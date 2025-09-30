@@ -366,9 +366,9 @@ graph LR
 #### Step 1: Prepare Your Data
 ```csv
 text,source,date
-"We must accelerate the transition to clean energy",Parliament,2024-01-15
-"The carbon tax is hurting small businesses",Opposition,2024-01-16
-"Investment in public transit reduces emissions",Committee,2024-01-17
+"We must accelerate the transition to clean energy",Parliament,2025-01-15
+"The carbon tax is hurting small businesses",Opposition,2025-01-16
+"Investment in public transit reduces emissions",Committee,2025-01-17
 ```
 
 #### Step 2: Create Annotation Prompt
@@ -617,10 +617,10 @@ We welcome contributions from the research community. Please refer to our [Contr
 If you use LLMTool in your research, please cite:
 
 ```bibtex
-@software{lemor2024llmtool,
+@software{lemor2025llmtool,
   author = {Lemor, Antoine},
   title = {LLMTool: An Advanced Annotation Pipeline for Social Sciences},
-  year = {2024},
+  year = {2025},
   url = {https://github.com/antoine-lemor/LLMTool}
 }
 ```
