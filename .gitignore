@@ -4,6 +4,3 @@ memory.md
 .venv/
 venv/
 paper/results/scripts/extract_results_from_csv.py
-# Paper outputs
-paper/results/outputs/
-*.tex
