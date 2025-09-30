@@ -1,0 +1,81 @@
+# LLMTool Requirements
+# Complete dependencies for all features
+# Author: Antoine Lemor
+
+# ===== CORE DEPENDENCIES =====
+# Data manipulation
+pandas>=1.5.0
+numpy>=1.21.0
+openpyxl>=3.0.0
+pyarrow>=10.0.0
+pyreadr>=0.4.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
+# JSON and validation
+pydantic>=2.0.0
+jsonschema>=4.0.0
+
+# CLI and interface
+rich>=13.0.0
+tqdm>=4.65.0
+inquirer>=3.0.0
+click>=8.0.0
+
+# Language detection
+langdetect>=1.0.9
+langid>=1.1.6
+
+# Logging and utilities
+loguru>=0.7.0
+python-dotenv>=1.0.0
+requests>=2.28.0
+
+# ===== LLM DEPENDENCIES =====
+# API clients
+openai>=1.0.0
+anthropic>=0.18.0
+google-generativeai>=0.3.0
+
+# Local LLM
+ollama>=0.1.7
+llama-cpp-python>=0.2.0
+
+# ===== TRAINING DEPENDENCIES =====
+# Deep learning
+torch>=2.0.0
+tensorflow>=2.13.0
+transformers>=4.35.0
+datasets>=2.14.0
+tokenizers>=0.14.0
+sentence-transformers>=2.2.0
+accelerate>=0.24.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+safetensors>=0.4.0
+
+# ML utilities
+scikit-learn>=1.3.0
+scipy>=1.10.0
+seaborn>=0.12.0
+matplotlib>=3.6.0
+
+# Evaluation metrics
+evaluate>=0.4.0
+rouge-score>=0.1.2
+bert-score>=0.3.13
+
+# Optimization
+optuna>=3.3.0
+ray[tune]>=2.6.0
+
+# MLOps
+mlflow>=2.8.0
+wandb>=0.15.0
+tensorboard>=2.13.0
+
+# Additional utilities
+imbalanced-learn>=0.11.0
+category_encoders>=2.6.0
