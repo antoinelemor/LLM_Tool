@@ -39,8 +39,11 @@ import sys
 import os
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+from collections import Counter
 import json
 import logging
+
+import pandas as pd
 
 # Rich for better CLI interface
 try:
@@ -64,6 +67,7 @@ except ImportError:
 from ..config.settings import Settings
 from ..pipelines.pipeline_controller import PipelineController
 from ..utils.language_detector import LanguageDetector
+from ..annotators.prompt_manager import PromptManager
 
 
 class LLMToolCLI:
@@ -75,6 +79,8 @@ class LLMToolCLI:
         self.settings = Settings()
         self.pipeline_controller = PipelineController()
         self.language_detector = LanguageDetector()
+        self.prompt_manager = PromptManager()
+        self.last_annotation_config: Dict[str, Any] = {}
 
         # Configure logging
         logging.basicConfig(
@@ -475,28 +481,153 @@ class LLMToolCLI:
 
     def get_annotation_config(self) -> Dict[str, Any]:
         """Get annotation configuration from user"""
-        config = {}
+        config: Dict[str, Any] = {}
 
         # Model selection
         use_api = Confirm.ask("Use API for annotation?", default=False)
         if use_api:
             config['mode'] = 'api'
-            config['provider'] = Prompt.ask("API Provider", choices=["openai", "anthropic"], default="openai")
+            config['provider'] = Prompt.ask(
+                "API Provider",
+                choices=["openai", "anthropic", "google", "custom"],
+                default="openai"
+            )
             config['api_key'] = Prompt.ask("API Key", password=True)
             config['model'] = Prompt.ask("Model", default="gpt-4")
         else:
             config['mode'] = 'local'
-            config['provider'] = Prompt.ask("Local provider", choices=["ollama"], default="ollama")
+            config['provider'] = Prompt.ask(
+                "Local provider",
+                choices=["ollama", "llamacpp", "transformers"],
+                default="ollama"
+            )
             config['model'] = Prompt.ask("Model", default="llama3.2")
 
         # Data configuration
-        config['data_format'] = Prompt.ask(
+        data_format = Prompt.ask(
             "Data format",
-            choices=["csv", "json", "excel"],
+            choices=["csv", "excel", "parquet", "postgresql"],
             default="csv"
         )
-        config['data_path'] = Prompt.ask("Data path")
+        config['data_format'] = data_format
+
+        if data_format == 'postgresql':
+            config['db_config'] = {
+                "host": Prompt.ask("Database host", default="localhost"),
+                "port": IntPrompt.ask("Database port", default=5432),
+                "database": Prompt.ask("Database name"),
+                "user": Prompt.ask("Database user"),
+                "password": Prompt.ask("Database password", password=True),
+                "table": Prompt.ask("Table name")
+            }
+            config['data_path'] = None
+        else:
+            default_data_dir = self.settings.paths.data_dir
+            default_path = default_data_dir / f"dataset.{data_format if data_format != 'csv' else 'csv'}"
+            data_path = ""
+            while not data_path:
+                if default_path.exists():
+                    candidate = Prompt.ask("Data path", default=str(default_path))
+                else:
+                    candidate = Prompt.ask("Data path")
+                candidate = (candidate or "").strip()
+                if not candidate:
+                    if HAS_RICH and self.console:
+                        self.console.print("[yellow]A data path is required.[/yellow]")
+                    else:
+                        print("Data path is required.")
+                    continue
+                if not Path(candidate).exists():
+                    warning_msg = f"Data file not found at {candidate}"
+                    if HAS_RICH and self.console:
+                        self.console.print(f"[red]{warning_msg}[/red]")
+                    else:
+                        print(warning_msg)
+                    continue
+                data_path = candidate
+
+            config['data_path'] = data_path
+
         config['text_column'] = Prompt.ask("Text column", default="text")
+        config['annotation_column'] = Prompt.ask("Annotation column", default="annotation")
+
+        # Prompt configuration
+        default_prompt_path = self.settings.paths.prompts_dir / "prompt_EN_long.txt"
+        default_prompt_str = str(default_prompt_path) if default_prompt_path.exists() else ""
+
+        prompt_path = ""
+        while not prompt_path:
+            if default_prompt_str:
+                candidate = Prompt.ask("Prompt file path", default=default_prompt_str)
+            else:
+                candidate = Prompt.ask("Prompt file path")
+            candidate = (candidate or "").strip()
+            if not candidate:
+                if HAS_RICH and self.console:
+                    self.console.print("[yellow]A prompt is required to run the annotation pipeline.[/yellow]")
+                else:
+                    print("Prompt path is required.")
+                continue
+
+            if not Path(candidate).exists():
+                message = f"Prompt file not found at {candidate}"
+                if HAS_RICH and self.console:
+                    self.console.print(f"[red]{message}[/red]")
+                else:
+                    print(message)
+                continue
+
+            prompt_path = candidate
+
+        try:
+            prompt_text, expected_keys = self.prompt_manager.load_prompt(prompt_path)
+        except Exception as exc:
+            warning_msg = f"Failed to parse prompt structure ({exc}). Proceeding with raw prompt content."
+            if HAS_RICH and self.console:
+                self.console.print(f"[yellow]{warning_msg}[/yellow]")
+            else:
+                print(warning_msg)
+            prompt_text = Path(prompt_path).read_text(encoding='utf-8')
+            expected_keys = []
+
+        prefix = ""
+        if Confirm.ask("Prefix JSON keys with a label?", default=False):
+            default_prefix = Path(prompt_path).stem.replace(" ", "_")
+            prefix = Prompt.ask("Prefix", default=default_prefix)
+
+        config['prompts'] = [
+            {
+                'prompt': prompt_text,
+                'expected_keys': expected_keys,
+                'prefix': prefix
+            }
+        ]
+        config['prompt_path'] = prompt_path
+
+        # Annotation sampling configuration
+        sample_size = IntPrompt.ask(
+            "Number of sentences to annotate for training (0 = all)",
+            default=500,
+            min=0
+        )
+        config['annotation_sample_size'] = sample_size if sample_size > 0 else None
+
+        if config['annotation_sample_size']:
+            random_sampling = Confirm.ask("Sample sentences randomly?", default=True)
+            config['annotation_sampling_strategy'] = 'random' if random_sampling else 'head'
+            config['annotation_sample_seed'] = IntPrompt.ask(
+                "Random seed",
+                default=42,
+                min=0
+            ) if random_sampling else 42
+        else:
+            config['annotation_sampling_strategy'] = 'head'
+            config['annotation_sample_seed'] = 42
+
+        config['output_format'] = 'csv'
+
+        # Persist for later stages (training recommendations)
+        self.last_annotation_config = config.copy()
 
         return config
 
@@ -516,11 +647,102 @@ class LLMToolCLI:
 
         return config
 
+    def recommend_models_for_training(self, sample_size: int = 200) -> Dict[str, Any]:
+        """Infer default models based on detected language distribution."""
+        fallback = {
+            'language_code': 'multilingual',
+            'language_name': 'multilingual',
+            'candidate_models': ['bert-base-multilingual-cased', 'xlm-roberta-base', 'mdeberta-v3-base'],
+            'default_model': 'bert-base-multilingual-cased',
+            'sampled': 0,
+        }
+
+        annotation_config = getattr(self, 'last_annotation_config', None)
+        if not annotation_config:
+            return fallback
+
+        data_format = annotation_config.get('data_format')
+        data_path = annotation_config.get('data_path')
+        text_column = annotation_config.get('text_column', 'text')
+
+        if data_format == 'postgresql' or not data_path:
+            return fallback
+
+        try:
+            if data_format == 'csv':
+                df = pd.read_csv(data_path)
+            elif data_format == 'excel':
+                df = pd.read_excel(data_path)
+            elif data_format == 'parquet':
+                df = pd.read_parquet(data_path)
+            else:
+                return fallback
+        except Exception as exc:
+            logging.warning("Failed to read data for language recommendation: %s", exc)
+            return fallback
+
+        if text_column not in df.columns:
+            logging.warning("Column '%s' not found for language recommendation", text_column)
+            return fallback
+
+        texts = df[text_column].dropna().astype(str)
+        if texts.empty:
+            return fallback
+
+        if len(texts) > sample_size:
+            sample = texts.sample(sample_size, random_state=42)
+        else:
+            sample = texts
+
+        detections = self.language_detector.detect_batch(sample.tolist(), parallel=False)
+        language_counts = Counter()
+
+        for detection in detections:
+            if not detection:
+                continue
+            language = detection.get('language')
+            confidence = detection.get('confidence', 0)
+            if language and confidence >= 0.5:
+                language_counts[language] += 1
+
+        if not language_counts:
+            return fallback
+
+        top_language, _ = language_counts.most_common(1)[0]
+        candidate_models = self.language_detector.get_recommended_models(top_language)
+        default_model = candidate_models[0] if candidate_models else fallback['default_model']
+        language_name = self.language_detector.get_language_name(top_language)
+
+        return {
+            'language_code': top_language,
+            'language_name': language_name,
+            'candidate_models': candidate_models or fallback['candidate_models'],
+            'default_model': default_model,
+            'sampled': len(sample),
+        }
+
     def get_training_config(self) -> Dict[str, Any]:
         """Get training configuration from user"""
-        config = {}
+        config: Dict[str, Any] = {}
 
-        config['benchmark_mode'] = Confirm.ask("Use benchmark mode?", default=True)
+        recommendation = self.recommend_models_for_training()
+        language_label = recommendation['language_name']
+        suggested_models = recommendation['candidate_models']
+        default_model = recommendation['default_model']
+
+        if HAS_RICH and self.console:
+            self.console.print(
+                f"[bold cyan]Detected language:[/bold cyan] {language_label}"
+                f" (sampled {recommendation['sampled']} texts)"
+            )
+            self.console.print(
+                f"[bold cyan]Suggested models:[/bold cyan] {', '.join(suggested_models[:5])}"
+            )
+        else:
+            print(f"Detected language: {language_label} (sample {recommendation['sampled']})")
+            print(f"Suggested models: {', '.join(suggested_models[:5])}")
+
+        config['benchmark_mode'] = Confirm.ask("Benchmark multiple models?", default=True)
 
         if config['benchmark_mode']:
             config['auto_select_best'] = Confirm.ask("Auto-select best model?", default=True)
@@ -528,22 +750,25 @@ class LLMToolCLI:
                 "Pause for manual validation before final selection?",
                 default=False
             )
-            config['models_to_test'] = IntPrompt.ask(
-                "Number of models to benchmark",
-                default=5,
-                min=2,
-                max=20
+            default_models_str = ", ".join(suggested_models[:5]) if suggested_models else default_model
+            models_input = Prompt.ask(
+                "Models to benchmark (comma separated)",
+                default=default_models_str
             )
+            models = [model.strip() for model in models_input.split(',') if model.strip()]
+            config['models_to_test'] = models or [default_model]
         else:
             config['model_type'] = Prompt.ask(
-                "Model type",
-                choices=["bert-base", "roberta", "deberta", "xlm-roberta"],
-                default="bert-base"
-            )
+                "Model to fine-tune",
+                default=default_model
+            ).strip()
 
         config['max_epochs'] = IntPrompt.ask("Maximum epochs", default=10, min=1, max=100)
         config['batch_size'] = IntPrompt.ask("Batch size", default=16, min=1, max=128)
         config['learning_rate'] = float(Prompt.ask("Learning rate", default="2e-5"))
+
+        # Persist recommendation for downstream summary
+        config['detected_language'] = language_label
 
         return config
 
@@ -576,7 +801,9 @@ class LLMToolCLI:
             # Annotation summary
             ann_summary = f"Mode: {annotation_config['mode']}\n"
             ann_summary += f"Model: {annotation_config['model']}\n"
-            ann_summary += f"Data: {annotation_config['data_format']}"
+            ann_summary += f"Data: {annotation_config['data_format']}\n"
+            sample_hint = annotation_config.get('annotation_sample_size')
+            ann_summary += f"Sample: {sample_hint or 'all'}"
             table.add_row("Annotation", ann_summary)
 
             # Validation summary
@@ -588,6 +815,14 @@ class LLMToolCLI:
 
             # Training summary
             train_summary = f"Mode: {'Benchmark' if training_config['benchmark_mode'] else 'Single'}\n"
+            detected_language = training_config.get('detected_language')
+            if detected_language:
+                train_summary += f"Language: {detected_language}\n"
+            if training_config['benchmark_mode']:
+                models_preview = ', '.join(training_config.get('models_to_test', [])[:3])
+                train_summary += f"Models: {models_preview or 'n/a'}\n"
+            else:
+                train_summary += f"Model: {training_config.get('model_type', 'n/a')}\n"
             train_summary += f"Epochs: {training_config['max_epochs']}\n"
             train_summary += f"Batch size: {training_config['batch_size']}"
             table.add_row("Training", train_summary)
@@ -606,10 +841,12 @@ class LLMToolCLI:
         pipeline_config = {
             # Data source configuration
             'mode': 'file',
-            'data_source': 'file',
+            'data_source': annotation_config['data_format'],
             'data_format': annotation_config['data_format'],
-            'file_path': annotation_config['data_path'],
+            'file_path': annotation_config.get('data_path'),
+            'db_config': annotation_config.get('db_config'),
             'text_column': annotation_config['text_column'],
+            'annotation_column': annotation_config.get('annotation_column', 'annotation'),
 
             # Annotation configuration
             'run_annotation': True,
@@ -617,6 +854,12 @@ class LLMToolCLI:
             'annotation_provider': annotation_config['provider'],
             'annotation_model': annotation_config['model'],
             'api_key': annotation_config.get('api_key'),
+            'prompts': annotation_config.get('prompts'),
+            'prompt_path': annotation_config.get('prompt_path'),
+            'annotation_sample_size': annotation_config.get('annotation_sample_size'),
+            'annotation_sampling_strategy': annotation_config.get('annotation_sampling_strategy'),
+            'annotation_sample_seed': annotation_config.get('annotation_sample_seed'),
+            'output_format': annotation_config.get('output_format', 'csv'),
 
             # Validation configuration
             'run_validation': validation_config['enable_validation'],

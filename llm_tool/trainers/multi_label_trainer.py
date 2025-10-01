@@ -92,6 +92,7 @@ class TrainingConfig:
     learning_rate: float = 5e-5
     reinforced_learning: bool = True
     n_epochs_reinforced: int = 2
+    reinforced_epochs: Optional[int] = None  # Override n_epochs_reinforced if provided
     track_languages: bool = True
     output_dir: str = "./multi_label_models"
     parallel_training: bool = False  # train models in parallel
@@ -649,6 +650,7 @@ class MultiLabelTrainer:
                 save_model_as=model_name,
                 reinforced_learning=self.config.reinforced_learning,
                 n_epochs_reinforced=self.config.n_epochs_reinforced,
+                reinforced_epochs=self.config.reinforced_epochs if hasattr(self.config, 'reinforced_epochs') else None,
                 track_languages=self.config.track_languages,
                 language_info=language_info,
                 metrics_output_dir=os.path.join(model_path, 'logs')

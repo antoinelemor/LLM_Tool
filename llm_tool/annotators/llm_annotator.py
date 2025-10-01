@@ -88,7 +88,7 @@ except ImportError:
 # Import from other modules
 from ..annotators.api_clients import create_api_client
 from ..annotators.prompt_manager import PromptManager
-from ..annotators.json_cleaner import JSONCleaner
+from ..annotators.json_cleaner import JSONCleaner, clean_json_output
 from ..config.settings import Settings
 
 # Try to import local model support
@@ -154,25 +154,38 @@ class LLMAnnotator:
         dict
             Annotation results and statistics
         """
+        # Reset counters to avoid leaking state across multiple runs
+        global status_counts
+        status_counts = {"success": 0, "error": 0, "cleaning_failed": 0, "decode_error": 0}
+
         # Validate configuration
+        self.logger.info("[ANNOTATOR] Validating config...")
         self._validate_config(config)
 
         # Setup model client
+        self.logger.info(f"[ANNOTATOR] Setting up model client for {config.get('model')}...")
         self._setup_model_client(config)
+        self.logger.info("[ANNOTATOR] Model client setup complete")
 
         # Load data
+        self.logger.info("[ANNOTATOR] Loading data...")
         data, metadata = self._load_data(config)
+        self.logger.info(f"[ANNOTATOR] Loaded {len(data)} rows")
 
         # Prepare prompts
+        self.logger.info("[ANNOTATOR] Preparing prompts...")
         prompts = self._prepare_prompts(config)
+        self.logger.info(f"[ANNOTATOR] Prepared {len(prompts)} prompt(s)")
 
         # Perform annotation
+        self.logger.info("[ANNOTATOR] Starting annotation process...")
         results = self._annotate_data(data, prompts, config)
 
         # Save results
+        self.logger.info("[ANNOTATOR] Saving results...")
         self._save_results(results, config)
 
-        return self._generate_summary(results)
+        return self._generate_summary(results, config)
 
     def _validate_config(self, config: Dict[str, Any]):
         """Validate annotation configuration"""
@@ -299,6 +312,20 @@ class LLMAnnotator:
         else:
             data_to_annotate = data.copy()
 
+        annotation_limit = config.get('annotation_sample_size') or config.get('annotation_limit')
+        if annotation_limit and len(data_to_annotate) > annotation_limit:
+            strategy = config.get('annotation_sampling_strategy', 'head')
+            sample_seed = config.get('annotation_sample_seed', 42)
+            if strategy == 'random':
+                data_to_annotate = data_to_annotate.sample(annotation_limit, random_state=sample_seed)
+            else:
+                data_to_annotate = data_to_annotate.head(annotation_limit)
+            self.logger.info(
+                "Limiting annotation to %s rows using '%s' sampling strategy",
+                len(data_to_annotate),
+                strategy
+            )
+
         # Calculate sample size if requested
         if config.get('calculate_sample_size', False):
             sample_size = self.calculate_sample_size(len(data_to_annotate))
@@ -307,7 +334,10 @@ class LLMAnnotator:
                 self.logger.info(f"Using sample of {sample_size} rows")
 
         # Prepare for parallel processing
+        use_parallel = config.get('use_parallel', True)
         num_processes = config.get('num_processes', 1)
+        if not use_parallel:
+            num_processes = 1
         multiple_prompts = len(prompts) > 1
 
         # Add necessary columns
@@ -335,15 +365,24 @@ class LLMAnnotator:
             config
         )
 
-        # Execute annotation
-        annotated_data = self._execute_parallel_annotation(
-            data,
-            tasks,
-            num_processes,
-            annotation_column,
-            identifier_column,
-            config
-        )
+        # Execute annotation (sequential fallback when only one process requested)
+        if num_processes <= 1:
+            annotated_data = self._execute_sequential_annotation(
+                data,
+                tasks,
+                annotation_column,
+                identifier_column,
+                config
+            )
+        else:
+            annotated_data = self._execute_parallel_annotation(
+                data,
+                tasks,
+                num_processes,
+                annotation_column,
+                identifier_column,
+                config
+            )
 
         return annotated_data
 
@@ -436,6 +475,7 @@ class LLMAnnotator:
         save_incrementally = config.get('save_incrementally', True)
         log_enabled = config.get('enable_logging', False)
         log_path = config.get('log_path')
+        output_format = config.get('output_format', config.get('data_source', 'csv'))
 
         # Initialize progress bar
         with tqdm(total=total_tasks, desc='Annotating', unit='items') as pbar:
@@ -489,12 +529,12 @@ class LLMAnnotator:
 
                         # Incremental saving
                         if save_incrementally and output_path:
-                            if config['data_source'] == 'csv' and CSV_APPEND:
+                            if output_format == 'csv' and CSV_APPEND:
                                 self._append_to_csv(full_data, identifier, identifier_column, annotation_column, output_path)
                             else:
                                 pending_save += 1
                                 if pending_save >= OTHER_FORMAT_SAVE_EVERY:
-                                    self._save_data(full_data, output_path, config['data_source'])
+                                    self._save_data(full_data, output_path, output_format)
                                     pending_save = 0
 
                         # Log if enabled
@@ -526,7 +566,81 @@ class LLMAnnotator:
 
         # Final save if needed
         if save_incrementally and output_path and pending_save > 0:
-            self._save_data(full_data, output_path, config['data_source'])
+            self._save_data(full_data, output_path, output_format)
+
+        return full_data
+
+    def _execute_sequential_annotation(
+        self,
+        full_data: pd.DataFrame,
+        tasks: List[Dict],
+        annotation_column: str,
+        identifier_column: str,
+        config: Dict[str, Any]
+    ) -> pd.DataFrame:
+        """Execute annotation tasks sequentially (no process pool)."""
+        output_path = config.get('output_path')
+        save_incrementally = config.get('save_incrementally', True)
+        log_enabled = config.get('enable_logging', False)
+        log_path = config.get('log_path')
+        output_format = config.get('output_format', config.get('data_source', 'csv'))
+
+        pending_save = 0
+
+        for task in tqdm(tasks, desc='Annotating', unit='items'):
+            if len(task['prompts']) > 1:
+                result = process_multiple_prompts(task)
+            else:
+                result = process_single_prompt(task)
+
+            identifier = result['identifier']
+            final_json = result['final_json']
+            inference_time = result['inference_time']
+            raw_json = result.get('raw_json')
+            cleaned_json = result.get('cleaned_json')
+            status = result.get('status', 'unknown')
+
+            mask = full_data[identifier_column] == identifier
+            if mask.any():
+                full_data.loc[mask, annotation_column] = final_json
+                full_data.loc[mask, f"{annotation_column}_inference_time"] = inference_time
+
+                if raw_json:
+                    full_data.loc[mask, f"{annotation_column}_raw_per_prompt"] = raw_json
+                if cleaned_json:
+                    full_data.loc[mask, f"{annotation_column}_cleaned_per_prompt"] = cleaned_json
+                if status:
+                    full_data.loc[mask, f"{annotation_column}_status_per_prompt"] = status
+
+            if final_json:
+                status_counts['success'] += 1
+            else:
+                status_counts['error'] += 1
+
+            if save_incrementally and output_path:
+                if output_format == 'csv' and CSV_APPEND:
+                    self._append_to_csv(full_data, identifier, identifier_column, annotation_column, output_path)
+                else:
+                    pending_save += 1
+                    if pending_save >= OTHER_FORMAT_SAVE_EVERY:
+                        self._save_data(full_data, output_path, output_format)
+                        pending_save = 0
+
+            if log_enabled and log_path:
+                self._write_log_entry(
+                    log_path,
+                    {
+                        'id': identifier,
+                        'final_json': final_json,
+                        'inference_time': inference_time,
+                        'status': status
+                    }
+                )
+
+        if save_incrementally and output_path and output_format != 'csv' and pending_save > 0:
+            self._save_data(full_data, output_path, output_format)
+        elif not save_incrementally and output_path:
+            self._save_data(full_data, output_path, output_format)
 
         return full_data
 
@@ -534,7 +648,7 @@ class LLMAnnotator:
         """Save annotation results"""
         output_path = config.get('output_path')
         if output_path:
-            format = config.get('output_format') or config.get('data_source', 'csv')
+            format = config.get('output_format') or 'csv'
             self._save_data(data, output_path, format)
             self.logger.info(f"Results saved to {output_path}")
 
@@ -577,17 +691,29 @@ class LLMAnnotator:
         with open(log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')
 
-    def _generate_summary(self, data: pd.DataFrame) -> Dict[str, Any]:
+    def _generate_summary(self, data: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
         """Generate annotation summary statistics"""
         total = len(data)
         success = status_counts.get('success', 0)
         errors = status_counts.get('error', 0)
-        
+        annotation_column = config.get('annotation_column', 'annotation')
+
+        annotated_rows = 0
+        if annotation_column in data.columns:
+            annotated_rows = data[annotation_column].dropna().shape[0]
+
         return {
             'total_processed': total,
             'successful': success,
             'errors': errors,
             'success_rate': (success / total * 100) if total > 0 else 0,
+            'annotated_rows': int(annotated_rows),
+            'annotation_column': annotation_column,
+            'output_file': config.get('output_path'),
+            'output_format': config.get('output_format', 'csv'),
+            'model': config.get('model'),
+            'provider': config.get('provider'),
+            'annotation_sample_size': config.get('annotation_sample_size') or config.get('annotation_limit'),
             'timestamp': datetime.now().isoformat()
         }
 
@@ -654,7 +780,7 @@ class LLMAnnotator:
     ) -> Optional[str]:
         """
         Analyze text using configured model.
-        
+
         Parameters
         ----------
         text : str
@@ -665,7 +791,7 @@ class LLMAnnotator:
             Model configuration
         schema : BaseModel, optional
             Pydantic schema for validation
-        
+
         Returns
         -------
         str or None
@@ -673,17 +799,22 @@ class LLMAnnotator:
         """
         # Build full prompt
         full_prompt = f"{prompt}\n\nText to analyze:\n{text}"
-        
+
+        self.logger.debug(f"[ANALYZE] Calling model with prompt length: {len(full_prompt)}")
+        self.logger.debug(f"[ANALYZE] Text to analyze (first 200 chars): {text[:200]}")
+
         # Call appropriate model
         provider = model_config.get('provider')
-        
+
         if provider in ['openai', 'anthropic', 'google'] and self.api_client:
+            self.logger.debug(f"[ANALYZE] Using API client for provider: {provider}")
             response = self.api_client.generate(
                 prompt=full_prompt,
                 temperature=model_config.get('temperature', 0.7),
                 max_tokens=model_config.get('max_tokens', 1000)
             )
         elif provider in ['ollama', 'llamacpp'] and self.local_client:
+            self.logger.debug(f"[ANALYZE] Using local client for provider: {provider}")
             response = self.local_client.generate(
                 prompt=full_prompt,
                 options=model_config.get('options', {})
@@ -691,41 +822,62 @@ class LLMAnnotator:
         else:
             self.logger.error(f"No client configured for provider: {provider}")
             return None
-        
+
+        self.logger.debug(f"[ANALYZE] Raw response from model: {response}")
+
         if not response:
+            self.logger.warning("[ANALYZE] Model returned empty response")
             return None
-        
+
         # Clean and validate response
-        cleaned = self.json_cleaner.clean_json_output(response, schema=schema)
+        # Extract expected keys from schema if available
+        expected_keys = []
+        if schema:
+            # Use model_fields for Pydantic V2, fallback to __fields__ for V1
+            if hasattr(schema, 'model_fields'):
+                expected_keys = list(schema.model_fields.keys())
+            elif hasattr(schema, '__fields__'):
+                expected_keys = list(schema.__fields__.keys())
+
+        self.logger.debug(f"[ANALYZE] Cleaning JSON with expected keys: {expected_keys}")
+        cleaned = clean_json_output(response, expected_keys)
+        self.logger.debug(f"[ANALYZE] Cleaned JSON: {cleaned}")
         
         # Validate with schema if provided
         if cleaned and schema:
+            self.logger.debug("[ANALYZE] Attempting schema validation")
             try:
                 validated = schema.model_validate_json(cleaned)
-                return validated.model_dump_json()
+                final_result = validated.model_dump_json()
+                self.logger.debug(f"[ANALYZE] Schema validated successfully: {final_result}")
+                return final_result
             except Exception as e:
-                self.logger.warning(f"Schema validation failed: {e}")
+                self.logger.warning(f"[ANALYZE] Schema validation failed: {e}, returning cleaned JSON")
                 return cleaned
-        
+
+        self.logger.debug(f"[ANALYZE] Returning final result: {cleaned}")
         return cleaned
 
 
 def process_single_prompt(task: Dict[str, Any]) -> Dict[str, Any]:
     """
     Process a single prompt for annotation.
-    
+
     Parameters
     ----------
     task : dict
         Task configuration including row data, prompt, and options
-    
+
     Returns
     -------
     dict
         Annotation result with identifier, JSON, and timing
     """
+    # Setup logging for this function
+    logger = logging.getLogger(__name__)
+
     start_time = time.perf_counter()
-    
+
     # Extract task parameters
     row = task['row']
     prompt_config = task['prompts'][0]  # Single prompt
@@ -733,24 +885,31 @@ def process_single_prompt(task: Dict[str, Any]) -> Dict[str, Any]:
     identifier = task['identifier']
     model_config = task['model_config']
     options = task.get('options', {})
-    
+
+    logger.debug(f"[PROCESS] Starting annotation for identifier: {identifier}")
+
     # Build text from columns
     text_parts = []
     for col in text_columns:
         if pd.notna(row[col]):
             text_parts.append(str(row[col]))
     text = "\n\n".join(text_parts)
-    
+
+    logger.debug(f"[PROCESS] Built text from {len(text_columns)} columns, length: {len(text)}")
+
     # Get prompt details (handle both 'prompt' and 'template' keys)
     prompt_text = prompt_config.get('prompt') or prompt_config.get('template', '')
     expected_keys = prompt_config.get('expected_keys', [])
     prefix = prompt_config.get('prefix', '')
-    
+
+    logger.debug(f"[PROCESS] Prompt length: {len(prompt_text)}, expected keys: {expected_keys}, prefix: {prefix}")
+
     # Build schema if expected keys provided
     schema = None
     if expected_keys and not options.get('disable_schema', False):
         schema = build_dynamic_schema(expected_keys)
-    
+        logger.debug(f"[PROCESS] Built dynamic schema for keys: {expected_keys}")
+
     # Create annotator instance for this process
     annotator = LLMAnnotator()
 
@@ -760,26 +919,33 @@ def process_single_prompt(task: Dict[str, Any]) -> Dict[str, Any]:
         'provider': model_config.get('provider', 'ollama'),
         'api_key': model_config.get('api_key')
     }
+    logger.debug(f"[PROCESS] Setting up model client: {config_for_setup}")
     annotator._setup_model_client(config_for_setup)
 
     # Analyze text
+    logger.debug(f"[PROCESS] Calling analyze_text_with_model")
     result = annotator.analyze_text_with_model(
         text=text,
         prompt=prompt_text,
         model_config=model_config,
         schema=schema
     )
-    
+
+    logger.debug(f"[PROCESS] Got result from analyze_text_with_model: {result}")
+
     # Apply prefix if specified
     if result and prefix:
+        logger.debug(f"[PROCESS] Applying prefix '{prefix}' to result")
         try:
             parsed = json.loads(result)
             prefixed = {f"{prefix}_{k}": v for k, v in parsed.items()}
             result = json.dumps(prefixed, ensure_ascii=False)
-        except:
-            pass
-    
+            logger.debug(f"[PROCESS] Prefixed result: {result}")
+        except Exception as e:
+            logger.warning(f"[PROCESS] Failed to apply prefix: {e}")
+
     elapsed = time.perf_counter() - start_time
+    logger.debug(f"[PROCESS] Completed annotation for {identifier} in {elapsed:.2f}s, result: {result}")
     
     return {
         'identifier': identifier,

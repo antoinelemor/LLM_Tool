@@ -43,6 +43,7 @@ from enum import Enum
 from concurrent.futures import ThreadPoolExecutor
 import json
 import time
+from datetime import datetime
 
 from ..config.settings import Settings, get_settings
 from ..utils.language_detector import LanguageDetector
@@ -94,15 +95,21 @@ class PipelineController:
     def _lazy_import_modules(self):
         """Lazy import of heavy modules"""
         if self._annotation_module is None:
+            self.logger.info("[IMPORT] Importing LLMAnnotator...")
             from ..annotators.llm_annotator import LLMAnnotator
+            self.logger.info("[IMPORT] LLMAnnotator imported successfully")
             self._annotation_module = LLMAnnotator
 
         if self._training_module is None:
+            self.logger.info("[IMPORT] Importing ModelTrainer...")
             from ..trainers.model_trainer import ModelTrainer
+            self.logger.info("[IMPORT] ModelTrainer imported successfully")
             self._training_module = ModelTrainer
 
         if self._validation_module is None:
+            self.logger.info("[IMPORT] Importing AnnotationValidator...")
             from ..validators.annotation_validator import AnnotationValidator
+            self.logger.info("[IMPORT] AnnotationValidator imported successfully")
             self._validation_module = AnnotationValidator
 
     def initialize_pipeline(self, config: Dict[str, Any]) -> PipelineState:
@@ -206,10 +213,99 @@ class PipelineController:
 
     def run_pipeline(self, config: Dict[str, Any]) -> PipelineState:
         """Run the complete pipeline synchronously"""
-        return asyncio.run(self.run_pipeline_async(config))
+        try:
+            # Initialize
+            self.initialize_pipeline(config)
+
+            # Only import modules that we actually need based on config
+            # This avoids loading heavy modules that might cause issues
+            self.logger.info("[PIPELINE] Importing required modules...")
+
+            # Phase 1: Annotation (synchronous to avoid asyncio conflicts with Ollama)
+            if config.get('run_annotation', True):
+                # Import only annotation module
+                if self._annotation_module is None:
+                    self.logger.info("[IMPORT] Importing LLMAnnotator...")
+                    from ..annotators.llm_annotator import LLMAnnotator
+                    self.logger.info("[IMPORT] LLMAnnotator imported successfully")
+                    self._annotation_module = LLMAnnotator
+
+                self.logger.info("[PIPELINE] Calling _run_annotation_phase_sync()...")
+                self._run_annotation_phase_sync(config)
+
+            # Phase 1.5: Prepare training data from annotations (if training is enabled)
+            if config.get('run_training', False) and self.state.annotation_results:
+                self.logger.info("[PIPELINE] Preparing training data from annotations...")
+                self._prepare_training_data_from_annotations(config)
+
+            # Phase 2: Validation
+            if config.get('run_validation', False):
+                if self._validation_module is None:
+                    self.logger.info("[IMPORT] Importing AnnotationValidator...")
+                    from ..validators.annotation_validator import AnnotationValidator
+                    self._validation_module = AnnotationValidator
+                asyncio.run(self._run_validation_phase(config))
+
+            # Phase 3: Training
+            if config.get('run_training', False):
+                if self._training_module is None:
+                    self.logger.info("[IMPORT] Importing ModelTrainer...")
+                    from ..trainers.model_trainer import ModelTrainer
+                    self._training_module = ModelTrainer
+                asyncio.run(self._run_training_phase(config))
+
+            # Phase 4: Deployment
+            if config.get('run_deployment', False):
+                asyncio.run(self._run_deployment_phase(config))
+
+            # Mark complete
+            self.state.current_phase = PipelinePhase.COMPLETED
+            self.state.end_time = time.time()
+
+            # Save pipeline state
+            self._save_pipeline_state()
+
+            return self.state
+
+        except Exception as e:
+            self.logger.error(f"Pipeline failed: {str(e)}")
+            self.state.errors.append({
+                'phase': self.state.current_phase,
+                'error': str(e)
+            })
+            self._save_pipeline_state()
+            raise
+
+    def _run_annotation_phase_sync(self, config: Dict[str, Any]):
+        """Run the annotation phase synchronously (avoids asyncio conflicts with Ollama)"""
+        self.logger.info("Starting annotation phase")
+        self.state.current_phase = PipelinePhase.ANNOTATION
+
+        try:
+            self.logger.info("[TRACE] Creating annotator instance...")
+            annotator = self._annotation_module(settings=self.settings)
+            self.logger.info("[TRACE] Annotator created successfully")
+
+            # Prepare annotation configuration
+            self.logger.info("[TRACE] Preparing annotation config...")
+            annotation_config = self._prepare_annotation_config(config)
+            self.logger.info(f"[TRACE] Config prepared. Provider={annotation_config.get('provider')}, Model={annotation_config.get('model')}")
+
+            # Run annotation synchronously
+            self.logger.info("[TRACE] Calling annotator.annotate()...")
+            results = annotator.annotate(annotation_config)
+            self.logger.info("[TRACE] Annotation completed!")
+
+            self.state.annotation_results = results
+            self.state.phases_completed.append(PipelinePhase.ANNOTATION)
+            self.logger.info(f"Annotation completed: {results.get('total_annotated', 0)} items processed")
+
+        except Exception as e:
+            self.logger.error(f"Annotation phase failed: {str(e)}")
+            raise
 
     async def _run_annotation_phase(self, config: Dict[str, Any]):
-        """Run the annotation phase"""
+        """Run the annotation phase (async version)"""
         self.logger.info("Starting annotation phase")
         self.state.current_phase = PipelinePhase.ANNOTATION
 
@@ -267,14 +363,32 @@ class PipelineController:
         try:
             trainer = self._training_module(settings=self.settings)
 
-            # Determine input data
-            if self.state.annotation_results:
+            # Determine input data - prioritize converted training files
+            training_files = None
+            if self.state.annotation_results and 'training_files' in self.state.annotation_results:
+                # Use converted training data (JSONL format)
+                training_files = self.state.annotation_results['training_files']
+                training_strategy = self.state.annotation_results.get('training_strategy', 'single-label')
+                self.logger.info(f"Using {len(training_files)} converted training file(s) (strategy={training_strategy})")
+            elif self.state.annotation_results:
+                # Fallback to annotation output (CSV format) - less ideal
                 input_data = self.state.annotation_results.get('output_file')
             else:
+                # Use manually provided training file
                 input_data = config.get('training_input_file')
 
-            if not input_data:
+            if not training_files and not input_data:
                 raise ValueError("No input data available for training")
+
+            # Train models based on strategy
+            if training_files:
+                # For single-label strategy, we might have multiple files (one per annotation key)
+                # For multi-label strategy, we have one file
+                # For now, let's train on the first file
+                # TODO: Support training multiple models (one per annotation key)
+                first_key = list(training_files.keys())[0]
+                input_data = training_files[first_key]
+                self.logger.info(f"Training on: {first_key} -> {input_data}")
 
             # Prepare training configuration
             training_config = self._prepare_training_config(config, input_data)
@@ -345,32 +459,57 @@ class PipelineController:
 
     def _prepare_annotation_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare configuration for annotation phase"""
+        provider = config.get('annotation_provider', 'ollama')
+        mode = config.get('annotation_mode', 'local')
+
+        input_format = config.get('data_source') or config.get('data_format', 'csv')
+        annotations_dir = self.settings.paths.data_dir / 'annotations'
+        annotations_dir.mkdir(parents=True, exist_ok=True)
+
+        input_name = Path(config.get('file_path', 'data')).stem or 'data'
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        default_output_format = config.get('output_format') or 'csv'
+        default_output_name = f"{input_name}_{provider}_annotations_{timestamp}.{default_output_format}"
+        default_output_path = annotations_dir / default_output_name
+
         return {
-            'mode': config.get('annotation_mode', 'local'),
-            'provider': config.get('annotation_provider', 'ollama'),
+            'mode': mode,
+            'provider': provider,
             'model': config.get('annotation_model', 'llama3.2'),
             'api_key': config.get('api_key'),
-            'data_source': config['data_source'],
-            'data_format': config.get('data_format', 'csv'),
+            'data_source': input_format,
+            'data_format': config.get('data_format', input_format),
             'file_path': config.get('file_path'),
+            'db_config': config.get('db_config'),
             'text_column': config.get('text_column', 'text'),
             'prompt_path': config.get('prompt_path'),
             'prompts_folder': config.get('prompts_folder'),
             'prompts': config.get('prompts'),
             'batch_size': config.get('batch_size', 100),
             'max_workers': config.get('max_workers', 4),
-            'output_format': config.get('output_format', 'json'),
-            'output_path': config.get('output_path',
-                                     str(self.settings.paths.data_dir / 'annotations.json'))
+            'num_processes': config.get('num_processes', config.get('max_workers', 4)),
+            'use_parallel': config.get('use_parallel', True),
+            'annotation_column': config.get('annotation_column', 'annotation'),
+            'annotation_sample_size': config.get('annotation_sample_size'),
+            'annotation_sampling_strategy': config.get('annotation_sampling_strategy', 'head'),
+            'annotation_sample_seed': config.get('annotation_sample_seed', 42),
+            'output_format': config.get('output_format', default_output_format),
+            'output_path': config.get('output_path', str(default_output_path))
         }
 
     def _prepare_training_config(self, config: Dict[str, Any], input_data: str) -> Dict[str, Any]:
         """Prepare configuration for training phase"""
+        models_to_test = config.get('models_to_test')
+        if isinstance(models_to_test, str):
+            models_to_test = [m.strip() for m in models_to_test.split(',') if m.strip()]
+        elif isinstance(models_to_test, int):
+            models_to_test = []
+
         return {
             'input_file': input_data,
             'model_type': config.get('training_model_type', 'bert-base-multilingual-cased'),
             'benchmark_mode': config.get('benchmark_mode', False),
-            'models_to_test': config.get('models_to_test', 5),
+            'models_to_test': models_to_test or ['bert-base-multilingual-cased', 'xlm-roberta-base'],
             'auto_select_best': config.get('auto_select_best', True),
             'max_epochs': config.get('max_epochs', 10),
             'batch_size': config.get('batch_size', 16),
@@ -382,6 +521,87 @@ class PipelineController:
             'output_dir': config.get('output_dir',
                                    str(self.settings.paths.models_dir / 'trained_model'))
         }
+
+    def _prepare_training_data_from_annotations(self, config: Dict[str, Any]):
+        """
+        Convert annotated CSV to training-ready JSONL format.
+        This function prepares data between annotation and training phases.
+        """
+        from ..utils.annotation_to_training import AnnotationToTrainingConverter
+
+        # Get annotation output file
+        annotation_output = self.state.annotation_results.get('output_file')
+        if not annotation_output:
+            self.logger.error("No annotation output file found")
+            return
+
+        # Get configuration
+        text_column = config.get('text_column', 'sentence')
+        annotation_column = config.get('annotation_column', 'annotation')
+        training_strategy = config.get('training_strategy', 'single-label')
+        label_strategy = config.get('label_strategy', 'key_value')
+        annotation_keys = config.get('training_annotation_keys')  # None means all keys
+
+        # Create converter
+        converter = AnnotationToTrainingConverter(verbose=True)
+
+        # Prepare output directory
+        training_data_dir = self.settings.paths.data_dir / 'training_data'
+        training_data_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        try:
+            if training_strategy == 'single-label':
+                # Create separate datasets for each annotation key
+                self.logger.info(f"Creating single-label training datasets (label_strategy={label_strategy})...")
+                output_files = converter.create_single_label_datasets(
+                    csv_path=annotation_output,
+                    output_dir=str(training_data_dir),
+                    text_column=text_column,
+                    annotation_column=annotation_column,
+                    annotation_keys=annotation_keys,
+                    label_strategy=label_strategy,
+                    id_column=config.get('identifier_column'),
+                    lang_column=config.get('lang_column')
+                )
+
+                if output_files:
+                    self.logger.info(f"Created {len(output_files)} training datasets:")
+                    for key, path in output_files.items():
+                        self.logger.info(f"  - {key}: {path}")
+
+                    # Store the first dataset for training (or user can select)
+                    # For now, we'll train on all of them sequentially
+                    self.state.annotation_results['training_files'] = output_files
+                    self.state.annotation_results['training_strategy'] = 'single-label'
+                else:
+                    self.logger.warning("No training datasets were created")
+
+            elif training_strategy == 'multi-label':
+                # Create single multi-label dataset
+                self.logger.info(f"Creating multi-label training dataset (label_strategy={label_strategy})...")
+                output_file = converter.create_multi_label_dataset(
+                    csv_path=annotation_output,
+                    output_path=str(training_data_dir / f'training_multilabel_{timestamp}.jsonl'),
+                    text_column=text_column,
+                    annotation_column=annotation_column,
+                    annotation_keys=annotation_keys,
+                    label_strategy=label_strategy,
+                    id_column=config.get('identifier_column'),
+                    lang_column=config.get('lang_column')
+                )
+
+                if output_file:
+                    self.logger.info(f"Created multi-label training dataset: {output_file}")
+                    self.state.annotation_results['training_files'] = {'multilabel': output_file}
+                    self.state.annotation_results['training_strategy'] = 'multi-label'
+                else:
+                    self.logger.warning("Multi-label training dataset was not created")
+
+        except Exception as e:
+            self.logger.error(f"Failed to prepare training data: {e}")
+            raise
 
     def _save_pipeline_state(self):
         """Save the current pipeline state to disk"""

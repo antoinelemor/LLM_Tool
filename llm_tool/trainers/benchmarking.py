@@ -1124,11 +1124,13 @@ class BenchmarkRunner:
                     language_info=filtered_test_languages if filtered_test_languages else None,
                     reinforced_learning=use_reinforced,
                     n_epochs_reinforced=self.config.reinforced_epochs if use_reinforced else 0,
+                    reinforced_epochs=self.config.reinforced_epochs if use_reinforced else None,
                     f1_class_1_weight=self.config.f1_class_1_weight,
                     rescue_low_class1_f1=self.config.rescue_low_class1_f1,
                     f1_1_rescue_threshold=self.config.f1_rescue_threshold,
                     reinforced_f1_threshold=self.config.reinforced_f1_threshold,
-                    model_identifier=f"benchmark_{model_name.lower()}"
+                    model_identifier=f"benchmark_{model_name.lower()}",
+                    metrics_output_dir="./training_logs"  # Use consistent logging directory
                 )
 
                 training_time = time.time() - start_time

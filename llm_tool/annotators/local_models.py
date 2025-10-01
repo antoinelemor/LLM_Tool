@@ -46,13 +46,14 @@ from pathlib import Path
 
 # Try to import Ollama
 try:
-    from ollama import generate, chat, list as list_models
+    from ollama import generate, chat
+    # DO NOT import 'list' at module level - it causes mutex locks
+    # Import it dynamically when needed instead
     HAS_OLLAMA = True
 except ImportError:
     HAS_OLLAMA = False
     generate = None
     chat = None
-    list_models = None
 
 # Try to import llama-cpp-python
 try:
@@ -90,17 +91,24 @@ class OllamaClient(BaseLocalClient):
     def __init__(self, model_name: str, **kwargs):
         """Initialize Ollama client"""
         super().__init__(model_name, **kwargs)
-        
+
+        self.logger.info(f"[1/4] Initializing OllamaClient for {model_name}")
+
         if not HAS_OLLAMA:
             raise ImportError("Ollama library not installed. Install with: pip install ollama")
-        
+
         self.options = kwargs.get('options', {})
+
+        self.logger.info(f"[2/4] Checking Ollama service...")
         self._check_ollama_service()
-        
+
+        self.logger.info(f"[3/4] Checking if model {model_name} is available...")
         # Check if model is available
         if not self.is_available():
             self.logger.warning(f"Model {model_name} not found in Ollama. Attempting to pull...")
             self._pull_model()
+        else:
+            self.logger.info(f"[4/4] Model {model_name} is available ✓")
 
     def _check_ollama_service(self):
         """Check if Ollama service is running"""
@@ -165,13 +173,11 @@ class OllamaClient(BaseLocalClient):
                     continue
                 if not line.strip():
                     continue
-                    
+
                 parts = line.split()
                 if parts:
                     model_name = parts[0]
-                    # Remove tag if present
-                    if ':' in model_name:
-                        model_name = model_name.split(':')[0]
+                    # Keep the full model name with tag (e.g., gpt-oss:120b)
                     models.append(model_name)
             
             return models
@@ -218,64 +224,33 @@ class OllamaClient(BaseLocalClient):
         # Retry logic
         for attempt in range(self.max_retries):
             try:
-                # Check if we should use chat or generate
-                if format == 'json' or kwargs.get('json_mode', False):
-                    # Use chat for structured output
-                    response = chat(
-                        model=self.model_name,
-                        messages=[{"role": "user", "content": prompt}],
-                        format={'type': 'object'},
-                        options=options
-                    )
-                    
-                    # Extract content from chat response
-                    if hasattr(response, 'message'):
-                        if hasattr(response.message, 'content'):
-                            content = response.message.content.strip()
-                        else:
-                            content = str(response.message)
-                    elif isinstance(response, dict):
-                        content = response.get('message', {}).get('content', '').strip()
-                    else:
-                        content = str(response)
-                    
-                    # Validate JSON if in JSON mode
-                    if format == 'json':
-                        try:
-                            json.loads(content)
-                        except json.JSONDecodeError:
-                            self.logger.warning(f"Invalid JSON from Ollama (attempt {attempt + 1})")
-                            if attempt < self.max_retries - 1:
-                                time.sleep(self.retry_delay * (attempt + 1))
-                                continue
-                            return None
-                    
-                    return content
-                    
+                self.logger.info(f"Generating response with {self.model_name} (attempt {attempt + 1}/{self.max_retries})")
+
+                # Always use generate() instead of chat() to avoid locking issues
+                # The chat() function with format parameter can cause mutex locks
+                response = generate(
+                    model=self.model_name,
+                    prompt=prompt,
+                    options=options
+                )
+
+                # Extract response
+                if isinstance(response, dict):
+                    content = response.get('response', '').strip()
+                elif hasattr(response, 'get'):
+                    content = response.get('response', '').strip()
                 else:
-                    # Use generate for regular text
-                    response = generate(
-                        model=self.model_name,
-                        prompt=prompt,
-                        options=options
-                    )
-                    
-                    # Extract response
-                    if isinstance(response, dict):
-                        content = response.get('response', '').strip()
-                    elif hasattr(response, 'get'):
-                        content = response.get('response', '').strip()
-                    else:
-                        content = str(response)
-                    
-                    if not content:
-                        self.logger.warning(f"Empty response from Ollama (attempt {attempt + 1})")
-                        if attempt < self.max_retries - 1:
-                            time.sleep(self.retry_delay * (attempt + 1))
-                            continue
-                        return None
-                    
-                    return content
+                    content = str(response)
+
+                if not content:
+                    self.logger.warning(f"Empty response from Ollama (attempt {attempt + 1})")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(self.retry_delay * (attempt + 1))
+                        continue
+                    return None
+
+                self.logger.info(f"Successfully generated response ({len(content)} chars)")
+                return content
                     
             except Exception as e:
                 self.logger.error(f"Ollama generation failed (attempt {attempt + 1}): {e}")
