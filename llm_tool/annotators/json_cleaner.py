@@ -483,43 +483,28 @@ def build_dynamic_schema(expected_keys: Optional[List[str]]):
 def extract_expected_keys(text: str) -> List[str]:
     """
     Attempts to robustly detect JSON keys in the text.
-    1) First, search for the JSON block between { ... }.
-    2) Quickly correct cases of ';' instead of ':'.
-    3) Parse the corrected block to retrieve the keys.
-    4) If it fails, fall back on other methods.
+    Priority order:
+    1) Look for "Expected JSON Keys" or similar headers with JSON blocks (HIGHEST PRIORITY)
+    2) Find all JSON blocks and use the last one (usually the schema)
+    3) Fall back on pattern matching for key definitions
     """
-    # Method 1: Look for valid JSON block between braces
-    block_match = re.search(r'\{[^{}]*\}', text, flags=re.DOTALL)
-    if block_match:
-        block_str = block_match.group(0)  # Includes braces
-        # Quick fix for cases where we have ; instead of :
-        block_str_fixed = re.sub(r'"\s*;\s*"', '": "', block_str)
-        block_str_fixed = re.sub(r'"\s*;\s*\[', '": [', block_str_fixed)
-        block_str_fixed = re.sub(r'"\s*;\s*\{', '": {', block_str_fixed)
-        block_str_fixed = re.sub(r'"\s*;\s*null', '": null', block_str_fixed)
-        block_str_fixed = re.sub(r'"\s*;\s*true', '": true', block_str_fixed)
-        block_str_fixed = re.sub(r'"\s*;\s*false', '": false', block_str_fixed)
-        block_str_fixed = re.sub(r'"\s*;\s*(\d+)', r'": \1', block_str_fixed)
-
-        try:
-            loaded = json.loads(block_str_fixed)
-            if isinstance(loaded, dict):
-                return list(loaded.keys())
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    # Method 2: Look for specific sections like "Expected JSON Keys" or similar
+    # Method 1: Look for specific sections like "Expected JSON Keys" or similar (HIGHEST PRIORITY)
     json_section_patterns = [
-        r'(?:Expected JSON Keys|JSON Schema|Output Format|Response Format|JSON Structure)[:\s]*(\{[^}]+\})',
-        r'(?:The response should be a JSON object with the following keys)[:\s]*(\{[^}]+\})',
-        r'(?:Return a JSON object with)[:\s]*(\{[^}]+\})',
+        r'\*\*Expected JSON Keys\*\*[:\s]*\{([^}]+)\}',  # Markdown bold headers
+        r'Expected JSON Keys[:\s]*\{([^}]+)\}',
+        r'JSON Schema[:\s]*\{([^}]+)\}',
+        r'Output Format[:\s]*\{([^}]+)\}',
+        r'Response Format[:\s]*\{([^}]+)\}',
+        r'JSON Structure[:\s]*\{([^}]+)\}',
+        r'The response should be a JSON object with the following keys[:\s]*\{([^}]+)\}',
+        r'Return a JSON object with[:\s]*\{([^}]+)\}',
     ]
 
     for pattern in json_section_patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
         if match:
-            json_block = match.group(1)
-            # Same treatment as before
+            json_block = '{' + match.group(1) + '}'
+            # Quick fix for cases where we have ; instead of :
             json_block_fixed = re.sub(r'"\s*;\s*"', '": "', json_block)
             json_block_fixed = re.sub(r'"\s*;\s*\[', '": [', json_block_fixed)
             json_block_fixed = re.sub(r'"\s*;\s*\{', '": {', json_block_fixed)
@@ -532,6 +517,30 @@ def extract_expected_keys(text: str) -> List[str]:
                 loaded = json.loads(json_block_fixed)
                 if isinstance(loaded, dict):
                     return list(loaded.keys())
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+    # Method 2: Find ALL JSON blocks and use the LAST one (usually the schema)
+    all_json_blocks = re.findall(r'\{[^{}]*\}', text, flags=re.DOTALL)
+    if all_json_blocks:
+        # Try from last to first
+        for json_block in reversed(all_json_blocks):
+            # Quick fix for cases where we have ; instead of :
+            json_block_fixed = re.sub(r'"\s*;\s*"', '": "', json_block)
+            json_block_fixed = re.sub(r'"\s*;\s*\[', '": [', json_block_fixed)
+            json_block_fixed = re.sub(r'"\s*;\s*\{', '": {', json_block_fixed)
+            json_block_fixed = re.sub(r'"\s*;\s*null', '": null', json_block_fixed)
+            json_block_fixed = re.sub(r'"\s*;\s*true', '": true', json_block_fixed)
+            json_block_fixed = re.sub(r'"\s*;\s*false', '": false', json_block_fixed)
+            json_block_fixed = re.sub(r'"\s*;\s*(\d+)', r'": \1', json_block_fixed)
+
+            try:
+                loaded = json.loads(json_block_fixed)
+                if isinstance(loaded, dict):
+                    # Filter out example/metadata keys
+                    keys = [k for k in loaded.keys() if k not in ['type', 'description', 'example', 'required', 'properties']]
+                    if keys:
+                        return keys
             except (json.JSONDecodeError, TypeError):
                 continue
 

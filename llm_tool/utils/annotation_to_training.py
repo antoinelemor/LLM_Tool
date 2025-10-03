@@ -220,13 +220,13 @@ class AnnotationToTrainingConverter:
                         if label_strategy == "key_value":
                             labels = [f"{key}_{item}" for item in value]
                         else:
-                            labels = value
+                            labels = [str(item) for item in value]
                     else:
                         # For scalars, create single label
                         if label_strategy == "key_value":
-                            labels = f"{key}_{value}"
+                            labels = [f"{key}_{value}"]
                         else:
-                            labels = value
+                            labels = [str(value)]
 
                     sample = {
                         "text": row[text_column],
@@ -328,8 +328,8 @@ class AnnotationToTrainingConverter:
             try:
                 annotation = json.loads(row[annotation_column])
 
-                # Collect all labels from specified keys
-                all_labels = {}
+                # Collect all labels from specified keys as a FLAT list
+                all_labels = []
 
                 for key in keys_to_use:
                     if key not in annotation:
@@ -341,17 +341,17 @@ class AnnotationToTrainingConverter:
                     if value is None:
                         continue
 
-                    # Create labels based on strategy
+                    # Create labels based on strategy and add to flat list
                     if isinstance(value, list):
                         if label_strategy == "key_value":
-                            all_labels[key] = [f"{key}_{item}" for item in value]
+                            all_labels.extend([f"{key}_{item}" for item in value])
                         else:
-                            all_labels[key] = value
+                            all_labels.extend(value)
                     else:
                         if label_strategy == "key_value":
-                            all_labels[key] = f"{key}_{value}"
+                            all_labels.append(f"{key}_{value}")
                         else:
-                            all_labels[key] = value
+                            all_labels.append(value)
 
                 # Only include if we have at least one non-null label
                 if all_labels:

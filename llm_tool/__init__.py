@@ -32,6 +32,13 @@ Author:
 Antoine Lemor
 """
 
+# Standard imports
+import os
+import sys
+
+# Simple setup - disable tokenizers parallelism to avoid warnings
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
 __version__ = "1.0.0"
 __author__ = "Antoine Lemor"
 

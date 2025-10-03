@@ -43,6 +43,15 @@ from typing import Dict, Any, Optional, List
 from configparser import ConfigParser
 from dataclasses import dataclass, asdict, field
 
+# Import API key manager
+try:
+    from .api_key_manager import APIKeyManager, get_key_manager
+    HAS_KEY_MANAGER = True
+except ImportError:
+    HAS_KEY_MANAGER = False
+    APIKeyManager = None
+    get_key_manager = None
+
 
 @dataclass
 class APIConfig:
@@ -149,6 +158,12 @@ class Settings:
         self.language = LanguageConfig()
         self.paths = PathConfig()
         self.logging = LoggingConfig()
+
+        # Initialize API key manager
+        if HAS_KEY_MANAGER:
+            self.key_manager = get_key_manager()
+        else:
+            self.key_manager = None
 
         # Create necessary directories
         self._create_directories()
@@ -275,8 +290,17 @@ class Settings:
         self.save()
 
     def get_api_key(self, provider: str) -> Optional[str]:
-        """Get API key for a provider, checking environment variables first"""
-        # Check environment variables
+        """
+        Get API key for a provider, checking in order:
+        1. Environment variables
+        2. Secure key manager
+        3. Settings file (legacy)
+        """
+        # Use key manager if available
+        if self.key_manager:
+            return self.key_manager.get_key(provider)
+
+        # Fallback to environment variables
         env_var_names = {
             'openai': 'OPENAI_API_KEY',
             'anthropic': 'ANTHROPIC_API_KEY',
@@ -288,17 +312,61 @@ class Settings:
         if env_var and env_var in os.environ:
             return os.environ[env_var]
 
-        # Return stored API key
+        # Return stored API key (legacy)
         if provider.lower() == self.api.provider:
             return self.api.api_key
 
         return None
 
-    def set_api_key(self, provider: str, api_key: str):
-        """Set API key for a provider"""
-        self.api.provider = provider
-        self.api.api_key = api_key
-        self.save()
+    def set_api_key(self, provider: str, api_key: str, model_name: Optional[str] = None):
+        """
+        Set API key for a provider.
+        Uses secure key manager if available, otherwise saves to config file.
+        """
+        if self.key_manager:
+            self.key_manager.save_key(provider, api_key, model_name)
+        else:
+            # Fallback to legacy storage
+            self.api.provider = provider
+            self.api.api_key = api_key
+            if model_name:
+                self.api.model_name = model_name
+            self.save()
+
+    def get_or_prompt_api_key(self, provider: str, model_name: Optional[str] = None) -> Optional[str]:
+        """
+        Get API key or prompt user if not available.
+
+        Parameters
+        ----------
+        provider : str
+            Provider name
+        model_name : str, optional
+            Model name to save with the key
+
+        Returns
+        -------
+        str or None
+            The API key
+        """
+        if self.key_manager:
+            return self.key_manager.get_or_prompt_key(provider, model_name)
+        else:
+            # Fallback - return existing or None
+            return self.get_api_key(provider)
+
+    def list_saved_providers(self) -> list:
+        """
+        List all providers with saved API keys.
+
+        Returns
+        -------
+        list
+            List of provider names
+        """
+        if self.key_manager:
+            return self.key_manager.list_providers()
+        return []
 
     def get_model_path(self, model_name: str) -> Path:
         """Get the full path for a model"""

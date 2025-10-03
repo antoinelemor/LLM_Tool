@@ -228,17 +228,38 @@ class ModelTrainer:
         X = df[text_column].values
         y = df['encoded_label'].values
 
+        # Check if we have enough samples for stratification
+        n_samples = len(y)
+        n_classes = len(np.unique(y))
+        test_samples = int(n_samples * self.config.test_split)
+        val_samples = int(n_samples * self.config.validation_split)
+
+        # Determine if stratification is possible
+        # We need at least n_classes samples in each split for stratification
+        can_stratify_test = (test_samples >= n_classes and
+                            (n_samples - test_samples) >= n_classes)
+        can_stratify_val = (val_samples >= n_classes and
+                           (n_samples - val_samples) >= n_classes)
+
+        if not can_stratify_test or not can_stratify_val:
+            self.logger.warning(
+                f"Too few samples ({n_samples}) for stratified split with {n_classes} classes. "
+                f"Using random split instead. Consider increasing annotation sample size."
+            )
+
         # First split: train+val and test
+        stratify_test = y if can_stratify_test else None
         X_temp, X_test, y_temp, y_test = train_test_split(
             X, y, test_size=self.config.test_split,
-            random_state=self.config.seed, stratify=y
+            random_state=self.config.seed, stratify=stratify_test
         )
 
         # Second split: train and validation
         val_size = self.config.validation_split / (1 - self.config.test_split)
+        stratify_val = y_temp if can_stratify_val else None
         X_train, X_val, y_train, y_val = train_test_split(
             X_temp, y_temp, test_size=val_size,
-            random_state=self.config.seed, stratify=y_temp
+            random_state=self.config.seed, stratify=stratify_val
         )
 
         # Create DataFrames
@@ -252,9 +273,15 @@ class ModelTrainer:
         return train_df, val_df, test_df
 
     def train_single_model(self, model_name: str, train_df: pd.DataFrame,
-                          val_df: pd.DataFrame, test_df: pd.DataFrame) -> TrainingResult:
+                          val_df: pd.DataFrame, test_df: pd.DataFrame,
+                          num_labels: Optional[int] = None,
+                          output_dir: Optional[str] = None,
+                          label_column: str = 'label',
+                          training_strategy: str = 'single-label') -> TrainingResult:
         """Train a single model"""
-        self.logger.info(f"Training model: {model_name}")
+        from tqdm import tqdm
+        print(f"\n🏋️  Training model: {model_name}")
+        self.logger.info(f"Training model: {model_name} with {training_strategy} strategy")
         start_time = time.time()
 
         # Get model class
@@ -266,16 +293,19 @@ class ModelTrainer:
         # Initialize model
         model_instance = model_class(model_name=model_name, device=self.device)
 
-        # Prepare data
+        # Prepare data - use the correct label column
         train_texts = train_df['text'].tolist()
-        train_labels = train_df['label'].tolist()
+        train_labels = train_df[label_column].tolist()
         val_texts = val_df['text'].tolist()
-        val_labels = val_df['label'].tolist()
+        val_labels = val_df[label_column].tolist()
         test_texts = test_df['text'].tolist()
-        test_labels = test_df['label'].tolist()
+        test_labels = test_df[label_column].tolist()
 
         # Create output directory
-        output_dir = Path(self.config.output_dir) / model_name.replace('/', '_')
+        if output_dir:
+            output_dir = Path(output_dir)
+        else:
+            output_dir = Path(self.config.output_dir) / model_name.replace('/', '_')
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Train model
@@ -299,18 +329,31 @@ class ModelTrainer:
                 progress_bar=False
             )
 
-            # Train
+            # Parse label name to extract key and value for display (if applicable)
+            # Check if label_column contains structured names like 'themes_long_transportation'
+            label_key = None
+            label_value = None
+            if label_column and '_long_' in label_column:
+                parts = label_column.split('_long_')
+                if len(parts) == 2:
+                    label_key = parts[0]
+                    label_value = parts[1]
+            elif label_column and '_short_' in label_column:
+                parts = label_column.split('_short_')
+                if len(parts) == 2:
+                    label_key = parts[0]
+                    label_value = parts[1]
+
+            # Train (using test_dataloader as validation for compatibility with bert_base)
             history = model_instance.run_training(
                 train_dataloader=train_dataloader,
-                val_dataloader=val_dataloader,
-                epochs=self.config.num_epochs,
-                learning_rate=self.config.learning_rate,
-                warmup_proportion=self.config.warmup_ratio,
-                train_batch_size=self.config.batch_size,
-                patience=self.config.early_stopping_patience,
-                delta=self.config.early_stopping_threshold,
-                save_path=str(output_dir),
-                metric=self.config.metric_for_best_model
+                test_dataloader=val_dataloader,  # bert_base expects test_dataloader for validation
+                n_epochs=self.config.num_epochs,
+                lr=self.config.learning_rate,
+                random_state=42,
+                save_model_as=str(output_dir / 'model'),
+                label_key=label_key,      # Pass parsed label key
+                label_value=label_value   # Pass parsed label value
             )
 
             # Evaluate on test set
@@ -456,6 +499,203 @@ class ModelTrainer:
 
         return benchmark_report
 
+    def train(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Synchronous training method for pipeline integration
+
+        Handles both single-label and multi-label training scenarios.
+        """
+        # Check for multi-label training first
+        if 'training_files' in config and config['training_files']:
+            return self._train_multi_label(config)
+
+        # Single-label training
+        if 'input_file' in config:
+            data_path = config['input_file']
+        else:
+            raise ValueError("No input_file or training_files specified in config")
+
+        # Update training config from dict
+        for key, value in config.items():
+            if hasattr(self.config, key):
+                setattr(self.config, key, value)
+
+        # Get column names
+        text_column = config.get('text_column', 'text')
+        label_column = config.get('label_column', 'label')
+        training_strategy = config.get('training_strategy', 'single-label')
+
+        # Get model name from config
+        model_name = config.get('model_name', self.config.model_name)
+
+        # Route to appropriate training method based on strategy
+        if training_strategy == 'multi-label':
+            # Use multi-label training with MultiLabelTrainer
+            from .multi_label_trainer import MultiLabelTrainer
+
+            print("\n🏋️ Training multi-label model...")
+            self.logger.info(f"Starting multi-label training for {label_column}")
+
+            # Load multi-label data directly without encoding
+            if data_path.endswith('.jsonl'):
+                df = pd.read_json(data_path, lines=True)
+            elif data_path.endswith('.json'):
+                df = pd.read_json(data_path)
+            elif data_path.endswith('.csv'):
+                import ast
+                df = pd.read_csv(data_path)
+                # Convert string representations of lists back to lists
+                if label_column in df.columns:
+                    df[label_column] = df[label_column].apply(
+                        lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith('[') else x
+                    )
+            else:
+                raise ValueError(f"Unsupported file format for multi-label: {data_path}")
+
+            # Check columns
+            if text_column not in df.columns:
+                raise ValueError(f"Text column '{text_column}' not found in data")
+            if label_column not in df.columns:
+                raise ValueError(f"Label column '{label_column}' not found in data")
+
+            # Split data manually without encoding
+            from sklearn.model_selection import train_test_split
+
+            X = df[text_column].values
+            y = df[label_column].values
+
+            # Extract language column if it exists
+            lang_col = None
+            if 'lang' in df.columns:
+                lang_col = df['lang'].values
+
+            # First split: train+val and test
+            if lang_col is not None:
+                X_temp, X_test, y_temp, y_test, lang_temp, lang_test = train_test_split(
+                    X, y, lang_col, test_size=self.config.test_split,
+                    random_state=self.config.seed
+                )
+            else:
+                X_temp, X_test, y_temp, y_test = train_test_split(
+                    X, y, test_size=self.config.test_split,
+                    random_state=self.config.seed
+                )
+                lang_temp, lang_test = None, None
+
+            # Second split: train and validation
+            val_size = self.config.validation_split / (1 - self.config.test_split)
+            if lang_temp is not None:
+                X_train, X_val, y_train, y_val, lang_train, lang_val = train_test_split(
+                    X_temp, y_temp, lang_temp, test_size=val_size,
+                    random_state=self.config.seed
+                )
+            else:
+                X_train, X_val, y_train, y_val = train_test_split(
+                    X_temp, y_temp, test_size=val_size,
+                    random_state=self.config.seed
+                )
+                lang_train, lang_val = None, None
+
+            # Prepare samples for MultiLabelTrainer
+            train_samples = []
+            for i in range(len(X_train)):
+                sample = {
+                    'text': X_train[i],
+                    'labels': y_train[i] if isinstance(y_train[i], list) else [y_train[i]]
+                }
+                if lang_train is not None:
+                    sample['lang'] = lang_train[i]
+                train_samples.append(sample)
+
+            val_samples = []
+            for i in range(len(X_val)):
+                sample = {
+                    'text': X_val[i],
+                    'labels': y_val[i] if isinstance(y_val[i], list) else [y_val[i]]
+                }
+                if lang_val is not None:
+                    sample['lang'] = lang_val[i]
+                val_samples.append(sample)
+
+            self.logger.info(f"Data split - Train: {len(train_samples)}, Val: {len(val_samples)}, Test: {len(X_test)}")
+
+            # Initialize MultiLabelTrainer with its own config
+            from llm_tool.trainers.multi_label_trainer import TrainingConfig as MLTrainingConfig
+            from llm_tool.trainers.bert_base import BertBase
+
+            ml_config = MLTrainingConfig()
+            ml_config.output_dir = config.get('output_dir', 'models/best_model')
+            ml_config.n_epochs = config.get('num_epochs', self.config.num_epochs)
+            ml_config.batch_size = config.get('batch_size', self.config.batch_size)
+            ml_config.learning_rate = config.get('learning_rate', self.config.learning_rate)
+            ml_config.train_by_language = config.get('train_by_language', False)
+            ml_config.auto_select_model = False  # Disable auto-selection
+            ml_config.model_class = BertBase  # Force BertBase to ensure run_training_enhanced is used
+
+            ml_trainer = MultiLabelTrainer(config=ml_config, verbose=True)
+
+            # Train models
+            trained_models = ml_trainer.train(
+                train_samples=train_samples,
+                val_samples=val_samples,
+                auto_split=False,
+                output_dir=config.get('output_dir', 'models/best_model')
+            )
+
+            # Aggregate results
+            if trained_models:
+                avg_f1 = np.mean([m.metrics.get('f1_macro', 0) for m in trained_models.values()])
+                avg_acc = np.mean([m.metrics.get('accuracy', 0) for m in trained_models.values()])
+
+                self.logger.info(f"Multi-label training complete!")
+                self.logger.info(f"Models trained: {len(trained_models)}/{len(trained_models)}")
+
+                results = {
+                    'f1_macro': avg_f1,
+                    'accuracy': avg_acc,
+                    'model_path': config.get('output_dir', 'models/best_model'),
+                    'training_time': 0,
+                    'trained_models': {k: v.model_path for k, v in trained_models.items()}
+                }
+            else:
+                results = {
+                    'f1_macro': 0.0,
+                    'accuracy': 0.0,
+                    'model_path': '',
+                    'training_time': 0
+                }
+        else:
+            # Load data for single-label training (uses encoding)
+            train_df, val_df, test_df = self.load_data(
+                data_path,
+                text_column=text_column,
+                label_column=label_column
+            )
+
+            # Get number of unique labels
+            all_labels = pd.concat([train_df[label_column], val_df[label_column], test_df[label_column]])
+            num_labels = len(all_labels.unique())
+
+            # Use single-label training
+            results = self.train_single_model(
+                model_name=model_name,
+                train_df=train_df,
+                val_df=val_df,
+                test_df=test_df,
+                num_labels=num_labels,
+                output_dir=config.get('output_dir', 'models/best_model'),
+                label_column=label_column,
+                training_strategy=training_strategy
+            )
+
+        return {
+            'best_model': model_name,
+            'best_f1_macro': results.get('f1', results.get('f1_macro', 0.0)),
+            'accuracy': results.get('accuracy', 0.0),
+            'model_path': results.get('model_path', ''),
+            'training_time': results.get('training_time', 0),
+            'metrics': results
+        }
+
     async def train_async(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Async wrapper for training (for pipeline integration)"""
         # Update config
@@ -497,6 +737,261 @@ class ModelTrainer:
         """Async wrapper for benchmarking (for pipeline integration)"""
         config['benchmark_mode'] = True
         return await self.train_async(config)
+
+    def _optimize_training_parameters(self, model_name: str, train_size: int,
+                                     num_labels: int, is_multilingual: bool,
+                                     avg_text_length: float) -> Dict[str, Any]:
+        """Smart parameter optimization based on model and data characteristics
+
+        This implements the advanced parameter optimization from AugmentedSocialScientist
+        """
+        params = {}
+
+        # Base parameters
+        params['batch_size'] = self.config.batch_size
+        params['learning_rate'] = self.config.learning_rate
+        params['num_epochs'] = self.config.num_epochs
+
+        # Adjust for model size
+        if 'large' in model_name.lower():
+            params['batch_size'] = max(4, params['batch_size'] // 4)
+            params['learning_rate'] *= 0.5
+            params['gradient_accumulation_steps'] = 4
+        elif 'xlarge' in model_name.lower() or 'xxlarge' in model_name.lower():
+            params['batch_size'] = max(2, params['batch_size'] // 8)
+            params['learning_rate'] *= 0.25
+            params['gradient_accumulation_steps'] = 8
+
+        # Adjust for long-context models with short texts
+        if any(model in model_name.lower() for model in ['longformer', 'bigbird']):
+            if avg_text_length < 512:  # Short texts
+                params['batch_size'] = max(2, params['batch_size'] // 8)
+                params['learning_rate'] *= 2
+                params['num_epochs'] = int(params['num_epochs'] * 1.5)
+                self.logger.info(f"Detected long-context model with short texts. Adjusting parameters.")
+
+        # Adjust for ALBERT (parameter sharing)
+        if 'albert' in model_name.lower():
+            params['num_epochs'] = params['num_epochs'] * 2
+            self.logger.info("ALBERT detected: doubling epochs due to parameter sharing")
+
+        # Adjust for multilingual data
+        if is_multilingual:
+            if 'xlm' in model_name.lower() or 'mdeberta' in model_name.lower():
+                params['num_epochs'] = int(params['num_epochs'] * 1.2)
+                params['warmup_ratio'] = 0.15
+            else:
+                # Non-multilingual model on multilingual data
+                self.logger.warning("Using non-multilingual model on multilingual data")
+                params['num_epochs'] = int(params['num_epochs'] * 1.5)
+
+        # Adjust for small datasets
+        if train_size < 100:
+            params['batch_size'] = min(8, train_size // 4)
+            params['num_epochs'] = min(20, params['num_epochs'] * 2)
+        elif train_size < 500:
+            params['batch_size'] = min(16, params['batch_size'])
+
+        # Adjust for many labels
+        if num_labels > 10:
+            params['num_epochs'] = int(params['num_epochs'] * 1.2)
+
+        return params
+
+    def _select_multilingual_model(self, language_distribution: Dict[str, int]) -> str:
+        """Select best multilingual model based on language distribution"""
+        total = sum(language_distribution.values())
+        languages = list(language_distribution.keys())
+
+        # Check language diversity
+        diversity = len(languages)
+
+        # Prefer mDeBERTa for high diversity
+        if diversity > 5:
+            return "microsoft/mdeberta-v3-base"
+        # XLM-RoBERTa for moderate diversity
+        elif diversity > 2:
+            return "xlm-roberta-base"
+        # Check specific language dominance
+        elif any(lang in ['fr', 'es', 'de', 'it', 'pt'] for lang in languages):
+            # European languages - XLM-RoBERTa performs well
+            return "xlm-roberta-base"
+        else:
+            # Default to mDeBERTa
+            return "microsoft/mdeberta-v3-base"
+
+    def _train_with_metadata(self, model_name: str, train_samples: List,
+                            val_samples: List, test_samples: List,
+                            num_labels: int, output_dir: Path,
+                            track_languages: bool = True) -> Dict[str, Any]:
+        """Train model with metadata support and per-language tracking
+
+        This implements the enhanced training from AugmentedSocialScientist
+        """
+        from ..trainers.bert_base import BertBase
+        from ..trainers.data_utils import MetadataDataset, PerformanceTracker
+        import torch
+        from torch.utils.data import DataLoader
+
+        self.logger.info(f"Training with metadata support: {model_name}")
+
+        # Initialize enhanced model
+        if 'bert' in model_name.lower():
+            model = BertBase(model_name=model_name, device=self.device)
+        else:
+            # Use regular model for non-BERT
+            return self.train_single_model(
+                model_name=model_name,
+                train_df=pd.DataFrame([{'text': s.text, 'label': s.label} for s in train_samples]),
+                val_df=pd.DataFrame([{'text': s.text, 'label': s.label} for s in val_samples]),
+                test_df=pd.DataFrame([{'text': s.text, 'label': s.label} for s in test_samples]),
+                num_labels=num_labels,
+                output_dir=str(output_dir)
+            )
+
+        # Create enhanced dataloaders with metadata
+        train_loader = model.encode_with_metadata(
+            train_samples,
+            batch_size=self.config.batch_size,
+            progress_bar=True
+        )
+        val_loader = model.encode_with_metadata(
+            val_samples,
+            batch_size=self.config.batch_size,
+            progress_bar=False
+        )
+        test_loader = model.encode_with_metadata(
+            test_samples,
+            batch_size=self.config.batch_size,
+            progress_bar=False
+        )
+
+        # Setup metrics output directory
+        metrics_dir = output_dir / 'metrics'
+        metrics_dir.mkdir(exist_ok=True)
+
+        # Train with enhanced tracking
+        history = model.run_training_enhanced(
+            train_dataloader=train_loader,
+            test_dataloader=val_loader,
+            n_epochs=self.config.num_epochs,
+            lr=self.config.learning_rate,
+            save_model_as=str(output_dir / 'model'),
+            metrics_output_dir=str(metrics_dir),
+            track_languages=track_languages
+        )
+
+        # Evaluate on test set
+        test_predictions = model.predict(test_loader)
+        test_probs = model.predict(test_loader, proba=True)
+
+        # Get language-specific metrics if available
+        language_metrics = {}
+        if track_languages and hasattr(model, 'performance_tracker'):
+            tracker = model.performance_tracker
+            if tracker and hasattr(tracker, 'get_language_metrics'):
+                language_metrics = tracker.get_language_metrics()
+
+        # Calculate overall metrics
+        test_labels = [s.label for s in test_samples]
+        from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report
+
+        accuracy = accuracy_score(test_labels, test_predictions)
+        precision, recall, f1_weighted, _ = precision_recall_fscore_support(
+            test_labels, test_predictions, average='weighted'
+        )
+        _, _, f1_macro, _ = precision_recall_fscore_support(
+            test_labels, test_predictions, average='macro'
+        )
+
+        report = classification_report(
+            test_labels, test_predictions,
+            output_dict=True
+        )
+
+        return {
+            'model_name': model_name,
+            'accuracy': accuracy,
+            'f1': f1_macro,
+            'f1_weighted': f1_weighted,
+            'precision': precision,
+            'recall': recall,
+            'model_path': str(output_dir),
+            'training_time': sum(h.get('time', 0) for h in history) if history else 0,
+            'best_epoch': len(history),
+            'training_history': history,
+            'classification_report': report,
+            'language_metrics': language_metrics
+        }
+
+    def _train_multi_label(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle multi-label training with multiple files
+
+        This is called when training_files contains multiple files for different labels
+        """
+        training_files = config['training_files']
+        results = {}
+        overall_metrics = {
+            'models_trained': 0,
+            'total_training_time': 0,
+            'per_label_results': {}
+        }
+
+        self.logger.info(f"Starting multi-label training for {len(training_files)} labels")
+
+        # Train a model for each label
+        for label_key, file_path in training_files.items():
+            if label_key == 'multilabel':
+                # This is the combined multi-label file, skip for now
+                continue
+
+            self.logger.info(f"\nTraining model for label: {label_key}")
+            self.logger.info(f"Using file: {file_path}")
+
+            # Create label-specific config
+            label_config = config.copy()
+            label_config['input_file'] = file_path
+            label_config['output_dir'] = str(Path(config.get('output_dir', 'models')) / f'model_{label_key}')
+
+            try:
+                # Train model for this label
+                result = self.train({**label_config, 'training_files': None})  # Remove training_files to avoid recursion
+                results[label_key] = result
+                overall_metrics['per_label_results'][label_key] = {
+                    'accuracy': result['accuracy'],
+                    'f1_macro': result['best_f1_macro'],
+                    'model_path': result['model_path']
+                }
+                overall_metrics['models_trained'] += 1
+                overall_metrics['total_training_time'] += result.get('training_time', 0)
+
+                self.logger.info(f"✓ Completed {label_key}: Accuracy={result['accuracy']:.4f}, F1={result['best_f1_macro']:.4f}")
+
+            except Exception as e:
+                self.logger.error(f"Failed to train model for {label_key}: {str(e)}")
+                overall_metrics['per_label_results'][label_key] = {'error': str(e)}
+
+        # Calculate average metrics
+        successful_results = [r for r in overall_metrics['per_label_results'].values() if 'error' not in r]
+        if successful_results:
+            overall_metrics['avg_accuracy'] = np.mean([r['accuracy'] for r in successful_results])
+            overall_metrics['avg_f1_macro'] = np.mean([r['f1_macro'] for r in successful_results])
+
+        self.logger.info(f"\nMulti-label training complete!")
+        self.logger.info(f"Models trained: {overall_metrics['models_trained']}/{len(training_files)-1}")  # -1 for multilabel file
+        if successful_results:
+            self.logger.info(f"Average accuracy: {overall_metrics['avg_accuracy']:.4f}")
+            self.logger.info(f"Average F1: {overall_metrics['avg_f1_macro']:.4f}")
+
+        return {
+            'best_model': 'multi_label_ensemble',
+            'best_f1_macro': overall_metrics.get('avg_f1_macro', 0),
+            'accuracy': overall_metrics.get('avg_accuracy', 0),
+            'model_path': config.get('output_dir', 'models'),
+            'training_time': overall_metrics['total_training_time'],
+            'metrics': overall_metrics,
+            'individual_results': results
+        }
 
 
 def main():

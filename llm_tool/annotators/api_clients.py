@@ -77,6 +77,7 @@ class BaseAPIClient(ABC):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.max_retries = kwargs.get('max_retries', 3)
         self.timeout = kwargs.get('timeout', 60)
+        self.progress_manager = kwargs.get('progress_manager', None)
 
     @abstractmethod
     def generate(self, prompt: str, **kwargs) -> Optional[str]:
@@ -90,6 +91,15 @@ class OpenAIClient(BaseAPIClient):
     def __init__(self, api_key: str, **kwargs):
         """Initialize OpenAI client"""
         super().__init__(api_key, **kwargs)
+
+        # If we have a progress manager, disable console logging to avoid conflicts
+        if self.progress_manager:
+            # Remove all console handlers to prevent duplicate output
+            for handler in self.logger.handlers[:]:
+                if isinstance(handler, logging.StreamHandler):
+                    self.logger.removeHandler(handler)
+            # Also prevent propagation to root logger
+            self.logger.propagate = False
 
         if not HAS_NEW_OPENAI:
             raise ImportError("OpenAI library not installed. Install with: pip install openai>=1.0.0")
@@ -135,8 +145,15 @@ class OpenAIClient(BaseAPIClient):
         model_name_lower = model.lower()
 
         # Detect model type for parameter adaptation
-        is_o_series = any(x in model_name_lower for x in ['o1-', 'o3-', 'o4-'])
-        is_2025_model = any(x in model_name_lower for x in ['2025', 'gpt-5'])
+        # o-series models: o1, o1-, o3-, o4- (reasoning models with fixed parameters)
+        is_o_series = (
+            model_name_lower == 'o1' or
+            model_name_lower.startswith('o1-') or
+            model_name_lower.startswith('o3-') or
+            model_name_lower.startswith('o4-')
+        )
+        # Recent models with different parameter handling (2025+ models, GPT-5 variants)
+        is_2025_model = any(x in model_name_lower for x in ['2025', 'gpt-5', 'gpt5'])
 
         try:
             # Build base arguments
@@ -153,17 +170,18 @@ class OpenAIClient(BaseAPIClient):
 
             # Add temperature and top_p based on model type
             if is_o_series:
-                # o1/o3 models: fixed parameters
+                # o1/o3 models: fixed parameters (reasoning models)
                 common_kw["temperature"] = 1.0
                 common_kw["top_p"] = 1.0
                 self.logger.info(f"o-series model detected ({model}): temperature and top_p fixed to 1.0")
-            elif is_2025_model and kwargs.get('use_default_params', False):
-                # 2025/gpt-5 models: use defaults
+            elif is_2025_model:
+                # 2025/gpt-5 models: use default parameters (temperature=1.0)
+                # These models often have restricted parameter ranges
                 common_kw["temperature"] = 1.0
                 common_kw["top_p"] = 1.0
-                self.logger.info(f"Model {model}: using default parameters")
+                self.logger.info(f"Recent model detected ({model}): using default parameters (temperature=1.0, top_p=1.0)")
             else:
-                # Classic models or custom parameters
+                # Classic models: allow custom parameters
                 common_kw["temperature"] = temperature
                 common_kw["top_p"] = kwargs.get('top_p', 1.0)
 
@@ -175,7 +193,39 @@ class OpenAIClient(BaseAPIClient):
 
             # Make API call
             completion = self.client.chat.completions.create(**common_kw)
-            raw = completion.choices[0].message.content.strip()
+            raw = completion.choices[0].message.content
+
+            # Check if model returned None or empty response
+            if raw is None or not raw.strip():
+                warning_msg = f"Model '{model}' returned empty response, retrying..."
+
+                # Only show via progress manager if available, otherwise log
+                if self.progress_manager:
+                    self.progress_manager.show_warning(warning_msg)
+                else:
+                    self.logger.warning(warning_msg)
+
+                # Retry with more explicit prompt
+                enhanced_prompt = prompt + "\n\nIMPORTANT: You MUST provide a complete response. Do not return an empty response."
+
+                retry_kw = common_kw.copy()
+                retry_kw['messages'] = [{"role": "user", "content": enhanced_prompt}]
+
+                retry_completion = self.client.chat.completions.create(**retry_kw)
+                raw = retry_completion.choices[0].message.content
+
+                # If still empty after retry, return None
+                if raw is None or not raw.strip():
+                    error_msg = f"Model '{model}' returned empty response even after retry"
+
+                    # Only show via progress manager if available, otherwise log
+                    if self.progress_manager:
+                        self.progress_manager.show_error(error_msg)
+                    else:
+                        self.logger.error(error_msg)
+                    return None
+
+            raw = raw.strip()
 
             # Check for empty JSON response
             if response_format and response_format.get("type") == "json_object":

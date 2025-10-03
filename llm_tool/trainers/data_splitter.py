@@ -147,6 +147,10 @@ class DataSplitter:
                     if isinstance(sample['labels'], dict):
                         label_key = tuple(sorted(sample['labels'].items()))
                         labels.append(label_key)
+                    elif isinstance(sample['labels'], list):
+                        # Convert list to tuple for hashability
+                        label_key = tuple(sorted(sample['labels'])) if sample['labels'] else ('__empty__',)
+                        labels.append(label_key)
                     else:
                         labels.append(sample['labels'])
                 else:
@@ -181,6 +185,11 @@ class DataSplitter:
         # Group samples by label
         label_groups = defaultdict(list)
         for idx, (sample, label) in enumerate(zip(samples, labels)):
+            # Convert lists to tuples for hashability
+            if isinstance(label, list):
+                label = tuple(sorted(label)) if label else ('__empty__',)
+            elif isinstance(label, dict):
+                label = tuple(sorted(label.items()))
             label_groups[label].append(idx)
 
         # Further stratify by language if requested
@@ -250,6 +259,11 @@ class DataSplitter:
         # Create composite keys
         composite_groups = defaultdict(list)
         for idx, (sample, label, lang) in enumerate(zip(samples, labels, languages)):
+            # Convert lists to tuples for hashability
+            if isinstance(label, list):
+                label = tuple(sorted(label)) if label else ('__empty__',)
+            elif isinstance(label, dict):
+                label = tuple(sorted(label.items()))
             key = (label, lang)
             composite_groups[key].append(idx)
 

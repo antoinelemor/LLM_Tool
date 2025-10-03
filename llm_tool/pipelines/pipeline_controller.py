@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
-from concurrent.futures import ThreadPoolExecutor
+# from concurrent.futures import ThreadPoolExecutor  # Disabled to avoid conflicts
 import json
 import time
 from datetime import datetime
@@ -79,18 +79,46 @@ class PipelineState:
 class PipelineController:
     """Main controller for orchestrating the complete pipeline"""
 
-    def __init__(self, settings: Optional[Settings] = None):
-        """Initialize the pipeline controller"""
+    def __init__(self, settings: Optional[Settings] = None, progress_callback=None):
+        """Initialize the pipeline controller
+
+        Args:
+            settings: Optional settings object
+            progress_callback: Optional callback function(phase, progress, message) for progress updates
+        """
         self.settings = settings or get_settings()
         self.language_detector = LanguageDetector()
-        self.executor = ThreadPoolExecutor(max_workers=self.settings.data.max_workers)
+        # Disable ThreadPoolExecutor to avoid threading conflicts with PyTorch/TensorFlow
+        # self.executor = ThreadPoolExecutor(max_workers=self.settings.data.max_workers)
+        self.executor = None
         self.state: Optional[PipelineState] = None
         self.logger = logging.getLogger(__name__)
+        self.progress_callback = progress_callback
 
         # Import components lazily to avoid circular dependencies
         self._annotation_module = None
         self._training_module = None
         self._validation_module = None
+
+    def _report_progress(self, phase: str, progress: float, message: str,
+                        subtask: Optional[Dict[str, Any]] = None):
+        """Report progress to callback if available
+
+        Args:
+            phase: Current phase name (e.g., 'annotation', 'training')
+            progress: Progress percentage (0-100)
+            message: Descriptive message
+            subtask: Optional subtask info with keys:
+                - 'name': subtask name
+                - 'current': current item
+                - 'total': total items
+                - 'message': subtask message
+        """
+        if self.progress_callback:
+            try:
+                self.progress_callback(phase, progress, message, subtask)
+            except Exception as e:
+                self.logger.warning(f"Progress callback failed: {e}")
 
     def _lazy_import_modules(self):
         """Lazy import of heavy modules"""
@@ -215,11 +243,14 @@ class PipelineController:
         """Run the complete pipeline synchronously"""
         try:
             # Initialize
+            self._report_progress('initialization', 0, '🔍 Initializing pipeline...')
             self.initialize_pipeline(config)
+            self._report_progress('initialization', 0, '✓ Pipeline initialized')
 
             # Only import modules that we actually need based on config
             # This avoids loading heavy modules that might cause issues
             self.logger.info("[PIPELINE] Importing required modules...")
+            self._report_progress('initialization', 0, '📦 Loading modules...')
 
             # Phase 1: Annotation (synchronous to avoid asyncio conflicts with Ollama)
             if config.get('run_annotation', True):
@@ -230,37 +261,63 @@ class PipelineController:
                     self.logger.info("[IMPORT] LLMAnnotator imported successfully")
                     self._annotation_module = LLMAnnotator
 
+                # Determine progress values based on whether training is enabled
+                run_training = config.get('run_training', False)
+                start_pct = 0
+                end_pct = 50 if run_training else 100
+
+                self._report_progress('annotation', start_pct, '🤖 Starting annotation...')
                 self.logger.info("[PIPELINE] Calling _run_annotation_phase_sync()...")
                 self._run_annotation_phase_sync(config)
+                self._report_progress('annotation', end_pct, '✓ Annotation completed')
 
             # Phase 1.5: Prepare training data from annotations (if training is enabled)
             if config.get('run_training', False) and self.state.annotation_results:
+                self._report_progress('preparation', 55, '🔄 Converting annotations to training format...')
                 self.logger.info("[PIPELINE] Preparing training data from annotations...")
                 self._prepare_training_data_from_annotations(config)
+                self._report_progress('preparation', 60, '✓ Training data prepared')
 
             # Phase 2: Validation
             if config.get('run_validation', False):
+                self._report_progress('validation', 65, '🔍 Validating annotations...')
                 if self._validation_module is None:
                     self.logger.info("[IMPORT] Importing AnnotationValidator...")
                     from ..validators.annotation_validator import AnnotationValidator
                     self._validation_module = AnnotationValidator
                 asyncio.run(self._run_validation_phase(config))
+                self._report_progress('validation', 70, '✓ Validation completed')
 
             # Phase 3: Training
             if config.get('run_training', False):
+                self._report_progress('training', 70, '🏋️  Starting model training...')
                 if self._training_module is None:
+                    self.logger.info("[IMPORT] Setting environment variables to prevent mutex issues...")
+                    # CRITICAL: Set environment variables BEFORE importing PyTorch to prevent mutex locks
+                    import os
+                    os.environ['OMP_NUM_THREADS'] = '1'  # Prevent OpenMP from creating multiple threads
+                    os.environ['MKL_NUM_THREADS'] = '1'  # Prevent MKL from creating multiple threads
+                    os.environ['OPENBLAS_NUM_THREADS'] = '1'  # Prevent OpenBLAS from creating multiple threads
+                    os.environ['VECLIB_MAXIMUM_THREADS'] = '1'  # Prevent Accelerate from creating multiple threads
+                    os.environ['NUMEXPR_NUM_THREADS'] = '1'  # Prevent NumExpr from creating multiple threads
+
                     self.logger.info("[IMPORT] Importing ModelTrainer...")
                     from ..trainers.model_trainer import ModelTrainer
                     self._training_module = ModelTrainer
-                asyncio.run(self._run_training_phase(config))
+                # Run training synchronously to avoid asyncio/threading conflicts
+                self._run_training_phase_sync(config)
+                self._report_progress('training', 95, '✓ Training completed')
 
             # Phase 4: Deployment
             if config.get('run_deployment', False):
+                self._report_progress('deployment', 96, '📦 Deploying model...')
                 asyncio.run(self._run_deployment_phase(config))
+                self._report_progress('deployment', 98, '✓ Deployment completed')
 
             # Mark complete
             self.state.current_phase = PipelinePhase.COMPLETED
             self.state.end_time = time.time()
+            self._report_progress('complete', 100, '✅ Pipeline completed!')
 
             # Save pipeline state
             self._save_pipeline_state()
@@ -283,7 +340,38 @@ class PipelineController:
 
         try:
             self.logger.info("[TRACE] Creating annotator instance...")
-            annotator = self._annotation_module(settings=self.settings)
+
+            # Create a progress callback wrapper for annotation subtasks
+            def annotation_progress_callback(current, total, message):
+                """Callback for annotation progress updates"""
+                # Check if training is enabled to determine progress range
+                run_training = config.get('run_training', False)
+
+                if run_training:
+                    # If training: annotation spans 0% → 50% of total pipeline
+                    progress_pct = (50 * current / max(total, 1))
+                else:
+                    # If annotation only: use full 0% → 100% range
+                    progress_pct = (100 * current / max(total, 1))
+
+                subtask_info = {
+                    'name': 'annotation',
+                    'current': current,
+                    'total': total,
+                    'message': message
+                }
+                self._report_progress('annotation', progress_pct, f'🤖 {message}', subtask_info)
+
+            # Pass progress_manager if available (for warnings/errors display)
+            progress_manager = getattr(self, 'progress_manager', None)
+
+            annotator = self._annotation_module(
+                settings=self.settings,
+                progress_callback=annotation_progress_callback if self.progress_callback else None,
+                progress_manager=progress_manager
+            )
+            # Store annotator reference for access to last_annotation
+            self.annotator = annotator
             self.logger.info("[TRACE] Annotator created successfully")
 
             # Prepare annotation configuration
@@ -291,7 +379,11 @@ class PipelineController:
             annotation_config = self._prepare_annotation_config(config)
             self.logger.info(f"[TRACE] Config prepared. Provider={annotation_config.get('provider')}, Model={annotation_config.get('model')}")
 
-            # Run annotation synchronously
+            # Disable tqdm if we have a progress callback (Rich progress is active)
+            if self.progress_callback:
+                annotation_config['disable_tqdm'] = True
+
+            # Run annotation synchronously with progress updates
             self.logger.info("[TRACE] Calling annotator.annotate()...")
             results = annotator.annotate(annotation_config)
             self.logger.info("[TRACE] Annotation completed!")
@@ -355,13 +447,104 @@ class PipelineController:
             self.logger.error(f"Validation phase failed: {str(e)}")
             raise
 
+    def _run_training_phase_sync(self, config: Dict[str, Any]):
+        """Run the training phase synchronously to avoid threading conflicts"""
+        self.logger.info("Starting training phase (sync)")
+        self.state.current_phase = PipelinePhase.TRAINING
+
+        try:
+            # Initialize trainer
+            trainer = self._training_module()
+
+            # Determine input data
+            training_files = None
+            if self.state.annotation_results and 'training_files' in self.state.annotation_results:
+                training_files = self.state.annotation_results['training_files']
+                training_strategy = self.state.annotation_results.get('training_strategy', 'single-label')
+                self.logger.info(f"Using {len(training_files)} training file(s) (strategy={training_strategy})")
+            elif self.state.annotation_results:
+                input_data = self.state.annotation_results.get('output_file')
+            else:
+                input_data = config.get('training_input_file')
+
+            if not training_files and not input_data:
+                raise ValueError("No input data available for training")
+
+            # For simplicity, train only the configured model (not multiple)
+            if training_files:
+                # Use first file or multilabel file
+                if 'multilabel' in training_files:
+                    input_data = training_files['multilabel']
+                else:
+                    # Use first annotation key's file
+                    input_data = list(training_files.values())[0]
+
+            # Prepare config
+            training_config = self._prepare_training_config(config, input_data)
+
+            # Validate that training data contains expected label column
+            training_file = training_config.get('input_file')
+            label_column = training_config.get('label_column')
+            if training_file and label_column:
+                try:
+                    import pandas as pd
+                    if training_file.endswith('.jsonl'):
+                        df_preview = pd.read_json(training_file, lines=True, nrows=5)
+                    else:
+                        df_preview = pd.read_csv(training_file, nrows=5)
+
+                    if label_column not in df_preview.columns:
+                        warning_msg = (
+                            f"Label column '{label_column}' not found in training data {training_file}. "
+                            "Skipping training phase."
+                        )
+                        self.logger.warning(warning_msg)
+                        if getattr(self, 'progress_manager', None):
+                            self.progress_manager.show_warning(warning_msg, item_info='Training phase')
+                        self.state.warnings.append({
+                            'phase': PipelinePhase.TRAINING,
+                            'warning': warning_msg
+                        })
+                        self._report_progress('training', 70, '⚠️ Training skipped (labels missing)')
+                        return
+                except Exception as exc:
+                    warning_msg = (
+                        f"Unable to read training data '{training_file}': {exc}. Skipping training phase."
+                    )
+                    self.logger.warning(warning_msg)
+                    if getattr(self, 'progress_manager', None):
+                        self.progress_manager.show_warning(warning_msg, item_info='Training phase')
+                    self.state.warnings.append({
+                        'phase': PipelinePhase.TRAINING,
+                        'warning': warning_msg
+                    })
+                    self._report_progress('training', 70, '⚠️ Training skipped (data unavailable)')
+                    return
+
+            # Report progress
+            self._report_progress('training', 75, '🏋️ Training model...')
+
+            # Run training synchronously (blocking)
+            self.logger.info("Starting synchronous model training...")
+            results = trainer.train(training_config)
+
+            # Store results
+            self.state.training_results = results
+            self.state.phases_completed.append(PipelinePhase.TRAINING)
+            self.logger.info(f"Training completed: {results.get('best_model', 'unknown')}")
+
+        except Exception as e:
+            self.logger.error(f"Training phase failed: {str(e)}")
+            raise
+
     async def _run_training_phase(self, config: Dict[str, Any]):
         """Run the training phase"""
         self.logger.info("Starting training phase")
         self.state.current_phase = PipelinePhase.TRAINING
 
         try:
-            trainer = self._training_module(settings=self.settings)
+            # Initialize trainer (ModelTrainer doesn't take settings parameter)
+            trainer = self._training_module()
 
             # Determine input data - prioritize converted training files
             training_files = None
@@ -381,28 +564,102 @@ class PipelineController:
                 raise ValueError("No input data available for training")
 
             # Train models based on strategy
+            all_training_results = {}
+
             if training_files:
-                # For single-label strategy, we might have multiple files (one per annotation key)
-                # For multi-label strategy, we have one file
-                # For now, let's train on the first file
-                # TODO: Support training multiple models (one per annotation key)
-                first_key = list(training_files.keys())[0]
-                input_data = training_files[first_key]
-                self.logger.info(f"Training on: {first_key} -> {input_data}")
+                training_strategy = self.state.annotation_results.get('training_strategy', 'single-label')
 
-            # Prepare training configuration
-            training_config = self._prepare_training_config(config, input_data)
+                if training_strategy == 'single-label':
+                    # Train one model per annotation key
+                    self.logger.info(f"Training {len(training_files)} models (one per annotation key)...")
+                    print(f"\n📊 Training {len(training_files)} separate models for multi-label classification")
 
-            # Run training or benchmarking
-            if config.get('benchmark_mode', False):
-                self.state.current_phase = PipelinePhase.BENCHMARKING
-                results = await trainer.benchmark_async(training_config)
+                    model_idx = 0
+                    num_models = len(training_files)
+
+                    for annotation_key, input_data in training_files.items():
+                        model_idx += 1
+                        print(f"\n🏋️  Training model {model_idx}/{num_models} for annotation key: '{annotation_key}'")
+                        self.logger.info(f"Training model for key '{annotation_key}': {input_data}")
+
+                        # Report training progress for this model
+                        base_progress = 70 + (25 * (model_idx - 1) / num_models)
+                        subtask_info = {
+                            'name': f'training_{annotation_key}',
+                            'current': 0,
+                            'total': 100,
+                            'message': f"Training model for '{annotation_key}'"
+                        }
+                        self._report_progress('training', base_progress,
+                            f'🏋️  Training model {model_idx}/{num_models}: {annotation_key}',
+                            subtask_info)
+
+                        # Prepare training configuration for this key
+                        key_config = self._prepare_training_config(config, input_data)
+                        key_config['output_dir'] = str(Path(key_config['output_dir']) / f"model_{annotation_key}")
+
+                        # Run training or benchmarking
+                        if config.get('benchmark_mode', False):
+                            self.state.current_phase = PipelinePhase.BENCHMARKING
+                            results = await trainer.benchmark_async(key_config)
+                        else:
+                            results = await trainer.train_async(key_config)
+
+                        all_training_results[annotation_key] = results
+                        self.logger.info(f"Model for '{annotation_key}' completed: Best model {results.get('best_model', 'unknown')}")
+
+                        # Report completion of this model
+                        subtask_info['current'] = 100
+                        subtask_info['message'] = f"✓ Model '{annotation_key}' trained"
+                        self._report_progress('training', 70 + (25 * model_idx / num_models),
+                            f'🏋️  Completed {model_idx}/{num_models} models',
+                            subtask_info)
+
+                    # Store all results
+                    self.state.training_results = {
+                        'strategy': 'single-label',
+                        'models': all_training_results,
+                        'num_models': len(all_training_results)
+                    }
+                    print(f"\n✅ Successfully trained {len(all_training_results)} models")
+
+                elif training_strategy == 'multi-label':
+                    # Train one multi-label model with all labels
+                    input_data = training_files['multilabel']
+                    self.logger.info(f"Training multi-label model: {input_data}")
+                    print(f"\n🏋️  Training single multi-label model")
+
+                    training_config = self._prepare_training_config(config, input_data)
+
+                    if config.get('benchmark_mode', False):
+                        self.state.current_phase = PipelinePhase.BENCHMARKING
+                        results = await trainer.benchmark_async(training_config)
+                    else:
+                        results = await trainer.train_async(training_config)
+
+                    self.state.training_results = {
+                        'strategy': 'multi-label',
+                        'model': results
+                    }
+                    print(f"\n✅ Multi-label model training completed")
             else:
-                results = await trainer.train_async(training_config)
+                # Fallback: single model training with provided input
+                input_data = config.get('training_input_file')
+                if not input_data:
+                    raise ValueError("No training data available")
 
-            self.state.training_results = results
+                training_config = self._prepare_training_config(config, input_data)
+
+                if config.get('benchmark_mode', False):
+                    self.state.current_phase = PipelinePhase.BENCHMARKING
+                    results = await trainer.benchmark_async(training_config)
+                else:
+                    results = await trainer.train_async(training_config)
+
+                self.state.training_results = results
+
             self.state.phases_completed.append(PipelinePhase.TRAINING)
-            self.logger.info(f"Training completed: Best model {results.get('best_model', 'unknown')}")
+            self.logger.info(f"Training phase completed successfully")
 
         except Exception as e:
             self.logger.error(f"Training phase failed: {str(e)}")
@@ -493,6 +750,8 @@ class PipelineController:
             'annotation_sample_size': config.get('annotation_sample_size'),
             'annotation_sampling_strategy': config.get('annotation_sampling_strategy', 'head'),
             'annotation_sample_seed': config.get('annotation_sample_seed', 42),
+            'max_tokens': config.get('max_tokens', self.settings.api.max_tokens if provider in {'openai', 'anthropic', 'google'} else 1000),
+            'options': config.get('options', {}),
             'output_format': config.get('output_format', default_output_format),
             'output_path': config.get('output_path', str(default_output_path))
         }
@@ -504,6 +763,13 @@ class PipelineController:
             models_to_test = [m.strip() for m in models_to_test.split(',') if m.strip()]
         elif isinstance(models_to_test, int):
             models_to_test = []
+
+        # Determine label column based on training strategy
+        training_strategy = config.get('training_strategy', 'single-label')
+        if training_strategy == 'multi-label':
+            label_column = 'labels'  # Multi-label uses 'labels' (plural)
+        else:
+            label_column = 'label'   # Single-label uses 'label' (singular)
 
         return {
             'input_file': input_data,
@@ -519,7 +785,11 @@ class PipelineController:
             'validation_split': config.get('validation_split', 0.2),
             'test_split': config.get('test_split', 0.1),
             'output_dir': config.get('output_dir',
-                                   str(self.settings.paths.models_dir / 'trained_model'))
+                                   str(self.settings.paths.models_dir / 'trained_model')),
+            # Add column mappings for training data generated from annotations
+            'text_column': config.get('training_text_column', 'text'),
+            'label_column': config.get('training_label_column', label_column),
+            'training_strategy': training_strategy  # Pass strategy to trainer
         }
 
     def _prepare_training_data_from_annotations(self, config: Dict[str, Any]):

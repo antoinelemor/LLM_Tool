@@ -51,7 +51,7 @@ import csv
 from datetime import datetime
 
 from llm_tool.trainers.data_utils import DataSample, DataLoader as DataUtil, PerformanceTracker
-from llm_tool.trainers.bert_base_enhanced import BertBaseEnhanced
+from llm_tool.trainers.bert_base import BertBase
 from llm_tool.trainers.multilingual_selector import MultilingualModelSelector
 from llm_tool.trainers.model_selector import ModelSelector, auto_select_model
 
@@ -84,6 +84,7 @@ class MultiLabelSample:
 class TrainingConfig:
     """Configuration for multi-label training."""
     model_class: Optional[type] = None  # specific model class to use
+    model_name: Optional[str] = None  # specific model name (e.g., 'bert-base-multilingual')
     auto_select_model: bool = True  # auto-select best model
     train_by_language: bool = False  # train separate models per language
     multilingual_model: bool = False  # use multilingual model for all languages
@@ -223,9 +224,15 @@ class MultiLabelTrainer:
 
             # Check for nested labels format
             if labels_dict_field and labels_dict_field in data:
-                # Labels are in a nested dict
-                labels = data[labels_dict_field]
-                if not isinstance(labels, dict):
+                # Labels can be either a dict or a list
+                labels_raw = data[labels_dict_field]
+                if isinstance(labels_raw, dict):
+                    # Already a dict: {'theme1': 1, 'theme2': 0}
+                    labels = labels_raw
+                elif isinstance(labels_raw, list):
+                    # List format: ['theme1', 'theme2'] - convert to dict with value 1
+                    labels = {label: 1 for label in labels_raw if label}
+                else:
                     return None
             else:
                 # Flat format - auto-detect label fields if not provided
@@ -293,8 +300,15 @@ class MultiLabelTrainer:
 
                 # Count positive and negative samples
                 labels = [s.label for s in samples]
-                positives = sum(labels)
-                negatives = len(labels) - positives
+                # Handle both binary labels and multi-label format
+                if labels and isinstance(labels[0], (list, tuple)):
+                    # For multi-label, just count samples (we'll transform to binary later)
+                    positives = len([l for l in labels if l])  # Non-empty labels
+                    negatives = len([l for l in labels if not l])  # Empty labels
+                else:
+                    # For binary labels
+                    positives = sum(labels)
+                    negatives = len(labels) - positives
 
                 # Count by language
                 lang_counts = Counter([s.lang for s in samples if s.lang])
@@ -480,6 +494,36 @@ class MultiLabelTrainer:
             # default: just label name
             return label_name
 
+    def _parse_label_name(self, label_name: str) -> tuple[str, str]:
+        """
+        Parse label name to extract key and value.
+
+        Examples:
+            'themes_long_transportation' -> ('themes', 'transportation')
+            'sentiment_long_positive' -> ('sentiment', 'positive')
+            'political_parties_long_CPC' -> ('political_parties', 'CPC')
+
+        Args:
+            label_name: Full label name (e.g., 'themes_long_transportation')
+
+        Returns:
+            Tuple of (key, value) or (label_name, label_name) if no separator found
+        """
+        # Try to split on '_long_' separator
+        if '_long_' in label_name:
+            parts = label_name.split('_long_')
+            if len(parts) == 2:
+                return (parts[0], parts[1])
+
+        # Try to split on '_short_' separator (alternative format)
+        if '_short_' in label_name:
+            parts = label_name.split('_short_')
+            if len(parts) == 2:
+                return (parts[0], parts[1])
+
+        # Fallback: return the full name for both
+        return (label_name, label_name)
+
     def _select_model_class(self,
                           samples: List[DataSample]) -> type:
         """
@@ -496,8 +540,8 @@ class MultiLabelTrainer:
             return self.config.model_class
 
         if not self.config.auto_select_model:
-            # default to BertBaseEnhanced
-            return BertBaseEnhanced
+            # default to BertBase
+            return BertBase
 
         # analyze language distribution
         languages = [s.lang for s in samples if s.lang]
@@ -536,15 +580,22 @@ class MultiLabelTrainer:
         if model_info.performance_metrics:
             metrics = model_info.performance_metrics
 
+            # Helper function to safely extract first value from list or return scalar
+            def safe_get_metric(metrics_dict, key, default=0):
+                val = metrics_dict.get(key, default)
+                if isinstance(val, list):
+                    return val[0] if len(val) > 0 else default
+                return val if val is not None else default
+
             # Overall metrics
             perf_data.append({
                 'metric_type': 'overall',
                 'language': 'all',
                 'accuracy': metrics.get('accuracy', 0),
-                'precision': metrics.get('precision', [0])[0] if isinstance(metrics.get('precision'), list) else metrics.get('precision', 0),
-                'recall': metrics.get('recall', [0])[0] if isinstance(metrics.get('recall'), list) else metrics.get('recall', 0),
+                'precision': safe_get_metric(metrics, 'precision'),
+                'recall': safe_get_metric(metrics, 'recall'),
                 'f1_score': metrics.get('macro_f1', 0),
-                'support': metrics.get('support', 0)
+                'support': safe_get_metric(metrics, 'support')
             })
 
             # Per-language metrics if available
@@ -554,8 +605,8 @@ class MultiLabelTrainer:
                         'metric_type': 'by_language',
                         'language': lang,
                         'accuracy': lang_metrics.get('accuracy', 0),
-                        'precision': lang_metrics.get('precision', [0])[0] if isinstance(lang_metrics.get('precision'), list) else lang_metrics.get('precision', 0),
-                        'recall': lang_metrics.get('recall', [0])[0] if isinstance(lang_metrics.get('recall'), list) else lang_metrics.get('recall', 0),
+                        'precision': safe_get_metric(lang_metrics, 'precision'),
+                        'recall': safe_get_metric(lang_metrics, 'recall'),
                         'f1_score': lang_metrics.get('macro_f1', 0),
                         'support': lang_metrics.get('n_samples', 0)
                     })
@@ -590,14 +641,22 @@ class MultiLabelTrainer:
         """
         model_name = self._generate_model_name(label_name, language)
 
+        # Parse label_name to extract key and value for display
+        label_key, label_value = self._parse_label_name(label_name)
+
         if self.verbose:
             self.logger.info(f"Training model: {model_name}")
 
         # select model class
         model_class = self._select_model_class(train_samples)
 
-        # initialize model
-        model = model_class()
+        # initialize model with configured model name
+        if self.config.model_name:
+            model = model_class(model_name=self.config.model_name)
+        else:
+            model = model_class()
+
+        # Use encode_with_metadata if available for full metadata tracking
         use_enhanced = hasattr(model, 'encode_with_metadata')
 
         # encode data
@@ -616,48 +675,50 @@ class MultiLabelTrainer:
             texts_val = [s.text for s in val_samples]
             labels_val = [s.label for s in val_samples]
 
-            train_loader = model.encode(texts_train, labels_train, batch_size=self.config.batch_size)
-            val_loader = model.encode(texts_val, labels_val, batch_size=self.config.batch_size)
+            train_loader = model.encode(texts_train, labels_train, batch_size=self.config.batch_size, progress_bar=False)
+            val_loader = model.encode(texts_val, labels_val, batch_size=self.config.batch_size, progress_bar=False)
 
-        # train model
+        # train model with unified run_training method (always includes full logging)
         model_path = os.path.join(self.config.output_dir, model_name)
 
-        if use_enhanced and hasattr(model, 'run_training_enhanced'):
-            scores = model.run_training_enhanced(
-                train_loader,
-                val_loader,
-                n_epochs=self.config.n_epochs,
-                lr=self.config.learning_rate,
-                save_model_as=model_name,
-                reinforced_learning=self.config.reinforced_learning,
-                n_epochs_reinforced=self.config.n_epochs_reinforced,
-                track_languages=self.config.track_languages,
-                metrics_output_dir=os.path.join(model_path, 'logs')
-            )
-        else:
-            # Extract language info from val_samples if track_languages is enabled
-            language_info = None
-            if self.config.track_languages and val_samples:
-                language_info = [s.lang for s in val_samples if hasattr(s, 'lang')]
-                if not language_info:
-                    language_info = None
+        # Create centralized training logs directory with timestamp and model name
+        # Structure: training_logs/YYYYMMDD_HHMMSS_modelname/
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        centralized_logs_dir = os.path.join('training_logs', f"{timestamp}_{model_name}")
 
-            scores = model.run_training(
-                train_loader,
-                val_loader,
-                n_epochs=self.config.n_epochs,
-                lr=self.config.learning_rate,
-                save_model_as=model_name,
-                reinforced_learning=self.config.reinforced_learning,
-                n_epochs_reinforced=self.config.n_epochs_reinforced,
-                reinforced_epochs=self.config.reinforced_epochs if hasattr(self.config, 'reinforced_epochs') else None,
-                track_languages=self.config.track_languages,
-                language_info=language_info,
-                metrics_output_dir=os.path.join(model_path, 'logs')
-            )
+        # Extract language information from validation samples for per-language metrics
+        # This enables automatic per-language metric tracking even without track_languages=True
+        val_language_info = [s.lang for s in val_samples] if val_samples else None
+
+        scores = model.run_training(
+            train_loader,
+            val_loader,
+            n_epochs=self.config.n_epochs,
+            lr=self.config.learning_rate,
+            save_model_as=model_name,
+            reinforced_learning=self.config.reinforced_learning,
+            n_epochs_reinforced=self.config.n_epochs_reinforced,
+            track_languages=True,  # Always enable to get per-language metrics
+            language_info=val_language_info,  # Pass language info for each validation sample
+            metrics_output_dir=centralized_logs_dir,  # Use centralized logs directory
+            label_key=label_key,  # Pass the parsed key (e.g., 'themes', 'sentiment')
+            label_value=label_value,  # Pass the parsed value (e.g., 'transportation', 'positive')
+            language=language  # Pass the language (e.g., 'EN', 'FR', 'MULTI')
+        )
 
         # calculate final metrics
-        precision, recall, f1, support = scores if scores else ([], [], [], [])
+        # scores is a tuple of (best_metric_val, best_model_path, best_scores)
+        # where best_scores contains [precision, recall, f1, support]
+        if scores and len(scores) == 3:
+            # Extract best_scores which is the third element
+            best_scores = scores[2]  # This contains [precision, recall, f1, support]
+            if best_scores and len(best_scores) >= 4:
+                precision, recall, f1, support = best_scores[:4]
+            else:
+                precision, recall, f1, support = [], [], [], []
+        else:
+            precision, recall, f1, support = [], [], [], []
 
         performance_metrics = {
             'precision': precision.tolist() if hasattr(precision, 'tolist') else precision,
@@ -802,8 +863,29 @@ class MultiLabelTrainer:
         samples = []
         for item in data:
             # Handle nested labels format
-            if 'labels' in item and isinstance(item['labels'], dict):
-                labels = item['labels']
+            if 'labels' in item:
+                if isinstance(item['labels'], dict):
+                    # Already in dict format
+                    labels = item['labels']
+                elif isinstance(item['labels'], list):
+                    # Convert list of labels to binary dict
+                    labels = {label: 1 for label in item['labels']}
+                else:
+                    # Single label
+                    labels = {str(item['labels']): 1}
+                text = item.get('text', '')
+                sample_id = item.get('id')
+                lang = item.get('lang')
+            elif 'label' in item:
+                # Handle 'label' field (singular)
+                if isinstance(item['label'], list):
+                    # Convert list of labels to binary dict
+                    labels = {label: 1 for label in item['label']}
+                elif isinstance(item['label'], dict):
+                    labels = item['label']
+                else:
+                    # Single label
+                    labels = {str(item['label']): 1}
                 text = item.get('text', '')
                 sample_id = item.get('id')
                 lang = item.get('lang')
@@ -840,13 +922,16 @@ class MultiLabelTrainer:
             Dictionary of model_name -> ModelInfo
         """
         # prepare datasets
-        # Create output directory for reports
-        output_dir = self.config.output_dir if hasattr(self.config, 'output_dir') else 'training_logs'
+        # Create centralized directory for distribution reports in training_logs/
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        reports_dir = os.path.join('training_logs', f"{timestamp}_distribution_reports")
+
         label_datasets = self.prepare_label_datasets(
             samples,
             train_ratio,
             val_ratio,
-            output_dir=output_dir
+            output_dir=reports_dir
         )
 
         # organize training jobs
@@ -873,11 +958,23 @@ class MultiLabelTrainer:
                     })
             else:
                 # single model for all languages
+                # Detect if multilingual (check unique languages in samples)
+                all_samples = datasets['train'] + datasets['val']
+                unique_langs = set(s.lang for s in all_samples if s.lang)
+
+                # If multiple languages detected, mark as MULTI, otherwise use the single language
+                if len(unique_langs) > 1:
+                    language_label = 'MULTI'
+                elif len(unique_langs) == 1:
+                    language_label = list(unique_langs)[0]
+                else:
+                    language_label = None
+
                 training_jobs.append({
                     'label_name': label_name,
                     'train_samples': datasets['train'],
                     'val_samples': datasets['val'],
-                    'language': None
+                    'language': language_label
                 })
 
         if self.verbose:
@@ -901,12 +998,12 @@ class MultiLabelTrainer:
                     futures.append(future)
 
                 # collect results
-                for future in tqdm(futures, desc="Training models"):
+                for future in tqdm(futures, desc="Training models", leave=False, disable=True):
                     model_info = future.result()
                     trained_models[model_info.model_name] = model_info
         else:
             # sequential training
-            for job in tqdm(training_jobs, desc="Training models"):
+            for job in tqdm(training_jobs, desc="Training models", leave=False, disable=True):
                 model_info = self.train_single_model(
                     job['label_name'],
                     job['train_samples'],

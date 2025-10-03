@@ -12,7 +12,7 @@
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
@@ -275,9 +275,13 @@ The training pipeline supports comprehensive model development:
 
 ```bash
 # Core dependencies
-Python >= 3.8
+Python >= 3.13  # REQUIRED: Python 3.13+ to avoid mutex lock issues on macOS
 Memory >= 8GB RAM (16GB recommended for large models)
 Storage >= 20GB available space
+
+# macOS specific note:
+# Due to transformers library compatibility issues, Python 3.13 is mandatory on macOS
+# The 'accelerate' package must be installed to prevent import blocking
 ```
 
 ### Standard Installation
@@ -287,12 +291,22 @@ Storage >= 20GB available space
 git clone https://github.com/antoine-lemor/LLMTool.git
 cd LLMTool
 
-# Create virtual environment
-python -m venv venv
+# Create virtual environment with Python 3.13 (REQUIRED on macOS)
+python3.13 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
+# Verify Python version
+python --version  # Should show Python 3.13.x
+
 # Install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
+
+# CRITICAL for macOS users: Verify accelerate is installed
+pip list | grep accelerate  # Should show accelerate>=1.10.0
+
+# If missing, install it explicitly:
+pip install accelerate>=1.10.0
 
 # Install Ollama (for local models)
 # macOS/Linux:

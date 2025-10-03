@@ -446,5 +446,20 @@ def setup_logging(
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Get a logger instance"""
-    return logging.getLogger(name)
+    """Get a logger instance with console handler"""
+    logger = logging.getLogger(name)
+
+    # Avoid adding duplicate handlers
+    if not logger.handlers:
+        # Add console handler to show logs in terminal
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setLevel(logging.INFO)
+
+        # Simple format to not clutter the beautiful colored output
+        formatter = logging.Formatter('%(message)s')
+        console_handler.setFormatter(formatter)
+
+        logger.addHandler(console_handler)
+        logger.setLevel(logging.INFO)
+
+    return logger

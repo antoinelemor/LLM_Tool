@@ -51,7 +51,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from llm_tool.trainers.logging_utils import get_logger
+from llm_tool.utils.logging_utils import get_logger
 from llm_tool.trainers.bert_base import BertBase
 from llm_tool.trainers.models import (
     Bert, Camembert, GermanBert, SpanishBert, ItalianBert,

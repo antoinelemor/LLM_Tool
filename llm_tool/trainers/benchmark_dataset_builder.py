@@ -48,7 +48,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-from llm_tool.trainers.logging_utils import get_logger
+from llm_tool.utils.logging_utils import get_logger
 
 
 @dataclass

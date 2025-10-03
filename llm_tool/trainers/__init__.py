@@ -84,8 +84,8 @@ from .multi_label_trainer import (
     train_multi_label_models
 )
 
-# Enhanced base with metadata support
-from .bert_base_enhanced import BertBaseEnhanced
+# BertBase now includes enhanced features with metadata support
+# (previously BertBaseEnhanced, now merged into BertBase)
 
 # Data utilities
 from .data_utils import (
@@ -105,6 +105,7 @@ from .data_splitter import (
 from .parallel_inference import parallel_predict
 from .benchmarking import BenchmarkRunner, BenchmarkConfig, TrainingRunSummary
 from .benchmark_dataset_builder import BenchmarkDatasetBuilder, BenchmarkDataset
+from .training_data_builder import TrainingDatasetBuilder, TrainingDataRequest, TrainingDataBundle
 
 # Command Line Interface
 from .cli import TrainingCLI
@@ -153,6 +154,7 @@ __all__ = [
     # Benchmarking orchestrator
     'BenchmarkRunner', 'BenchmarkConfig', 'TrainingRunSummary',
     'BenchmarkDatasetBuilder', 'BenchmarkDataset',
+    'TrainingDatasetBuilder', 'TrainingDataRequest', 'TrainingDataBundle',
 
     # Command Line Interface
     'TrainingCLI'

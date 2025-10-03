@@ -45,6 +45,7 @@ import os
 import shutil
 import csv
 import json
+import warnings
 from typing import List, Tuple, Any, Optional, Dict
 from collections import defaultdict
 
@@ -57,6 +58,14 @@ from tqdm.auto import tqdm
 from sklearn.metrics import classification_report, precision_recall_fscore_support
 from colorama import init, Fore, Back, Style
 from tabulate import tabulate
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+from rich.layout import Layout
+from rich.console import Group
+from rich.text import Text
+from rich import box
 
 # Initialize colorama for cross-platform colored output
 init(autoreset=True)
@@ -71,9 +80,249 @@ from transformers import (
     WEIGHTS_NAME,
     CONFIG_NAME
 )
+import transformers
+# Suppress transformers warnings globally
+transformers.logging.set_verbosity_error()
 
-from AugmentedSocialScientistFork.bert_abc import BertABC
-from AugmentedSocialScientistFork.logging_utils import get_logger
+from llm_tool.trainers.bert_abc import BertABC
+from llm_tool.utils.logging_utils import get_logger
+
+
+class TrainingDisplay:
+    """Rich Live Display for training progress with all metrics."""
+
+    def __init__(self, model_name: str, label_key: str = None, label_value: str = None,
+                 language: str = None, n_epochs: int = 10, is_reinforced: bool = False):
+        self.model_name = model_name
+        self.label_key = label_key
+        self.label_value = label_value
+        self.language = language
+        self.n_epochs = n_epochs
+        self.is_reinforced = is_reinforced
+
+        # Class names for display
+        if label_value:
+            # Truncate if too long
+            value_short = label_value[:15] if len(label_value) > 15 else label_value
+            self.class_0_name = f"NOT {value_short}"
+            self.class_1_name = f"IS {value_short}"
+        else:
+            self.class_0_name = "Class 0"
+            self.class_1_name = "Class 1"
+
+        # Metrics storage
+        self.current_epoch = 0
+        self.current_phase = "Initializing"
+        self.train_loss = 0.0
+        self.val_loss = 0.0
+        self.train_progress = 0
+        self.val_progress = 0
+        self.train_total = 0
+        self.val_total = 0
+
+        # Performance metrics
+        self.accuracy = 0.0
+        self.precision = [0.0, 0.0]
+        self.recall = [0.0, 0.0]
+        self.f1_scores = [0.0, 0.0]
+        self.f1_macro = 0.0
+        self.support = [0, 0]
+
+        # Per-language metrics
+        self.language_metrics = {}
+
+        # Best model tracking
+        self.best_f1 = 0.0
+        self.best_epoch = 0
+        self.improvement = 0.0
+
+        # Timing
+        self.train_time = 0.0
+        self.val_time = 0.0
+        self.epoch_time = 0.0
+        self.total_time = 0.0
+        self.start_time = time.time()
+
+    def create_header(self) -> Table:
+        """Create header with model and label info."""
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column(style="bold cyan")
+        table.add_column(style="bold white")
+
+        if self.is_reinforced:
+            table.add_row("🔄 REINFORCED TRAINING", "")
+        else:
+            table.add_row("🏋️ MODEL TRAINING", "")
+
+        table.add_row("Model:", self.model_name)
+
+        if self.label_key and self.label_value:
+            table.add_row("Label Key:", self.label_key)
+            table.add_row("Label Value:", self.label_value)
+
+        if self.language:
+            lang_display = self.language if self.language != "MULTI" else f"MULTI (multilingual)"
+            table.add_row("Language:", lang_display)
+
+        return table
+
+    def create_progress_section(self) -> Table:
+        """Create progress bars for training and validation."""
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column(style="cyan", width=12)
+        table.add_column()
+
+        # Epoch progress
+        epoch_pct = (self.current_epoch / self.n_epochs) * 100 if self.n_epochs > 0 else 0
+        epoch_bar = self._create_bar(epoch_pct, width=30)
+        table.add_row("📊 Epoch:", f"{self.current_epoch}/{self.n_epochs} {epoch_bar}")
+
+        # Phase
+        table.add_row("🔄 Phase:", self.current_phase)
+
+        # Training progress
+        if self.train_total > 0:
+            train_pct = (self.train_progress / self.train_total) * 100
+            train_bar = self._create_bar(train_pct, width=30)
+            table.add_row("📚 Training:", f"{self.train_progress}/{self.train_total} {train_bar}")
+
+        # Validation progress
+        if self.val_total > 0:
+            val_pct = (self.val_progress / self.val_total) * 100
+            val_bar = self._create_bar(val_pct, width=30)
+            table.add_row("🔍 Validation:", f"{self.val_progress}/{self.val_total} {val_bar}")
+
+        return table
+
+    def create_metrics_table(self) -> Table:
+        """Create table with all performance metrics."""
+        table = Table(title="📈 Performance Metrics", box=box.ROUNDED, title_style="bold magenta")
+        table.add_column("Metric", style="cyan")
+        table.add_column(self.class_0_name, justify="center", style="yellow")
+        table.add_column(self.class_1_name, justify="center", style="green")
+        table.add_column("Overall", justify="center", style="bold white")
+
+        # Losses
+        table.add_row("Train Loss", "", "", f"{self.train_loss:.4f}")
+        table.add_row("Val Loss", "", "", f"{self.val_loss:.4f}")
+        table.add_row("", "", "", "")  # Separator
+
+        # Metrics
+        table.add_row("Accuracy", "", "", f"{self.accuracy:.3f}")
+        table.add_row("Precision", f"{self.precision[0]:.3f}", f"{self.precision[1]:.3f}", "")
+        table.add_row("Recall", f"{self.recall[0]:.3f}", f"{self.recall[1]:.3f}", "")
+        table.add_row("F1-Score", f"{self.f1_scores[0]:.3f}", f"{self.f1_scores[1]:.3f}", f"{self.f1_macro:.3f}")
+        table.add_row("Support", str(int(self.support[0])), str(int(self.support[1])), str(int(sum(self.support))))
+
+        return table
+
+    def create_language_table(self) -> Table:
+        """Create table with per-language metrics."""
+        if not self.language_metrics:
+            return None
+
+        table = Table(title="🌍 Per-Language Performance", box=box.ROUNDED, title_style="bold magenta")
+        table.add_column("Language", style="cyan")
+        table.add_column("Support 0", justify="center")
+        table.add_column("Support 1", justify="center")
+        table.add_column("Accuracy", justify="center")
+        table.add_column("F1 Class 0", justify="center")
+        table.add_column("F1 Class 1", justify="center")
+        table.add_column("Macro F1", justify="center", style="bold")
+
+        for lang, metrics in sorted(self.language_metrics.items()):
+            table.add_row(
+                lang,
+                str(metrics.get('support_0', 0)),
+                str(metrics.get('support_1', 0)),
+                f"{metrics.get('accuracy', 0):.3f}",
+                f"{metrics.get('f1_0', 0):.3f}",
+                f"{metrics.get('f1_1', 0):.3f}",
+                f"{metrics.get('macro_f1', 0):.3f}"
+            )
+
+        # Add average row (only count languages with actual support)
+        if len(self.language_metrics) > 1:
+            # Only average languages that have at least some samples in class 1
+            # (to avoid skewing average with languages that have no positive examples)
+            valid_metrics = [m for m in self.language_metrics.values()
+                           if m.get('support_0', 0) + m.get('support_1', 0) > 0]
+
+            if valid_metrics:
+                avg_acc = sum(m.get('accuracy', 0) for m in valid_metrics) / len(valid_metrics)
+                avg_f1 = sum(m.get('macro_f1', 0) for m in valid_metrics) / len(valid_metrics)
+                table.add_row("-" * 8, "-" * 9, "-" * 9, "-" * 8, "-" * 10, "-" * 10, "-" * 8)
+                table.add_row("AVERAGE", "", "", f"{avg_acc:.3f}", "", "", f"{avg_f1:.3f}", style="bold")
+
+        return table
+
+    def create_summary_section(self) -> Table:
+        """Create summary with timing and best model info."""
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column(style="cyan", width=15)
+        table.add_column(style="white")
+
+        # Timing
+        table.add_row("⏱️ Train Time:", self._format_time(self.train_time))
+        table.add_row("⏱️ Val Time:", self._format_time(self.val_time))
+        table.add_row("⏱️ Epoch Time:", self._format_time(self.epoch_time))
+        table.add_row("⏱️ Total Time:", self._format_time(self.total_time))
+
+        # Best model
+        if self.best_f1 > 0:
+            table.add_row("", "")
+            table.add_row("🏆 Best F1:", f"{self.best_f1:.4f} (Epoch {self.best_epoch})")
+            if self.improvement != 0:
+                sign = "+" if self.improvement > 0 else ""
+                table.add_row("📈 Improvement:", f"{sign}{self.improvement:.4f}")
+
+        return table
+
+    def create_panel(self) -> Panel:
+        """Create the complete panel with all sections."""
+        sections = [self.create_header()]
+        sections.append(Text())  # Spacer
+        sections.append(self.create_progress_section())
+        sections.append(Text())  # Spacer
+        sections.append(self.create_metrics_table())
+
+        # Add language table if available
+        lang_table = self.create_language_table()
+        if lang_table:
+            sections.append(Text())  # Spacer
+            sections.append(lang_table)
+
+        sections.append(Text())  # Spacer
+        sections.append(self.create_summary_section())
+
+        group = Group(*sections)
+
+        # Different colors for normal vs reinforced training
+        if self.is_reinforced:
+            title = "🔥 REINFORCED LEARNING"
+            border_color = "bold yellow"  # Yellow/orange for reinforced
+        else:
+            title = "🏋️ MODEL TRAINING"
+            border_color = "bold blue"  # Blue for normal
+
+        return Panel(group, title=title, border_style=border_color, box=box.HEAVY)
+
+    def _create_bar(self, percentage: float, width: int = 30) -> str:
+        """Create a text-based progress bar."""
+        filled = int((percentage / 100) * width)
+        bar = "█" * filled + "░" * (width - filled)
+        return f"[{bar}] {percentage:.1f}%"
+
+    def _format_time(self, seconds: float) -> str:
+        """Format time in seconds to readable format."""
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        elif seconds < 3600:
+            return f"{int(seconds // 60)}m {int(seconds % 60)}s"
+        else:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return f"{hours}h {minutes}m"
 
 
 class BertBase(BertABC):
@@ -121,11 +370,13 @@ class BertBase(BertABC):
             # If MPS is available on Apple Silicon, use it
             elif torch.backends.mps.is_available():
                 self.device = torch.device("mps")
-                self.logger.info('Detected Apple Silicon MPS backend. Using the MPS device.')
+                # Suppress MPS detection log to keep console clean
+                # self.logger.info('Detected Apple Silicon MPS backend. Using the MPS device.')
             # Otherwise, use CPU
             else:
                 self.device = torch.device("cpu")
-                self.logger.info('Falling back to CPU execution.')
+                # Suppress CPU fallback log to keep console clean
+                # self.logger.info('Falling back to CPU execution.')
 
     # ------------------------------------------------------------------
     # Internal helpers shared with enhanced variants
@@ -223,12 +474,128 @@ class BertBase(BertABC):
 
         dataset, label_mapping = self._build_dataset(inputs, masks, labels)
 
-        if label_mapping is not None and progress_bar:
-            self.logger.info("Label ids mapping: %s", label_mapping)
+        # Suppress label mapping log to keep console clean
+        # if label_mapping is not None and progress_bar:
+        #     self.logger.info("Label ids mapping: %s", label_mapping)
 
         sampler = SequentialSampler(dataset)
         dataloader = DataLoader(dataset, sampler=sampler, batch_size=batch_size)
         return dataloader
+
+    def calculate_reinforced_trigger_score(
+            self,
+            f1_class_0: float,
+            f1_class_1: float,
+            support_class_0: int,
+            support_class_1: int,
+            language_metrics: Optional[Dict[str, Dict[str, float]]] = None
+    ) -> Tuple[float, bool, str]:
+        """
+        Calculate an intelligent score to determine if reinforced learning should be triggered.
+
+        This method considers:
+        1. F1 score of class 1 (minority class)
+        2. Class imbalance ratio (to overweight minority class performance)
+        3. Per-language F1 scores (if available)
+
+        Parameters
+        ----------
+        f1_class_0 : float
+            F1 score for class 0
+        f1_class_1 : float
+            F1 score for class 1 (typically minority class)
+        support_class_0 : int
+            Number of samples in class 0
+        support_class_1 : int
+            Number of samples in class 1
+        language_metrics : dict, optional
+            Dictionary with language-specific metrics
+
+        Returns
+        -------
+        trigger_score : float
+            Computed score (0.0 to 1.0) - lower means worse performance
+        should_trigger : bool
+            True if reinforced learning should be triggered
+        reason : str
+            Human-readable explanation of the decision
+        """
+        # Calculate class imbalance ratio
+        total_samples = support_class_0 + support_class_1
+        if total_samples == 0:
+            return 0.0, True, "No samples available"
+
+        class_1_ratio = support_class_1 / total_samples
+        class_0_ratio = support_class_0 / total_samples
+
+        # Calculate imbalance weight (higher when class is more imbalanced)
+        # When class 1 is 50%, imbalance_weight = 1.0
+        # When class 1 is 10%, imbalance_weight = 2.0
+        # When class 1 is 5%, imbalance_weight = 2.5
+        if class_1_ratio > 0:
+            imbalance_weight = min(0.5 / class_1_ratio, 3.0)  # Cap at 3.0x weight
+        else:
+            imbalance_weight = 3.0
+
+        # Base score: weighted F1 of class 1
+        # When class is very imbalanced, F1 of class 1 becomes more important
+        base_weight = 0.4 + (0.3 * min(imbalance_weight / 3.0, 1.0))  # 0.4 to 0.7
+        class_1_weighted_f1 = f1_class_1 * base_weight
+        class_0_weighted_f1 = f1_class_0 * (1.0 - base_weight)
+
+        overall_f1_score = class_1_weighted_f1 + class_0_weighted_f1
+
+        # Factor in language-specific performance if available
+        language_penalty = 0.0
+        language_info = ""
+
+        if language_metrics and len(language_metrics) > 0:
+            # Check if any language has poor F1 for class 1
+            poor_languages = []
+            for lang, metrics in language_metrics.items():
+                lang_f1_1 = metrics.get('f1_1', 0.0)
+                lang_support_1 = metrics.get('support_1', 0)
+
+                # Consider a language "poor" if F1_1 < 0.5 and has reasonable support
+                if lang_f1_1 < 0.5 and lang_support_1 >= 3:
+                    poor_languages.append(f"{lang}(F1={lang_f1_1:.2f})")
+                    # Apply penalty proportional to how bad the language is
+                    language_penalty += (0.5 - lang_f1_1) * 0.15  # Max 0.15 penalty per language
+
+            if poor_languages:
+                language_info = f" Poor language performance: {', '.join(poor_languages)}."
+
+        # Final trigger score (penalized by poor language performance)
+        trigger_score = max(0.0, overall_f1_score - language_penalty)
+
+        # Decision logic
+        # Trigger if:
+        # 1. Score is below 0.70 (standard threshold)
+        # 2. OR class 1 F1 is below 0.40 (very poor minority class performance)
+        # 3. OR any language has F1_1 < 0.30
+        should_trigger = False
+        reason = ""
+
+        if trigger_score < 0.70:
+            should_trigger = True
+            reason = (f"Trigger score {trigger_score:.3f} < 0.70 "
+                     f"(Class 1 F1={f1_class_1:.3f}, imbalance={class_1_ratio:.1%}, "
+                     f"weight={imbalance_weight:.2f}x).{language_info}")
+        elif f1_class_1 < 0.40:
+            should_trigger = True
+            reason = f"Class 1 F1 ({f1_class_1:.3f}) critically low < 0.40.{language_info}"
+        elif language_metrics:
+            for lang, metrics in language_metrics.items():
+                if metrics.get('f1_1', 0.0) < 0.30 and metrics.get('support_1', 0) >= 3:
+                    should_trigger = True
+                    reason = f"Language {lang} has critical F1_1={metrics['f1_1']:.3f} < 0.30.{language_info}"
+                    break
+
+        if not should_trigger:
+            reason = (f"No trigger: score={trigger_score:.3f}, F1_1={f1_class_1:.3f}, "
+                     f"class 1 ratio={class_1_ratio:.1%}.{language_info}")
+
+        return trigger_score, should_trigger, reason
 
     def run_training(
             self,
@@ -250,7 +617,10 @@ class BertBase(BertABC):
             language_info: Optional[List[str]] = None,
             f1_1_rescue_threshold: float = 0.0,
             model_identifier: Optional[str] = None,
-            reinforced_f1_threshold: float = 0.7  # Nouveau paramètre pour le seuil de déclenchement
+            reinforced_f1_threshold: float = 0.7,  # Nouveau paramètre pour le seuil de déclenchement
+            label_key: Optional[str] = None,  # Multi-label: key being trained (e.g., 'themes', 'sentiment')
+            label_value: Optional[str] = None,  # Multi-label: specific value (e.g., 'transportation', 'positive')
+            language: Optional[str] = None  # Language of the data being trained (e.g., 'EN', 'FR')
     ) -> Tuple[Any, Any, Any, Any]:
         """
         Train, evaluate, and (optionally) save a BERT model. This method also logs training and validation
@@ -336,10 +706,14 @@ class BertBase(BertABC):
         csv_headers = [
             "model_identifier",
             "model_name",
+            "label_key",        # Multi-label: key (e.g., 'themes', 'sentiment')
+            "label_value",      # Multi-label: value (e.g., 'transportation', 'positive')
+            "language",         # Language of the data (e.g., 'EN', 'FR', 'MULTI')
             "timestamp",
             "epoch",
             "train_loss",
             "val_loss",
+            "accuracy",         # Overall accuracy
             "precision_0",
             "recall_0",
             "f1_0",
@@ -390,10 +764,14 @@ class BertBase(BertABC):
         best_models_headers = [
             "model_identifier",
             "model_type",
+            "label_key",        # Multi-label: key (e.g., 'themes', 'sentiment')
+            "label_value",      # Multi-label: value (e.g., 'transportation', 'positive')
+            "language",         # Language of the data (e.g., 'EN', 'FR', 'MULTI')
             "timestamp",
             "epoch",
             "train_loss",
             "val_loss",
+            "accuracy",         # Overall accuracy
             "precision_0",
             "recall_0",
             "f1_0",
@@ -470,13 +848,16 @@ class BertBase(BertABC):
         torch.manual_seed(random_state)
         torch.cuda.manual_seed_all(random_state)
 
-        # Initialize the model
-        model = self.model_sequence_classifier.from_pretrained(
-            self.model_name,
-            num_labels=num_labels,
-            output_attentions=False,
-            output_hidden_states=False
-        )
+        # Initialize the model (suppress warnings about missing weights)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Some weights of.*were not initialized")
+            warnings.filterwarnings("ignore", message=".*not initialized from the model checkpoint.*")
+            model = self.model_sequence_classifier.from_pretrained(
+                self.model_name,
+                num_labels=num_labels,
+                output_attentions=False,
+                output_hidden_states=False
+            )
         model.to(self.device)
 
         optimizer = AdamW(model.parameters(), lr=lr, eps=1e-8)
@@ -492,6 +873,7 @@ class BertBase(BertABC):
         best_metric_val = -1.0
         best_model_path = None
         best_scores = None  # Will store final best (precision, recall, f1, support)
+        best_language_metrics = None  # Will store language metrics from best epoch
         language_performance_history = []  # Store language metrics for each epoch
         self.language_metrics_history = []
         if reinforced_epochs is not None:
@@ -503,428 +885,260 @@ class BertBase(BertABC):
         # Initialize metrics tracking
         training_metrics = []
 
-        self.logger.info("\n%s", f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
-        self.logger.info("%s", f"{Fore.CYAN}{'TRAINING START':^80}{Style.RESET_ALL}")
-        self.logger.info("%s", f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}\n")
+        # Initialize Rich Live Display
+        display = TrainingDisplay(
+            model_name=self.model_name if hasattr(self, 'model_name') else save_model_as or "BERT",
+            label_key=label_key,
+            label_value=label_value,
+            language=language,
+            n_epochs=n_epochs,
+            is_reinforced=False
+        )
 
-        if track_languages and language_info:
-            unique_langs_logged = ", ".join(sorted(set(language_info)))
-            self.logger.info("Tracking per-language validation metrics for: %s", unique_langs_logged)
+        # Start Live display - this will remain fixed and update in place
+        with Live(display.create_panel(), refresh_per_second=4) as live:
+            for i_epoch in range(n_epochs):
+                epoch_start_time = time.time()
 
-        for i_epoch in range(n_epochs):
-            epoch_start_time = time.time()
+                # Update display for new epoch
+                display.current_epoch = i_epoch + 1
+                display.current_phase = "Training"
+                display.train_total = len(train_dataloader)
+                display.train_progress = 0
+                live.update(display.create_panel())
 
-            # Epoch header with color
-            self.logger.info("%s", f"\n{Fore.YELLOW}{'━'*80}{Style.RESET_ALL}")
-            self.logger.info("%s", f"{Fore.YELLOW}  Epoch {i_epoch + 1}/{n_epochs}{Style.RESET_ALL}")
-            self.logger.info("%s", f"{Fore.YELLOW}{'━'*80}{Style.RESET_ALL}\n")
+                t0 = time.time()
+                total_train_loss = 0.0
+                model.train()
 
-            # Training phase
-            self.logger.info("%s", f"{Fore.GREEN}📚 Training Phase{Style.RESET_ALL}")
+                # Training loop - no tqdm, we update the display directly
+                for step, train_batch in enumerate(train_dataloader):
+                    b_inputs = train_batch[0].to(self.device)
+                    b_masks = train_batch[1].to(self.device)
+                    b_labels = train_batch[2].to(self.device)
 
-            t0 = time.time()
-            total_train_loss = 0.0
-            model.train()
+                    model.zero_grad()
 
-            # Create progress bar for training batches
-            train_pbar = tqdm(train_dataloader,
-                            desc=f"  Training",
-                            unit="batch",
-                            bar_format='{desc}: {percentage:3.0f}%|{bar:30}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
-                            colour='green')
+                    outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks)
+                    logits = outputs[0]
 
-            for step, train_batch in enumerate(train_pbar):
+                    # Weighted loss if pos_weight is specified
+                    if pos_weight is not None:
+                        weight_tensor = torch.tensor([1.0, pos_weight.item()], device=self.device)
+                        criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor)
+                    else:
+                        criterion = torch.nn.CrossEntropyLoss()
 
-                b_inputs = train_batch[0].to(self.device)
-                b_masks = train_batch[1].to(self.device)
-                b_labels = train_batch[2].to(self.device)
+                    loss = criterion(logits, b_labels)
+                    total_train_loss += loss.item()
 
-                model.zero_grad()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
-                outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks)
-                logits = outputs[0]
+                    optimizer.step()
+                    scheduler.step()
 
-                # Weighted loss if pos_weight is specified
-                if pos_weight is not None:
-                    weight_tensor = torch.tensor([1.0, pos_weight.item()], device=self.device)
-                    criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor)
+                    # Update display with current progress
+                    display.train_progress = step + 1
+                    display.train_loss = loss.item()
+                    display.epoch_time = time.time() - epoch_start_time  # Update elapsed time
+                    display.total_time = time.time() - training_start_time
+                    live.update(display.create_panel())
+
+                # After training loop - calculate average loss
+                avg_train_loss = total_train_loss / len(train_dataloader)
+                train_loss_values.append(avg_train_loss)
+
+                # Update display with final training metrics
+                display.train_loss = avg_train_loss
+                display.train_time = time.time() - t0
+                display.current_phase = "Validation"
+                display.val_total = len(test_dataloader)
+                display.val_progress = 0
+                live.update(display.create_panel())
+
+                # =============== Validation after this epoch ===============
+                t0 = time.time()
+                model.eval()
+
+                total_val_loss = 0.0
+                logits_complete = []
+
+                # Validation loop - update display directly
+                for step, test_batch in enumerate(test_dataloader):
+                    b_inputs = test_batch[0].to(self.device)
+                    b_masks = test_batch[1].to(self.device)
+                    b_labels = test_batch[2].to(self.device)
+
+                    with torch.no_grad():
+                        outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks, labels=b_labels)
+
+                        loss = outputs.loss
+                        logits = outputs.logits
+
+                    total_val_loss += loss.item()
+                    logits_complete.append(logits.detach().cpu().numpy())
+
+                    # Update display with validation progress
+                    display.val_progress = step + 1
+                    display.val_loss = loss.item()
+                    display.epoch_time = time.time() - epoch_start_time  # Update elapsed time
+                    display.total_time = time.time() - training_start_time
+                    live.update(display.create_panel())
+
+                # After validation loop
+                logits_complete = np.concatenate(logits_complete, axis=0)
+                avg_val_loss = total_val_loss / len(test_dataloader)
+                val_loss_values.append(avg_val_loss)
+
+                # Update display with final validation metrics
+                display.val_loss = avg_val_loss
+                display.val_time = time.time() - t0
+                live.update(display.create_panel())
+
+                preds = np.argmax(logits_complete, axis=1).flatten()
+
+                # Get actual unique classes present in predictions and labels
+                unique_classes = np.unique(np.concatenate([test_labels, preds]))
+
+                # Only use target_names if it matches the number of unique classes
+                if label_names is not None and len(label_names) == len(unique_classes):
+                    report = classification_report(test_labels, preds, target_names=label_names, output_dict=True)
                 else:
-                    criterion = torch.nn.CrossEntropyLoss()
+                    # Don't use target_names if there's a mismatch
+                    report = classification_report(test_labels, preds, output_dict=True)
 
-                loss = criterion(logits, b_labels)
-                total_train_loss += loss.item()
+                # Extract metrics for classes 0 and 1 (assuming binary classification or focusing on first two classes)
+                class_0_metrics = report.get("0", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
+                class_1_metrics = report.get("1", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
+                macro_avg = report.get("macro avg", {"f1-score": 0})
 
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                precision_0 = class_0_metrics["precision"]
+                recall_0 = class_0_metrics["recall"]
+                f1_0 = class_0_metrics["f1-score"]
+                support_0 = class_0_metrics["support"]
 
-                optimizer.step()
-                scheduler.step()
+                precision_1 = class_1_metrics["precision"]
+                recall_1 = class_1_metrics["recall"]
+                f1_1 = class_1_metrics["f1-score"]
+                support_1 = class_1_metrics["support"]
 
-                # Update progress bar with current loss
-                train_pbar.set_postfix({'loss': f'{loss.item():.4f}'})
+                macro_f1 = macro_avg["f1-score"]
 
-            train_pbar.close()
-            avg_train_loss = total_train_loss / len(train_dataloader)
-            train_loss_values.append(avg_train_loss)
+                # Calculate accuracy
+                accuracy = np.sum(preds == test_labels) / len(test_labels)
 
-            self.logger.info("  ✓ Average training loss: %s%.4f%s", Fore.CYAN, avg_train_loss, Style.RESET_ALL)
-            self.logger.info("  ⏱  Training time: %s", self.format_time(time.time() - t0))
+                # Update display with performance metrics
+                display.accuracy = accuracy
+                display.precision = [precision_0, precision_1]
+                display.recall = [recall_0, recall_1]
+                display.f1_scores = [f1_0, f1_1]
+                display.f1_macro = macro_f1
+                display.support = [support_0, support_1]
+                live.update(display.create_panel())
 
-            # =============== Validation after this epoch ===============
-            # Show language information if available
-            if track_languages and language_info:
-                unique_langs = list(set(language_info))
-                lang_str = ", ".join(sorted(unique_langs))
-                self.logger.info("%s", f"\n{Fore.BLUE}🔍 Validation Phase (Languages: {lang_str}){Style.RESET_ALL}")
-            else:
-                self.logger.info("%s", f"\n{Fore.BLUE}🔍 Validation Phase{Style.RESET_ALL}")
-
-            t0 = time.time()
-            model.eval()
-
-            total_val_loss = 0.0
-            logits_complete = []
-
-            # Create progress bar for validation batches
-            val_pbar = tqdm(test_dataloader,
-                          desc=f"  Validating",
-                          unit="batch",
-                          bar_format='{desc}: {percentage:3.0f}%|{bar:30}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
-                          colour='blue')
-
-            for test_batch in val_pbar:
-                b_inputs = test_batch[0].to(self.device)
-                b_masks = test_batch[1].to(self.device)
-                b_labels = test_batch[2].to(self.device)
-
-                with torch.no_grad():
-                    outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks, labels=b_labels)
-
-                loss = outputs.loss
-                logits = outputs.logits
-
-                total_val_loss += loss.item()
-                logits_complete.append(logits.detach().cpu().numpy())
-
-                # Update progress bar with current loss
-                val_pbar.set_postfix({'loss': f'{loss.item():.4f}'})
-
-            val_pbar.close()
-            logits_complete = np.concatenate(logits_complete, axis=0)
-            avg_val_loss = total_val_loss / len(test_dataloader)
-            val_loss_values.append(avg_val_loss)
-
-            self.logger.info("  ✓ Average validation loss: %s%.4f%s", Fore.CYAN, avg_val_loss, Style.RESET_ALL)
-            self.logger.info("  ⏱  Validation time: %s", self.format_time(time.time() - t0))
-
-            preds = np.argmax(logits_complete, axis=1).flatten()
-            report = classification_report(test_labels, preds, target_names=label_names, output_dict=True)
-
-            # Extract metrics for classes 0 and 1 (assuming binary classification or focusing on first two classes)
-            class_0_metrics = report.get("0", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
-            class_1_metrics = report.get("1", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
-            macro_avg = report.get("macro avg", {"f1-score": 0})
-
-            precision_0 = class_0_metrics["precision"]
-            recall_0 = class_0_metrics["recall"]
-            f1_0 = class_0_metrics["f1-score"]
-            support_0 = class_0_metrics["support"]
-
-            precision_1 = class_1_metrics["precision"]
-            recall_1 = class_1_metrics["recall"]
-            f1_1 = class_1_metrics["f1-score"]
-            support_1 = class_1_metrics["support"]
-
-            macro_f1 = macro_avg["f1-score"]
-
-            # Print metrics in a beautiful table format
-            self.logger.info("%s", f"\n{Fore.MAGENTA}📊 Performance Metrics{Style.RESET_ALL}")
-
-            # Create metrics table
-            metrics_table = [
-                ["Metric", "Class 0", "Class 1", "Overall"],
-                ["─" * 15, "─" * 15, "─" * 15, "─" * 15],
-                ["Precision", f"{precision_0:.3f}", f"{precision_1:.3f}", ""],
-                ["Recall", f"{recall_0:.3f}", f"{recall_1:.3f}", ""],
-                ["F1-Score", f"{f1_0:.3f}", f"{f1_1:.3f}", f"{macro_f1:.3f}"],
-                ["Support", f"{support_0}", f"{support_1}", f"{support_0 + support_1}"]
-            ]
-
-            for row in metrics_table:
-                if row[0] == "F1-Score" and f1_1 >= 0.7:
-                    # Highlight good F1 score for class 1
-                    self.logger.info("  %s", f"{row[0]:<15} {row[1]:<15} {Fore.GREEN}{row[2]:<15}{Style.RESET_ALL} {row[3]:<15}")
-                elif row[0] == "F1-Score" and f1_1 < 0.5:
-                    # Highlight poor F1 score for class 1
-                    self.logger.info("  %s", f"{row[0]:<15} {row[1]:<15} {Fore.RED}{row[2]:<15}{Style.RESET_ALL} {row[3]:<15}")
-                else:
-                    self.logger.info("  %s", f"{row[0]:<15} {row[1]:<15} {row[2]:<15} {row[3]:<15}")
-
-            # Calculate and display per-language metrics if requested
-            if track_languages and language_info is not None:
-                self.logger.info("%s", f"\n{Fore.MAGENTA}🌍 Per-Language Performance (Epoch {i_epoch + 1}){Style.RESET_ALL}")
-                unique_validation_langs = sorted(set(language_info))
-                self.logger.info(
-                    "   Validating %d language(s): %s",
-                    len(unique_validation_langs),
-                    ", ".join(unique_validation_langs)
-                )
-
-                lang_headers = ["Language", "Samples", "Accuracy", "F1 Class 0", "F1 Class 1", "Macro F1", "Balance"]
-                self.logger.info(
-                    "  %s",
-                    f"{lang_headers[0]:<12} {lang_headers[1]:<10} {lang_headers[2]:<12} {lang_headers[3]:<12} {lang_headers[4]:<12} {lang_headers[5]:<12} {lang_headers[6]:<10}",
-                )
-                self.logger.info("  %s", f"{'─'*12} {'─'*10} {'─'*12} {'─'*12} {'─'*12} {'─'*12} {'─'*10}")
-
-                unique_languages = list(set(language_info))
-                language_metrics = {}
-
-                for lang in sorted(unique_languages):
-                    # Get indices for this language
-                    lang_indices = [i for i, l in enumerate(language_info) if l == lang]
-                    if not lang_indices:
-                        continue
-
-                    # Get predictions and labels for this language
-                    lang_preds = preds[lang_indices]
-                    lang_labels = np.array(test_labels)[lang_indices]
-
-                    # Calculate metrics
-                    lang_report = classification_report(lang_labels, lang_preds, output_dict=True, zero_division=0)
-
-                    lang_acc = lang_report.get('accuracy', 0)
-
-                    # Extract detailed metrics for class 0
-                    lang_precision_0 = lang_report.get('0', {}).get('precision', 0) if '0' in lang_report else 0
-                    lang_recall_0 = lang_report.get('0', {}).get('recall', 0) if '0' in lang_report else 0
-                    lang_f1_0 = lang_report.get('0', {}).get('f1-score', 0) if '0' in lang_report else 0
-                    lang_support_0 = int(lang_report.get('0', {}).get('support', 0)) if '0' in lang_report else 0
-
-                    # Extract detailed metrics for class 1
-                    lang_precision_1 = lang_report.get('1', {}).get('precision', 0) if '1' in lang_report else 0
-                    lang_recall_1 = lang_report.get('1', {}).get('recall', 0) if '1' in lang_report else 0
-                    lang_f1_1 = lang_report.get('1', {}).get('f1-score', 0) if '1' in lang_report else 0
-                    lang_support_1 = int(lang_report.get('1', {}).get('support', 0)) if '1' in lang_report else 0
-
-                    lang_macro_f1 = lang_report.get('macro avg', {}).get('f1-score', 0)
-                    lang_support = len(lang_indices)
-
-                    # Calculate class balance
-                    balance_ratio = lang_support_1 / (lang_support_0 + lang_support_1) if (lang_support_0 + lang_support_1) > 0 else 0
-                    balance_str = f"{balance_ratio:.2%}"
-
-                    # Color code based on performance
-                    acc_color = Fore.GREEN if lang_acc >= 0.8 else Fore.YELLOW if lang_acc >= 0.6 else Fore.RED
-                    f1_color = Fore.GREEN if lang_f1_1 >= 0.7 else Fore.YELLOW if lang_f1_1 >= 0.5 else Fore.RED
-                    balance_color = Fore.GREEN if 0.3 <= balance_ratio <= 0.7 else Fore.YELLOW if 0.2 <= balance_ratio <= 0.8 else Fore.RED
-
-                    self.logger.info(
-                        "  %s",
-                        f"{lang:<12} {lang_support:<10} {acc_color}{lang_acc:<12.3f}{Style.RESET_ALL} {lang_f1_0:<12.3f} {f1_color}{lang_f1_1:<12.3f}{Style.RESET_ALL} {lang_macro_f1:<12.3f} {balance_color}{balance_str:<10}{Style.RESET_ALL}",
-                    )
-
-                    language_metrics[lang] = {
-                        'accuracy': lang_acc,
-                        'precision_0': lang_precision_0,
-                        'recall_0': lang_recall_0,
-                        'f1_0': lang_f1_0,
-                        'support_0': lang_support_0,
-                        'precision_1': lang_precision_1,
-                        'recall_1': lang_recall_1,
-                        'f1_1': lang_f1_1,
-                        'support_1': lang_support_1,
-                        'macro_f1': lang_macro_f1
-                    }
-
-                self.logger.info("%s", "-" * 90)
-
-                averages: Optional[Dict[str, float]] = None
-                if language_metrics:
-                    avg_acc = sum(m['accuracy'] for m in language_metrics.values()) / len(language_metrics)
-                    avg_f1 = sum(m['macro_f1'] for m in language_metrics.values()) / len(language_metrics)
-                    averages = {'accuracy': avg_acc, 'macro_f1': avg_f1}
-                    self.logger.info(
-                        "  %s",
-                        f"{'AVERAGE':<12} {'':<10} {avg_acc:<12.3f} {'':<12} {'':<12} {avg_f1:<12.3f}"
-                    )
-                self.logger.info("%s", "=" * 90)
-
-                # Store language metrics for this epoch
-                if 'language_metrics' in locals():
-                    epoch_record = {
-                        'epoch': i_epoch + 1,
-                        'metrics': language_metrics
-                    }
-                    if averages is not None:
-                        epoch_record['averages'] = averages
-                    language_performance_history.append(epoch_record)
-
-            # Append to training_metrics.csv (normal training phase)
-            with open(training_metrics_csv, mode='a', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-
-                # Get timestamp for this entry
-                current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-                row = [
-                    model_identifier if model_identifier else "",
-                    self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
-                    current_timestamp,
-                    i_epoch + 1,
-                    avg_train_loss,
-                    avg_val_loss,
-                    precision_0,
-                    recall_0,
-                    f1_0,
-                    support_0,
-                    precision_1,
-                    recall_1,
-                    f1_1,
-                    support_1,
-                    macro_f1
-                ]
-
-                # Add language metrics if available
-                if track_languages and language_info is not None and 'language_metrics' in locals():
+                # Calculate and display per-language metrics if requested
+                if track_languages and language_info is not None:
                     unique_languages = list(set(language_info))
+                    language_metrics = {}
+
                     for lang in sorted(unique_languages):
-                        if lang in language_metrics:
-                            row.extend([
-                                language_metrics[lang]['accuracy'],
-                                language_metrics[lang]['precision_0'],
-                                language_metrics[lang]['recall_0'],
-                                language_metrics[lang]['f1_0'],
-                                language_metrics[lang]['support_0'],
-                                language_metrics[lang]['precision_1'],
-                                language_metrics[lang]['recall_1'],
-                                language_metrics[lang]['f1_1'],
-                                language_metrics[lang]['support_1'],
-                                language_metrics[lang]['macro_f1']
-                            ])
-                        else:
-                            row.extend([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])  # Default values if language not in this epoch
+                        # Get indices for this language
+                        lang_indices = [i for i, l in enumerate(language_info) if l == lang]
+                        if not lang_indices:
+                            continue
 
-                writer.writerow(row)
+                        # Get predictions and labels for this language
+                        lang_preds = preds[lang_indices]
+                        lang_labels = np.array(test_labels)[lang_indices]
 
-            # Compute "combined" metric if best_model_criteria is "combined"
-            if best_model_criteria == "combined":
-                combined_metric = f1_class_1_weight * f1_1 + (1.0 - f1_class_1_weight) * macro_f1
-            else:
-                # Fallback or alternative strategy
-                combined_metric = (f1_1 + macro_f1) / 2.0
+                        # Calculate metrics
+                        lang_report = classification_report(lang_labels, lang_preds, output_dict=True, zero_division=0)
 
-            # Enhanced epoch summary with language info
-            self.logger.info("%s", f"\n{Fore.CYAN}─── Epoch {i_epoch + 1}/{n_epochs} Summary ───{Style.RESET_ALL}")
-            epoch_time = time.time() - epoch_start_time
-            self.logger.info("  ⏱  Epoch Time: %s", self.format_time(epoch_time))
-            self.logger.info("  📊 Combined Metric: %.4f", combined_metric)
+                        lang_acc = lang_report.get('accuracy', 0)
 
-            # Add language-specific summary if available
-            if track_languages and language_info and 'language_metrics' in locals():
-                self.logger.info("  🌍 Languages trained: %d", len(language_metrics))
-                best_lang = max(language_metrics.items(), key=lambda x: x[1]['macro_f1'])
-                worst_lang = min(language_metrics.items(), key=lambda x: x[1]['macro_f1'])
-                self.logger.info("  📈 Best performing: %s (F1: %.3f)", best_lang[0], best_lang[1]['macro_f1'])
-                self.logger.info("  📉 Needs attention: %s (F1: %.3f)", worst_lang[0], worst_lang[1]['macro_f1'])
+                        # Extract detailed metrics for class 0
+                        lang_precision_0 = lang_report.get('0', {}).get('precision', 0) if '0' in lang_report else 0
+                        lang_recall_0 = lang_report.get('0', {}).get('recall', 0) if '0' in lang_report else 0
+                        lang_f1_0 = lang_report.get('0', {}).get('f1-score', 0) if '0' in lang_report else 0
+                        lang_support_0 = int(lang_report.get('0', {}).get('support', 0)) if '0' in lang_report else 0
 
-            if combined_metric > best_metric_val:
-                # We found a new best model
-                self.logger.info("%s", f"  {Fore.GREEN}✨ NEW BEST MODEL! (Δ +{combined_metric - best_metric_val:.4f}){Style.RESET_ALL}")
-                # Remove old best model folder if it exists
-                if best_model_path is not None:
-                    try:
-                        shutil.rmtree(best_model_path)
-                    except OSError:
-                        pass
+                        # Extract detailed metrics for class 1
+                        lang_precision_1 = lang_report.get('1', {}).get('precision', 0) if '1' in lang_report else 0
+                        lang_recall_1 = lang_report.get('1', {}).get('recall', 0) if '1' in lang_report else 0
+                        lang_f1_1 = lang_report.get('1', {}).get('f1-score', 0) if '1' in lang_report else 0
+                        lang_support_1 = int(lang_report.get('1', {}).get('support', 0)) if '1' in lang_report else 0
 
-                best_metric_val = combined_metric
+                        lang_macro_f1 = lang_report.get('macro avg', {}).get('f1-score', 0)
+                        lang_support = len(lang_indices)
 
-                if save_model_as is not None:
-                    # Save the new best model in a temporary folder
-                    best_model_path = f"./models/{save_model_as}_epoch_{i_epoch+1}"
-                    os.makedirs(best_model_path, exist_ok=True)
+                        language_metrics[lang] = {
+                            'samples': lang_support,
+                            'accuracy': lang_acc,
+                            'precision_0': lang_precision_0,
+                            'recall_0': lang_recall_0,
+                            'f1_0': lang_f1_0,
+                            'support_0': lang_support_0,
+                            'precision_1': lang_precision_1,
+                            'recall_1': lang_recall_1,
+                            'f1_1': lang_f1_1,
+                            'support_1': lang_support_1,
+                            'macro_f1': lang_macro_f1
+                        }
 
-                    model_to_save = model.module if hasattr(model, 'module') else model
-                    output_model_file = os.path.join(best_model_path, WEIGHTS_NAME)
-                    output_config_file = os.path.join(best_model_path, CONFIG_NAME)
+                    # Update display with language metrics
+                    display.language_metrics = language_metrics
+                    live.update(display.create_panel())
 
-                    torch.save(model_to_save.state_dict(), output_model_file)
-                    model_to_save.config.to_json_file(output_config_file)
-                    self.tokenizer.save_vocabulary(best_model_path)
-                else:
-                    best_model_path = None
+                    # Store language metrics for this epoch
+                    averages: Optional[Dict[str, float]] = None
+                    if language_metrics:
+                        avg_acc = sum(m['accuracy'] for m in language_metrics.values()) / len(language_metrics)
+                        avg_f1 = sum(m['macro_f1'] for m in language_metrics.values()) / len(language_metrics)
+                        averages = {'accuracy': avg_acc, 'macro_f1': avg_f1}
 
-                # Check if this is truly the best model for this model type
-                # Read existing best_models.csv to check if we already have a better model
-                should_update_best = True
-                model_type = self.model_name if hasattr(self, 'model_name') else self.__class__.__name__
+                        epoch_record = {
+                            'epoch': i_epoch + 1,
+                            'metrics': language_metrics
+                        }
+                        if averages is not None:
+                            epoch_record['averages'] = averages
+                        language_performance_history.append(epoch_record)
 
-                if os.path.exists(best_models_csv) and os.path.getsize(best_models_csv) > 0:
-                    # Read existing best models to check if this model type already has a better score
-                    with open(best_models_csv, 'r', encoding='utf-8') as f_read:
-                        reader = csv.DictReader(f_read)
-                        for existing_row in reader:
-                            # Check if same model type and identifier
-                            if (existing_row.get('model_identifier') == (model_identifier if model_identifier else "") and
-                                existing_row.get('model_type') == model_type):
-                                # Compare scores
-                                existing_macro_f1 = float(existing_row.get('macro_f1', 0))
-                                if existing_macro_f1 >= macro_f1:
-                                    should_update_best = False
-                                    break
+                # Append to training_metrics.csv (normal training phase)
+                with open(training_metrics_csv, mode='a', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
 
-                if should_update_best:
-                    # First, remove any existing entry for this model type/identifier combination
-                    if os.path.exists(best_models_csv) and os.path.getsize(best_models_csv) > 0:
-                        # Read all rows
-                        rows_to_keep = []
-                        with open(best_models_csv, 'r', encoding='utf-8') as f_read:
-                            reader = csv.DictReader(f_read)
-                            headers_dict = reader.fieldnames
-                            for row in reader:
-                                # Keep rows that are NOT the same model type/identifier
-                                if not (row.get('model_identifier') == (model_identifier if model_identifier else "") and
-                                       row.get('model_type') == model_type):
-                                    rows_to_keep.append(row)
+                    # Get timestamp for this entry
+                    current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-                        # Rewrite the file without the old entry
-                        if headers_dict:
-                            with open(best_models_csv, 'w', newline='', encoding='utf-8') as f_write:
-                                writer = csv.DictWriter(f_write, fieldnames=headers_dict)
-                                writer.writeheader()
-                                writer.writerows(rows_to_keep)
+                    row = [
+                        model_identifier if model_identifier else "",
+                        self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
+                        label_key if label_key else "",         # Add label_key
+                        label_value if label_value else "",     # Add label_value
+                        language if language else "",           # Add language
+                        current_timestamp,
+                        i_epoch + 1,
+                        avg_train_loss,
+                        avg_val_loss,
+                        accuracy,                               # Add accuracy
+                        precision_0,
+                        recall_0,
+                        f1_0,
+                        support_0,
+                        precision_1,
+                        recall_1,
+                        f1_1,
+                        support_1,
+                        macro_f1
+                    ]
 
-                    # Now append the new best model
-                    with open(best_models_csv, mode='a', newline='', encoding='utf-8') as f:
-                        writer = csv.writer(f)
-
-                        # Get timestamp
-                        current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-                        row = [
-                            model_identifier if model_identifier else "",
-                            model_type,
-                            current_timestamp,
-                            i_epoch + 1,
-                            avg_train_loss,
-                            avg_val_loss,
-                            precision_0,
-                            recall_0,
-                            f1_0,
-                            support_0,
-                            precision_1,
-                            recall_1,
-                            f1_1,
-                            support_1,
-                            macro_f1
-                        ]
-
-                        # Add language metrics for standard languages (EN, FR)
-                        # Always add these columns to maintain CSV consistency
-                        standard_languages = ['EN', 'FR']
-                        for lang in standard_languages:
-                            if track_languages and language_info is not None and 'language_metrics' in locals() and lang in language_metrics:
+                    # Add language metrics if available
+                    if track_languages and language_info is not None and 'language_metrics' in locals():
+                        unique_languages = list(set(language_info))
+                        for lang in sorted(unique_languages):
+                            if lang in language_metrics:
                                 row.extend([
                                     language_metrics[lang]['accuracy'],
                                     language_metrics[lang]['precision_0'],
@@ -938,173 +1152,563 @@ class BertBase(BertABC):
                                     language_metrics[lang]['macro_f1']
                                 ])
                             else:
-                                # Fill with empty values to maintain CSV structure
-                                row.extend(['', '', '', '', '', '', '', '', '', ''])
+                                row.extend([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])  # Default values if language not in this epoch
 
-                        row.extend([
-                            best_model_path if best_model_path else "Not saved to disk",
-                            "normal"  # training phase
-                        ])
+                    writer.writerow(row)
 
-                        writer.writerow(row)
+                # Compute "combined" metric if best_model_criteria is "combined"
+                if best_model_criteria == "combined":
+                    combined_metric = f1_class_1_weight * f1_1 + (1.0 - f1_class_1_weight) * macro_f1
+                else:
+                    # Fallback or alternative strategy
+                    combined_metric = (f1_1 + macro_f1) / 2.0
 
-                best_scores = precision_recall_fscore_support(test_labels, preds)
+                # Compute epoch timing
+                epoch_time = time.time() - epoch_start_time
+                display.epoch_time = epoch_time
+                display.total_time = time.time() - training_start_time
 
-        # End of normal training
-        self.logger.info("%s", f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
-        self.logger.info("%s", f"{Fore.CYAN}{'TRAINING COMPLETE':^80}{Style.RESET_ALL}")
-        self.logger.info("%s", f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}\n")
+                # Check if this is a new best model
+                if combined_metric > best_metric_val:
+                    # We found a new best model
+                    display.improvement = combined_metric - best_metric_val
+                    display.best_f1 = macro_f1
+                    display.best_epoch = i_epoch + 1
+                    live.update(display.create_panel())
+                    # Remove old best model folder if it exists
+                    if best_model_path is not None:
+                        try:
+                            shutil.rmtree(best_model_path)
+                        except OSError:
+                            pass
 
-        self.logger.info("%s", f"{Fore.YELLOW}📈 Training Summary Dashboard{Style.RESET_ALL}\n")
+                    best_metric_val = combined_metric
 
-        total_time = time.time() - training_start_time
-        self.logger.info("  ⏱  Total Training Time: %s", self.format_time(total_time))
-        self.logger.info("  🔄 Total Epochs: %d", n_epochs)
-        self.logger.info("  📦 Batch Size: %d", train_dataloader.batch_size)
-        self.logger.info("  📚 Training Samples: %d", len(train_dataloader.dataset))
-        self.logger.info("  🧪 Validation Samples: %d", len(test_dataloader.dataset))
+                    # Always save best_scores for reinforced learning trigger check
+                    best_scores = precision_recall_fscore_support(test_labels, preds)
 
-        if best_scores is not None:
-            self.logger.info("%s", f"\n{Fore.YELLOW}🏆 Best Model Performance{Style.RESET_ALL}")
-            best_f1_0 = best_scores[2][0]
-            best_f1_1 = best_scores[2][1]
-            best_macro = (best_f1_0 + best_f1_1) / 2
+                    # Save language metrics from best epoch (if available)
+                    if track_languages and 'language_metrics' in locals():
+                        best_language_metrics = language_metrics.copy()
 
-            perf_table = [
-                ["", "F1-Score"],
-                ["─" * 15, "─" * 15],
-                ["Class 0", f"{best_f1_0:.3f}"],
-                ["Class 1", f"{best_f1_1:.3f}" if best_f1_1 >= 0.7 else f"{Fore.YELLOW}{best_f1_1:.3f}{Style.RESET_ALL}" if best_f1_1 >= 0.5 else f"{Fore.RED}{best_f1_1:.3f}{Style.RESET_ALL}"],
-                ["Macro Avg", f"{best_macro:.3f}"]
-            ]
+                    if save_model_as is not None:
+                        # Save the new best model in a temporary folder
+                        best_model_path = f"./models/{save_model_as}_epoch_{i_epoch+1}"
+                        os.makedirs(best_model_path, exist_ok=True)
 
-            for row in perf_table:
-                self.logger.info("  %s", f"{row[0]:<15} {row[1]}")
+                        model_to_save = model.module if hasattr(model, 'module') else model
+                        output_model_file = os.path.join(best_model_path, WEIGHTS_NAME)
+                        output_config_file = os.path.join(best_model_path, CONFIG_NAME)
 
-        # Loss Evolution
-        if train_loss_values and val_loss_values:
-            self.logger.info("%s", f"\n{Fore.YELLOW}📉 Loss Evolution{Style.RESET_ALL}")
-            self.logger.info(
-                "  Training Loss:   %.4f → %.4f (Δ %+0.4f)",
-                train_loss_values[0],
-                train_loss_values[-1],
-                train_loss_values[-1] - train_loss_values[0],
-            )
-            self.logger.info(
-                "  Validation Loss: %.4f → %.4f (Δ %+0.4f)",
-                val_loss_values[0],
-                val_loss_values[-1],
-                val_loss_values[-1] - val_loss_values[0],
-            )
+                        torch.save(model_to_save.state_dict(), output_model_file)
+                        model_to_save.config.to_json_file(output_config_file)
+                        self.tokenizer.save_vocabulary(best_model_path)
+                    else:
+                        best_model_path = None
 
-        # Save language performance history if available
-        if track_languages and language_performance_history:
-            language_metrics_json = os.path.join(metrics_output_dir, "language_performance.json")
-            with open(language_metrics_json, 'w', encoding='utf-8') as f:
-                json.dump(language_performance_history, f, indent=2, ensure_ascii=False)
-            self.logger.info("  💾 Language performance saved to: %s", language_metrics_json)
+                    # Check if this is truly the best model for this model type
+                    # Read existing best_models.csv to check if we already have a better model
+                    should_update_best = True
+                    model_type = self.model_name if hasattr(self, 'model_name') else self.__class__.__name__
 
-        # If we have a best model, rename it to the final user-specified name (for normal training)
-        final_path = None
-        if save_model_as is not None and best_model_path is not None:
-            final_path = f"./models/{save_model_as}"
-            # Remove existing final path if any
-            if os.path.exists(final_path):
-                shutil.rmtree(final_path)
-            shutil.move(best_model_path, final_path)
-            best_model_path = final_path
-            self.logger.info("Best model from normal training is available at: %s", best_model_path)
-        elif save_model_as is not None and best_model_path is None:
-            self.logger.warning("No best model was found during training (combined metric never improved)")
-            # Save current model as fallback
-            final_path = f"./models/{save_model_as}"
-            os.makedirs(final_path, exist_ok=True)
-            model_to_save = model.module if hasattr(model, 'module') else model
-            output_model_file = os.path.join(final_path, WEIGHTS_NAME)
-            output_config_file = os.path.join(final_path, CONFIG_NAME)
-            torch.save(model_to_save.state_dict(), output_model_file)
-            model_to_save.config.to_json_file(output_config_file)
-            self.tokenizer.save_vocabulary(final_path)
-            best_model_path = final_path
-            self.logger.info("Current model saved as fallback at: %s", best_model_path)
+                    if os.path.exists(best_models_csv) and os.path.getsize(best_models_csv) > 0:
+                        # Read existing best models to check if this model type already has a better score
+                        with open(best_models_csv, 'r', encoding='utf-8') as f_read:
+                            reader = csv.DictReader(f_read)
+                            for existing_row in reader:
+                                # Check if same model type and identifier
+                                if (existing_row.get('model_identifier') == (model_identifier if model_identifier else "") and
+                                    existing_row.get('model_type') == model_type):
+                                    # Compare scores
+                                    existing_macro_f1 = float(existing_row.get('macro_f1', 0))
+                                    if existing_macro_f1 >= macro_f1:
+                                        should_update_best = False
+                                        break
 
-        # ==================== Reinforced Training Check ====================
-        print("\n" + "="*80)
-        print("REINFORCED TRAINING CHECK")
-        print("="*80)
+                    if should_update_best:
+                        # First, remove any existing entry for this model type/identifier combination
+                        if os.path.exists(best_models_csv) and os.path.getsize(best_models_csv) > 0:
+                            # Read all rows
+                            rows_to_keep = []
+                            with open(best_models_csv, 'r', encoding='utf-8') as f_read:
+                                reader = csv.DictReader(f_read)
+                                headers_dict = reader.fieldnames
+                                for row in reader:
+                                    # Keep rows that are NOT the same model type/identifier
+                                    if not (row.get('model_identifier') == (model_identifier if model_identifier else "") and
+                                           row.get('model_type') == model_type):
+                                        rows_to_keep.append(row)
 
-        self.logger.info("="*80)
-        self.logger.info("REINFORCED TRAINING CHECK")
-        self.logger.info("="*80)
+                            # Rewrite the file without the old entry
+                            if headers_dict:
+                                with open(best_models_csv, 'w', newline='', encoding='utf-8') as f_write:
+                                    writer = csv.DictWriter(f_write, fieldnames=headers_dict)
+                                    writer.writeheader()
+                                    writer.writerows(rows_to_keep)
 
-        reinforced_triggered = False
-        if best_scores is not None:
-            best_f1_1 = best_scores[2][1]  # best_scores = (precision, recall, f1, support)
+                        # Now append the new best model
+                        with open(best_models_csv, mode='a', newline='', encoding='utf-8') as f:
+                            writer = csv.writer(f)
 
-            # Debug avec PRINT pour être sûr de voir
-            print(f"🔍 Reinforced check:")
-            print(f"   - Model: {self.__class__.__name__}")
-            print(f"   - F1_1: {best_f1_1:.3f}")
-            print(f"   - Threshold: {reinforced_f1_threshold:.3f}")
-            print(f"   - reinforced_learning: {reinforced_learning}")
-            print(f"   - n_epochs_reinforced: {n_epochs_reinforced}")
-            print(f"   - Will trigger? {best_f1_1 < reinforced_f1_threshold and reinforced_learning and n_epochs_reinforced > 0}")
+                            # Get timestamp
+                            current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            # Debug logging aussi
-            self.logger.info(f"🔍 Reinforced check: F1_1={best_f1_1:.3f} vs threshold={reinforced_f1_threshold:.3f}")
-            self.logger.info(f"   - reinforced_learning enabled: {reinforced_learning}")
-            self.logger.info(f"   - n_epochs_reinforced: {n_epochs_reinforced}")
+                            row = [
+                                model_identifier if model_identifier else "",
+                                model_type,
+                                label_key if label_key else "",         # Add label_key
+                                label_value if label_value else "",     # Add label_value
+                                language if language else "",           # Add language
+                                current_timestamp,
+                                i_epoch + 1,
+                                avg_train_loss,
+                                avg_val_loss,
+                                accuracy,                               # Add accuracy
+                                precision_0,
+                                recall_0,
+                                f1_0,
+                                support_0,
+                                precision_1,
+                                recall_1,
+                                f1_1,
+                                support_1,
+                                macro_f1
+                            ]
 
-            if not reinforced_learning:
-                print("⚠️ Reinforced learning DÉSACTIVÉ")
-                self.logger.warning("⚠️ Reinforced learning DÉSACTIVÉ - ne se déclenchera pas même si F1_1 < seuil")
-            elif n_epochs_reinforced == 0:
-                print("⚠️ n_epochs_reinforced = 0")
-                self.logger.warning("⚠️ n_epochs_reinforced = 0 - pas d'époques de reinforced configurées!")
-            elif best_f1_1 < reinforced_f1_threshold and reinforced_learning and n_epochs_reinforced > 0:
-                reinforced_triggered = True
-                self.logger.warning(
-                    "The best model's F1 score for class 1 (%.3f) is below %.2f. Triggering reinforced training...",
-                    best_f1_1,
-                    reinforced_f1_threshold,
+                            # Add language metrics for standard languages (EN, FR)
+                            # Always add these columns to maintain CSV consistency
+                            standard_languages = ['EN', 'FR']
+                            for lang in standard_languages:
+                                if track_languages and language_info is not None and 'language_metrics' in locals() and lang in language_metrics:
+                                    row.extend([
+                                        language_metrics[lang]['accuracy'],
+                                        language_metrics[lang]['precision_0'],
+                                        language_metrics[lang]['recall_0'],
+                                        language_metrics[lang]['f1_0'],
+                                        language_metrics[lang]['support_0'],
+                                        language_metrics[lang]['precision_1'],
+                                        language_metrics[lang]['recall_1'],
+                                        language_metrics[lang]['f1_1'],
+                                        language_metrics[lang]['support_1'],
+                                        language_metrics[lang]['macro_f1']
+                                    ])
+                                else:
+                                    # Fill with empty values to maintain CSV structure
+                                    row.extend(['', '', '', '', '', '', '', '', '', ''])
+
+                            row.extend([
+                                best_model_path if best_model_path else "Not saved to disk",
+                                "normal"  # training phase
+                            ])
+
+                            writer.writerow(row)
+
+                else:
+                    # No new best model this epoch, but still update display to show current epoch timing
+                    live.update(display.create_panel())
+
+            # End of normal training (after all epochs) - display final summary
+            display.current_phase = "Training Complete"
+            display.total_time = time.time() - training_start_time
+            live.update(display.create_panel())
+
+            # Save language performance history if available
+            if track_languages and language_performance_history:
+                language_metrics_json = os.path.join(metrics_output_dir, "language_performance.json")
+                with open(language_metrics_json, 'w', encoding='utf-8') as f:
+                    json.dump(language_performance_history, f, indent=2, ensure_ascii=False)
+
+            # If we have a best model, rename it to the final user-specified name (for normal training)
+            final_path = None
+            if save_model_as is not None and best_model_path is not None:
+                final_path = f"./models/{save_model_as}"
+                # Remove existing final path if any
+                if os.path.exists(final_path):
+                    shutil.rmtree(final_path)
+                shutil.move(best_model_path, final_path)
+                best_model_path = final_path
+            elif save_model_as is not None and best_model_path is None:
+                # Save current model as fallback
+                final_path = f"./models/{save_model_as}"
+                os.makedirs(final_path, exist_ok=True)
+                model_to_save = model.module if hasattr(model, 'module') else model
+                output_model_file = os.path.join(final_path, WEIGHTS_NAME)
+                output_config_file = os.path.join(final_path, CONFIG_NAME)
+                torch.save(model_to_save.state_dict(), output_model_file)
+                model_to_save.config.to_json_file(output_config_file)
+                self.tokenizer.save_vocabulary(final_path)
+                best_model_path = final_path
+
+            # ==================== Reinforced Training Check ====================
+            reinforced_triggered = False
+            if best_scores is not None and reinforced_learning and n_epochs_reinforced > 0:
+                # Extract metrics from best_scores
+                best_precision = best_scores[0]  # (precision_0, precision_1, ...)
+                best_recall = best_scores[1]     # (recall_0, recall_1, ...)
+                best_f1_scores = best_scores[2]  # (f1_0, f1_1, ...)
+                best_support = best_scores[3]    # (support_0, support_1, ...)
+
+                # Handle single-class or multi-class cases
+                if len(best_f1_scores) >= 2:
+                    best_f1_0 = best_f1_scores[0]
+                    best_f1_1 = best_f1_scores[1]
+                    best_support_0 = int(best_support[0])
+                    best_support_1 = int(best_support[1])
+                else:
+                    # Single class - use the only F1 score
+                    best_f1_0 = 0.0
+                    best_f1_1 = best_f1_scores[0]
+                    best_support_0 = 0
+                    best_support_1 = int(best_support[0])
+
+                # Use intelligent trigger logic
+                trigger_score, should_trigger, trigger_reason = self.calculate_reinforced_trigger_score(
+                    f1_class_0=best_f1_0,
+                    f1_class_1=best_f1_1,
+                    support_class_0=best_support_0,
+                    support_class_1=best_support_1,
+                    language_metrics=best_language_metrics
                 )
 
-                # Perform reinforced training
-                # This returns updated best_metric_val, best_model_path, best_scores
-                (best_metric_val,
-                 best_model_path,
-                 best_scores) = self.reinforced_training(
-                    train_dataloader=train_dataloader,
-                    test_dataloader=test_dataloader,
-                    base_model_path=best_model_path,
-                    random_state=random_state,
-                    metrics_output_dir=metrics_output_dir,
-                    save_model_as=save_model_as,
-                    best_model_criteria=best_model_criteria,
-                    f1_class_1_weight=f1_class_1_weight,
-                    previous_best_metric=best_metric_val,
-                    n_epochs_reinforced=n_epochs_reinforced,
-                    rescue_low_class1_f1=rescue_low_class1_f1,
-                    f1_1_rescue_threshold=f1_1_rescue_threshold,
-                    prev_best_f1_1=best_f1_1,  # Pass the F1_1 for adaptive parameters
-                    original_lr=lr,  # Pass original LR
-                    track_languages=track_languages,
-                    language_info=language_info,
-                    model_identifier=model_identifier  # Pass model_identifier for CSV logging
-                )
-            else:
-                self.logger.info("No reinforced training triggered.")
-        else:
-            self.logger.warning("No valid best scores found after normal training (unexpected). Reinforced training skipped.")
+                # Trigger reinforced learning if needed (don't log - would break Rich Live display)
+                if should_trigger:
+                    reinforced_triggered = True
 
-        if track_languages and language_performance_history:
-            history_path = os.path.join(metrics_output_dir, "language_metrics_history.json")
-            try:
-                with open(history_path, "w", encoding="utf-8") as history_file:
-                    json.dump(language_performance_history, history_file, indent=2, ensure_ascii=False)
-                self.logger.info("Saved per-language validation history to %s", history_path)
-            except OSError as exc:  # pragma: no cover - filesystem-specific failures
-                self.logger.warning("Could not persist language history to %s: %s", history_path, exc)
+                    # ========== INLINE REINFORCED TRAINING (ROBUST SOLUTION) ==========
+                    # Instead of calling separate function, run reinforced training INLINE
+                    # within the SAME Live context to ensure display updates properly
+
+                    # Switch display to reinforced mode
+                    display.is_reinforced = True
+                    display.n_epochs = n_epochs_reinforced
+                    display.current_epoch = 0
+                    display.current_phase = "Reinforced Training"
+
+                    # Prepare reinforced training setup
+                    os.makedirs(metrics_output_dir, exist_ok=True)
+                    reinforced_metrics_csv = os.path.join(metrics_output_dir, "reinforced_training_metrics.csv")
+
+                    # Create headers for reinforced metrics CSV
+                    reinforced_headers = [
+                        "model_identifier", "model_type", "label_key", "label_value", "language",
+                        "epoch", "train_loss", "val_loss", "accuracy",
+                        "precision_0", "recall_0", "f1_0", "support_0",
+                        "precision_1", "recall_1", "f1_1", "support_1", "macro_f1"
+                    ]
+
+                    if track_languages and language_info is not None:
+                        unique_langs = sorted(list(set(language_info)))
+                        for lang in unique_langs:
+                            reinforced_headers.extend([
+                                f"{lang}_accuracy", f"{lang}_precision_0", f"{lang}_recall_0", f"{lang}_f1_0", f"{lang}_support_0",
+                                f"{lang}_precision_1", f"{lang}_recall_1", f"{lang}_f1_1", f"{lang}_support_1", f"{lang}_macro_f1"
+                            ])
+
+                    with open(reinforced_metrics_csv, mode='w', newline='', encoding='utf-8') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(reinforced_headers)
+
+                    # Extract dataset from train_dataloader and apply WeightedRandomSampler
+                    dataset = train_dataloader.dataset
+                    labels = dataset.tensors[2].numpy()
+
+                    class_sample_count = np.bincount(labels)
+                    weight_per_class = 1.0 / class_sample_count
+                    sample_weights = [weight_per_class[t] for t in labels]
+
+                    sampler = WeightedRandomSampler(
+                        weights=sample_weights,
+                        num_samples=len(sample_weights),
+                        replacement=True
+                    )
+
+                    # Build new train dataloader with bigger batch size
+                    new_batch_size = 64
+                    new_train_dataloader = DataLoader(dataset, sampler=sampler, batch_size=new_batch_size)
+
+                    # Get intelligent reinforced parameters
+                    from .reinforced_params import get_reinforced_params, should_use_advanced_techniques
+
+                    model_name_for_params = self.__class__.__name__
+                    reinforced_params = get_reinforced_params(model_name_for_params, best_f1_1, lr)
+                    advanced_techniques = should_use_advanced_techniques(best_f1_1)
+
+                    new_lr = reinforced_params['learning_rate']
+                    pos_weight_val = reinforced_params['class_1_weight']
+                    weight_tensor = torch.tensor([1.0, pos_weight_val], dtype=torch.float)
+
+                    if 'n_epochs' in reinforced_params:
+                        n_epochs_reinforced = reinforced_params['n_epochs']
+                        display.n_epochs = n_epochs_reinforced
+
+                    # Load best model as starting point (suppress logs to avoid interfering with Rich display)
+                    if best_model_path is not None:
+                        model_state = torch.load(os.path.join(best_model_path, WEIGHTS_NAME), map_location=self.device)
+                        model.load_state_dict(model_state)
+
+                    # Create new optimizer and scheduler for reinforced training
+                    optimizer = AdamW(model.parameters(), lr=new_lr, eps=1e-8)
+                    total_steps = len(new_train_dataloader) * n_epochs_reinforced
+                    scheduler = get_linear_schedule_with_warmup(
+                        optimizer,
+                        num_warmup_steps=0,
+                        num_training_steps=total_steps
+                    )
+
+                    # Track reinforced training time
+                    reinforced_start_time = time.time()
+
+                    # Reinforced training loop - INLINE within same Live context
+                    # NOTE: Suppress logger during reinforced training to avoid interfering with Rich Live display
+                    for epoch in range(n_epochs_reinforced):
+                        epoch_start_time = time.time()
+
+                        # Update display for new epoch
+                        display.current_epoch = epoch + 1
+                        display.current_phase = f"🔥 Reinforced Epoch {epoch + 1}/{n_epochs_reinforced}"
+                        display.train_total = len(new_train_dataloader)
+                        display.train_progress = 0
+                        live.update(display.create_panel())  # ✅ INLINE update - same context
+
+                        # Training phase
+                        t0 = time.time()
+                        model.train()
+                        running_loss = 0.0
+
+                        criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor.to(self.device))
+
+                        for step, train_batch in enumerate(new_train_dataloader):
+                            b_inputs = train_batch[0].to(self.device)
+                            b_masks = train_batch[1].to(self.device)
+                            b_labels = train_batch[2].to(self.device)
+
+                            model.zero_grad()
+                            outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks)
+                            logits = outputs[0]
+
+                            loss = criterion(logits, b_labels)
+                            running_loss += loss.item()
+
+                            loss.backward()
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+                            optimizer.step()
+                            scheduler.step()
+
+                            # Update display with progress
+                            display.train_progress = step + 1
+                            display.train_loss = loss.item()
+                            display.epoch_time = time.time() - epoch_start_time
+                            display.total_time = time.time() - reinforced_start_time
+                            live.update(display.create_panel())  # ✅ INLINE update
+
+                        avg_train_loss = running_loss / len(new_train_dataloader)
+                        display.train_loss = avg_train_loss
+                        display.train_time = time.time() - t0
+                        display.current_phase = "Validation (Reinforced)"
+                        display.val_total = len(test_dataloader)
+                        display.val_progress = 0
+                        live.update(display.create_panel())  # ✅ INLINE update
+
+                        # Validation phase
+                        model.eval()
+                        total_val_loss = 0.0
+                        logits_complete = []
+                        eval_labels = []
+
+                        for step, test_batch in enumerate(test_dataloader):
+                            b_inputs = test_batch[0].to(self.device)
+                            b_masks = test_batch[1].to(self.device)
+                            b_labels = test_batch[2].to(self.device)
+                            eval_labels.extend(b_labels.cpu().numpy())
+
+                            with torch.no_grad():
+                                outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks, labels=b_labels)
+
+                            val_loss = outputs.loss
+                            val_logits = outputs.logits
+
+                            total_val_loss += val_loss.item()
+                            logits_complete.append(val_logits.detach().cpu().numpy())
+
+                            # Update display with validation progress
+                            display.val_progress = step + 1
+                            display.val_loss = val_loss.item()
+                            display.epoch_time = time.time() - epoch_start_time
+                            display.total_time = time.time() - reinforced_start_time
+                            live.update(display.create_panel())  # ✅ INLINE update
+
+                        avg_val_loss = total_val_loss / len(test_dataloader)
+                        logits_complete = np.concatenate(logits_complete, axis=0)
+                        val_preds = np.argmax(logits_complete, axis=1).flatten()
+
+                        # Calculate metrics
+                        report = classification_report(eval_labels, val_preds, output_dict=True, zero_division=0)
+                        class_0_metrics = report.get("0", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
+                        class_1_metrics = report.get("1", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
+                        macro_avg = report.get("macro avg", {"f1-score": 0})
+
+                        precision_0 = class_0_metrics["precision"]
+                        recall_0 = class_0_metrics["recall"]
+                        f1_0 = class_0_metrics["f1-score"]
+                        support_0 = class_0_metrics["support"]
+
+                        precision_1 = class_1_metrics["precision"]
+                        recall_1 = class_1_metrics["recall"]
+                        f1_1 = class_1_metrics["f1-score"]
+                        support_1 = class_1_metrics["support"]
+
+                        macro_f1 = macro_avg["f1-score"]
+                        accuracy = np.sum(val_preds == np.array(eval_labels)) / len(eval_labels)
+
+                        # Update display with metrics
+                        display.val_loss = avg_val_loss
+                        display.val_time = time.time() - t0 - display.train_time
+                        display.accuracy = accuracy
+                        display.precision = [precision_0, precision_1]
+                        display.recall = [recall_0, recall_1]
+                        display.f1_scores = [f1_0, f1_1]
+                        display.f1_macro = macro_f1
+                        display.support = [int(support_0), int(support_1)]
+
+                        # Calculate language-specific metrics if tracking
+                        language_metrics = {}
+                        if track_languages and language_info is not None:
+                            unique_languages = list(set(language_info))
+                            for lang in sorted(unique_languages):
+                                lang_indices = [i for i, l in enumerate(language_info) if l == lang]
+                                if not lang_indices:
+                                    continue
+
+                                lang_preds = val_preds[lang_indices]
+                                lang_labels = np.array(eval_labels)[lang_indices]
+
+                                lang_report = classification_report(lang_labels, lang_preds, output_dict=True, zero_division=0)
+                                lang_acc = lang_report.get('accuracy', 0)
+
+                                lang_precision_0 = lang_report.get('0', {}).get('precision', 0) if '0' in lang_report else 0
+                                lang_recall_0 = lang_report.get('0', {}).get('recall', 0) if '0' in lang_report else 0
+                                lang_f1_0 = lang_report.get('0', {}).get('f1-score', 0) if '0' in lang_report else 0
+                                lang_support_0 = int(lang_report.get('0', {}).get('support', 0)) if '0' in lang_report else 0
+
+                                lang_precision_1 = lang_report.get('1', {}).get('precision', 0) if '1' in lang_report else 0
+                                lang_recall_1 = lang_report.get('1', {}).get('recall', 0) if '1' in lang_report else 0
+                                lang_f1_1 = lang_report.get('1', {}).get('f1-score', 0) if '1' in lang_report else 0
+                                lang_support_1 = int(lang_report.get('1', {}).get('support', 0)) if '1' in lang_report else 0
+
+                                lang_macro_f1 = lang_report.get('macro avg', {}).get('f1-score', 0)
+                                if lang_macro_f1 == 0 and (lang_f1_0 > 0 or lang_f1_1 > 0):
+                                    lang_macro_f1 = (lang_f1_0 + lang_f1_1) / 2.0
+
+                                language_metrics[lang] = {
+                                    'accuracy': lang_acc,
+                                    'precision_0': lang_precision_0,
+                                    'recall_0': lang_recall_0,
+                                    'f1_0': lang_f1_0,
+                                    'support_0': lang_support_0,
+                                    'precision_1': lang_precision_1,
+                                    'recall_1': lang_recall_1,
+                                    'f1_1': lang_f1_1,
+                                    'support_1': lang_support_1,
+                                    'macro_f1': lang_macro_f1
+                                }
+
+                            # Update display with language metrics
+                            display.language_metrics = language_metrics
+
+                        live.update(display.create_panel())  # ✅ INLINE update with all metrics
+
+                        # Write epoch metrics to CSV
+                        reinforced_row = [
+                            model_identifier if model_identifier else "Unknown",
+                            self.__class__.__name__,
+                            label_key if label_key else "",
+                            label_value if label_value else "",
+                            language if language else "MULTI",
+                            epoch + 1,
+                            avg_train_loss,
+                            avg_val_loss,
+                            accuracy,
+                            precision_0, recall_0, f1_0, int(support_0),
+                            precision_1, recall_1, f1_1, int(support_1),
+                            macro_f1
+                        ]
+
+                        if track_languages and language_info is not None:
+                            for lang in sorted(unique_langs):
+                                if lang in language_metrics:
+                                    lm = language_metrics[lang]
+                                    reinforced_row.extend([
+                                        lm['accuracy'],
+                                        lm['precision_0'], lm['recall_0'], lm['f1_0'], lm['support_0'],
+                                        lm['precision_1'], lm['recall_1'], lm['f1_1'], lm['support_1'],
+                                        lm['macro_f1']
+                                    ])
+                                else:
+                                    reinforced_row.extend([0] * 10)
+
+                        with open(reinforced_metrics_csv, mode='a', newline='', encoding='utf-8') as f:
+                            writer = csv.writer(f)
+                            writer.writerow(reinforced_row)
+
+                        # Check if this is a new best model
+                        combined_metric = (1 - f1_class_1_weight) * f1_0 + f1_class_1_weight * f1_1
+
+                        if best_model_criteria == "combined":
+                            current_metric = combined_metric
+                        elif best_model_criteria == "macro_f1":
+                            current_metric = macro_f1
+                        elif best_model_criteria == "accuracy":
+                            current_metric = accuracy
+                        else:
+                            current_metric = combined_metric
+
+                        if current_metric > best_metric_val:
+                            best_metric_val = current_metric
+
+                            # Save new best model
+                            if save_model_as is not None:
+                                temp_reinforced_path = f"./models/{save_model_as}_reinforced_temp"
+                                os.makedirs(temp_reinforced_path, exist_ok=True)
+
+                                model_to_save = model.module if hasattr(model, 'module') else model
+                                output_model_file = os.path.join(temp_reinforced_path, WEIGHTS_NAME)
+                                output_config_file = os.path.join(temp_reinforced_path, CONFIG_NAME)
+
+                                torch.save(model_to_save.state_dict(), output_model_file)
+                                model_to_save.config.to_json_file(output_config_file)
+                                self.tokenizer.save_vocabulary(temp_reinforced_path)
+
+                                best_model_path = temp_reinforced_path
+
+                                # Update best_scores
+                                best_scores = precision_recall_fscore_support(eval_labels, val_preds, average=None, zero_division=0)
+
+                                # Show in display instead of logger (to avoid breaking Rich Live)
+                                display.current_phase = f"🔥 NEW BEST! Metric: {current_metric:.4f}"
+                                live.update(display.create_panel())
+
+                    # Finalize reinforced model path
+                    if best_model_path and best_model_path.endswith("_reinforced_temp"):
+                        final_path = best_model_path.replace("_reinforced_temp", "")
+                        if os.path.exists(final_path):
+                            shutil.rmtree(final_path)
+                        os.rename(best_model_path, final_path)
+                        best_model_path = final_path
+                        # Don't log here - would interfere with Rich display
+
+                    # Reset display back to normal mode
+                    display.is_reinforced = False
+                    display.current_phase = "Training Complete"
+                    live.update(display.create_panel())  # ✅ INLINE update
+
+            if track_languages and language_performance_history:
+                history_path = os.path.join(metrics_output_dir, "language_metrics_history.json")
+                try:
+                    with open(history_path, "w", encoding="utf-8") as history_file:
+                        json.dump(language_performance_history, history_file, indent=2, ensure_ascii=False)
+                except OSError:
+                pass
 
         # Finally, if reinforced training was triggered and found a better model, it might have placed it
         # in a temporary folder. The method already handles rename at the end. So at this point we are done.
@@ -1160,7 +1764,12 @@ class BertBase(BertABC):
             original_lr: float = 5e-5,
             track_languages: bool = False,
             language_info: Optional[List[str]] = None,
-            model_identifier: Optional[str] = None
+            model_identifier: Optional[str] = None,
+            label_key: Optional[str] = None,  # Multi-label: key being trained
+            label_value: Optional[str] = None,  # Multi-label: specific value
+            language: Optional[str] = None,  # Language of the data
+            live: Any = None,  # Live context to reuse (if None, create new)
+            display: Any = None  # Display object to reuse (if None, create new)
     ) -> Tuple[float, str | None, Tuple[Any, Any, Any, Any] | None]:
         """
         A "reinforced training" procedure that is triggered if the final best model from normal
@@ -1225,20 +1834,42 @@ class BertBase(BertABC):
               - best_model_path is the path to the best model (reinforced if improved).
               - best_scores is the final (precision, recall, f1, support) from sklearn metrics.
         """
-        # Reinforced training header with color formatting
-        self.logger.info("\n%s", f"{Fore.MAGENTA}{'='*80}{Style.RESET_ALL}")
-        self.logger.info("%s", f"{Fore.MAGENTA}{'REINFORCED TRAINING START':^80}{Style.RESET_ALL}")
-        self.logger.info("%s", f"{Fore.MAGENTA}{'='*80}{Style.RESET_ALL}\n")
+        # Reuse display if provided, otherwise create new one
+        create_new_live = False
+        if display is None:
+            display = TrainingDisplay(
+                model_name=self.model_name if hasattr(self, 'model_name') else save_model_as or "BERT",
+                label_key=label_key,
+                label_value=label_value,
+                language=language,
+                n_epochs=n_epochs_reinforced,
+                is_reinforced=True
+            )
+            create_new_live = True
+        else:
+            # Switch existing display to reinforced mode
+            display.is_reinforced = True
+            display.n_epochs = n_epochs_reinforced
+            display.current_epoch = 0
+
+        # Track total training time for reinforced phase
+        training_start_time = time.time()
 
         # Prepare new CSV for reinforced training metrics
         os.makedirs(metrics_output_dir, exist_ok=True)
         reinforced_metrics_csv = os.path.join(metrics_output_dir, "reinforced_training_metrics.csv")
 
-        # Create headers for reinforced metrics CSV
+        # Create headers for reinforced metrics CSV (include model identifiers)
         reinforced_headers = [
+            "model_identifier",
+            "model_type",
+            "label_key",        # Multi-label: key (e.g., 'themes', 'sentiment')
+            "label_value",      # Multi-label: value (e.g., 'transportation', 'positive')
+            "language",         # Language of the data (e.g., 'EN', 'FR', 'MULTI')
             "epoch",
             "train_loss",
             "val_loss",
+            "accuracy",         # Overall accuracy
             "precision_0",
             "recall_0",
             "f1_0",
@@ -1315,18 +1946,7 @@ class BertBase(BertABC):
         # Adjust epochs if specified
         if 'n_epochs' in reinforced_params:
             n_epochs_reinforced = reinforced_params['n_epochs']
-            self.logger.info(f"Adjusted reinforced epochs: {n_epochs_reinforced} (was {n_epochs_reinforced})")
-
-        # Display parameters with formatting
-        self.logger.info("%s", f"{Fore.CYAN}🎯 Reinforced Training Parameters{Style.RESET_ALL}")
-        self.logger.info("  Model: %s", model_name_for_params)
-        self.logger.info("  Learning rate: %s", f"{Fore.GREEN}{new_lr:.2e}{Style.RESET_ALL}")
-        self.logger.info("  Class 1 weight: %s", f"{Fore.GREEN}{pos_weight_val:.1f}{Style.RESET_ALL}")
-        self.logger.info("  Epochs: %s", f"{Fore.GREEN}{n_epochs_reinforced}{Style.RESET_ALL}")
-        active_techniques = [k.replace('use_', '') for k, v in advanced_techniques.items() if v]
-        if active_techniques:
-            self.logger.info("  Advanced techniques: %s", f"{Fore.CYAN}{', '.join(active_techniques)}{Style.RESET_ALL}")
-        self.logger.info("")
+            display.n_epochs = n_epochs_reinforced
 
         # Set seeds again
         random.seed(random_state)
@@ -1334,19 +1954,23 @@ class BertBase(BertABC):
         torch.manual_seed(random_state)
         torch.cuda.manual_seed_all(random_state)
 
-        # Load from base_model_path if given, else from self.model_name
-        if base_model_path:
-            model = self.model_sequence_classifier.from_pretrained(base_model_path)
-            self.logger.info("📥 Loaded base model from: %s", base_model_path)
-        else:
-            model = self.model_sequence_classifier.from_pretrained(
-                self.model_name,
-                num_labels=2,
-                output_attentions=False,
-                output_hidden_states=False
-            )
-            self.logger.info("📥 Using fresh model from: %s", self.model_name)
+        # Load from base_model_path if given, else from self.model_name (suppress warnings)
+        self.logger.info(f"Loading model from: {base_model_path if base_model_path else self.model_name}")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Some weights of.*were not initialized")
+            warnings.filterwarnings("ignore", message=".*not initialized from the model checkpoint.*")
+            if base_model_path:
+                model = self.model_sequence_classifier.from_pretrained(base_model_path)
+            else:
+                model = self.model_sequence_classifier.from_pretrained(
+                    self.model_name,
+                    num_labels=2,
+                    output_attentions=False,
+                    output_hidden_states=False
+                )
+        self.logger.info("Model loaded successfully, moving to device...")
         model.to(self.device)
+        self.logger.info("Model ready for reinforced training")
 
         optimizer = AdamW(model.parameters(), lr=new_lr, eps=1e-8)
         scheduler = get_linear_schedule_with_warmup(
@@ -1382,198 +2006,269 @@ class BertBase(BertABC):
         # We'll rely on the fact that if previous_best_metric is > -1, we had a valid model
         # but let's not forcibly re-check that; we do it dynamically later.
 
-        # Reinforced training epochs
-        for epoch in range(n_epochs_reinforced):
-            epoch_start_time = time.time()
+        # Update display for reinforced training
+        display.current_phase = "Reinforced Training"
 
-            # Epoch header with color (matching normal training)
-            self.logger.info("%s", f"\n{Fore.MAGENTA}{'━'*80}{Style.RESET_ALL}")
-            self.logger.info("%s", f"{Fore.MAGENTA}  Reinforced Epoch {epoch + 1}/{n_epochs_reinforced}{Style.RESET_ALL}")
-            self.logger.info("%s", f"{Fore.MAGENTA}{'━'*80}{Style.RESET_ALL}\n")
+        # Debug log
+        self.logger.info("🔥 Starting reinforced learning phase...")
 
-            # Training phase
-            self.logger.info("%s", f"{Fore.GREEN}📚 Training Phase{Style.RESET_ALL}")
+        # ROBUST SOLUTION: Reuse the SAME Live context throughout
+        # The key is to just update the renderable, not create a new Live
+        if create_new_live:
+            # Only create NEW context if called standalone (not from run_training)
+            live_context = Live(display.create_panel(), refresh_per_second=4)
+            live = live_context.__enter__()
+            self.logger.info("Created new Live context for reinforced learning")
+        else:
+            # Reuse existing Live - just update the renderable
+            self.logger.info("Reusing existing Live context for reinforced learning")
 
-            t0 = time.time()
-            model.train()
-            running_loss = 0.0
+            # The Live is already active in the parent, just update it
+            live.update(display.create_panel())
+            live_context = None  # Don't manage the context here
 
-            # Weighted cross entropy (for 2 classes) with emphasis on class 1
-            criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor.to(self.device))
+        try:
+            # Reinforced training epochs
+            self.logger.info(f"Starting {n_epochs_reinforced} reinforced epochs...")
+            for epoch in range(n_epochs_reinforced):
+                epoch_start_time = time.time()
+                self.logger.info(f"🔥 Reinforced Epoch {epoch + 1}/{n_epochs_reinforced}")
 
-            # Create progress bar for training batches
-            train_pbar = tqdm(new_train_dataloader,
-                            desc=f"  Training",
-                            unit="batch",
-                            bar_format='{desc}: {percentage:3.0f}%|{bar:30}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
-                            colour='green')
+                # Update display for new epoch
+                display.current_epoch = epoch + 1
+                display.current_phase = "Training (Reinforced)"
+                display.train_total = len(new_train_dataloader)
+                display.train_progress = 0
+                live.update(display.create_panel())
+                live.refresh()  # Force immediate redraw
 
-            for step, train_batch in enumerate(train_pbar):
-                b_inputs = train_batch[0].to(self.device)
-                b_masks = train_batch[1].to(self.device)
-                b_labels = train_batch[2].to(self.device)
+                t0 = time.time()
+                model.train()
+                running_loss = 0.0
 
-                model.zero_grad()
-                outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks)
-                logits = outputs[0]
+                # Weighted cross entropy (for 2 classes) with emphasis on class 1
+                criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor.to(self.device))
 
-                loss = criterion(logits, b_labels)
-                running_loss += loss.item()
+                # Training loop - update display directly
+                for step, train_batch in enumerate(new_train_dataloader):
+                    b_inputs = train_batch[0].to(self.device)
+                    b_masks = train_batch[1].to(self.device)
+                    b_labels = train_batch[2].to(self.device)
 
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    model.zero_grad()
+                    outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks)
+                    logits = outputs[0]
 
-                optimizer.step()
-                scheduler.step()
+                    loss = criterion(logits, b_labels)
+                    running_loss += loss.item()
 
-            avg_train_loss = running_loss / len(new_train_dataloader)
-            elapsed_str = self.format_time(time.time() - t0)
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
-            # Training summary
-            self.logger.info("")
-            self.logger.info("  Training complete")
-            self.logger.info("    Average loss: %s", f"{Fore.YELLOW}{avg_train_loss:.4f}{Style.RESET_ALL}")
-            self.logger.info("    Time elapsed: %s", elapsed_str)
-            self.logger.info("")
+                    optimizer.step()
+                    scheduler.step()
 
-            # Validation phase
-            self.logger.info("%s", f"{Fore.BLUE}🔍 Validation Phase{Style.RESET_ALL}")
+                    # Update display with current progress
+                    display.train_progress = step + 1
+                    display.train_loss = loss.item()
+                    display.epoch_time = time.time() - epoch_start_time  # Update elapsed time
+                    display.total_time = time.time() - training_start_time
+                    live.update(display.create_panel())
 
-            model.eval()
-            total_val_loss = 0.0
-            logits_complete = []
-            eval_labels = []
+                avg_train_loss = running_loss / len(new_train_dataloader)
+                display.train_loss = avg_train_loss
+                display.train_time = time.time() - t0
+                display.current_phase = "Validation (Reinforced)"
+                display.val_total = len(test_dataloader)
+                display.val_progress = 0
+                live.update(display.create_panel())
 
-            # Create progress bar for validation
-            val_pbar = tqdm(test_dataloader,
-                          desc=f"  Validating",
-                          unit="batch",
-                          bar_format='{desc}: {percentage:3.0f}%|{bar:30}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
-                          colour='blue')
+                # Validation phase
+                model.eval()
+                total_val_loss = 0.0
+                logits_complete = []
+                eval_labels = []
 
-            for test_batch in val_pbar:
-                b_inputs = test_batch[0].to(self.device)
-                b_masks = test_batch[1].to(self.device)
-                b_labels = test_batch[2].to(self.device)
-                eval_labels.extend(b_labels.cpu().numpy())
+                # Validation loop - update display directly
+                for step, test_batch in enumerate(test_dataloader):
+                    b_inputs = test_batch[0].to(self.device)
+                    b_masks = test_batch[1].to(self.device)
+                    b_labels = test_batch[2].to(self.device)
+                    eval_labels.extend(b_labels.cpu().numpy())
 
-                with torch.no_grad():
-                    outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks, labels=b_labels)
+                    with torch.no_grad():
+                        outputs = model(b_inputs, token_type_ids=None, attention_mask=b_masks, labels=b_labels)
 
-                val_loss = outputs.loss
-                val_logits = outputs.logits
+                    val_loss = outputs.loss
+                    val_logits = outputs.logits
 
-                total_val_loss += val_loss.item()
-                logits_complete.append(val_logits.detach().cpu().numpy())
+                    total_val_loss += val_loss.item()
+                    logits_complete.append(val_logits.detach().cpu().numpy())
 
-            avg_val_loss = total_val_loss / len(test_dataloader)
-            logits_complete = np.concatenate(logits_complete, axis=0)
-            val_preds = np.argmax(logits_complete, axis=1).flatten()
+                    # Update display with validation progress
+                    display.val_progress = step + 1
+                    display.val_loss = val_loss.item()
+                    display.epoch_time = time.time() - epoch_start_time  # Update elapsed time
+                    display.total_time = time.time() - display.start_time
+                    live.update(display.create_panel())
 
-            # Classification report
-            report = classification_report(eval_labels, val_preds, output_dict=True)
-            class_0_metrics = report.get("0", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
-            class_1_metrics = report.get("1", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
-            macro_avg = report.get("macro avg", {"f1-score": 0})
+                avg_val_loss = total_val_loss / len(test_dataloader)
+                logits_complete = np.concatenate(logits_complete, axis=0)
+                val_preds = np.argmax(logits_complete, axis=1).flatten()
 
-            precision_0 = class_0_metrics["precision"]
-            recall_0 = class_0_metrics["recall"]
-            f1_0 = class_0_metrics["f1-score"]
-            support_0 = class_0_metrics["support"]
+                # Classification report
+                report = classification_report(eval_labels, val_preds, output_dict=True)
+                class_0_metrics = report.get("0", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
+                class_1_metrics = report.get("1", {"precision": 0, "recall": 0, "f1-score": 0, "support": 0})
+                macro_avg = report.get("macro avg", {"f1-score": 0})
 
-            precision_1 = class_1_metrics["precision"]
-            recall_1 = class_1_metrics["recall"]
-            f1_1 = class_1_metrics["f1-score"]
-            support_1 = class_1_metrics["support"]
+                precision_0 = class_0_metrics["precision"]
+                recall_0 = class_0_metrics["recall"]
+                f1_0 = class_0_metrics["f1-score"]
+                support_0 = class_0_metrics["support"]
 
-            macro_f1 = macro_avg["f1-score"]
+                precision_1 = class_1_metrics["precision"]
+                recall_1 = class_1_metrics["recall"]
+                f1_1 = class_1_metrics["f1-score"]
+                support_1 = class_1_metrics["support"]
 
-            # Display validation metrics with formatting
-            self.logger.info("")
-            self.logger.info("  Validation complete")
-            self.logger.info("    Validation loss: %s", f"{Fore.YELLOW}{avg_val_loss:.4f}{Style.RESET_ALL}")
-            self.logger.info("")
+                macro_f1 = macro_avg["f1-score"]
 
-            # Display classification metrics in a table format
-            self.logger.info("%s", f"{Fore.CYAN}📊 Performance Metrics{Style.RESET_ALL}")
-            self.logger.info("  %s", "Class    Precision  Recall     F1-score   Support")
-            self.logger.info("  %s", "─"*60)
+                # Update display with performance metrics
+                display.val_loss = avg_val_loss
+                display.val_time = time.time() - t0
+                accuracy = np.sum(val_preds == eval_labels) / len(eval_labels)
+                display.accuracy = accuracy
+                display.precision = [precision_0, precision_1]
+                display.recall = [recall_0, recall_1]
+                display.f1_scores = [f1_0, f1_1]
+                display.f1_macro = macro_f1
+                display.support = [int(support_0), int(support_1)]
+                live.update(display.create_panel())
 
-            # Color code F1 scores
-            f1_0_color = Fore.GREEN if f1_0 >= 0.7 else Fore.YELLOW if f1_0 >= 0.5 else Fore.RED
-            f1_1_color = Fore.GREEN if f1_1 >= 0.7 else Fore.YELLOW if f1_1 >= 0.5 else Fore.RED
+                # Calculate language-specific metrics if tracking
+                language_metrics = {}
+                if track_languages and language_info is not None:
+                    unique_languages = list(set(language_info))
+                    for lang in sorted(unique_languages):
+                        # Get indices for this language
+                        lang_indices = [i for i, l in enumerate(language_info) if l == lang]
+                        if not lang_indices:
+                            continue
 
-            self.logger.info("  %s", f"0        {precision_0:.4f}     {recall_0:.4f}     {f1_0_color}{f1_0:.4f}{Style.RESET_ALL}     {int(support_0)}")
-            self.logger.info("  %s", f"1        {precision_1:.4f}     {recall_1:.4f}     {f1_1_color}{f1_1:.4f}{Style.RESET_ALL}     {int(support_1)}")
-            self.logger.info("  %s", "─"*60)
-            macro_color = Fore.GREEN if macro_f1 >= 0.7 else Fore.YELLOW if macro_f1 >= 0.5 else Fore.RED
-            self.logger.info("  %s", f"Macro F1: {macro_color}{macro_f1:.4f}{Style.RESET_ALL}")
-            self.logger.info("")
+                        # Get predictions and labels for this language
+                        lang_preds = val_preds[lang_indices]
+                        lang_labels = np.array(eval_labels)[lang_indices]
 
-            # Calculate language-specific metrics if tracking
-            language_metrics = {}
-            if track_languages and language_info is not None:
-                unique_languages = list(set(language_info))
-                for lang in sorted(unique_languages):
-                    # Get indices for this language
-                    lang_indices = [i for i, l in enumerate(language_info) if l == lang]
-                    if not lang_indices:
-                        continue
+                        # Calculate metrics
+                        lang_report = classification_report(lang_labels, lang_preds, output_dict=True, zero_division=0)
 
-                    # Get predictions and labels for this language
-                    lang_preds = val_preds[lang_indices]
-                    lang_labels = np.array(eval_labels)[lang_indices]
+                        lang_acc = lang_report.get('accuracy', 0)
 
-                    # Calculate metrics
-                    lang_report = classification_report(lang_labels, lang_preds, output_dict=True, zero_division=0)
+                        # Extract detailed metrics for class 0
+                        lang_precision_0 = lang_report.get('0', {}).get('precision', 0) if '0' in lang_report else 0
+                        lang_recall_0 = lang_report.get('0', {}).get('recall', 0) if '0' in lang_report else 0
+                        lang_f1_0 = lang_report.get('0', {}).get('f1-score', 0) if '0' in lang_report else 0
+                        lang_support_0 = int(lang_report.get('0', {}).get('support', 0)) if '0' in lang_report else 0
 
-                    lang_acc = lang_report.get('accuracy', 0)
+                        # Extract detailed metrics for class 1
+                        lang_precision_1 = lang_report.get('1', {}).get('precision', 0) if '1' in lang_report else 0
+                        lang_recall_1 = lang_report.get('1', {}).get('recall', 0) if '1' in lang_report else 0
+                        lang_f1_1 = lang_report.get('1', {}).get('f1-score', 0) if '1' in lang_report else 0
+                        lang_support_1 = int(lang_report.get('1', {}).get('support', 0)) if '1' in lang_report else 0
 
-                    # Extract detailed metrics for class 0
-                    lang_precision_0 = lang_report.get('0', {}).get('precision', 0) if '0' in lang_report else 0
-                    lang_recall_0 = lang_report.get('0', {}).get('recall', 0) if '0' in lang_report else 0
-                    lang_f1_0 = lang_report.get('0', {}).get('f1-score', 0) if '0' in lang_report else 0
-                    lang_support_0 = int(lang_report.get('0', {}).get('support', 0)) if '0' in lang_report else 0
+                        # Get macro F1 from report, or calculate manually if not available
+                        lang_macro_f1 = lang_report.get('macro avg', {}).get('f1-score', 0)
+                        if lang_macro_f1 == 0 and (lang_f1_0 > 0 or lang_f1_1 > 0):
+                            # Manual calculation if classification_report didn't provide it
+                            lang_macro_f1 = (lang_f1_0 + lang_f1_1) / 2.0
 
-                    # Extract detailed metrics for class 1
-                    lang_precision_1 = lang_report.get('1', {}).get('precision', 0) if '1' in lang_report else 0
-                    lang_recall_1 = lang_report.get('1', {}).get('recall', 0) if '1' in lang_report else 0
-                    lang_f1_1 = lang_report.get('1', {}).get('f1-score', 0) if '1' in lang_report else 0
-                    lang_support_1 = int(lang_report.get('1', {}).get('support', 0)) if '1' in lang_report else 0
+                        language_metrics[lang] = {
+                            'samples': len(lang_indices),
+                            'accuracy': lang_acc,
+                            'precision_0': lang_precision_0,
+                            'recall_0': lang_recall_0,
+                            'f1_0': lang_f1_0,
+                            'support_0': lang_support_0,
+                            'precision_1': lang_precision_1,
+                            'recall_1': lang_recall_1,
+                            'f1_1': lang_f1_1,
+                            'support_1': lang_support_1,
+                            'macro_f1': lang_macro_f1
+                        }
 
-                    lang_macro_f1 = lang_report.get('macro avg', {}).get('f1-score', 0)
-
-                    language_metrics[lang] = {
-                        'accuracy': lang_acc,
-                        'precision_0': lang_precision_0,
-                        'recall_0': lang_recall_0,
-                        'f1_0': lang_f1_0,
-                        'support_0': lang_support_0,
-                        'precision_1': lang_precision_1,
-                        'recall_1': lang_recall_1,
-                        'f1_1': lang_f1_1,
-                        'support_1': lang_support_1,
-                        'macro_f1': lang_macro_f1
-                    }
-
-                # Display language metrics with formatting
-                self.logger.info("%s", f"{Fore.CYAN}🌍 Language-Specific Metrics{Style.RESET_ALL}")
-                self.logger.info("  %s", f"{'Language':<12} {'Accuracy':<12} {'F1 Class 0':<12} {'F1 Class 1':<12} {'Macro F1':<12}")
-                self.logger.info("  %s", f"{'─'*12} {'─'*12} {'─'*12} {'─'*12} {'─'*12}")
-                for lang in sorted(language_metrics.keys()):
-                    metrics = language_metrics[lang]
-                    # Color code F1 class 1
-                    lang_f1_1_color = Fore.GREEN if metrics['f1_1'] >= 0.7 else Fore.YELLOW if metrics['f1_1'] >= 0.5 else Fore.RED
-                    self.logger.info("  %s", f"{lang:<12} {metrics['accuracy']:<12.3f} {metrics['f1_0']:<12.3f} {lang_f1_1_color}{metrics['f1_1']:<12.3f}{Style.RESET_ALL} {metrics['macro_f1']:<12.3f}")
-                self.logger.info("")
+                    # Update display with language metrics
+                    display.language_metrics = language_metrics
+                    live.update(display.create_panel())
 
             # Save epoch metrics to reinforced_training_metrics.csv
+            # Get model type for logging
+            model_type = self.model_name if hasattr(self, 'model_name') else self.__class__.__name__
+
             with open(reinforced_metrics_csv, mode='a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 row = [
+                    model_identifier if model_identifier else "",
+                    model_type,
+                    label_key if label_key else "",         # Add label_key
+                    label_value if label_value else "",     # Add label_value
+                    language if language else "",           # Add language
                     epoch + 1,
                     avg_train_loss,
                     avg_val_loss,
+                    accuracy,                               # Add accuracy
+                    precision_0,
+                    recall_0,
+                    f1_0,
+                    support_0,
+                    precision_1,
+                    recall_1,
+                    f1_1,
+                    support_1,
+                    macro_f1
+                ]
+
+                # Add language metrics if available
+                if track_languages and language_info is not None and language_metrics:
+                    unique_languages = list(set(language_info))
+                    for lang in sorted(unique_languages):
+                        if lang in language_metrics:
+                            row.extend([
+                                language_metrics[lang]['accuracy'],
+                                language_metrics[lang]['precision_0'],
+                                language_metrics[lang]['recall_0'],
+                                language_metrics[lang]['f1_0'],
+                                language_metrics[lang]['support_0'],
+                                language_metrics[lang]['precision_1'],
+                                language_metrics[lang]['recall_1'],
+                                language_metrics[lang]['f1_1'],
+                                language_metrics[lang]['support_1'],
+                                language_metrics[lang]['macro_f1']
+                            ])
+                        else:
+                            row.extend([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+                writer.writerow(row)
+
+            # Also append to training_metrics.csv (to consolidate all epochs in one file)
+            training_metrics_csv = os.path.join(metrics_output_dir, "training_metrics.csv")
+            with open(training_metrics_csv, mode='a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+
+                # Get timestamp for this entry
+                current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                row = [
+                    model_identifier if model_identifier else "",
+                    model_type,
+                    label_key if label_key else "",         # Add label_key
+                    label_value if label_value else "",     # Add label_value
+                    language if language else "",           # Add language
+                    current_timestamp,
+                    epoch + 1,
+                    avg_train_loss,
+                    avg_val_loss,
+                    accuracy,                               # Add accuracy
                     precision_0,
                     recall_0,
                     f1_0,
@@ -1641,7 +2336,12 @@ class BertBase(BertABC):
 
             # Standard best-model selection logic
             if new_metric_val > best_metric_val:
-                self.logger.info("%s", f"{Fore.GREEN}✓ New best model! Combined metric: {combined_metric:.4f}{Style.RESET_ALL}")
+                # Update display with best model info
+                display.improvement = new_metric_val - best_metric_val
+                display.best_f1 = macro_f1
+                display.best_epoch = epoch + 1
+                live.update(display.create_panel())
+
                 # Remove old best model if needed
                 if best_model_path_local is not None and os.path.isdir(best_model_path_local):
                     try:
@@ -1650,6 +2350,7 @@ class BertBase(BertABC):
                         pass
 
                 best_metric_val = new_metric_val
+
                 # Save new best model to a temporary path
                 if save_model_as is not None:
                     best_model_path_local = f"./models/{save_model_as}_reinforced_epoch_{epoch+1}"
@@ -1711,10 +2412,14 @@ class BertBase(BertABC):
                         row = [
                             model_identifier if model_identifier else "",
                             model_type,
+                            label_key if label_key else "",         # Add label_key
+                            label_value if label_value else "",     # Add label_value
+                            language if language else "",           # Add language
                             current_timestamp,
                             epoch + 1,
                             avg_train_loss,
                             avg_val_loss,
+                            accuracy,                               # Add accuracy
                             precision_0,
                             recall_0,
                             f1_0,
@@ -1754,17 +2459,21 @@ class BertBase(BertABC):
 
                         writer.writerow(row)
 
-                best_scores = precision_recall_fscore_support(eval_labels, val_preds)
-        else:
-            # Even if we didn't find a better model, calculate the final scores
-            # Use the last evaluation results
-            if 'val_preds' in locals() and 'eval_labels' in locals():
-                best_scores = precision_recall_fscore_support(eval_labels, val_preds)
-            else:
-                # If no evaluation was done, keep the scores from normal training
-                # (passed as prev_best_f1_1 but we need the full scores)
-                # This shouldn't happen in normal circumstances
-                best_scores = None
+                    best_scores = precision_recall_fscore_support(eval_labels, val_preds)
+
+                # Update epoch timing
+                display.epoch_time = time.time() - epoch_start_time
+                display.total_time = time.time() - display.start_time
+                live.update(display.create_panel())
+
+            # After finishing the reinforced epochs, update display
+            display.current_phase = "Reinforced Training Complete"
+            live.update(display.create_panel())
+
+        finally:
+            # Close live context only if we created it
+            if create_new_live and live_context:
+                live_context.__exit__(None, None, None)
 
         # After finishing the reinforced epochs, if we have found a better model, rename it to final
         if best_model_path_local and (best_model_path_local != base_model_path):
@@ -1775,10 +2484,7 @@ class BertBase(BertABC):
                     shutil.rmtree(final_path)
                 os.rename(best_model_path_local, final_path)
                 best_model_path_local = final_path
-                self.logger.info("")
-                self.logger.info("%s", f"{Fore.GREEN}💾 Best model saved at: {best_model_path_local}{Style.RESET_ALL}")
             elif save_model_as is not None and best_model_path_local is None:
-                self.logger.warning("%s", f"{Fore.YELLOW}⚠️  No improvement found during reinforced training{Style.RESET_ALL}")
                 # Keep the previous best model if it exists
                 best_model_path_local = f"./models/{save_model_as}"
                 if not os.path.exists(best_model_path_local):
@@ -1790,12 +2496,7 @@ class BertBase(BertABC):
                     torch.save(model_to_save.state_dict(), output_model_file)
                     model_to_save.config.to_json_file(output_config_file)
                     self.tokenizer.save_vocabulary(best_model_path_local)
-                    self.logger.info("%s", f"{Fore.CYAN}💾 Current model saved as fallback at: {best_model_path_local}{Style.RESET_ALL}")
 
-        # Completion message
-        self.logger.info("\n%s", f"{Fore.MAGENTA}{'='*80}{Style.RESET_ALL}")
-        self.logger.info("%s", f"{Fore.MAGENTA}{'REINFORCED TRAINING COMPLETE':^80}{Style.RESET_ALL}")
-        self.logger.info("%s", f"{Fore.MAGENTA}{'='*80}{Style.RESET_ALL}\n")
         return best_metric_val, best_model_path_local, best_scores
 
     def predict(

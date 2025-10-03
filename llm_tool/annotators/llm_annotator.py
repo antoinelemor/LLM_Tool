@@ -123,15 +123,34 @@ status_counts = {"success": 0, "error": 0, "cleaning_failed": 0, "decode_error":
 class LLMAnnotator:
     """Main LLM annotation class with comprehensive features"""
 
-    def __init__(self, settings: Optional[Settings] = None):
-        """Initialize the LLM annotator"""
+    def __init__(self, settings: Optional[Settings] = None, progress_callback=None, progress_manager=None):
+        """Initialize the LLM annotator
+
+        Args:
+            settings: Optional Settings object
+            progress_callback: Optional callback for progress updates (current, total, message)
+            progress_manager: Optional progress manager for displaying warnings/errors
+        """
         self.settings = settings or Settings()
+        self.progress_callback = progress_callback
+        self.progress_manager = progress_manager
         self.logger = logging.getLogger(__name__)
+
+        # If we have a progress manager, disable console logging to avoid conflicts
+        if self.progress_manager:
+            # Remove all console handlers to prevent duplicate output
+            for handler in self.logger.handlers[:]:
+                if isinstance(handler, logging.StreamHandler):
+                    self.logger.removeHandler(handler)
+            # Also prevent propagation to root logger
+            self.logger.propagate = False
+
         self.json_cleaner = JSONCleaner()
         self.prompt_manager = PromptManager()
         self.api_client = None
         self.local_client = None
         self.progress_bar = None
+        self.last_annotation = None  # Store last successful annotation for display
 
     def annotate(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -213,7 +232,8 @@ class LLMAnnotator:
             self.api_client = create_api_client(
                 provider=provider,
                 api_key=api_key,
-                model=model_name
+                model=model_name,
+                progress_manager=self.progress_manager  # Pass progress manager for warnings/errors
             )
         elif provider == 'ollama' and HAS_LOCAL_MODELS:
             self.local_client = OllamaClient(model_name)
@@ -477,8 +497,32 @@ class LLMAnnotator:
         log_path = config.get('log_path')
         output_format = config.get('output_format', config.get('data_source', 'csv'))
 
-        # Initialize progress bar
-        with tqdm(total=total_tasks, desc='Annotating', unit='items') as pbar:
+        # Report initial progress - DEBUG with file logging
+        import sys
+        try:
+            with open('/tmp/llmtool_debug.log', 'a') as f:
+                f.write(f"[ANNOTATOR] Starting with {total_tasks} tasks, callback={self.progress_callback is not None}\n")
+        except:
+            pass
+
+        if self.progress_callback:
+            try:
+                with open('/tmp/llmtool_debug.log', 'a') as f:
+                    f.write(f"[ANNOTATOR] Calling progress_callback(0, {total_tasks}, ...)\n")
+            except:
+                pass
+            self.progress_callback(0, total_tasks, f"Starting annotation of {total_tasks} items")
+        else:
+            try:
+                with open('/tmp/llmtool_debug.log', 'a') as f:
+                    f.write(f"[ANNOTATOR] ERROR: No progress_callback!\n")
+            except:
+                pass
+
+        # Initialize progress bar with position lock to prevent line jumps
+        disable_pbar = config.get('disable_tqdm', False)
+        with tqdm(total=total_tasks, desc='🤖 LLM Annotation', unit='items',
+                  position=0, leave=True, dynamic_ncols=True, disable=disable_pbar) as pbar:
             with concurrent.futures.ProcessPoolExecutor(max_workers=num_processes) as executor:
                 # Submit all tasks
                 if len(tasks[0]['prompts']) > 1:
@@ -494,6 +538,7 @@ class LLMAnnotator:
 
                 pending_save = 0
                 batch_results = []
+                completed_count = 0
 
                 # Process completed tasks
                 for future in concurrent.futures.as_completed(futures):
@@ -524,6 +569,11 @@ class LLMAnnotator:
                         if final_json:
                             status_counts['success'] += 1
                             batch_results.append((identifier, final_json, inference_time))
+                            # Store last successful annotation for display
+                            try:
+                                self.last_annotation = json.loads(final_json) if isinstance(final_json, str) else final_json
+                            except:
+                                pass
                         else:
                             status_counts['error'] += 1
 
@@ -549,13 +599,19 @@ class LLMAnnotator:
                                 }
                             )
 
-                        # Display sample results
-                        if len(batch_results) >= 10:
+                        # Display sample results only if progress bar is enabled
+                        if not disable_pbar and len(batch_results) >= 10:
                             sample = random.choice(batch_results)
                             tqdm.write(f"✨ Sample annotation for ID {sample[0]}: {sample[1][:100]}...")
                             batch_results = []
 
                         pbar.update(1)
+
+                        # Report progress via callback if available
+                        completed_count += 1
+                        if self.progress_callback:
+                            self.progress_callback(completed_count, total_tasks,
+                                f"Annotated {completed_count}/{total_tasks} items")
 
                     except Exception as e:
                         import traceback
@@ -564,9 +620,19 @@ class LLMAnnotator:
                         status_counts['error'] += 1
                         pbar.update(1)
 
+                        # Report error progress too
+                        completed_count += 1
+                        if self.progress_callback:
+                            self.progress_callback(completed_count, total_tasks,
+                                f"Annotated {completed_count}/{total_tasks} items ({status_counts['error']} errors)")
+
         # Final save if needed
         if save_incrementally and output_path and pending_save > 0:
             self._save_data(full_data, output_path, output_format)
+
+        # Report final progress
+        if self.progress_callback:
+            self.progress_callback(total_tasks, total_tasks, f"Completed annotation of {total_tasks} items")
 
         return full_data
 
@@ -586,8 +652,22 @@ class LLMAnnotator:
         output_format = config.get('output_format', config.get('data_source', 'csv'))
 
         pending_save = 0
+        total_tasks = len(tasks)
+        completed_count = 0
 
-        for task in tqdm(tasks, desc='Annotating', unit='items'):
+        # Report initial progress
+        if self.progress_callback:
+            try:
+                with open('/tmp/llmtool_debug.log', 'a') as f:
+                    f.write(f"[ANNOTATOR SEQUENTIAL] Starting with {total_tasks} tasks, callback={self.progress_callback is not None}\n")
+                    f.flush()
+            except:
+                pass
+            self.progress_callback(0, total_tasks, f"Starting annotation of {total_tasks} items")
+
+        disable_pbar = config.get('disable_tqdm', False)
+        for task in tqdm(tasks, desc='🤖 LLM Annotation', unit='items',
+                         position=0, leave=True, dynamic_ncols=True, disable=disable_pbar):
             if len(task['prompts']) > 1:
                 result = process_multiple_prompts(task)
             else:
@@ -614,6 +694,11 @@ class LLMAnnotator:
 
             if final_json:
                 status_counts['success'] += 1
+                # Store last successful annotation for display
+                try:
+                    self.last_annotation = json.loads(final_json) if isinstance(final_json, str) else final_json
+                except:
+                    pass
             else:
                 status_counts['error'] += 1
 
@@ -637,10 +722,32 @@ class LLMAnnotator:
                     }
                 )
 
+            # Report progress via callback if available
+            completed_count += 1
+            if self.progress_callback:
+                try:
+                    with open('/tmp/llmtool_debug.log', 'a') as f:
+                        f.write(f"[ANNOTATOR SEQUENTIAL] Progress: {completed_count}/{total_tasks}\n")
+                        f.flush()
+                except:
+                    pass
+                self.progress_callback(completed_count, total_tasks,
+                    f"Annotated {completed_count}/{total_tasks} items")
+
         if save_incrementally and output_path and output_format != 'csv' and pending_save > 0:
             self._save_data(full_data, output_path, output_format)
         elif not save_incrementally and output_path:
             self._save_data(full_data, output_path, output_format)
+
+        # Report final progress
+        if self.progress_callback:
+            try:
+                with open('/tmp/llmtool_debug.log', 'a') as f:
+                    f.write(f"[ANNOTATOR SEQUENTIAL] Completed all {total_tasks} tasks\n")
+                    f.flush()
+            except:
+                pass
+            self.progress_callback(total_tasks, total_tasks, f"Completed annotation of {total_tasks} items")
 
         return full_data
 
@@ -826,7 +933,12 @@ class LLMAnnotator:
         self.logger.debug(f"[ANALYZE] Raw response from model: {response}")
 
         if not response:
-            self.logger.warning("[ANALYZE] Model returned empty response")
+            warning_msg = "[ANALYZE] Model returned empty response"
+            # Only show via progress manager if available, otherwise log
+            if self.progress_manager:
+                self.progress_manager.show_warning(warning_msg)
+            else:
+                self.logger.warning(warning_msg)
             return None
 
         # Clean and validate response

@@ -1,81 +1,86 @@
-# LLMTool Requirements
-# Complete dependencies for all features
-# Author: Antoine Lemor
-
-# ===== CORE DEPENDENCIES =====
-# Data manipulation
-pandas>=1.5.0
-numpy>=1.21.0
-openpyxl>=3.0.0
-pyarrow>=10.0.0
-pyreadr>=0.4.0
-
-# Database
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0
-
-# JSON and validation
-pydantic>=2.0.0
-jsonschema>=4.0.0
-
-# CLI and interface
-rich>=13.0.0
-tqdm>=4.65.0
-inquirer>=3.0.0
-click>=8.0.0
-
-# Language detection
-langdetect>=1.0.9
-langid>=1.1.6
-
-# Logging and utilities
-loguru>=0.7.0
-python-dotenv>=1.0.0
-requests>=2.28.0
-
-# ===== LLM DEPENDENCIES =====
-# API clients
-openai>=1.0.0
-anthropic>=0.18.0
-google-generativeai>=0.3.0
-
-# Local LLM
-ollama>=0.1.7
-llama-cpp-python>=0.2.0
-
-# ===== TRAINING DEPENDENCIES =====
-# Deep learning
-torch>=2.0.0
-tensorflow>=2.13.0
-transformers>=4.35.0
-datasets>=2.14.0
-tokenizers>=0.14.0
-sentence-transformers>=2.2.0
-accelerate>=0.24.0
-sentencepiece>=0.1.99
-protobuf>=3.20.0
-safetensors>=0.4.0
-
-# ML utilities
-scikit-learn>=1.3.0
-scipy>=1.10.0
-seaborn>=0.12.0
-matplotlib>=3.6.0
-
-# Evaluation metrics
-evaluate>=0.4.0
-rouge-score>=0.1.2
-bert-score>=0.3.13
-
-# Optimization
-optuna>=3.3.0
-ray[tune]>=2.6.0
-
-# MLOps
-mlflow>=2.8.0
-wandb>=0.15.0
-tensorboard>=2.13.0
-
-# Additional utilities
-imbalanced-learn>=0.11.0
-category_encoders>=2.6.0
+accelerate==1.10.1
+aiohappyeyeballs==2.6.1
+aiohttp==3.12.15
+aiosignal==1.4.0
+annotated-types==0.7.0
+anyio==4.11.0
+attrs==25.3.0
+blessed==1.22.0
+certifi==2025.8.3
+cffi==2.0.0
+charset-normalizer==3.4.3
+colorama==0.4.6
+cryptography==46.0.2
+datasets==4.1.1
+dill==0.4.0
+distro==1.9.0
+editor==1.6.6
+et_xmlfile==2.0.0
+evaluate==0.4.6
+filelock==3.19.1
+frozenlist==1.7.0
+fsspec==2025.9.0
+h11==0.16.0
+hf-xet==1.1.10
+httpcore==1.0.9
+httpx==0.28.1
+huggingface-hub==0.35.3
+idna==3.10
+inquirer==3.4.1
+Jinja2==3.1.6
+jiter==0.11.0
+joblib==1.5.2
+langdetect==1.0.9
+loguru==0.7.3
+markdown-it-py==4.0.0
+MarkupSafe==3.0.3
+mdurl==0.1.2
+mpmath==1.3.0
+multidict==6.6.4
+multiprocess==0.70.16
+networkx==3.5
+numpy==2.3.3
+ollama==0.6.0
+openai==2.1.0
+openpyxl==3.1.5
+packaging==25.0
+pandas==2.3.3
+propcache==0.3.2
+psutil==7.1.0
+pyarrow==21.0.0
+pycparser==2.23
+pydantic==2.11.9
+pydantic_core==2.33.2
+Pygments==2.19.2
+pyreadr==0.5.3
+python-dateutil==2.9.0.post0
+pytz==2025.2
+PyYAML==6.0.3
+readchar==4.2.1
+regex==2025.9.18
+requests==2.32.5
+rich==14.1.0
+runs==1.2.2
+safetensors==0.6.2
+scikit-learn==1.7.2
+scipy==1.16.2
+sentencepiece==0.2.1
+setuptools==80.9.0
+six==1.17.0
+sniffio==1.3.1
+SQLAlchemy==2.0.43
+sympy==1.14.0
+tabulate==0.9.0
+threadpoolctl==3.6.0
+tokenizers==0.22.1
+torch==2.8.0
+tqdm==4.67.1
+transformers==4.56.2
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+tzdata==2025.2
+urllib3==2.5.0
+wcwidth==0.2.14
+xmod==1.8.1
+xxhash==3.6.0
+yarl==1.20.1
