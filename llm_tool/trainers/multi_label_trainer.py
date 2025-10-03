@@ -142,6 +142,10 @@ class MultiLabelTrainer:
         self.model_selector = ModelSelector(verbose=False)
         self.ml_selector = MultilingualModelSelector(verbose=False)
 
+        # Import Rich console for clean display transitions
+        from rich.console import Console
+        self.console = Console()
+
     def load_multi_label_data(self,
                               filepath: str,
                               text_field: str = 'text',
@@ -643,6 +647,9 @@ class MultiLabelTrainer:
 
         # Parse label_name to extract key and value for display
         label_key, label_value = self._parse_label_name(label_name)
+
+        # Clear console for clean display transition between models
+        self.console.clear()
 
         if self.verbose:
             self.logger.info(f"Training model: {model_name}")

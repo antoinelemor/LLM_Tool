@@ -458,6 +458,7 @@ class PipelineController:
 
             # Determine input data
             training_files = None
+            input_data = None
             if self.state.annotation_results and 'training_files' in self.state.annotation_results:
                 training_files = self.state.annotation_results['training_files']
                 training_strategy = self.state.annotation_results.get('training_strategy', 'single-label')
@@ -470,16 +471,81 @@ class PipelineController:
             if not training_files and not input_data:
                 raise ValueError("No input data available for training")
 
-            # For simplicity, train only the configured model (not multiple)
+            # For multi-label or multiple files, use MultiLabelTrainer with full features
+            if training_files and len(training_files) > 1:
+                # Import MultiLabelTrainer for advanced multi-label training
+                from ..trainers.multi_label_trainer import MultiLabelTrainer, TrainingConfig as MultiLabelTrainingConfig
+
+                self.logger.info("Using MultiLabelTrainer for multi-file training")
+                print(f"\n🏋️ Training multi-label model...")
+
+                # Prepare training config for MultiLabelTrainer
+                model_name = config.get('training_model_type') or config.get('training_annotation_model')
+
+                ml_config = MultiLabelTrainingConfig(
+                    model_name=model_name,
+                    n_epochs=config.get('max_epochs', 10),
+                    batch_size=config.get('batch_size', 16),
+                    learning_rate=config.get('learning_rate', 2e-5),
+                    reinforced_learning=True,  # Enable reinforced learning
+                    reinforced_epochs=config.get('reinforced_epochs', 8),
+                    auto_select_model=False,  # Use the specified model
+                    train_by_language=False,
+                    multilingual_model=True,
+                    output_dir=config.get('output_dir', str(self.settings.paths.models_dir / 'trained_models')),
+                    auto_split=True,
+                    split_ratio=1.0 - config.get('validation_split', 0.2),
+                    stratified=True
+                )
+
+                ml_trainer = MultiLabelTrainer(config=ml_config, verbose=True)
+
+                # Load and train on all files
+                all_results = {}
+                for idx, (key, file_path) in enumerate(training_files.items(), 1):
+                    print(f"\n📊 Training model {idx}/{len(training_files)} for: {key}")
+                    self._report_progress('training', 70 + (25 * (idx - 1) / len(training_files)),
+                                        f'🏋️ Training {key} ({idx}/{len(training_files)})')
+
+                    # Load samples for this label
+                    samples = ml_trainer.load_multi_label_data(
+                        filepath=file_path,
+                        text_field='text',
+                        labels_dict_field='labels',
+                        id_field='id',
+                        lang_field='lang'
+                    )
+
+                    # Train single model for this key
+                    model_info = ml_trainer.train_single_model(
+                        label_name=key,
+                        train_samples=samples,
+                        language=None  # Multilingual
+                    )
+
+                    all_results[key] = model_info
+                    print(f"✅ Model for '{key}' trained successfully")
+
+                # Store comprehensive results
+                self.state.training_results = {
+                    'strategy': 'multi-label',
+                    'models': all_results,
+                    'num_models': len(all_results),
+                    'best_model': list(all_results.keys())[0] if all_results else None
+                }
+                self.state.phases_completed.append(PipelinePhase.TRAINING)
+                print(f"\n✅ Successfully trained {len(all_results)} models with reinforced learning")
+                return
+
+            # Fallback: Single file training
             if training_files:
-                # Use first file or multilabel file
+                # Use multilabel file if available, otherwise first file
                 if 'multilabel' in training_files:
                     input_data = training_files['multilabel']
                 else:
-                    # Use first annotation key's file
                     input_data = list(training_files.values())[0]
 
-            # Prepare config
+            # Prepare config for single-file training
             training_config = self._prepare_training_config(config, input_data)
 
             # Validate that training data contains expected label column

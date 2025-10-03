@@ -538,6 +538,7 @@ class DataDetector:
             'file_path': file_path,
             'format': file_path.suffix[1:].lower(),
             'columns': [],
+            'all_columns': [],  # Add this for complete column list
             'text_column_candidates': [],
             'annotation_column_candidates': [],
             'id_column_candidates': [],
@@ -546,7 +547,9 @@ class DataDetector:
             'has_valid_annotations': False,
             'annotation_stats': {},
             'row_count': 0,
-            'issues': []
+            'issues': [],
+            'sample_data': {},  # Add sample data for displaying examples
+            'annotation_keys_found': set()  # For JSON annotations
         }
 
         if not HAS_PANDAS:
@@ -584,6 +587,30 @@ class DataDetector:
 
             result['row_count'] = len(df)
             result['columns'] = list(df.columns)
+            result['all_columns'] = list(df.columns)  # Store complete list
+
+            # Extract sample data for each column (first 3 non-null values)
+            for col in df.columns:
+                non_null_values = df[col].dropna().head(3).tolist()
+                result['sample_data'][col] = non_null_values
+
+            # For JSON annotations, detect keys within the annotation column
+            for col in df.columns:
+                col_lower = col.lower()
+                if 'annotation' in col_lower or 'label' in col_lower:
+                    # Try to parse first few entries as JSON to find keys
+                    for idx in range(min(10, len(df))):
+                        val = df[col].iloc[idx]
+                        if pd.notna(val):
+                            try:
+                                if isinstance(val, dict):
+                                    result['annotation_keys_found'].update(val.keys())
+                                elif isinstance(val, str):
+                                    parsed = json.loads(val)
+                                    if isinstance(parsed, dict):
+                                        result['annotation_keys_found'].update(parsed.keys())
+                            except:
+                                pass
 
             # Detect column candidates
             text_candidates = ['text', 'content', 'message', 'sentence', 'paragraph',
@@ -3604,12 +3631,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 for issue in analysis['issues']:
                     self.console.print(f"  {issue}")
 
-            # Auto-suggest text column
+            # Auto-suggest text column with all available columns
             text_column_default = "sentence"
+            all_columns = analysis.get('all_columns', [])
+
             if analysis['text_column_candidates']:
                 best_text = analysis['text_column_candidates'][0]['name']
                 text_column_default = best_text
                 self.console.print(f"\n[green]✓ Text column detected: '{best_text}'[/green]")
+
+            # Show all available columns for reference
+            if all_columns:
+                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
 
             text_column = Prompt.ask("Text column", default=text_column_default)
 
@@ -3624,6 +3657,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print(f"[green]✓ Annotation column detected: '{best_annotation}' ({fill_rate*100:.1f}% filled)[/green]")
                 else:
                     self.console.print(f"[red]⚠️  Annotation column '{best_annotation}' is EMPTY - cannot be used for training![/red]")
+
+            # Show all available columns for reference
+            if all_columns:
+                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
 
             annotation_column = Prompt.ask("Annotation column", default=annotation_column_default)
 
@@ -3696,24 +3733,126 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     else:
                         model_to_use = recommendations[0]['model']
 
-            # Explain training strategies for LLM-JSON format
+            # Explain training strategies for LLM-JSON format with REAL examples from data
             self.console.print("\n[bold]📚 Training Strategy for LLM-JSON Format:[/bold]")
-            self.console.print("  [cyan]single-label[/cyan] - Each text has ONE category")
-            self.console.print("                     Example: sentiment → positive OR negative")
-            self.console.print("  [cyan]multi-label[/cyan]  - Train ONE model per annotation KEY to detect MULTIPLE values")
-            self.console.print("                     Example: If key='themes' with 5 values → 1 model detects all 5 themes")
-            self.console.print("                              If key='sentiment' with 3 values → 1 model detects all 3 sentiments")
+
+            # Parse real data to extract actual keys and values
+            annotation_keys_found = analysis.get('annotation_keys_found', set())
+            sample_annotation = analysis.get('sample_data', {}).get(annotation_column, [])
+            real_example_data = None
+
+            if sample_annotation and len(sample_annotation) > 0:
+                first_sample = sample_annotation[0]
+                try:
+                    if isinstance(first_sample, str):
+                        real_example_data = json.loads(first_sample)
+                    elif isinstance(first_sample, dict):
+                        real_example_data = first_sample
+                except:
+                    pass
+
+            # Single-label explanation with REAL examples
+            self.console.print("  [cyan]single-label[/cyan] - Each text has ONE category per key (mutually exclusive)")
+            self.console.print("                     [dim]Use this when a text can only belong to one category[/dim]")
+            if real_example_data:
+                # Find a single-value key to use as example
+                single_val_key = None
+                single_val = None
+                for key, val in real_example_data.items():
+                    if val is not None and not isinstance(val, list):
+                        single_val_key = key
+                        single_val = val
+                        break
+                if single_val_key:
+                    self.console.print(f"                     [bold]Example from YOUR data:[/bold] {single_val_key} → '{single_val}'")
+                    self.console.print(f"                     [dim]→ Train 1 model for '{single_val_key}' that predicts ONE value[/dim]")
+                else:
+                    self.console.print("                     Example: sentiment → 'positive' OR 'negative'")
+            else:
+                self.console.print("                     Example: sentiment → 'positive' OR 'negative'")
+
+            # Show detected keys
+            if annotation_keys_found:
+                keys_str = ', '.join(sorted(annotation_keys_found))
+                self.console.print(f"                     [dim]Detected keys in your data: {keys_str}[/dim]")
+
+            # Multi-label explanation with REAL examples
+            self.console.print("\n  [cyan]multi-label[/cyan]  - Train ONE binary classifier per key to detect ALL its values")
+            self.console.print("                     [dim]Use this when a text can have multiple categories[/dim]")
+            if real_example_data and annotation_keys_found:
+                # Build real examples from actual data
+                self.console.print("                     [bold]Based on YOUR data:[/bold]")
+                model_count = 0
+                for key in sorted(annotation_keys_found):
+                    val = real_example_data.get(key)
+                    if val is not None:
+                        model_count += 1
+                        if isinstance(val, list):
+                            if val:
+                                val_str = ', '.join([f"'{v}'" for v in val[:3]])
+                                if len(val) > 3:
+                                    val_str += f", ... ({len(val)} total)"
+                                self.console.print(f"                       • Model {model_count}: '{key}' → can detect [{val_str}]")
+                            else:
+                                self.console.print(f"                       • Model {model_count}: '{key}' → (empty list)")
+                        else:
+                            self.console.print(f"                       • Model {model_count}: '{key}' → can detect '{val}'")
+                if model_count > 0:
+                    self.console.print(f"                     [dim]→ Will train {model_count} separate models total[/dim]")
+            else:
+                self.console.print("                     Example: If key='themes' → 1 model detects all theme values")
+                self.console.print("                              If key='sentiment' → 1 model detects all sentiment values")
+
+            # Show full JSON example for clarity
+            if real_example_data:
+                self.console.print(f"\n[dim]📄 Complete example from your data:[/dim]")
+                example_str = json.dumps(real_example_data, ensure_ascii=False, indent=2)
+                self.console.print(f"[dim]{example_str}[/dim]")
 
             mode = Prompt.ask("Target dataset", choices=["single-label", "multi-label", "back"], default="single-label")
             if mode == "back":
                 return None
 
-            # Explain label strategies
+            # Explain label strategies with REAL examples
             self.console.print("\n[bold]🏷️  Label Strategy Options:[/bold]")
-            self.console.print("  [cyan]key_value[/cyan]  - Labels include key names")
-            self.console.print("                    Example: 'themes_transportation', 'sentiment_positive'")
-            self.console.print("  [cyan]value_only[/cyan] - Labels are just values")
-            self.console.print("                    Example: 'transportation', 'positive'")
+            self.console.print("[dim]This determines how label NAMES will be formatted in the training data[/dim]")
+            self.console.print("\n  [cyan]key_value[/cyan]  - Label names include key prefix (prevents conflicts)")
+
+            # Generate real examples for key_value
+            if real_example_data:
+                real_kv_examples = []
+                for key, val in real_example_data.items():
+                    if val is not None:
+                        if isinstance(val, list) and val:
+                            real_kv_examples.append(f"'{key}_{val[0]}'")
+                        elif not isinstance(val, list):
+                            real_kv_examples.append(f"'{key}_{val}'")
+                if real_kv_examples:
+                    examples_str = ', '.join(real_kv_examples[:3])
+                    self.console.print(f"                    [bold]From YOUR data:[/bold] {examples_str}")
+                else:
+                    self.console.print("                    Example: 'themes_transportation', 'sentiment_positive'")
+            else:
+                self.console.print("                    Example: 'themes_transportation', 'sentiment_positive'")
+
+            self.console.print("\n  [cyan]value_only[/cyan] - Label names are just values (simpler but may conflict)")
+
+            # Generate real examples for value_only
+            if real_example_data:
+                real_vo_examples = []
+                for key, val in real_example_data.items():
+                    if val is not None:
+                        if isinstance(val, list) and val:
+                            real_vo_examples.append(f"'{val[0]}'")
+                        elif not isinstance(val, list):
+                            real_vo_examples.append(f"'{val}'")
+                if real_vo_examples:
+                    examples_str = ', '.join(real_vo_examples[:3])
+                    self.console.print(f"                    [bold]From YOUR data:[/bold] {examples_str}")
+                else:
+                    self.console.print("                    Example: 'transportation', 'positive'")
+            else:
+                self.console.print("                    Example: 'transportation', 'positive'")
 
             label_strategy = Prompt.ask("Label strategy", choices=["key_value", "value_only", "back"], default="key_value")
             if label_strategy == "back":
@@ -3722,11 +3861,69 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # For multi-label CSV-JSON: ask which keys to use (one model per key)
             annotation_keys = None
             if mode == "multi-label":
-                self.console.print("\n[bold yellow]Multi-label mode:[/bold yellow] One model will be trained per annotation key")
-                self.console.print("Example: If you select 'themes,sentiment' → 2 models (one for themes, one for sentiment)")
-                keys_input = Prompt.ask("Annotation keys to include (comma separated, leave blank for all)", default="")
+                self.console.print("\n[bold yellow]📋 Multi-label mode:[/bold yellow] One model will be trained per annotation key")
+                self.console.print("[dim]This means training SEPARATE BINARY classifiers for each category type[/dim]")
+
+                # Show detected keys if available WITH REAL VALUES
+                if analysis.get('annotation_keys_found'):
+                    detected_keys = sorted(analysis['annotation_keys_found'])
+                    self.console.print(f"\n[green]✓ Detected annotation keys in your data: {', '.join(detected_keys)}[/green]")
+
+                    # Extract unique values for each key from sample data
+                    key_values = {}
+                    if real_example_data:
+                        for key in detected_keys:
+                            val = real_example_data.get(key)
+                            if val is not None:
+                                if isinstance(val, list):
+                                    key_values[key] = val if val else []
+                                else:
+                                    key_values[key] = [val]
+
+                    self.console.print("\n[bold]What this means (with YOUR data):[/bold]")
+                    for key in detected_keys:
+                        if key in key_values and key_values[key]:
+                            values_preview = ', '.join([f"'{v}'" for v in key_values[key][:3]])
+                            if len(key_values[key]) > 3:
+                                values_preview += ", ..."
+                            self.console.print(f"  • [cyan]{key}[/cyan] → One binary model for each value: {values_preview}")
+                        else:
+                            self.console.print(f"  • [cyan]{key}[/cyan] → One model will classify ALL {key} values")
+
+                    # Build real example from detected keys
+                    if len(detected_keys) >= 2:
+                        example_keys = ', '.join(detected_keys[:2])
+                        self.console.print(f"\n[bold]Example:[/bold] Selecting '{example_keys}' → {min(2, len(detected_keys))} models trained")
+                        for idx, key in enumerate(detected_keys[:2], 1):
+                            if key in key_values and key_values[key]:
+                                val_preview = key_values[key][0]
+                                self.console.print(f"  Model {idx}: Trains '{key}_{val_preview}' vs NOT '{key}_{val_preview}' (and all other {key} values)")
+                            else:
+                                self.console.print(f"  Model {idx}: Detects all {key} categories")
+                else:
+                    self.console.print("Example: If you select 'themes,sentiment' → 2 models (one for themes, one for sentiment)")
+
+                # Show selection guidance with all available options
+                if detected_keys:
+                    self.console.print("\n[bold cyan]📝 Select which annotation keys to train:[/bold cyan]")
+                    self.console.print(f"[bold]Available keys:[/bold] {', '.join(detected_keys)}")
+                    self.console.print("\n[dim]Options:[/dim]")
+                    self.console.print(f"  • [cyan]Leave blank[/cyan] → Train ALL {len(detected_keys)} models (one per key)")
+                    self.console.print(f"  • [cyan]Enter specific keys[/cyan] → Train only selected models")
+                    if detected_keys:
+                        self.console.print(f"    Example: '{detected_keys[0]}' → Train only 1 model for {detected_keys[0]}")
+                    if len(detected_keys) >= 2:
+                        self.console.print(f"    Example: '{detected_keys[0]},{detected_keys[1]}' → Train 2 models")
+
+                keys_input = Prompt.ask("\nAnnotation keys (comma-separated, or BLANK for ALL)", default="")
                 annotation_keys = [key.strip() for key in keys_input.split(",") if key.strip()] or None
             else:
+                # For single-label mode
+                if analysis.get('annotation_keys_found'):
+                    detected_keys = sorted(analysis['annotation_keys_found'])
+                    self.console.print(f"\n[dim]Note: Your data has keys: {', '.join(detected_keys)}[/dim]")
+                    self.console.print("[dim]Leave blank to use all keys, or specify which ones to include[/dim]")
+
                 keys_input = Prompt.ask("Annotation keys to include (comma separated, leave blank for all)", default="")
                 annotation_keys = [key.strip() for key in keys_input.split(",") if key.strip()] or None
 
@@ -3734,7 +3931,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             id_column_default = ""
             if analysis['id_column_candidates']:
                 id_column_default = analysis['id_column_candidates'][0]
-                self.console.print(f"[green]✓ ID column detected: '{id_column_default}'[/green]")
+                self.console.print(f"\n[green]✓ ID column detected: '{id_column_default}'[/green]")
+            # Show all available columns for reference
+            if all_columns:
+                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
 
             id_column = Prompt.ask("Identifier column (optional)", default=id_column_default)
 
@@ -3742,7 +3942,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             lang_column_default = ""
             if analysis['language_column_candidates']:
                 lang_column_default = analysis['language_column_candidates'][0]
-                self.console.print(f"[green]✓ Language column detected: '{lang_column_default}'[/green]")
+                self.console.print(f"\n[green]✓ Language column detected: '{lang_column_default}'[/green]")
+            # Show all available columns for reference
+            if all_columns:
+                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
 
             lang_column = Prompt.ask("Language column (optional)", default=lang_column_default)
 
@@ -4003,10 +4206,27 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         auto_select_model = Confirm.ask("Auto-select the best backbone for each label?", default=True)
 
+        # Get the model name from the bundle if available
+        model_name_to_use = None
+        if hasattr(bundle, 'recommended_model') and bundle.recommended_model:
+            model_name_to_use = bundle.recommended_model
+            self.console.print(f"\n[green]✓ Using selected model: {model_name_to_use}[/green]")
+
+        # If no model was selected, ask the user now
+        if not model_name_to_use:
+            self.console.print("\n[yellow]⚠️  No model was selected during data preparation[/yellow]")
+            default_model = "bert-base-multilingual-cased"
+            model_name_to_use = Prompt.ask(
+                "Which model would you like to use?",
+                default=default_model
+            )
+            self.console.print(f"[green]✓ Using model: {model_name_to_use}[/green]")
+
         trainer_config = MultiLabelTrainingConfig(
             n_epochs=epochs,
             batch_size=batch_size,
             learning_rate=learning_rate,
+            model_name=model_name_to_use,  # Pass the selected model name
             auto_select_model=auto_select_model,
             train_by_language=train_by_language,
             multilingual_model=multilingual_model,

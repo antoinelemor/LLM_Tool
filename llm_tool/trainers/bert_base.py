@@ -63,9 +63,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 from rich.layout import Layout
-from rich.console import Group
+from rich.console import Group, Console
 from rich.text import Text
 from rich import box
+
+# Create a shared console for Rich operations
+console = Console()
 
 # Initialize colorama for cross-platform colored output
 init(autoreset=True)
@@ -135,6 +138,10 @@ class TrainingDisplay:
         self.best_f1 = 0.0
         self.best_epoch = 0
         self.improvement = 0.0
+        self.combined_metric = 0.0  # Weighted score for model selection
+        self.reinforced_threshold = 0.0  # Threshold to trigger reinforced learning
+        self.reinforced_triggered = False  # Whether reinforced learning was triggered
+        self.language_variance = 0.0  # Coefficient of variation for F1 class 1 across languages
 
         # Timing
         self.train_time = 0.0
@@ -259,7 +266,7 @@ class TrainingDisplay:
     def create_summary_section(self) -> Table:
         """Create summary with timing and best model info."""
         table = Table(show_header=False, box=None, padding=(0, 1))
-        table.add_column(style="cyan", width=15)
+        table.add_column(style="cyan", width=22, no_wrap=True)  # Wide enough for emoji labels
         table.add_column(style="white")
 
         # Timing
@@ -275,6 +282,22 @@ class TrainingDisplay:
             if self.improvement != 0:
                 sign = "+" if self.improvement > 0 else ""
                 table.add_row("📈 Improvement:", f"{sign}{self.improvement:.4f}")
+
+            # Show combined metric (weighted score) if available
+            if self.combined_metric > 0:
+                table.add_row("⚖️ Combined Score:", f"{self.combined_metric:.4f}")
+
+            # Show reinforced learning info if relevant
+            if self.reinforced_threshold > 0:
+                table.add_row("🎯 RL Threshold:", f"{self.reinforced_threshold:.4f}")
+                if self.reinforced_triggered:
+                    table.add_row("🔥 RL Triggered:", "Yes", style="bold yellow")
+
+            # Show language variance if available (for multilingual models)
+            if self.language_variance > 0:
+                # Color code based on variance level
+                variance_style = "green" if self.language_variance < 0.3 else ("yellow" if self.language_variance < 0.7 else "red")
+                table.add_row("📊 Lang Variance:", f"{self.language_variance:.3f}", style=variance_style)
 
         return table
 
@@ -548,13 +571,20 @@ class BertBase(BertABC):
         # Factor in language-specific performance if available
         language_penalty = 0.0
         language_info = ""
+        language_variance_penalty = 0.0
 
         if language_metrics and len(language_metrics) > 0:
             # Check if any language has poor F1 for class 1
             poor_languages = []
+            f1_class1_by_lang = []
+
             for lang, metrics in language_metrics.items():
                 lang_f1_1 = metrics.get('f1_1', 0.0)
                 lang_support_1 = metrics.get('support_1', 0)
+
+                # Track F1 class 1 for variance calculation
+                if lang_support_1 >= 3:  # Only include languages with meaningful support
+                    f1_class1_by_lang.append(lang_f1_1)
 
                 # Consider a language "poor" if F1_1 < 0.5 and has reasonable support
                 if lang_f1_1 < 0.5 and lang_support_1 >= 3:
@@ -562,11 +592,24 @@ class BertBase(BertABC):
                     # Apply penalty proportional to how bad the language is
                     language_penalty += (0.5 - lang_f1_1) * 0.15  # Max 0.15 penalty per language
 
-            if poor_languages:
-                language_info = f" Poor language performance: {', '.join(poor_languages)}."
+            # Calculate variance penalty if we have multiple languages
+            if len(f1_class1_by_lang) > 1:
+                mean_f1 = np.mean(f1_class1_by_lang)
+                std_f1 = np.std(f1_class1_by_lang)
 
-        # Final trigger score (penalized by poor language performance)
-        trigger_score = max(0.0, overall_f1_score - language_penalty)
+                # High variance = unbalanced performance across languages
+                # Apply penalty if coefficient of variation > 0.5
+                if mean_f1 > 0:
+                    cv = std_f1 / mean_f1
+                    if cv > 0.5:  # Significant variance
+                        language_variance_penalty = (cv - 0.5) * 0.1  # Up to 0.1 penalty
+                        language_info += f" High variance across languages (CV={cv:.2f})."
+
+            if poor_languages:
+                language_info = f" Poor language performance: {', '.join(poor_languages)}." + language_info
+
+        # Final trigger score (penalized by poor language performance and variance)
+        trigger_score = max(0.0, overall_f1_score - language_penalty - language_variance_penalty)
 
         # Decision logic
         # Trigger if:
@@ -697,6 +740,9 @@ class BertBase(BertABC):
             - The final best model is ultimately saved to "./models/<save_model_as>" if save_model_as is provided.
               (If reinforced training finds a better model, that replaces the previous best.)
         """
+        # Reset reinforced learning flag at the start of each training session
+        self._reinforced_already_triggered = False
+
         # Ensure metric output directory exists
         os.makedirs(metrics_output_dir, exist_ok=True)
         training_metrics_csv = os.path.join(metrics_output_dir, "training_metrics.csv")
@@ -896,7 +942,8 @@ class BertBase(BertABC):
         )
 
         # Start Live display - this will remain fixed and update in place
-        with Live(display.create_panel(), refresh_per_second=4) as live:
+        # Use transient=True to clear the display when context exits (prevents stacking)
+        with Live(display.create_panel(), refresh_per_second=4, transient=True) as live:
             for i_epoch in range(n_epochs):
                 epoch_start_time = time.time()
 
@@ -1088,6 +1135,14 @@ class BertBase(BertABC):
 
                     # Update display with language metrics
                     display.language_metrics = language_metrics
+
+                    # Calculate language variance for F1 class 1
+                    f1_class1_values = [m['f1_1'] for m in language_metrics.values() if m['support_1'] >= 3]
+                    if len(f1_class1_values) > 1:
+                        mean_f1 = np.mean(f1_class1_values)
+                        std_f1 = np.std(f1_class1_values)
+                        display.language_variance = (std_f1 / mean_f1) if mean_f1 > 0 else 0
+
                     live.update(display.create_panel())
 
                     # Store language metrics for this epoch
@@ -1159,6 +1214,25 @@ class BertBase(BertABC):
                 # Compute "combined" metric if best_model_criteria is "combined"
                 if best_model_criteria == "combined":
                     combined_metric = f1_class_1_weight * f1_1 + (1.0 - f1_class_1_weight) * macro_f1
+
+                    # Apply language balance penalty if we have per-language metrics
+                    if language_metrics:
+                        # Calculate variance in F1 class 1 across languages
+                        f1_class1_values = [m.get('f1_1', 0) for m in language_metrics.values()
+                                           if m.get('support_1', 0) > 0]  # Only count languages with positive examples
+
+                        if len(f1_class1_values) > 1:
+                            # Calculate coefficient of variation (std / mean) as a measure of imbalance
+                            mean_f1_class1 = np.mean(f1_class1_values)
+                            std_f1_class1 = np.std(f1_class1_values)
+
+                            # Avoid division by zero
+                            if mean_f1_class1 > 0:
+                                cv = std_f1_class1 / mean_f1_class1  # Coefficient of variation
+                                # Apply penalty: reduce combined_metric by up to 20% based on variance
+                                # CV of 0 = no penalty, CV of 1.0+ = full 20% penalty
+                                language_balance_penalty = min(cv * 0.2, 0.2)
+                                combined_metric = combined_metric * (1 - language_balance_penalty)
                 else:
                     # Fallback or alternative strategy
                     combined_metric = (f1_1 + macro_f1) / 2.0
@@ -1174,6 +1248,7 @@ class BertBase(BertABC):
                     display.improvement = combined_metric - best_metric_val
                     display.best_f1 = macro_f1
                     display.best_epoch = i_epoch + 1
+                    display.combined_metric = combined_metric
                     live.update(display.create_panel())
                     # Remove old best model folder if it exists
                     if best_model_path is not None:
@@ -1340,8 +1415,12 @@ class BertBase(BertABC):
                 best_model_path = final_path
 
             # ==================== Reinforced Training Check ====================
+            # Use a flag to ensure reinforced learning only triggers once per training session
+            if not hasattr(self, '_reinforced_already_triggered'):
+                self._reinforced_already_triggered = False
+
             reinforced_triggered = False
-            if best_scores is not None and reinforced_learning and n_epochs_reinforced > 0:
+            if best_scores is not None and reinforced_learning and n_epochs_reinforced > 0 and not self._reinforced_already_triggered:
                 # Extract metrics from best_scores
                 best_precision = best_scores[0]  # (precision_0, precision_1, ...)
                 best_recall = best_scores[1]     # (recall_0, recall_1, ...)
@@ -1370,9 +1449,14 @@ class BertBase(BertABC):
                     language_metrics=best_language_metrics
                 )
 
+                # Update display with reinforced learning threshold info
+                display.reinforced_threshold = trigger_score
+                display.reinforced_triggered = should_trigger
+
                 # Trigger reinforced learning if needed (don't log - would break Rich Live display)
                 if should_trigger:
                     reinforced_triggered = True
+                    self._reinforced_already_triggered = True  # Mark as triggered to prevent re-triggering
 
                     # ========== INLINE REINFORCED TRAINING (ROBUST SOLUTION) ==========
                     # Instead of calling separate function, run reinforced training INLINE
@@ -1382,7 +1466,17 @@ class BertBase(BertABC):
                     display.is_reinforced = True
                     display.n_epochs = n_epochs_reinforced
                     display.current_epoch = 0
-                    display.current_phase = "Reinforced Training"
+                    display.current_phase = "🔥 Starting Reinforced Training"
+
+                    # Reset all metrics for clean transition
+                    display.train_progress = 0
+                    display.val_progress = 0
+                    display.train_total = 0
+                    display.val_total = 0
+
+                    # IMMEDIATELY update display to show transition (prevents panel stacking)
+                    live.update(display.create_panel(), refresh=True)
+                    time.sleep(0.2)  # Brief pause for clean visual transition
 
                     # Prepare reinforced training setup
                     os.makedirs(metrics_output_dir, exist_ok=True)
@@ -1697,10 +1791,13 @@ class BertBase(BertABC):
                         best_model_path = final_path
                         # Don't log here - would interfere with Rich display
 
-                    # Reset display back to normal mode
+                    # Reset display back to normal mode with clean transition
                     display.is_reinforced = False
-                    display.current_phase = "Training Complete"
-                    live.update(display.create_panel())  # ✅ INLINE update
+                    display.current_phase = "✅ Training Complete (Reinforced)"
+                    display.train_progress = 0
+                    display.val_progress = 0
+                    live.update(display.create_panel(), refresh=True)
+                    time.sleep(0.15)  # Brief pause for visual clarity
 
             if track_languages and language_performance_history:
                 history_path = os.path.join(metrics_output_dir, "language_metrics_history.json")
@@ -1708,7 +1805,7 @@ class BertBase(BertABC):
                     with open(history_path, "w", encoding="utf-8") as history_file:
                         json.dump(language_performance_history, history_file, indent=2, ensure_ascii=False)
                 except OSError:
-                pass
+                    pass
 
         # Finally, if reinforced training was triggered and found a better model, it might have placed it
         # in a temporary folder. The method already handles rename at the end. So at this point we are done.
