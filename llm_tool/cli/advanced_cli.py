@@ -73,13 +73,19 @@ try:
     from rich.syntax import Syntax
     from rich.markdown import Markdown
     from rich import print as rprint
+    from rich import box
     console = Console()
     HAS_RICH = True
 except ImportError as e:
     print("\n❌ Error: Rich library is required but not installed.")
-    print("💻 Please install it with: pip install rich")
-    print(f"\nError details: {e}")
-    sys.exit(1)
+
+# Requests is optional (only needed for Label Studio direct export)
+HAS_REQUESTS = False
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    pass  # Will be handled gracefully when needed
 
 # Try importing pandas for data preview
 try:
@@ -100,6 +106,7 @@ from ..config.settings import Settings
 from ..pipelines.pipeline_controller import PipelineController
 from ..utils.language_detector import LanguageDetector
 from ..annotators.json_cleaner import extract_expected_keys
+from ..annotators.prompt_wizard import SocialSciencePromptWizard, create_llm_client_for_wizard
 from ..trainers.model_trainer import ModelTrainer, BenchmarkConfig
 from ..trainers.multi_label_trainer import (
     MultiLabelTrainer,
@@ -1153,15 +1160,14 @@ class AdvancedCLI:
             menu_table.add_column()
 
             options = [
-                ("1", "🎯 Quick Start - Intelligent Pipeline Setup"),
-                ("2", "📝 Annotation Wizard - Guided LLM Annotation"),
-                ("3", "🚀 Complete Pipeline - Full Automated Workflow"),
-                ("4", "🏋️ Training Studio - Model Training & Benchmarking"),
-                ("5", "🔍 Validation Lab - Quality Assurance Tools"),
-                ("6", "📊 Analytics Dashboard - Performance Insights"),
+                ("1", "🎨 LLM Annotation Studio - Annotate with LLM (No Training)"),
+                ("2", "🎯 Quick Start - Intelligent Pipeline Setup"),
+                ("3", "📝 Annotation Wizard - Guided LLM Annotation"),
+                ("4", "🚀 Complete Pipeline - Full Automated Workflow"),
+                ("5", "🏋️ Training Studio - Model Training & Benchmarking"),
+                ("6", "🔍 Validation Lab - Quality Assurance Tools"),
                 ("7", "💾 Profile Manager - Save & Load Configurations"),
-                ("8", "⚙️ Advanced Settings - Fine-tune Everything"),
-                ("9", "📚 Documentation & Help"),
+                ("8", "📚 Documentation & Help"),
                 ("0", "❌ Exit")
             ]
 
@@ -1183,10 +1189,10 @@ class AdvancedCLI:
 
             self.console.print(panel)
 
-            # Smart prompt with validation
+            # Smart prompt with validation (now 0-8 since we have 9 options)
             choice = Prompt.ask(
                 "\n[bold yellow]Select option[/bold yellow]",
-                choices=[str(i) for i in range(10)],
+                choices=["0", "1", "2", "3", "4", "5", "6", "7", "8"],
                 default="1"
             )
 
@@ -1194,15 +1200,15 @@ class AdvancedCLI:
             print("\n" + "="*50)
             print("Main Menu")
             print("="*50)
-            print("1. Quick Start - Intelligent Pipeline Setup")
-            print("2. Annotation Wizard - Guided LLM Annotation")
-            print("3. Complete Pipeline - Full Automated Workflow")
-            print("4. Training Studio - Model Training & Benchmarking")
-            print("5. Validation Lab - Quality Assurance Tools")
-            print("6. Analytics Dashboard - Performance Insights")
-            print("7. Profile Manager - Save & Load Configurations")
-            print("8. Advanced Settings - Fine-tune Everything")
-            print("9. Documentation & Help")
+            print("1. LLM Annotation Studio - Annotate with LLM (No Training)")
+            print("2. Quick Start - Intelligent Pipeline Setup")
+            print("3. Annotation Wizard - Guided LLM Annotation")
+            print("4. Complete Pipeline - Full Automated Workflow")
+            print("5. Training Studio - Model Training & Benchmarking")
+            print("6. Validation Lab - Quality Assurance Tools")
+            print("7. Analytics Dashboard - Performance Insights")
+            print("8. Profile Manager - Save & Load Configurations")
+            print("9. Advanced Settings - Fine-tune Everything")
             print("0. Exit")
             print("-"*50)
 
@@ -1498,6 +1504,19 @@ class AdvancedCLI:
         response = input(f"Identifier column [{default_choice}]: ").strip()
         return response or default_choice
 
+    def _display_section_header(self, title: str, description: str):
+        """Display a simple section header without full banner"""
+        if HAS_RICH and self.console:
+            self.console.print(f"\n[bold cyan]Welcome to LLM Tool[/bold cyan]")
+            self.console.print(Panel.fit(
+                f"[bold cyan]{title}[/bold cyan]\n{description}",
+                border_style="cyan"
+            ))
+        else:
+            print(f"\nWelcome to LLM Tool")
+            print(f"\n{title}")
+            print(description)
+
     def _display_welcome_banner(self):
         """Display a beautiful welcome banner"""
         if HAS_RICH and self.console:
@@ -1549,9 +1568,9 @@ class AdvancedCLI:
             info_table = Table(show_header=False, box=None, padding=(0, 2))
             info_table.add_row("📚 Version:", "[bright_green]1.0[/bright_green]")
             info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
-            info_table.add_row("🚀 Features:", "[cyan]Multi-LLM Support, Smart Training, Auto-Detection[/cyan]")
-            info_table.add_row("🎯 Capabilities:", "[magenta]JSON Annotation, BERT Training, Benchmarking[/magenta]")
-            info_table.add_row("⚡ Performance:", "[green]Parallel Processing, Progress Tracking[/green]")
+            info_table.add_row("🚀 Features:", "[cyan]Ollama/API Models, Prompt Wizard, Label Studio Export, Multi-Language[/cyan]")
+            info_table.add_row("🎯 Capabilities:", "[magenta]Social Science Annotation, BERT Training, Model Benchmarking, Quality Metrics[/magenta]")
+            info_table.add_row("⚡ Performance:", "[green]Incremental Save, Resume Support, Rich Progress UI, Batch Processing[/green]")
 
             self.console.print(Panel(
                 info_table,
@@ -1614,8 +1633,14 @@ class AdvancedCLI:
             # Interactive configuration with smart defaults
             self.console.print("\n[bold]Let's configure your pipeline:[/bold]\n")
 
+            # Ask if user wants to continue or go back to main menu
+            continue_setup = Confirm.ask("Continue with pipeline setup?", default=True)
+            if not continue_setup:
+                self.console.print("[yellow]Returning to main menu...[/yellow]")
+                return
+
             # LLM configuration - ASK FIRST
-            self.console.print(f"[bold]Step 1: LLM Selection[/bold]")
+            self.console.print(f"\n[bold]Step 1: LLM Selection[/bold]")
             self.console.print(f"[dim]Auto-selected: {best_llm.name} ({best_llm.provider})[/dim]")
 
             use_auto_llm = Confirm.ask("Use this LLM?", default=True)
@@ -2171,7 +2196,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         return []
 
     def _get_custom_prompt(self) -> str:
-        """Get custom prompt from user - detect from directory, file path, or paste"""
+        """Get custom prompt from user - detect from directory, file path, paste, or wizard"""
         if HAS_RICH and self.console:
             # Try to detect prompts in the prompts directory
             detected_prompts = self._detect_prompts_in_directory()
@@ -2206,13 +2231,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # If no detected prompts or user declined, ask for input method
             self.console.print("\n[bold]Prompt Input Method:[/bold]")
+            self.console.print("[dim]• wizard: 🧙‍♂️ Interactive Social Science Prompt Wizard (Recommended!)[/dim]")
+            self.console.print("[dim]• path: Load from existing file[/dim]")
+            self.console.print("[dim]• paste: Paste prompt text directly[/dim]")
+
             method = Prompt.ask(
                 "How do you want to provide the prompt?",
-                choices=["path", "paste"],
-                default="path"
+                choices=["wizard", "path", "paste"],
+                default="wizard"
             )
 
-            if method == "path":
+            if method == "wizard":
+                # Launch the Social Science Prompt Wizard
+                return self._run_social_science_wizard()
+
+            elif method == "path":
                 # Ask for file path
                 prompt_path = Prompt.ask("\nPath to prompt file (.txt)")
                 while not Path(prompt_path).exists():
@@ -2246,6 +2279,140 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         else:
             # Fallback for non-Rich environments
             return input("Enter prompt: ").strip()
+
+    def _run_social_science_wizard(self) -> str:
+        """Launch the Social Science Prompt Wizard for guided prompt creation"""
+        try:
+            # Check if user wants LLM assistance for definition generation
+            use_llm_assist = Confirm.ask(
+                "\n[cyan]🤖 Do you want AI assistance for generating category definitions?[/cyan]",
+                default=True
+            )
+
+            llm_client = None
+            if use_llm_assist:
+                # Detect available models for assistance
+                all_llms = LLMDetector.detect_all_llms()
+                available_models = []
+
+                # Collect all available models
+                for provider, models in all_llms.items():
+                    for model in models:
+                        if model.is_available:
+                            available_models.append(model)
+
+                if not available_models:
+                    self.console.print("[yellow]⚠️  No LLM models detected. Continuing without AI assistance.[/yellow]")
+                else:
+                    # Display available models
+                    self.console.print("\n[bold cyan]🤖 Modèles Disponibles pour Assistance IA :[/bold cyan]")
+
+                    table = Table(
+                        box=box.ROUNDED,
+                        title="[bold]Sélection du Modèle LLM[/bold]",
+                        title_style="cyan"
+                    )
+                    table.add_column("#", justify="right", style="cyan bold", width=4)
+                    table.add_column("Modèle", style="white bold", width=35)
+                    table.add_column("Fournisseur", style="yellow", width=15)
+                    table.add_column("Type / Taille", style="green", width=20)
+
+                    for i, model in enumerate(available_models, 1):
+                        # Determine model type and quality indicator
+                        model_name = model.name
+                        provider = model.provider
+
+                        # Extract size/quality info from model name
+                        type_info = ""
+                        if "120b" in model_name.lower():
+                            type_info = "🚀 Très Grand (120B)"
+                        elif "72b" in model_name.lower() or "70b" in model_name.lower():
+                            type_info = "⚡ Grand (70B+)"
+                        elif "27b" in model_name.lower() or "22b" in model_name.lower():
+                            type_info = "💪 Moyen (20B+)"
+                        elif "8x" in model_name.lower():
+                            type_info = "🔀 MoE (Mixture)"
+                        elif "3.2" in model_name.lower() or "3.3" in model_name.lower():
+                            type_info = "⚡ Rapide (Llama 3)"
+                        elif "gpt-5-nano" in model_name.lower():
+                            type_info = "⚡ Ultra Rapide"
+                        elif "gpt-5-mini" in model_name.lower():
+                            type_info = "🎯 Équilibré"
+                        elif "deepseek-r1" in model_name.lower():
+                            type_info = "🧠 Raisonnement"
+                        elif "nemotron" in model_name.lower():
+                            type_info = "📝 Instructions"
+                        else:
+                            type_info = model.size or "Standard"
+
+                        # Style the provider
+                        if provider == "ollama":
+                            provider_styled = "🏠 Ollama"
+                        elif provider == "openai":
+                            provider_styled = "☁️  OpenAI"
+                        elif provider == "anthropic":
+                            provider_styled = "☁️  Anthropic"
+                        else:
+                            provider_styled = provider
+
+                        table.add_row(str(i), model_name, provider_styled, type_info)
+
+                    self.console.print(table)
+                    self.console.print("\n[dim italic]💡 Conseil : Les modèles plus grands donnent de meilleurs résultats mais sont plus lents[/dim italic]\n")
+
+                    # Let user select model
+                    while True:
+                        choice = IntPrompt.ask(
+                            "\n[cyan]Select model for AI assistance[/cyan]",
+                            default=1
+                        )
+                        if 1 <= choice <= len(available_models):
+                            break
+                        self.console.print(f"[red]Please select a number between 1 and {len(available_models)}[/red]")
+
+                    selected_model = available_models[choice - 1]
+                    self.console.print(f"[green]✓ Selected: {selected_model.name}[/green]\n")
+
+                    # Get API key if needed
+                    api_key = None
+                    if selected_model.requires_api_key:
+                        api_key = self._get_or_prompt_api_key(
+                            selected_model.provider,
+                            selected_model.name
+                        )
+
+                    # Create LLM client for wizard
+                    try:
+                        llm_client = create_llm_client_for_wizard(
+                            provider=selected_model.provider,
+                            model=selected_model.name,
+                            api_key=api_key
+                        )
+                        self.console.print("[green]✓ AI assistant ready![/green]\n")
+                    except Exception as e:
+                        self.console.print(f"[yellow]⚠️  Failed to initialize AI assistant: {e}[/yellow]")
+                        self.console.print("[yellow]Continuing without AI assistance.[/yellow]\n")
+                        llm_client = None
+
+            # Create and run wizard
+            wizard = SocialSciencePromptWizard(llm_client=llm_client)
+            prompt_text, expected_keys = wizard.run()
+
+            # Store expected keys in prompt manager for later use
+            if expected_keys:
+                self.console.print(f"\n[green]✓ Generated prompt with {len(expected_keys)} JSON keys:[/green]")
+                self.console.print(f"[dim]{', '.join(expected_keys)}[/dim]\n")
+
+            return prompt_text
+
+        except Exception as e:
+            self.console.print(f"\n[red]✗ Error running wizard: {e}[/red]")
+            import traceback
+            self.console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+            # Fallback to manual prompt entry
+            self.console.print("\n[yellow]Falling back to manual prompt entry...[/yellow]")
+            return self._get_custom_prompt()
 
     def _get_multi_prompts(self) -> List[Tuple[str, List[str], str]]:
         """Get multiple prompts for multi-prompt mode"""
@@ -2730,8 +2897,226 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             options.setdefault('num_predict', user_max_tokens)
             pipeline_config['options'] = options
 
+        # ============================================================
+        # REPRODUCIBILITY METADATA
+        # ============================================================
+        if HAS_RICH and self.console:
+            self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
+            self.console.print("[yellow]⚠️  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
+
+            self.console.print("  [green]1. Resume Capability[/green]")
+            self.console.print("     • Continue this annotation if it stops or crashes")
+            self.console.print("     • Annotate additional rows later with same settings")
+            self.console.print("     • Access via 'Resume/Relaunch Annotation' workflow\n")
+
+            self.console.print("  [green]2. Scientific Reproducibility[/green]")
+            self.console.print("     • Document exact parameters for research papers")
+            self.console.print("     • Reproduce identical annotations in the future")
+            self.console.print("     • Track model version, prompts, and all settings\n")
+
+            self.console.print("  [red]⚠️  If you choose NO:[/red]")
+            self.console.print("     • You CANNOT resume this annotation later")
+            self.console.print("     • You CANNOT relaunch with same parameters")
+            self.console.print("     • Parameters will be lost forever\n")
+
+            save_metadata = Confirm.ask(
+                "[bold yellow]Save annotation parameters to JSON file?[/bold yellow]",
+                default=True
+            )
+
+            # Validation tool export option
+            self.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
+            self.console.print("[dim]Export annotations to JSONL format for human validation[/dim]\n")
+
+            self.console.print("[yellow]Available validation tools:[/yellow]")
+            self.console.print("  • [cyan]Doccano[/cyan] - Simple, lightweight NLP annotation tool")
+            self.console.print("  • [cyan]Label Studio[/cyan] - Advanced, feature-rich annotation platform")
+            self.console.print("  • Both are open-source and free\n")
+
+            export_enabled = Confirm.ask(
+                "[bold yellow]Export to validation tool?[/bold yellow]",
+                default=False
+            )
+
+            export_to_doccano = False
+            export_to_labelstudio = False
+            export_sample_size = None
+
+            if export_enabled:
+                # Ask which tool to use
+                self.console.print("\n[yellow]Select validation tool:[/yellow]")
+                export_tool = Prompt.ask(
+                    "[bold yellow]Which tool?[/bold yellow]",
+                    choices=["doccano", "labelstudio"],
+                    default="doccano"
+                )
+
+                export_to_doccano = export_tool == "doccano"
+                export_to_labelstudio = export_tool == "labelstudio"
+
+                # Step 2b: If Label Studio, ask export method
+                labelstudio_direct_export = False
+                labelstudio_api_url = None
+                labelstudio_api_key = None
+
+                if export_to_labelstudio:
+                    self.console.print("\n[yellow]Label Studio export method:[/yellow]")
+                    self.console.print("  • [cyan]jsonl[/cyan] - Export to JSONL file (manual import)")
+                    if HAS_REQUESTS:
+                        self.console.print("  • [cyan]direct[/cyan] - Direct export to Label Studio via API\n")
+                        export_choices = ["jsonl", "direct"]
+                    else:
+                        self.console.print("  • [dim]direct[/dim] - Direct export via API [dim](requires 'requests' library)[/dim]\n")
+                        export_choices = ["jsonl"]
+
+                    export_method = Prompt.ask(
+                        "[bold yellow]Export method[/bold yellow]",
+                        choices=export_choices,
+                        default="jsonl"
+                    )
+
+                    if export_method == "direct":
+                        labelstudio_direct_export = True
+
+                        self.console.print("\n[cyan]Label Studio API Configuration:[/cyan]")
+                        labelstudio_api_url = Prompt.ask(
+                            "Label Studio URL",
+                            default="http://localhost:8080"
+                        )
+
+                        labelstudio_api_key = Prompt.ask(
+                            "API Key (from Label Studio Account & Settings)"
+                        )
+
+                # Ask about LLM predictions inclusion
+                self.console.print("\n[yellow]Include LLM predictions in export?[/yellow]")
+                self.console.print("  • [cyan]with[/cyan] - Include LLM annotations as predictions (for review/correction)")
+                self.console.print("  • [cyan]without[/cyan] - Export only data without predictions (for manual annotation)")
+                self.console.print("  • [cyan]both[/cyan] - Create two files/projects: one with and one without predictions\n")
+
+                prediction_mode = Prompt.ask(
+                    "[bold yellow]Prediction mode[/bold yellow]",
+                    choices=["with", "without", "both"],
+                    default="with"
+                )
+
+                # Ask how many sentences to export
+                self.console.print("\n[yellow]How many annotated sentences to export?[/yellow]")
+                self.console.print("  • [cyan]all[/cyan] - Export all annotated sentences")
+                self.console.print("  • [cyan]representative[/cyan] - Representative sample (stratified by labels)")
+                self.console.print("  • [cyan]number[/cyan] - Specify exact number\n")
+
+                sample_choice = Prompt.ask(
+                    "[bold yellow]Export sample[/bold yellow]",
+                    choices=["all", "representative", "number"],
+                    default="all"
+                )
+
+                if sample_choice == "all":
+                    export_sample_size = "all"
+                elif sample_choice == "representative":
+                    export_sample_size = "representative"
+                else:  # number
+                    export_sample_size = self._int_prompt_with_validation(
+                        "Number of sentences to export",
+                        100,
+                        1,
+                        999999
+                    )
+        else:
+            save_metadata = False
+            export_to_doccano = False
+            export_to_labelstudio = False
+            export_sample_size = None
+            labelstudio_direct_export = False
+            labelstudio_api_url = None
+            labelstudio_api_key = None
+
         # Execute pipeline
         try:
+            # Save metadata before execution
+            if save_metadata:
+                import json
+
+                # Build comprehensive metadata
+                metadata = {
+                    'annotation_session': {
+                        'timestamp': timestamp,
+                        'tool_version': 'LLMTool v1.0',
+                        'workflow': 'Quick Start - Intelligent Pipeline Setup'
+                    },
+                    'data_source': {
+                        'file_path': dataset_path,
+                        'file_name': Path(dataset_path).name,
+                        'data_format': data_format,
+                        'text_column': text_column,
+                        'identifier_column': identifier_column,
+                        'detected_language': detected_language,
+                        'total_rows': annotation_settings.get('annotation_sample_size') if annotation_settings.get('annotation_sample_size') else 'all',
+                        'sampling_strategy': annotation_settings.get('annotation_sampling_strategy', 'head'),
+                        'sample_seed': annotation_settings.get('annotation_sample_seed', 42)
+                    },
+                    'model_configuration': {
+                        'provider': model_info.provider,
+                        'model_name': model_info.name,
+                        'annotation_mode': annotation_mode,
+                        'temperature': annotation_settings.get('temperature'),
+                        'max_tokens': annotation_settings.get('max_tokens'),
+                        'top_p': annotation_settings.get('top_p'),
+                        'top_k': annotation_settings.get('top_k')
+                    },
+                    'prompts': [
+                        {
+                            'prompt_content': p['prompt'],
+                            'expected_keys': p['expected_keys'],
+                            'prefix': p['prefix']
+                        }
+                        for p in prompts_payload
+                    ],
+                    'processing_configuration': {
+                        'parallel_workers': pipeline_config.get('num_processes', 1),
+                        'batch_size': pipeline_config.get('batch_size', 16)
+                    },
+                    'training_configuration': {
+                        'run_training': run_training,
+                        'training_strategy': training_strategy,
+                        'label_strategy': label_strategy,
+                        'training_annotation_keys': training_annotation_keys,
+                        'benchmark_mode': benchmark_mode,
+                        'training_model': default_model,
+                        'max_epochs': training_preset.get('epochs', 10),
+                        'batch_size': training_preset.get('batch_size', 16),
+                        'learning_rate': training_preset.get('learning_rate', 2e-5)
+                    },
+                    'output': {
+                        'output_path': str(default_output_path),
+                        'output_format': 'csv'
+                    },
+                    'export_preferences': {
+                        'export_to_doccano': export_to_doccano,
+                        'export_to_labelstudio': export_to_labelstudio,
+                        'export_sample_size': export_sample_size,
+                        'prediction_mode': prediction_mode if (export_to_doccano or export_to_labelstudio) else 'with',
+                        'labelstudio_direct_export': labelstudio_direct_export if export_to_labelstudio else False,
+                        'labelstudio_api_url': labelstudio_api_url if export_to_labelstudio else None,
+                        'labelstudio_api_key': labelstudio_api_key if export_to_labelstudio else None
+                    }
+                }
+
+                # Save metadata JSON
+                metadata_filename = f"{Path(dataset_path).stem}_{safe_model_name}_metadata_{timestamp}.json"
+                metadata_path = annotations_dir / metadata_filename
+
+                with open(metadata_path, 'w', encoding='utf-8') as f:
+                    json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+                if HAS_RICH and self.console:
+                    self.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
+                    self.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
+                    self.console.print(f"   {metadata_path}\n")
+                else:
+                    print(f"\n✅ Metadata saved: {metadata_path}\n")
+
             # Execute with real-time progress tracking
             print("\n🚀 Starting pipeline...\n")
 
@@ -2749,7 +3134,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 # Use RichProgressManager in compact mode for elegant display
                 with RichProgressManager(
-                    show_json_every=10,  # Show JSON sample every 10 annotations
+                    show_json_every=1,  # Show JSON sample for every annotation
                     compact_mode=False   # Display full preview panels
                 ) as progress_manager:
                     # Wrap the pipeline for enhanced JSON tracking
@@ -2805,6 +3190,66 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 if best_f1 is not None:
                     print(f"Macro F1: {best_f1:.3f}")
 
+        # Export to Doccano JSONL if requested
+        if export_to_doccano and HAS_RICH and self.console:
+            # Build prompt_configs from prompts_payload for Quick Start
+            prompt_configs_for_export = []
+            for p in prompts_payload:
+                prompt_configs_for_export.append({
+                    'prompt': {
+                        'keys': p.get('expected_keys', []),
+                        'content': p.get('prompt', '')
+                    },
+                    'prefix': p.get('prefix', '')
+                })
+
+            self._export_to_doccano_jsonl(
+                output_file=output_file,
+                text_column=text_column,
+                prompt_configs=prompt_configs_for_export,
+                data_path=Path(dataset_path),
+                timestamp=timestamp,
+                sample_size=export_sample_size
+            )
+
+        # Export to Label Studio if requested
+        if export_to_labelstudio and HAS_RICH and self.console:
+            # Build prompt_configs from prompts_payload for Quick Start
+            prompt_configs_for_export = []
+            for p in prompts_payload:
+                prompt_configs_for_export.append({
+                    'prompt': {
+                        'keys': p.get('expected_keys', []),
+                        'content': p.get('prompt', '')
+                    },
+                    'prefix': p.get('prefix', '')
+                })
+
+            if labelstudio_direct_export:
+                # Direct export to Label Studio via API
+                self._export_to_labelstudio_direct(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs_for_export,
+                    data_path=Path(dataset_path),
+                    timestamp=timestamp,
+                    sample_size=export_sample_size,
+                    prediction_mode=prediction_mode,
+                    api_url=labelstudio_api_url,
+                    api_key=labelstudio_api_key
+                )
+            else:
+                # Export to JSONL file for manual import
+                self._export_to_labelstudio_jsonl(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs_for_export,
+                    data_path=Path(dataset_path),
+                    timestamp=timestamp,
+                    sample_size=export_sample_size,
+                    prediction_mode=prediction_mode
+                )
+
         # Persist last run details for other wizards
         self.last_annotation_config = {
             'data_path': dataset_path,
@@ -2828,23 +3273,23 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 choice = self.get_main_menu_choice()
 
                 if choice == "1":
-                    self.quick_start_wizard()
+                    self.llm_annotation_studio()
                 elif choice == "2":
-                    self.annotation_wizard()
+                    self.quick_start_wizard()
                 elif choice == "3":
-                    self.complete_pipeline()
+                    self.annotation_wizard()
                 elif choice == "4":
-                    self.training_studio()
+                    self.complete_pipeline()
                 elif choice == "5":
-                    self.validation_lab()
+                    self.training_studio()
                 elif choice == "6":
-                    self.analytics_dashboard()
+                    self.validation_lab()
                 elif choice == "7":
-                    self.profile_manager_ui()
+                    self.analytics_dashboard()
                 elif choice == "8":
-                    self.advanced_settings()
+                    self.profile_manager_ui()
                 elif choice == "9":
-                    self.show_documentation()
+                    self.advanced_settings()
                 elif choice == "0":
                     if HAS_RICH and self.console:
                         self.console.print("\n[bold cyan]Thank you for using LLMTool! 👋[/bold cyan]\n")
@@ -2873,15 +3318,100 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     print(f"Error: {str(e)}")
 
     # Placeholder methods for other menu options
+    def llm_annotation_studio(self):
+        """
+        LLM Annotation Studio - Complete annotation workflow without training.
+
+        Features:
+        - Auto-detection of prompts from prompts/ folder
+        - Automatic JSON key extraction
+        - Multi-prompt with prefix system
+        - Incremental save for ALL data formats
+        - Automatic ID creation and tracking
+        - Organized output structure
+        """
+        # Display welcome banner
+        self._display_welcome_banner()
+
+        if HAS_RICH and self.console:
+            # Get smart suggestions
+            suggestions = self._get_smart_suggestions()
+
+            # Create workflow menu table
+            from rich.table import Table
+            workflow_table = Table(show_header=False, box=None, padding=(0, 2))
+            workflow_table.add_column("Option", style="cyan", width=8)
+            workflow_table.add_column("Description")
+
+            workflows = [
+                ("1", "🔄 Resume/Relaunch Annotation (Use saved parameters or resume incomplete)"),
+                ("2", "🎯 Smart Annotate (Guided wizard with all options)"),
+                ("3", "🗄️  Database Annotator (PostgreSQL direct)"),
+                ("4", "🗑️  Clean Old Metadata (Delete saved parameters)"),
+                ("0", "⬅️  Back to main menu")
+            ]
+
+            for option, desc in workflows:
+                workflow_table.add_row(f"[bold cyan]{option}[/bold cyan]", desc)
+
+            # Display panel with suggestions
+            panel = Panel(
+                workflow_table,
+                title="[bold]🎨 LLM Annotation Studio[/bold]",
+                subtitle=f"[dim]{suggestions}[/dim]" if suggestions else None,
+                border_style="cyan"
+            )
+
+            self.console.print("\n")
+            self.console.print(panel)
+
+            workflow = Prompt.ask(
+                "\n[bold yellow]Select workflow[/bold yellow]",
+                choices=["0", "1", "2", "3", "4"],
+                default="2"
+            )
+
+            if workflow == "0":
+                return
+            elif workflow == "1":
+                self._quick_annotate()
+            elif workflow == "2":
+                self._smart_annotate()
+            elif workflow == "3":
+                self._database_annotator()
+            elif workflow == "4":
+                self._clean_metadata()
+        else:
+            print("\n=== LLM Annotation Studio ===")
+            print("Professional LLM annotation without model training\n")
+            print("1. Resume/Relaunch Annotation")
+            print("2. Smart Annotate (Recommended)")
+            print("3. Database Annotator")
+            print("4. Clean Old Metadata")
+            print("0. Back")
+            choice = input("\nSelect workflow: ").strip()
+
+            if choice == "1":
+                self._quick_annotate()
+            elif choice == "2":
+                self._smart_annotate()
+            elif choice == "3":
+                self._database_annotator()
+            elif choice == "4":
+                self._clean_metadata()
+
     def annotation_wizard(self):
         """Guided annotation wizard with step-by-step configuration"""
-        if HAS_RICH and self.console:
-            self.console.print(Panel.fit(
-                "[bold cyan]📝 Annotation Wizard[/bold cyan]\n"
-                "Interactive guided setup for LLM annotation",
-                border_style="cyan"
-            ))
+        # Display welcome banner
+        self._display_welcome_banner()
 
+        # Display simple section header
+        self._display_section_header(
+            "📝 Annotation Wizard",
+            "Interactive guided setup for LLM annotation"
+        )
+
+        if HAS_RICH and self.console:
             # Step 1: Choose annotation mode
             self.console.print("\n[bold]Step 1: Annotation Mode[/bold]")
             mode = Prompt.ask(
@@ -3107,13 +3637,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def complete_pipeline(self):
         """Complete pipeline workflow - Full annotation to deployment"""
-        if HAS_RICH and self.console:
-            self.console.print(Panel.fit(
-                "[bold cyan]🚀 Complete Pipeline[/bold cyan]\n"
-                "Full workflow: Annotation → Training → Validation → Deployment",
-                border_style="cyan"
-            ))
+        # Display welcome banner
+        self._display_welcome_banner()
 
+        # Display simple section header
+        self._display_section_header(
+            "🚀 Complete Pipeline",
+            "Full workflow: Annotation → Training → Validation → Deployment"
+        )
+
+        if HAS_RICH and self.console:
             # Step 1: Data Selection
             self.console.print("\n[bold yellow]Step 1: Data Selection[/bold yellow]")
 
@@ -3485,17 +4018,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def training_studio(self):
         """Training studio bringing dataset builders and trainers together."""
+        # Display welcome banner
+        self._display_welcome_banner()
+
+        # Display simple section header
+        self._display_section_header(
+            "🏋️ Training Studio",
+            "Advanced model training and benchmarking"
+        )
+
         if not (HAS_RICH and self.console):
             print("\nTraining Studio requires the Rich interface. Launch `llm-tool --simple` for basic commands.")
             return
-
-        self.console.print(
-            Panel.fit(
-                "[bold cyan]🏋️ Training Studio[/bold cyan]\n"
-                "Advanced model training and benchmarking",
-                border_style="cyan",
-            )
-        )
 
         self._ensure_training_models_loaded()
         builder = TrainingDatasetBuilder(self.settings.paths.data_dir / "training_data")
@@ -4478,13 +5012,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def validation_lab(self):
         """Validation lab for quality control and Doccano export"""
-        if HAS_RICH and self.console:
-            self.console.print(Panel.fit(
-                "[bold cyan]🔍 Validation Lab[/bold cyan]\n"
-                "Quality control and human review preparation",
-                border_style="cyan"
-            ))
+        # Display welcome banner
+        self._display_welcome_banner()
 
+        # Display simple section header
+        self._display_section_header(
+            "🔍 Validation Lab",
+            "Quality control and human review preparation"
+        )
+
+        if HAS_RICH and self.console:
             # Select annotations file
             self.console.print("\n[bold]Select Annotations File:[/bold]")
             annotations_path = self._prompt_file_path("Annotations file path")
@@ -4575,13 +5112,28 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def analytics_dashboard(self):
         """Analytics dashboard"""
+        # Display simple section header
+        self._display_section_header(
+            "📊 Analytics Dashboard",
+            "Performance analysis and insights (Coming Soon)"
+        )
+
         if HAS_RICH and self.console:
-            self.console.print(Panel("[bold cyan]Analytics Dashboard - Coming Soon[/bold cyan]"))
+            self.console.print("\n[yellow]This feature is under development[/yellow]")
         else:
-            print("Analytics Dashboard - Coming Soon")
+            print("\nThis feature is under development")
 
     def profile_manager_ui(self):
         """Profile manager interface"""
+        # Display welcome banner
+        self._display_welcome_banner()
+
+        # Display simple section header
+        self._display_section_header(
+            "💾 Profile Manager",
+            "Manage saved configuration profiles"
+        )
+
         if HAS_RICH and self.console:
             profiles = self.profile_manager.list_profiles()
 
@@ -4616,13 +5168,2789 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def advanced_settings(self):
         """Advanced settings interface"""
+        # Display simple section header
+        self._display_section_header(
+            "⚙️ Advanced Settings",
+            "Configure advanced options (Coming Soon)"
+        )
+
         if HAS_RICH and self.console:
-            self.console.print(Panel("[bold cyan]Advanced Settings - Coming Soon[/bold cyan]"))
+            self.console.print("\n[yellow]This feature is under development[/yellow]")
         else:
-            print("Advanced Settings - Coming Soon")
+            print("\nThis feature is under development")
+
+    # ============================================================================
+    # LLM ANNOTATION STUDIO - HELPER METHODS
+    # ============================================================================
+
+    def _detect_prompts_in_folder(self, folder_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+        """
+        Auto-detect prompts from prompts/ folder with JSON key extraction.
+
+        Returns:
+            List of dicts with: {'path': Path, 'name': str, 'keys': List[str], 'content': str}
+        """
+        if folder_path is None:
+            # Default to current directory prompts/ folder
+            folder_path = Path.cwd() / "prompts"
+
+        if not folder_path.exists():
+            self.logger.warning(f"Prompts folder not found: {folder_path}")
+            return []
+
+        prompts = []
+        for txt_file in sorted(folder_path.glob("*.txt")):
+            try:
+                content = txt_file.read_text(encoding='utf-8')
+
+                # Extract JSON keys using the existing function
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(content)
+
+                prompts.append({
+                    'path': txt_file,
+                    'name': txt_file.stem,
+                    'keys': keys,
+                    'content': content
+                })
+
+                self.logger.info(f"Detected prompt: {txt_file.name} with {len(keys)} keys")
+            except Exception as e:
+                self.logger.warning(f"Failed to read prompt {txt_file.name}: {e}")
+
+        return prompts
+
+    def _detect_text_columns(self, file_path: Path) -> Dict[str, Any]:
+        """
+        Intelligently detect text columns in a dataset.
+
+        Returns:
+            Dict with: {
+                'all_columns': List[str],
+                'text_candidates': List[Dict],  # [{'name': str, 'confidence': str, 'sample': str}]
+                'df': pd.DataFrame
+            }
+        """
+        # Load data to analyze columns
+        try:
+            if file_path.suffix.lower() == '.csv':
+                df = pd.read_csv(file_path, nrows=100)  # Sample first 100 rows
+            elif file_path.suffix.lower() in ['.xlsx', '.xls']:
+                df = pd.read_excel(file_path, nrows=100)
+            elif file_path.suffix.lower() == '.parquet':
+                df = pd.read_parquet(file_path)
+                df = df.head(100)
+            elif file_path.suffix.lower() == '.jsonl':
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = [json.loads(line) for line in f.readlines()[:100]]
+                df = pd.DataFrame(data)
+            else:
+                # Fallback
+                return {'all_columns': [], 'text_candidates': [], 'df': None}
+
+            all_columns = df.columns.tolist()
+            text_candidates = []
+
+            # Analyze each column
+            for col in all_columns:
+                if col in df.columns and df[col].dtype == 'object':
+                    # Get non-null sample
+                    non_null = df[col].dropna()
+                    if len(non_null) == 0:
+                        continue
+
+                    # Calculate average length
+                    avg_length = non_null.astype(str).str.len().mean()
+                    sample_value = str(non_null.iloc[0])[:100]  # First 100 chars
+
+                    # Determine confidence
+                    if avg_length > 100:
+                        confidence = "high"
+                    elif avg_length > 30:
+                        confidence = "medium"
+                    elif avg_length > 10:
+                        confidence = "low"
+                    else:
+                        confidence = "very_low"
+
+                    # Add to candidates if reasonable length
+                    if avg_length > 10:
+                        text_candidates.append({
+                            'name': col,
+                            'confidence': confidence,
+                            'avg_length': avg_length,
+                            'sample': sample_value
+                        })
+
+            # Sort by confidence and avg_length
+            confidence_order = {"high": 0, "medium": 1, "low": 2, "very_low": 3}
+            text_candidates.sort(key=lambda x: (confidence_order[x['confidence']], -x['avg_length']))
+
+            return {
+                'all_columns': all_columns,
+                'text_candidates': text_candidates,
+                'df': df
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to analyze columns: {e}")
+            return {'all_columns': [], 'text_candidates': [], 'df': None}
+
+    def _create_annotation_id(self, df: pd.DataFrame, id_column: str = "annotation_id") -> pd.DataFrame:
+        """
+        Create or verify annotation ID column for tracking.
+
+        Args:
+            df: DataFrame to process
+            id_column: Name of ID column
+
+        Returns:
+            DataFrame with ID column added/verified
+        """
+        if id_column not in df.columns:
+            df[id_column] = [f"ann_{i:06d}" for i in range(1, len(df) + 1)]
+            self.console.print(f"[green]✓ Created {id_column} column with {len(df)} IDs[/green]")
+        else:
+            # Verify no nulls
+            null_count = df[id_column].isna().sum()
+            if null_count > 0:
+                self.console.print(f"[yellow]⚠️  Found {null_count} null IDs, filling them...[/yellow]")
+                next_id = len(df) + 1
+                for idx in df[df[id_column].isna()].index:
+                    df.at[idx, id_column] = f"ann_{next_id:06d}"
+                    next_id += 1
+
+        return df
+
+    def _create_output_structure(self, base_name: str, data_format: str) -> Dict[str, Path]:
+        """
+        Create organized output folder structure.
+
+        Structure:
+            annotations_output/
+                {timestamp}_{base_name}/
+                    data/           # Annotated data files
+                    logs/           # Annotation logs
+                    prompts/        # Copy of prompts used
+                    config.json     # Configuration used
+
+        Returns:
+            Dict with paths: {'root', 'data', 'logs', 'prompts', 'config'}
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        root = Path("annotations_output") / f"{timestamp}_{base_name}"
+
+        paths = {
+            'root': root,
+            'data': root / 'data',
+            'logs': root / 'logs',
+            'prompts': root / 'prompts',
+            'config': root / 'config.json'
+        }
+
+        # Create directories
+        for key in ['data', 'logs', 'prompts']:
+            paths[key].mkdir(parents=True, exist_ok=True)
+
+        self.console.print(f"[green]✓ Created output structure: {root}[/green]")
+        return paths
+
+    def _save_incremental(
+        self,
+        df: pd.DataFrame,
+        output_path: Path,
+        data_format: str,
+        batch_size: int = 50,
+        db_config: Optional[Dict] = None
+    ):
+        """
+        Save data incrementally based on format.
+
+        Supports:
+        - CSV: Line-by-line append
+        - Excel: Batch save every N rows
+        - Parquet: Batch save every N rows
+        - PostgreSQL: Immediate UPDATE per row
+        - RData: Batch save every N rows
+        """
+        if data_format == 'csv':
+            # Append mode for CSV
+            if not output_path.exists():
+                df.head(0).to_csv(output_path, index=False)
+            df.to_csv(output_path, mode='a', header=not output_path.exists(), index=False)
+
+        elif data_format == 'excel':
+            # Full save for Excel (cannot append)
+            df.to_excel(output_path, index=False)
+
+        elif data_format == 'parquet':
+            # Full save for Parquet
+            df.to_parquet(output_path, index=False)
+
+        elif data_format == 'postgresql' and db_config:
+            # Direct UPDATE in database
+            from sqlalchemy import create_engine, text
+            engine = create_engine(
+                f"postgresql://{db_config['user']}:{db_config['password']}@"
+                f"{db_config['host']}:{db_config.get('port', 5432)}/{db_config['database']}"
+            )
+            # Implementation would use UPDATE statements
+            pass
+
+        elif data_format in ['rdata', 'rds']:
+            # Save using pyreadr
+            try:
+                import pyreadr
+                pyreadr.write_rdata(str(output_path), df, df_name="annotated_data")
+            except ImportError:
+                self.logger.error("pyreadr not installed - cannot save RData format")
+
+    # ============================================================================
+    # LLM ANNOTATION STUDIO - WORKFLOW METHODS
+    # ============================================================================
+
+    def _quick_annotate(self):
+        """Resume or relaunch annotation using saved parameters"""
+        self.console.print("\n[bold cyan]🔄 Resume/Relaunch Annotation[/bold cyan]\n")
+        self.console.print("[dim]Load saved parameters from previous annotations[/dim]\n")
+
+        # ============================================================
+        # DETECT METADATA FILES
+        # ============================================================
+        annotations_dir = self.settings.paths.data_dir / 'annotations'
+
+        if not annotations_dir.exists():
+            self.console.print("[yellow]No annotations directory found.[/yellow]")
+            self.console.print("[dim]Run Smart Annotate first to create annotation sessions.[/dim]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        # Find all metadata JSON files
+        metadata_files = list(annotations_dir.glob("*_metadata_*.json"))
+
+        if not metadata_files:
+            self.console.print("[yellow]No saved annotation parameters found.[/yellow]")
+            self.console.print("[dim]Run Smart Annotate and save parameters to use this feature.[/dim]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        # Sort by modification time (most recent first)
+        metadata_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+        # Display available sessions
+        self.console.print(f"[green]Found {len(metadata_files)} saved annotation session(s)[/green]\n")
+
+        sessions_table = Table(border_style="cyan", show_header=True)
+        sessions_table.add_column("#", style="cyan", width=3)
+        sessions_table.add_column("Session", style="white")
+        sessions_table.add_column("Date", style="yellow")
+        sessions_table.add_column("Workflow", style="green")
+        sessions_table.add_column("Model", style="magenta")
+
+        import json
+        from datetime import datetime
+
+        # Load and display sessions
+        valid_sessions = []
+        for i, mf in enumerate(metadata_files[:20], 1):  # Show max 20 most recent
+            try:
+                with open(mf, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+
+                session_info = metadata.get('annotation_session', {})
+                model_config = metadata.get('model_configuration', {})
+
+                timestamp_str = session_info.get('timestamp', '')
+                try:
+                    dt = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                    date_str = dt.strftime('%Y-%m-%d %H:%M')
+                except:
+                    date_str = timestamp_str
+
+                workflow = session_info.get('workflow', 'Unknown')
+                model_name = model_config.get('model_name', 'Unknown')
+
+                sessions_table.add_row(
+                    str(i),
+                    mf.stem[:40],
+                    date_str,
+                    workflow.split(' - ')[0] if ' - ' in workflow else workflow,
+                    model_name
+                )
+
+                valid_sessions.append((mf, metadata))
+            except Exception as e:
+                self.logger.warning(f"Could not load metadata file {mf}: {e}")
+                continue
+
+        if not valid_sessions:
+            self.console.print("[yellow]No valid metadata files found.[/yellow]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        self.console.print(sessions_table)
+
+        # Select session
+        session_choice = self._int_prompt_with_validation(
+            "\n[bold yellow]Select session to resume/relaunch[/bold yellow]",
+            1, 1, len(valid_sessions)
+        )
+
+        selected_file, metadata = valid_sessions[session_choice - 1]
+
+        self.console.print(f"\n[green]✓ Selected: {selected_file.name}[/green]")
+
+        # ============================================================
+        # DISPLAY ALL PARAMETERS
+        # ============================================================
+        self._display_metadata_parameters(metadata)
+
+        # ============================================================
+        # ASK: RESUME OR RELAUNCH?
+        # ============================================================
+        self.console.print("\n[bold cyan]📋 Action Mode[/bold cyan]\n")
+        self.console.print("[yellow]What would you like to do?[/yellow]")
+        self.console.print("  • [cyan]resume[/cyan]   - Continue an incomplete annotation (skip already annotated rows)")
+        self.console.print("           [dim]Requires the output file with annotated rows[/dim]")
+        self.console.print("  • [cyan]relaunch[/cyan] - Start a new annotation with same parameters")
+        self.console.print("           [dim]Runs a fresh annotation session[/dim]")
+
+        action_mode = Prompt.ask(
+            "\n[bold yellow]Select action[/bold yellow]",
+            choices=["resume", "relaunch"],
+            default="relaunch"
+        )
+
+        # ============================================================
+        # ASK: MODIFY PARAMETERS?
+        # ============================================================
+        self.console.print("\n[bold cyan]⚙️  Parameter Modification[/bold cyan]\n")
+
+        modify_params = Confirm.ask(
+            "Do you want to modify any parameters?",
+            default=False
+        )
+
+        # Extract parameters from metadata
+        modified_metadata = self._modify_parameters_if_requested(metadata, modify_params)
+
+        # ============================================================
+        # EXECUTE ANNOTATION
+        # ============================================================
+        self._execute_from_metadata(modified_metadata, action_mode, selected_file)
+
+        self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
+        input()
+
+    def _smart_annotate(self):
+        """Smart guided annotation wizard with all options"""
+        self.console.print("\n[bold cyan]🎯 Smart Annotate - Guided Wizard[/bold cyan]\n")
+
+        # Step 1: Data Selection
+        self.console.print("[bold]Step 1/6: Data Selection[/bold]")
+
+        if not self.detected_datasets:
+            self.console.print("[yellow]No datasets auto-detected.[/yellow]")
+            data_path = Path(self._prompt_file_path("Dataset path"))
+        else:
+            self.console.print(f"\n[dim]Found {len(self.detected_datasets)} datasets:[/dim]")
+            for i, ds in enumerate(self.detected_datasets[:10], 1):
+                self.console.print(f"  {i}. {ds.path.name} ({ds.format.upper()}, {ds.size_mb:.1f} MB)")
+
+            use_detected = Confirm.ask("\nUse detected dataset?", default=True)
+            if use_detected:
+                choice = self._int_prompt_with_validation("Select dataset", 1, 1, len(self.detected_datasets))
+                data_path = self.detected_datasets[choice - 1].path
+            else:
+                data_path = Path(self._prompt_file_path("Dataset path"))
+
+        # Detect format
+        data_format = data_path.suffix[1:].lower()
+        if data_format == 'xlsx':
+            data_format = 'excel'
+
+        self.console.print(f"[green]✓ Selected: {data_path.name} ({data_format})[/green]")
+
+        # Step 2: Text column selection with intelligent detection
+        self.console.print("\n[bold]Step 2/6: Text Column Selection[/bold]")
+
+        # Detect text columns
+        column_info = self._detect_text_columns(data_path)
+
+        if column_info['text_candidates']:
+            self.console.print("\n[dim]Detected text columns (sorted by confidence):[/dim]")
+
+            # Create table for candidates
+            col_table = Table(border_style="blue")
+            col_table.add_column("#", style="cyan", width=3)
+            col_table.add_column("Column", style="white")
+            col_table.add_column("Confidence", style="yellow")
+            col_table.add_column("Avg Length", style="green")
+            col_table.add_column("Sample", style="dim")
+
+            for i, candidate in enumerate(column_info['text_candidates'][:10], 1):
+                # Color code confidence
+                conf_color = {
+                    "high": "[green]High[/green]",
+                    "medium": "[yellow]Medium[/yellow]",
+                    "low": "[orange1]Low[/orange1]",
+                    "very_low": "[red]Very Low[/red]"
+                }
+                conf_display = conf_color.get(candidate['confidence'], candidate['confidence'])
+
+                col_table.add_row(
+                    str(i),
+                    candidate['name'],
+                    conf_display,
+                    f"{candidate['avg_length']:.0f} chars",
+                    candidate['sample'][:50] + "..." if len(candidate['sample']) > 50 else candidate['sample']
+                )
+
+            self.console.print(col_table)
+
+            # Show all columns option
+            self.console.print(f"\n[dim]All columns ({len(column_info['all_columns'])}): {', '.join(column_info['all_columns'])}[/dim]")
+
+            # Ask user to select
+            default_col = column_info['text_candidates'][0]['name'] if column_info['text_candidates'] else "text"
+            text_column = Prompt.ask(
+                "\n[bold yellow]Enter column name[/bold yellow] (or choose from above)",
+                default=default_col
+            )
+        else:
+            # No candidates detected, show all columns
+            if column_info['all_columns']:
+                self.console.print(f"\n[yellow]Could not auto-detect text columns.[/yellow]")
+                self.console.print(f"[dim]Available columns: {', '.join(column_info['all_columns'])}[/dim]")
+            text_column = Prompt.ask("Text column name", default="text")
+
+        # Step 3: Model Selection
+        self.console.print("\n[bold]Step 3/6: Model Selection[/bold]")
+        self.console.print("[dim]Tested API models: OpenAI & Anthropic[/dim]\n")
+
+        selected_llm = self._select_llm_interactive()
+        provider = selected_llm.provider
+        model_name = selected_llm.name
+
+        # Get API key if needed
+        api_key = None
+        if selected_llm.requires_api_key:
+            api_key = self._get_or_prompt_api_key(provider, model_name)
+
+        # Step 4: Prompt Configuration
+        self.console.print("\n[bold]Step 4/6: Prompt Configuration[/bold]")
+
+        # Auto-detect prompts
+        detected_prompts = self._detect_prompts_in_folder()
+
+        if detected_prompts:
+            self.console.print(f"\n[green]✓ Found {len(detected_prompts)} prompts in prompts/ folder:[/green]")
+            for i, p in enumerate(detected_prompts, 1):
+                # Display ALL keys, not truncated
+                keys_str = ', '.join(p['keys'])
+                self.console.print(f"  {i}. [cyan]{p['name']}[/cyan]")
+                self.console.print(f"     Keys ({len(p['keys'])}): {keys_str}")
+
+            # Explain the options clearly
+            self.console.print("\n[bold]Prompt Selection Options:[/bold]")
+            self.console.print("  [cyan]all[/cyan]     - Use ALL detected prompts (multi-prompt mode)")
+            self.console.print("           → Each text will be annotated with all prompts")
+            self.console.print("           → Useful when you want complete annotations from all perspectives")
+            self.console.print("\n  [cyan]select[/cyan]  - Choose SPECIFIC prompts by number (e.g., 1,3,5)")
+            self.console.print("           → Only selected prompts will be used")
+            self.console.print("           → Useful when testing or when you need only certain annotations")
+            self.console.print("\n  [cyan]wizard[/cyan]  - 🧙‍♂️ Create NEW prompt using Social Science Wizard")
+            self.console.print("           → Interactive guided prompt creation")
+            self.console.print("           → Optional AI assistance for definitions")
+            self.console.print("           → [bold green]Recommended for new research projects![/bold green]")
+            self.console.print("\n  [cyan]custom[/cyan]  - Provide path to a prompt file NOT in prompts/ folder")
+            self.console.print("           → Use a prompt from another location")
+            self.console.print("           → Useful for testing new prompts or one-off annotations")
+
+            prompt_choice = Prompt.ask(
+                "\n[bold yellow]Prompt selection[/bold yellow]",
+                choices=["all", "select", "wizard", "custom"],
+                default="all"
+            )
+
+            selected_prompts = []
+            if prompt_choice == "all":
+                selected_prompts = detected_prompts
+                self.console.print(f"[green]✓ Using all {len(selected_prompts)} prompts[/green]")
+            elif prompt_choice == "select":
+                indices = Prompt.ask("Enter prompt numbers (comma-separated, e.g., 1,3,5)")
+                for idx_str in indices.split(','):
+                    idx = int(idx_str.strip()) - 1
+                    if 0 <= idx < len(detected_prompts):
+                        selected_prompts.append(detected_prompts[idx])
+                self.console.print(f"[green]✓ Selected {len(selected_prompts)} prompts[/green]")
+            elif prompt_choice == "wizard":
+                # Launch Social Science Wizard
+                wizard_prompt = self._run_social_science_wizard()
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(wizard_prompt)
+                selected_prompts = [{
+                    'path': None,  # Wizard-generated, not from file
+                    'name': 'wizard_generated',
+                    'keys': keys,
+                    'content': wizard_prompt
+                }]
+                self.console.print(f"[green]✓ Using wizard-generated prompt with {len(keys)} keys[/green]")
+            else:
+                # Custom path
+                custom_path = Path(self._prompt_file_path("Prompt file path (.txt)"))
+                content = custom_path.read_text(encoding='utf-8')
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(content)
+                selected_prompts = [{
+                    'path': custom_path,
+                    'name': custom_path.stem,
+                    'keys': keys,
+                    'content': content
+                }]
+        else:
+            self.console.print("[yellow]No prompts found in prompts/ folder[/yellow]")
+
+            # Offer wizard or custom path
+            self.console.print("\n[bold]Prompt Options:[/bold]")
+            self.console.print("  [cyan]wizard[/cyan] - 🧙‍♂️ Create prompt using Social Science Wizard (Recommended)")
+            self.console.print("  [cyan]custom[/cyan] - Provide path to existing prompt file")
+
+            choice = Prompt.ask(
+                "\n[bold yellow]Select option[/bold yellow]",
+                choices=["wizard", "custom"],
+                default="wizard"
+            )
+
+            if choice == "wizard":
+                # Launch Social Science Wizard
+                wizard_prompt = self._run_social_science_wizard()
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(wizard_prompt)
+                selected_prompts = [{
+                    'path': None,  # Wizard-generated, not from file
+                    'name': 'wizard_generated',
+                    'keys': keys,
+                    'content': wizard_prompt
+                }]
+                self.console.print(f"[green]✓ Using wizard-generated prompt with {len(keys)} keys[/green]")
+            else:
+                custom_path = Path(self._prompt_file_path("Prompt file path (.txt)"))
+                content = custom_path.read_text(encoding='utf-8')
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(content)
+                selected_prompts = [{
+                    'path': custom_path,
+                    'name': custom_path.stem,
+                    'keys': keys,
+                    'content': content
+                }]
+
+        # Step 5: Multi-prompt prefix configuration
+        prompt_configs = []
+        if len(selected_prompts) > 1:
+            self.console.print("\n[bold]Multi-Prompt Mode:[/bold] Configure key prefixes")
+            self.console.print("[dim]Prefixes help identify which prompt generated which keys[/dim]\n")
+
+            for i, prompt in enumerate(selected_prompts, 1):
+                self.console.print(f"\n[cyan]Prompt {i}: {prompt['name']}[/cyan]")
+                self.console.print(f"  Keys: {', '.join(prompt['keys'])}")
+
+                add_prefix = Confirm.ask(f"Add prefix to keys for this prompt?", default=True)
+                prefix = ""
+                if add_prefix:
+                    default_prefix = prompt['name'].lower().replace(' ', '_')
+                    prefix = Prompt.ask("Prefix", default=default_prefix)
+                    self.console.print(f"  [green]Keys will become: {', '.join([f'{prefix}_{k}' for k in prompt['keys'][:3]])}[/green]")
+
+                prompt_configs.append({
+                    'prompt': prompt,
+                    'prefix': prefix
+                })
+        else:
+            # Single prompt - no prefix needed
+            prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
+
+        # Step 6: Advanced Options
+        self.console.print("\n[bold]Step 5/6: Advanced Options[/bold]")
+
+        # ============================================================
+        # DATASET SCOPE
+        # ============================================================
+        self.console.print("\n[bold cyan]📊 Dataset Scope[/bold cyan]")
+        self.console.print("[dim]Determine how many rows to annotate from your dataset[/dim]\n")
+
+        # Get total rows if possible
+        total_rows = None
+        if column_info.get('df') is not None:
+            # We have a sample, extrapolate
+            total_rows = len(pd.read_csv(data_path)) if data_format == 'csv' else None
+
+        if total_rows:
+            self.console.print(f"[green]✓ Dataset contains {total_rows:,} rows[/green]\n")
+
+        # Option 1: Annotate all or limited
+        self.console.print("[yellow]Option 1:[/yellow] Annotate ALL rows vs LIMIT to specific number")
+        self.console.print("  • [cyan]all[/cyan]   - Annotate the entire dataset")
+        self.console.print("           [dim]Use this for production annotations[/dim]")
+        self.console.print("  • [cyan]limit[/cyan] - Specify exact number of rows to annotate")
+        self.console.print("           [dim]Use this for testing or partial annotation[/dim]")
+
+        scope_choice = Prompt.ask(
+            "\nAnnotate entire dataset or limit rows?",
+            choices=["all", "limit"],
+            default="all"
+        )
+
+        annotation_limit = None
+        use_sample = False
+        sample_strategy = "head"
+
+        if scope_choice == "limit":
+            # Ask for specific number
+            annotation_limit = self._int_prompt_with_validation(
+                "How many rows to annotate?",
+                default=100,
+                min_value=1,
+                max_value=total_rows if total_rows else 1000000
+            )
+
+            # Option 2: Calculate representative sample
+            if total_rows and total_rows > 1000:
+                self.console.print("\n[yellow]Option 2:[/yellow] Representative Sample Calculation")
+                self.console.print("  Calculate statistically representative sample size (95% confidence interval)")
+                self.console.print(f"  [dim]• Current selection: {annotation_limit} rows[/dim]")
+
+                calculate_sample = Confirm.ask("Calculate representative sample size?", default=False)
+
+                if calculate_sample:
+                    # Formula: n = (Z² × p × (1-p)) / E²
+                    # For 95% CI: Z=1.96, p=0.5 (max variance), E=0.05 (5% margin)
+                    import math
+                    z = 1.96
+                    p = 0.5
+                    e = 0.05
+                    n_infinite = (z**2 * p * (1-p)) / (e**2)
+                    n_adjusted = n_infinite / (1 + ((n_infinite - 1) / total_rows))
+                    recommended_sample = int(math.ceil(n_adjusted))
+
+                    self.console.print(f"\n[green]📈 Recommended sample size: {recommended_sample} rows[/green]")
+                    self.console.print(f"[dim]   (95% confidence level, 5% margin of error)[/dim]")
+
+                    use_recommended = Confirm.ask(f"Use recommended sample size ({recommended_sample} rows)?", default=True)
+                    if use_recommended:
+                        annotation_limit = recommended_sample
+                        use_sample = True
+
+            # Option 3: Random sampling
+            self.console.print("\n[yellow]Option 3:[/yellow] Sampling Strategy")
+            self.console.print("  Choose how to select the rows to annotate")
+            self.console.print("  • [cyan]head[/cyan]   - Take first N rows (faster, sequential)")
+            self.console.print("           [dim]Good for testing, preserves order[/dim]")
+            self.console.print("  • [cyan]random[/cyan] - Random sample of N rows (representative)")
+            self.console.print("           [dim]Better for statistical validity, unbiased[/dim]")
+
+            sample_strategy = Prompt.ask(
+                "\nSampling strategy",
+                choices=["head", "random"],
+                default="random" if use_sample else "head"
+            )
+
+        # ============================================================
+        # PARALLEL PROCESSING
+        # ============================================================
+        self.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
+        self.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
+
+        self.console.print("[yellow]Parallel Workers:[/yellow]")
+        self.console.print("  Number of simultaneous annotation processes")
+        self.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
+        self.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
+        self.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
+        self.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
+        self.console.print("           [dim]Recommended for: Local models (Ollama), first time users, debugging[/dim]")
+        self.console.print("  • [cyan]2-4 workers[/cyan] - Moderate parallelism")
+        self.console.print("           [dim]Recommended for: API models (OpenAI, Claude) - avoid rate limits[/dim]")
+        self.console.print("  • [cyan]4-8 workers[/cyan] - High parallelism")
+        self.console.print("           [dim]Recommended for: API models only - requires high rate limits[/dim]")
+
+        num_processes = self._int_prompt_with_validation("Parallel workers", 1, 1, 16)
+
+        # ============================================================
+        # INCREMENTAL SAVE
+        # ============================================================
+        self.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
+        self.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
+
+        self.console.print("[yellow]Enable incremental save?[/yellow]")
+        self.console.print("  • [green]Yes[/green] - Save progress regularly during annotation (recommended)")
+        self.console.print("           [dim]Protects against crashes, allows resuming, safer for long runs[/dim]")
+        self.console.print("  • [red]No[/red]  - Save only at the end")
+        self.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
+
+        save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
+
+        # Only ask for batch size if incremental save is enabled
+        if save_incrementally:
+            self.console.print("\n[yellow]Batch Size:[/yellow]")
+            self.console.print("  Number of rows processed between each save")
+            self.console.print("  • [cyan]Smaller (1-10)[/cyan]   - Very frequent saves, maximum safety")
+            self.console.print("           [dim]Use for: Unstable systems, expensive APIs, testing[/dim]")
+            self.console.print("  • [cyan]Medium (10-50)[/cyan]   - Balanced safety and performance")
+            self.console.print("           [dim]Use for: Most production cases[/dim]")
+            self.console.print("  • [cyan]Larger (50-200)[/cyan]  - Less frequent saves, better performance")
+            self.console.print("           [dim]Use for: Stable systems, large datasets, local models[/dim]")
+
+            batch_size = self._int_prompt_with_validation("Batch size", 1, 1, 1000)
+        else:
+            batch_size = None  # Not used when incremental save is disabled
+
+        # ============================================================
+        # MODEL PARAMETERS
+        # ============================================================
+        self.console.print("\n[bold cyan]🎛️  Model Parameters[/bold cyan]")
+        self.console.print("[dim]Configure advanced model generation parameters[/dim]\n")
+
+        # Check if model supports parameter tuning
+        model_name_lower = model_name.lower()
+        is_o_series = any(x in model_name_lower for x in ['o1', 'o3', 'o4'])
+        supports_params = not is_o_series
+
+        if not supports_params:
+            self.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
+            self.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
+            configure_params = False
+        else:
+            self.console.print("[yellow]Configure model parameters?[/yellow]")
+            self.console.print("  Adjust how the model generates responses")
+            self.console.print("  [dim]• Default values work well for most cases[/dim]")
+            self.console.print("  [dim]• Advanced users can fine-tune for specific needs[/dim]")
+            configure_params = Confirm.ask("\nConfigure model parameters?", default=False)
+
+        # Default values
+        temperature = 0.7
+        max_tokens = 1000
+        top_p = 1.0
+        top_k = 40
+
+        if configure_params:
+            self.console.print("\n[bold]Parameter Explanations:[/bold]\n")
+
+            # Temperature
+            self.console.print("[cyan]🌡️  Temperature (0.0 - 2.0):[/cyan]")
+            self.console.print("  Controls randomness in responses")
+            self.console.print("  • [green]Low (0.0-0.3)[/green]  - Deterministic, focused, consistent")
+            self.console.print("           [dim]Use for: Structured tasks, factual extraction, classification[/dim]")
+            self.console.print("  • [yellow]Medium (0.4-0.9)[/yellow] - Balanced creativity and consistency")
+            self.console.print("           [dim]Use for: General annotation, most use cases[/dim]")
+            self.console.print("  • [red]High (1.0-2.0)[/red]  - Creative, varied, unpredictable")
+            self.console.print("           [dim]Use for: Brainstorming, diverse perspectives[/dim]")
+            temperature = FloatPrompt.ask("Temperature", default=0.7)
+
+            # Max tokens
+            self.console.print("\n[cyan]📏 Max Tokens:[/cyan]")
+            self.console.print("  Maximum length of the response")
+            self.console.print("  • [green]Short (100-500)[/green]   - Brief responses, simple annotations")
+            self.console.print("  • [yellow]Medium (500-2000)[/yellow]  - Standard responses, detailed annotations")
+            self.console.print("  • [red]Long (2000+)[/red]     - Extensive responses, complex reasoning")
+            self.console.print("  [dim]Note: More tokens = higher API costs[/dim]")
+            max_tokens = self._int_prompt_with_validation("Max tokens", 1000, 50, 8000)
+
+            # Top_p (nucleus sampling)
+            self.console.print("\n[cyan]🎯 Top P (0.0 - 1.0):[/cyan]")
+            self.console.print("  Nucleus sampling - alternative to temperature")
+            self.console.print("  • [green]Low (0.1-0.5)[/green]  - Focused on most likely tokens")
+            self.console.print("           [dim]More deterministic, safer outputs[/dim]")
+            self.console.print("  • [yellow]High (0.9-1.0)[/yellow] - Consider broader token range")
+            self.console.print("           [dim]More creative, diverse outputs[/dim]")
+            self.console.print("  [dim]Tip: Use either temperature OR top_p, not both aggressively[/dim]")
+            top_p = FloatPrompt.ask("Top P", default=1.0)
+
+            # Top_k (only for some models)
+            if provider in ['ollama', 'google']:
+                self.console.print("\n[cyan]🔢 Top K:[/cyan]")
+                self.console.print("  Limits vocabulary to K most likely next tokens")
+                self.console.print("  • [green]Small (1-10)[/green]   - Very focused, repetitive")
+                self.console.print("  • [yellow]Medium (20-50)[/yellow]  - Balanced diversity")
+                self.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
+                top_k = self._int_prompt_with_validation("Top K", 40, 1, 100)
+
+        # Step 7: Execute
+        self.console.print("\n[bold]Step 6/6: Review & Execute[/bold]")
+
+        # Display comprehensive summary
+        summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
+        summary_table.add_column("Category", style="bold cyan", width=20)
+        summary_table.add_column("Setting", style="yellow", width=25)
+        summary_table.add_column("Value", style="white")
+
+        # Data section
+        summary_table.add_row("📁 Data", "Dataset", str(data_path.name))
+        summary_table.add_row("", "Format", data_format.upper())
+        summary_table.add_row("", "Text Column", text_column)
+        if total_rows:
+            summary_table.add_row("", "Total Rows", f"{total_rows:,}")
+        if annotation_limit:
+            summary_table.add_row("", "Rows to Annotate", f"{annotation_limit:,} ({sample_strategy})")
+        else:
+            summary_table.add_row("", "Rows to Annotate", "ALL")
+
+        # Model section
+        summary_table.add_row("🤖 Model", "Provider/Model", f"{provider}/{model_name}")
+        summary_table.add_row("", "Temperature", f"{temperature}")
+        summary_table.add_row("", "Max Tokens", f"{max_tokens}")
+        if configure_params:
+            summary_table.add_row("", "Top P", f"{top_p}")
+            if provider in ['ollama', 'google']:
+                summary_table.add_row("", "Top K", f"{top_k}")
+
+        # Prompts section
+        summary_table.add_row("📝 Prompts", "Count", f"{len(prompt_configs)}")
+        for i, pc in enumerate(prompt_configs, 1):
+            prefix_info = f" (prefix: {pc['prefix']}_)" if pc['prefix'] else " (no prefix)"
+            summary_table.add_row("", f"  Prompt {i}", f"{pc['prompt']['name']}{prefix_info}")
+
+        # Processing section
+        summary_table.add_row("⚙️  Processing", "Parallel Workers", str(num_processes))
+        summary_table.add_row("", "Batch Size", str(batch_size))
+        summary_table.add_row("", "Incremental Save", "Yes" if save_incrementally else "No")
+
+        self.console.print("\n")
+        self.console.print(summary_table)
+
+        if not Confirm.ask("\n[bold yellow]Start annotation?[/bold yellow]", default=True):
+            return
+
+        # ============================================================
+        # REPRODUCIBILITY METADATA
+        # ============================================================
+        self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
+        self.console.print("[yellow]⚠️  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
+
+        self.console.print("  [green]1. Resume Capability[/green]")
+        self.console.print("     • Continue this annotation if it stops or crashes")
+        self.console.print("     • Annotate additional rows later with same settings")
+        self.console.print("     • Access via 'Resume/Relaunch Annotation' workflow\n")
+
+        self.console.print("  [green]2. Scientific Reproducibility[/green]")
+        self.console.print("     • Document exact parameters for research papers")
+        self.console.print("     • Reproduce identical annotations in the future")
+        self.console.print("     • Track model version, prompts, and all settings\n")
+
+        self.console.print("  [red]⚠️  If you choose NO:[/red]")
+        self.console.print("     • You CANNOT resume this annotation later")
+        self.console.print("     • You CANNOT relaunch with same parameters")
+        self.console.print("     • Parameters will be lost forever\n")
+
+        save_metadata = Confirm.ask(
+            "[bold yellow]Save annotation parameters to JSON file?[/bold yellow]",
+            default=True
+        )
+
+        # ============================================================
+        # VALIDATION TOOL EXPORT OPTION
+        # ============================================================
+        self.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
+        self.console.print("[dim]Export annotations to JSONL format for human validation[/dim]\n")
+
+        self.console.print("[yellow]Available validation tools:[/yellow]")
+        self.console.print("  • [cyan]Doccano[/cyan] - Simple, lightweight NLP annotation tool")
+        self.console.print("  • [cyan]Label Studio[/cyan] - Advanced, feature-rich annotation platform")
+        self.console.print("  • Both are open-source and free\n")
+
+        self.console.print("[green]Why validate with external tools?[/green]")
+        self.console.print("  • Review and correct LLM annotations")
+        self.console.print("  • Calculate inter-annotator agreement")
+        self.console.print("  • Export validated data for metrics calculation\n")
+
+        # Initialize export flags
+        export_to_doccano = False
+        export_to_labelstudio = False
+        export_sample_size = None
+
+        # Step 1: Ask if user wants to export
+        export_confirm = Confirm.ask(
+            "[bold yellow]Export to validation tool?[/bold yellow]",
+            default=False
+        )
+
+        if export_confirm:
+            # Step 2: Ask which tool to export to
+            tool_choice = Prompt.ask(
+                "[bold yellow]Which validation tool?[/bold yellow]",
+                choices=["doccano", "labelstudio"],
+                default="doccano"
+            )
+
+            # Set the appropriate export flag
+            if tool_choice == "doccano":
+                export_to_doccano = True
+            else:  # labelstudio
+                export_to_labelstudio = True
+
+            # Step 2b: If Label Studio, ask export method
+            labelstudio_direct_export = False
+            labelstudio_api_url = None
+            labelstudio_api_key = None
+
+            if export_to_labelstudio:
+                self.console.print("\n[yellow]Label Studio export method:[/yellow]")
+                self.console.print("  • [cyan]jsonl[/cyan] - Export to JSONL file (manual import)")
+                if HAS_REQUESTS:
+                    self.console.print("  • [cyan]direct[/cyan] - Direct export to Label Studio via API\n")
+                    export_choices = ["jsonl", "direct"]
+                else:
+                    self.console.print("  • [dim]direct[/dim] - Direct export via API [dim](requires 'requests' library)[/dim]\n")
+                    export_choices = ["jsonl"]
+
+                export_method = Prompt.ask(
+                    "[bold yellow]Export method[/bold yellow]",
+                    choices=export_choices,
+                    default="jsonl"
+                )
+
+                if export_method == "direct":
+                    labelstudio_direct_export = True
+
+                    self.console.print("\n[cyan]Label Studio API Configuration:[/cyan]")
+                    labelstudio_api_url = Prompt.ask(
+                        "Label Studio URL",
+                        default="http://localhost:8080"
+                    )
+
+                    labelstudio_api_key = Prompt.ask(
+                        "API Key (from Label Studio Account & Settings)"
+                    )
+
+            # Step 3: Ask about LLM predictions inclusion
+            self.console.print("\n[yellow]Include LLM predictions in export?[/yellow]")
+            self.console.print("  • [cyan]with[/cyan] - Include LLM annotations as predictions (for review/correction)")
+            self.console.print("  • [cyan]without[/cyan] - Export only data without predictions (for manual annotation)")
+            self.console.print("  • [cyan]both[/cyan] - Create two files: one with and one without predictions\n")
+
+            prediction_mode = Prompt.ask(
+                "[bold yellow]Prediction mode[/bold yellow]",
+                choices=["with", "without", "both"],
+                default="with"
+            )
+
+            # Step 4: Ask how many sentences to export
+            self.console.print("\n[yellow]How many annotated sentences to export?[/yellow]")
+            self.console.print("  • [cyan]all[/cyan] - Export all annotated sentences")
+            self.console.print("  • [cyan]representative[/cyan] - Representative sample (stratified by labels)")
+            self.console.print("  • [cyan]number[/cyan] - Specify exact number\n")
+
+            sample_choice = Prompt.ask(
+                "[bold yellow]Export sample[/bold yellow]",
+                choices=["all", "representative", "number"],
+                default="all"
+            )
+
+            if sample_choice == "all":
+                export_sample_size = "all"
+            elif sample_choice == "representative":
+                export_sample_size = "representative"
+            else:  # number
+                export_sample_size = self._int_prompt_with_validation(
+                    "Number of sentences to export",
+                    100,
+                    1,
+                    999999
+                )
+
+        # ============================================================
+        # EXECUTE ANNOTATION
+        # ============================================================
+
+        # Prepare output path
+        annotations_dir = self.settings.paths.data_dir / 'annotations'
+        annotations_dir.mkdir(parents=True, exist_ok=True)
+        safe_model_name = model_name.replace(':', '_').replace('/', '_')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
+        default_output_path = annotations_dir / output_filename
+
+        self.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
+        self.console.print(f"   {default_output_path}")
+        self.console.print()
+
+        # Prepare prompts payload for pipeline
+        prompts_payload = []
+        for pc in prompt_configs:
+            prompts_payload.append({
+                'prompt': pc['prompt']['content'],
+                'expected_keys': pc['prompt']['keys'],
+                'prefix': pc['prefix']
+            })
+
+        # Determine annotation mode
+        annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
+
+        # Build pipeline config
+        pipeline_config = {
+            'mode': 'file',
+            'data_source': data_format,
+            'data_format': data_format,
+            'file_path': str(data_path),
+            'text_column': text_column,
+            'text_columns': [text_column],
+            'annotation_column': 'annotation',
+            'identifier_column': 'annotation_id',  # Will be created if doesn't exist
+            'run_annotation': True,
+            'annotation_mode': annotation_mode,
+            'annotation_provider': provider,
+            'annotation_model': model_name,
+            'api_key': api_key if api_key else None,
+            'prompts': prompts_payload,
+            'annotation_sample_size': annotation_limit,
+            'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
+            'annotation_sample_seed': 42,
+            'max_tokens': max_tokens,
+            'temperature': temperature,
+            'top_p': top_p,
+            'top_k': top_k if provider in ['ollama', 'google'] else None,
+            'max_workers': num_processes,
+            'num_processes': num_processes,
+            'use_parallel': num_processes > 1,
+            'warmup': False,
+            'disable_tqdm': True,  # Use Rich progress instead
+            'output_format': data_format,
+            'output_path': str(default_output_path),
+            'save_incrementally': save_incrementally,
+            'batch_size': batch_size,
+            'run_validation': False,
+            'run_training': False,
+        }
+
+        # Add model-specific options
+        if provider == 'ollama':
+            options = {
+                'temperature': temperature,
+                'num_predict': max_tokens,
+                'top_p': top_p,
+                'top_k': top_k
+            }
+            pipeline_config['options'] = options
+
+        # ============================================================
+        # SAVE REPRODUCIBILITY METADATA
+        # ============================================================
+        if save_metadata:
+            import json
+
+            # Build comprehensive metadata
+            metadata = {
+                'annotation_session': {
+                    'timestamp': timestamp,
+                    'tool_version': 'LLMTool v1.0',
+                    'workflow': 'LLM Annotation Studio - Smart Annotate'
+                },
+                'data_source': {
+                    'file_path': str(data_path),
+                    'file_name': data_path.name,
+                    'data_format': data_format,
+                    'text_column': text_column,
+                    'total_rows': annotation_limit if annotation_limit else 'all',
+                    'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
+                    'sample_seed': 42 if sample_strategy == 'random' else None
+                },
+                'model_configuration': {
+                    'provider': provider,
+                    'model_name': model_name,
+                    'annotation_mode': annotation_mode,
+                    'temperature': temperature,
+                    'max_tokens': max_tokens,
+                    'top_p': top_p,
+                    'top_k': top_k if provider in ['ollama', 'google'] else None
+                },
+                'prompts': [
+                    {
+                        'name': pc['prompt']['name'],
+                        'file_path': str(pc['prompt']['path']) if 'path' in pc['prompt'] else None,
+                        'expected_keys': pc['prompt']['keys'],
+                        'prefix': pc['prefix'],
+                        'prompt_content': pc['prompt']['content']
+                    }
+                    for pc in prompt_configs
+                ],
+                'processing_configuration': {
+                    'parallel_workers': num_processes,
+                    'batch_size': batch_size,
+                    'incremental_save': save_incrementally,
+                    'identifier_column': 'annotation_id'
+                },
+                'output': {
+                    'output_path': str(default_output_path),
+                    'output_format': data_format
+                },
+                'export_preferences': {
+                    'export_to_doccano': export_to_doccano,
+                    'export_to_labelstudio': export_to_labelstudio,
+                    'export_sample_size': export_sample_size,
+                    'prediction_mode': prediction_mode if (export_to_doccano or export_to_labelstudio) else 'with',
+                    'labelstudio_direct_export': labelstudio_direct_export if export_to_labelstudio else False,
+                    'labelstudio_api_url': labelstudio_api_url if export_to_labelstudio else None,
+                    'labelstudio_api_key': labelstudio_api_key if export_to_labelstudio else None
+                }
+            }
+
+            # Save metadata JSON
+            metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
+            metadata_path = annotations_dir / metadata_filename
+
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            self.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
+            self.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
+            self.console.print(f"   {metadata_path}\n")
+
+        # Execute pipeline with Rich progress
+        try:
+            self.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
+
+            # Create pipeline controller
+            from ..pipelines.pipeline_controller import PipelineController
+            pipeline_with_progress = PipelineController(settings=self.settings)
+
+            # Use RichProgressManager for elegant display
+            from ..utils.rich_progress_manager import RichProgressManager
+            from ..pipelines.enhanced_pipeline_wrapper import EnhancedPipelineWrapper
+
+            with RichProgressManager(
+                show_json_every=1,  # Show JSON sample for every annotation
+                compact_mode=False   # Full preview panels
+            ) as progress_manager:
+                # Wrap pipeline for enhanced JSON tracking
+                enhanced_pipeline = EnhancedPipelineWrapper(
+                    pipeline_with_progress,
+                    progress_manager
+                )
+
+                # Run pipeline
+                state = enhanced_pipeline.run_pipeline(pipeline_config)
+
+                # Check for errors
+                if state.errors:
+                    error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
+                    self.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
+                    self.console.print("[dim]Press Enter to return to menu...[/dim]")
+                    input()
+                    return
+
+            # Get results
+            annotation_results = state.annotation_results or {}
+            output_file = annotation_results.get('output_file', str(default_output_path))
+
+            # Display success message
+            self.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
+            self.console.print(f"\n[bold cyan]📄 Output File:[/bold cyan]")
+            self.console.print(f"   {output_file}")
+
+            # Display statistics if available
+            total_annotated = annotation_results.get('total_annotated', 0)
+            if total_annotated:
+                self.console.print(f"\n[bold cyan]📊 Statistics:[/bold cyan]")
+                self.console.print(f"   Rows annotated: {total_annotated:,}")
+
+                success_count = annotation_results.get('success_count', 0)
+                if success_count:
+                    success_rate = (success_count / total_annotated * 100)
+                    self.console.print(f"   Success rate: {success_rate:.1f}%")
+
+            # Export to Doccano JSONL if requested
+            if export_to_doccano:
+                self._export_to_doccano_jsonl(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs,
+                    data_path=data_path,
+                    timestamp=timestamp,
+                    sample_size=export_sample_size
+                )
+
+            # Export to Label Studio if requested
+            if export_to_labelstudio:
+                if labelstudio_direct_export:
+                    # Direct export to Label Studio via API
+                    self._export_to_labelstudio_direct(
+                        output_file=output_file,
+                        text_column=text_column,
+                        prompt_configs=prompt_configs,
+                        data_path=data_path,
+                        timestamp=timestamp,
+                        sample_size=export_sample_size,
+                        prediction_mode=prediction_mode,
+                        api_url=labelstudio_api_url,
+                        api_key=labelstudio_api_key
+                    )
+                else:
+                    # Export to JSONL file
+                    self._export_to_labelstudio_jsonl(
+                        output_file=output_file,
+                        text_column=text_column,
+                        prompt_configs=prompt_configs,
+                        data_path=data_path,
+                        timestamp=timestamp,
+                        sample_size=export_sample_size,
+                        prediction_mode=prediction_mode
+                    )
+
+            self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
+            input()
+
+        except Exception as exc:
+            self.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
+            self.logger.exception("Annotation execution failed")
+            self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
+            input()
+
+    def _display_metadata_parameters(self, metadata: dict):
+        """Display all parameters from metadata in a formatted way"""
+        self.console.print("\n[bold cyan]📋 Saved Parameters[/bold cyan]\n")
+
+        # Create parameter display table
+        params_table = Table(border_style="blue", show_header=False, box=None)
+        params_table.add_column("Section", style="yellow bold", width=25)
+        params_table.add_column("Details", style="white")
+
+        # Session Info
+        session = metadata.get('annotation_session', {})
+        params_table.add_row("📅 Session", f"{session.get('workflow', 'N/A')}")
+        params_table.add_row("", f"Date: {session.get('timestamp', 'N/A')}")
+
+        # Data Source
+        data_source = metadata.get('data_source', {})
+        params_table.add_row("📁 Data", f"File: {data_source.get('file_name', 'N/A')}")
+        params_table.add_row("", f"Format: {data_source.get('data_format', 'N/A')}")
+        params_table.add_row("", f"Text Column: {data_source.get('text_column', 'N/A')}")
+        params_table.add_row("", f"Rows: {data_source.get('total_rows', 'N/A')}")
+        params_table.add_row("", f"Sampling: {data_source.get('sampling_strategy', 'N/A')}")
+
+        # Model Configuration
+        model_config = metadata.get('model_configuration', {})
+        params_table.add_row("🤖 Model", f"{model_config.get('provider', 'N/A')}/{model_config.get('model_name', 'N/A')}")
+        params_table.add_row("", f"Temperature: {model_config.get('temperature', 'N/A')}")
+        params_table.add_row("", f"Max Tokens: {model_config.get('max_tokens', 'N/A')}")
+
+        # Prompts
+        prompts = metadata.get('prompts', [])
+        params_table.add_row("📝 Prompts", f"Count: {len(prompts)}")
+        for i, p in enumerate(prompts[:3], 1):  # Show first 3
+            name = p.get('name', f"Prompt {i}")
+            keys = p.get('expected_keys', [])
+            prefix = p.get('prefix', '')
+            keys_str = ', '.join(keys[:5])
+            if len(keys) > 5:
+                keys_str += f"... ({len(keys)} total)"
+            prefix_str = f" [{prefix}_]" if prefix else ""
+            params_table.add_row("", f"  {i}. {name}{prefix_str}: {keys_str}")
+
+        # Processing
+        proc_config = metadata.get('processing_configuration', {})
+        params_table.add_row("⚙️  Processing", f"Workers: {proc_config.get('parallel_workers', 1)}")
+        params_table.add_row("", f"Batch Size: {proc_config.get('batch_size', 'N/A')}")
+
+        self.console.print(params_table)
+
+    def _modify_parameters_if_requested(self, metadata: dict, modify: bool) -> dict:
+        """Allow user to modify specific parameters"""
+        if not modify:
+            return metadata
+
+        self.console.print("\n[bold]Select parameter to modify:[/bold]")
+        self.console.print("  [cyan]1[/cyan] - Data source (file, text column)")
+        self.console.print("  [cyan]2[/cyan] - Model (provider, model name)")
+        self.console.print("  [cyan]3[/cyan] - Model parameters (temperature, max_tokens, etc.)")
+        self.console.print("  [cyan]4[/cyan] - Prompts (add/remove/modify)")
+        self.console.print("  [cyan]5[/cyan] - Sampling (rows to annotate, strategy)")
+        self.console.print("  [cyan]6[/cyan] - Processing (workers, batch size)")
+        self.console.print("  [cyan]0[/cyan] - Done modifying")
+
+        modified = metadata.copy()
+
+        while True:
+            choice = Prompt.ask(
+                "\n[bold yellow]Modify which parameter?[/bold yellow]",
+                choices=["0", "1", "2", "3", "4", "5", "6"],
+                default="0"
+            )
+
+            if choice == "0":
+                break
+            elif choice == "1":
+                # Modify data source
+                self.console.print("\n[yellow]Current data:[/yellow]")
+                data_source = modified.get('data_source', {})
+                self.console.print(f"  File: {data_source.get('file_path', 'N/A')}")
+                self.console.print(f"  Text column: {data_source.get('text_column', 'N/A')}")
+
+                if Confirm.ask("Change data file?", default=False):
+                    new_file = self._prompt_file_path("New data file path")
+                    modified['data_source']['file_path'] = new_file
+                    modified['data_source']['file_name'] = Path(new_file).name
+
+                if Confirm.ask("Change text column?", default=False):
+                    new_col = Prompt.ask("New text column name")
+                    modified['data_source']['text_column'] = new_col
+
+            elif choice == "2":
+                # Modify model
+                self.console.print("\n[yellow]Current model:[/yellow]")
+                model_config = modified.get('model_configuration', {})
+                self.console.print(f"  Provider: {model_config.get('provider', 'N/A')}")
+                self.console.print(f"  Model: {model_config.get('model_name', 'N/A')}")
+
+                if Confirm.ask("Change model?", default=False):
+                    # Reuse model selection from smart annotate
+                    provider = Prompt.ask("Provider", choices=["ollama", "openai", "anthropic"], default="ollama")
+                    model_name = Prompt.ask("Model name")
+                    modified['model_configuration']['provider'] = provider
+                    modified['model_configuration']['model_name'] = model_name
+
+            elif choice == "3":
+                # Modify model parameters
+                model_config = modified.get('model_configuration', {})
+
+                if Confirm.ask("Change temperature?", default=False):
+                    temp = FloatPrompt.ask("Temperature (0.0-2.0)", default=0.7)
+                    modified['model_configuration']['temperature'] = temp
+
+                if Confirm.ask("Change max_tokens?", default=False):
+                    tokens = self._int_prompt_with_validation("Max tokens", 1000, 50, 8000)
+                    modified['model_configuration']['max_tokens'] = tokens
+
+            elif choice == "4":
+                # Modify prompts
+                self.console.print("\n[yellow]Prompt modification not implemented in this version.[/yellow]")
+                self.console.print("[dim]Use Smart Annotate to create new annotation with different prompts.[/dim]")
+
+            elif choice == "5":
+                # Modify sampling
+                data_source = modified.get('data_source', {})
+                current_rows = data_source.get('total_rows', 'all')
+
+                self.console.print(f"\n[yellow]Current: {current_rows} rows[/yellow]")
+
+                if Confirm.ask("Change number of rows to annotate?", default=False):
+                    annotate_all = Confirm.ask("Annotate all rows?", default=True)
+                    if annotate_all:
+                        modified['data_source']['total_rows'] = 'all'
+                        modified['data_source']['sampling_strategy'] = 'none'
+                    else:
+                        num_rows = self._int_prompt_with_validation("Number of rows", 100, 1, 1000000)
+                        strategy = Prompt.ask("Sampling strategy", choices=["head", "random"], default="random")
+                        modified['data_source']['total_rows'] = num_rows
+                        modified['data_source']['sampling_strategy'] = strategy
+
+            elif choice == "6":
+                # Modify processing
+                proc_config = modified.get('processing_configuration', {})
+
+                if Confirm.ask("Change parallel workers?", default=False):
+                    workers = self._int_prompt_with_validation("Parallel workers", 1, 1, 16)
+                    modified['processing_configuration']['parallel_workers'] = workers
+
+                if Confirm.ask("Change batch size?", default=False):
+                    batch = self._int_prompt_with_validation("Batch size", 1, 1, 1000)
+                    modified['processing_configuration']['batch_size'] = batch
+
+        self.console.print("\n[green]✓ Parameters modified[/green]")
+        return modified
+
+    def _execute_from_metadata(self, metadata: dict, action_mode: str, metadata_file: Path):
+        """Execute annotation based on loaded metadata"""
+        import json
+        from datetime import datetime
+
+        # Extract all parameters from metadata
+        data_source = metadata.get('data_source', {})
+        model_config = metadata.get('model_configuration', {})
+        prompts = metadata.get('prompts', [])
+        proc_config = metadata.get('processing_configuration', {})
+        output_config = metadata.get('output', {})
+        export_prefs = metadata.get('export_preferences', {})
+
+        # Get export preferences
+        export_to_doccano = export_prefs.get('export_to_doccano', False)
+        export_to_labelstudio = export_prefs.get('export_to_labelstudio', False)
+        export_sample_size = export_prefs.get('export_sample_size', 'all')
+
+        if export_to_doccano or export_to_labelstudio:
+            export_tools = []
+            if export_to_doccano:
+                export_tools.append("Doccano")
+            if export_to_labelstudio:
+                export_tools.append("Label Studio")
+            self.console.print(f"\n[cyan]ℹ️  Export enabled for: {', '.join(export_tools)} (from saved preferences)[/cyan]")
+            if export_sample_size != 'all':
+                self.console.print(f"[cyan]   Sample size: {export_sample_size}[/cyan]")
+
+        # Prepare paths
+        data_path = Path(data_source.get('file_path', ''))
+        data_format = data_source.get('data_format', 'csv')
+
+        # Check if resuming
+        if action_mode == 'resume':
+            # Try to find the output file
+            original_output = Path(output_config.get('output_path', ''))
+
+            if not original_output.exists():
+                self.console.print(f"\n[yellow]⚠️  Output file not found: {original_output}[/yellow]")
+                self.console.print("[yellow]Switching to relaunch mode (fresh annotation)[/yellow]")
+                action_mode = 'relaunch'
+            else:
+                self.console.print(f"\n[green]✓ Found output file: {original_output.name}[/green]")
+
+                # Count already annotated rows
+                import pandas as pd
+                try:
+                    if data_format == 'csv':
+                        df_output = pd.read_csv(original_output)
+                    elif data_format in ['excel', 'xlsx']:
+                        df_output = pd.read_excel(original_output)
+                    elif data_format == 'parquet':
+                        df_output = pd.read_parquet(original_output)
+
+                    # Count rows with valid annotations (non-empty, non-null strings)
+                    if 'annotation' in df_output.columns:
+                        # Count only rows where annotation exists and is not empty/whitespace
+                        annotated_mask = (
+                            df_output['annotation'].notna() &
+                            (df_output['annotation'].astype(str).str.strip() != '') &
+                            (df_output['annotation'].astype(str) != 'nan')
+                        )
+                        annotated_count = annotated_mask.sum()
+                    else:
+                        annotated_count = 0
+
+                    self.console.print(f"[cyan]  Rows already annotated: {annotated_count:,}[/cyan]")
+
+                    # Get total available rows from source file
+                    if data_path.exists():
+                        if data_format == 'csv':
+                            total_available = len(pd.read_csv(data_path))
+                        elif data_format in ['excel', 'xlsx']:
+                            total_available = len(pd.read_excel(data_path))
+                        elif data_format == 'parquet':
+                            total_available = len(pd.read_parquet(data_path))
+                        else:
+                            total_available = len(df_output)
+                    else:
+                        total_available = len(df_output)
+
+                    # Calculate remaining based on original target
+                    original_target = data_source.get('total_rows', 'all')
+
+                    if original_target == 'all':
+                        total_target = total_available
+                    else:
+                        total_target = original_target
+
+                    remaining_from_target = total_target - annotated_count
+                    remaining_from_source = total_available - annotated_count
+
+                    self.console.print(f"[cyan]  Original target: {total_target:,} rows[/cyan]")
+                    self.console.print(f"[cyan]  Remaining from target: {remaining_from_target:,}[/cyan]")
+                    self.console.print(f"[cyan]  Total available in source: {total_available:,} rows[/cyan]")
+                    self.console.print(f"[cyan]  Maximum you can annotate: {remaining_from_source:,}[/cyan]\n")
+
+                    if remaining_from_source <= 0:
+                        self.console.print("\n[yellow]All available rows are already annotated![/yellow]")
+                        continue_anyway = Confirm.ask("Continue with relaunch mode?", default=False)
+                        if not continue_anyway:
+                            return
+                        action_mode = 'relaunch'
+                    else:
+                        self.console.print("[yellow]You can annotate:[/yellow]")
+                        self.console.print(f"  • Up to [cyan]{remaining_from_target:,}[/cyan] more rows to complete original target")
+                        self.console.print(f"  • Or up to [cyan]{remaining_from_source:,}[/cyan] total to use all available data\n")
+
+                        resume_count = self._int_prompt_with_validation(
+                            f"How many more rows to annotate? (max: {remaining_from_source:,})",
+                            min(100, remaining_from_target) if remaining_from_target > 0 else 100,
+                            1,
+                            remaining_from_source
+                        )
+
+                        # Update metadata for resume
+                        metadata['data_source']['total_rows'] = resume_count
+                        metadata['resume_mode'] = True
+                        metadata['resume_from_file'] = str(original_output)
+                        metadata['already_annotated'] = int(annotated_count)
+
+                except Exception as e:
+                    self.console.print(f"\n[red]Error reading output file: {e}[/red]")
+                    self.console.print("[yellow]Switching to relaunch mode[/yellow]")
+                    action_mode = 'relaunch'
+
+        # Prepare output path
+        annotations_dir = self.settings.paths.data_dir / 'annotations'
+        annotations_dir.mkdir(parents=True, exist_ok=True)
+        safe_model_name = model_config.get('model_name', 'unknown').replace(':', '_').replace('/', '_')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        if action_mode == 'resume':
+            output_filename = original_output.name  # Keep same filename
+            default_output_path = original_output
+        else:
+            output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
+            default_output_path = annotations_dir / output_filename
+
+        self.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
+        self.console.print(f"   {default_output_path}")
+
+        # Prepare prompts payload
+        prompts_payload = []
+        for p in prompts:
+            prompts_payload.append({
+                'prompt': p.get('prompt_content', p.get('prompt', '')),
+                'expected_keys': p.get('expected_keys', []),
+                'prefix': p.get('prefix', '')
+            })
+
+        # Get parameters
+        provider = model_config.get('provider', 'ollama')
+        model_name = model_config.get('model_name', 'llama2')
+        annotation_mode = model_config.get('annotation_mode', 'local')
+        temperature = model_config.get('temperature', 0.7)
+        max_tokens = model_config.get('max_tokens', 1000)
+        top_p = model_config.get('top_p', 1.0)
+        top_k = model_config.get('top_k', 40)
+
+        num_processes = proc_config.get('parallel_workers', 1)
+        batch_size = proc_config.get('batch_size', 1)
+
+        total_rows = data_source.get('total_rows')
+        annotation_limit = None if total_rows == 'all' else total_rows
+        sample_strategy = data_source.get('sampling_strategy', 'head')
+
+        # IMPORTANT: In resume mode, always use 'head' strategy to continue sequentially
+        # This ensures we pick up exactly where we left off, not random new rows
+        if action_mode == 'resume':
+            sample_strategy = 'head'
+            self.console.print(f"\n[cyan]ℹ️  Resume mode: Using sequential (head) strategy to continue where you left off[/cyan]")
+
+        # Get API key if needed
+        api_key = None
+        if provider in ['openai', 'anthropic', 'google']:
+            api_key = self._get_api_key(provider)
+            if not api_key:
+                self.console.print(f"[red]API key required for {provider}[/red]")
+                return
+
+        # Build pipeline config
+        pipeline_config = {
+            'mode': 'file',
+            'data_source': data_format,
+            'data_format': data_format,
+            'file_path': str(data_path),
+            'text_column': data_source.get('text_column', 'text'),
+            'text_columns': [data_source.get('text_column', 'text')],
+            'annotation_column': 'annotation',
+            'identifier_column': 'annotation_id',
+            'run_annotation': True,
+            'annotation_mode': annotation_mode,
+            'annotation_provider': provider,
+            'annotation_model': model_name,
+            'api_key': api_key,
+            'prompts': prompts_payload,
+            'annotation_sample_size': annotation_limit,
+            'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
+            'annotation_sample_seed': 42,
+            'max_tokens': max_tokens,
+            'temperature': temperature,
+            'top_p': top_p,
+            'top_k': top_k if provider in ['ollama', 'google'] else None,
+            'max_workers': num_processes,
+            'num_processes': num_processes,
+            'use_parallel': num_processes > 1,
+            'warmup': False,
+            'disable_tqdm': True,
+            'output_format': data_format,
+            'output_path': str(default_output_path),
+            'save_incrementally': True,
+            'batch_size': batch_size,
+            'run_validation': False,
+            'run_training': False,
+        }
+
+        # Add resume information if resuming
+        if action_mode == 'resume' and metadata.get('resume_mode'):
+            pipeline_config['resume_mode'] = True
+            pipeline_config['resume_from_file'] = metadata.get('resume_from_file')
+            pipeline_config['skip_annotated'] = True
+
+            # Load already annotated IDs to skip them
+            try:
+                import pandas as pd
+                resume_file = Path(metadata.get('resume_from_file'))
+                if resume_file.exists():
+                    if data_format == 'csv':
+                        df_resume = pd.read_csv(resume_file)
+                    elif data_format in ['excel', 'xlsx']:
+                        df_resume = pd.read_excel(resume_file)
+                    elif data_format == 'parquet':
+                        df_resume = pd.read_parquet(resume_file)
+
+                    # Get IDs of rows that have valid annotations
+                    if 'annotation' in df_resume.columns and 'annotation_id' in df_resume.columns:
+                        annotated_mask = (
+                            df_resume['annotation'].notna() &
+                            (df_resume['annotation'].astype(str).str.strip() != '') &
+                            (df_resume['annotation'].astype(str) != 'nan')
+                        )
+                        already_annotated_ids = df_resume.loc[annotated_mask, 'annotation_id'].tolist()
+                        pipeline_config['skip_annotation_ids'] = already_annotated_ids
+
+                        self.console.print(f"[cyan]  Will skip {len(already_annotated_ids)} already annotated row(s)[/cyan]")
+            except Exception as e:
+                self.logger.warning(f"Could not load annotated IDs from resume file: {e}")
+                self.console.print(f"[yellow]⚠️  Warning: Could not load annotated IDs - may re-annotate some rows[/yellow]")
+
+        # Add model-specific options
+        if provider == 'ollama':
+            options = {
+                'temperature': temperature,
+                'num_predict': max_tokens,
+                'top_p': top_p,
+                'top_k': top_k
+            }
+            pipeline_config['options'] = options
+
+        # Save new metadata for this execution
+        if action_mode == 'relaunch':
+            new_metadata = metadata.copy()
+            new_metadata['annotation_session']['timestamp'] = timestamp
+            new_metadata['annotation_session']['relaunch_from'] = str(metadata_file.name)
+            new_metadata['output']['output_path'] = str(default_output_path)
+
+            new_metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
+            new_metadata_path = annotations_dir / new_metadata_filename
+
+            with open(new_metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(new_metadata, f, indent=2, ensure_ascii=False)
+
+            self.console.print(f"\n[green]✅ New session metadata saved[/green]")
+            self.console.print(f"[cyan]📋 Metadata File:[/cyan]")
+            self.console.print(f"   {new_metadata_path}\n")
+
+        # Execute pipeline
+        try:
+            self.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
+
+            from ..pipelines.pipeline_controller import PipelineController
+            pipeline_with_progress = PipelineController(settings=self.settings)
+
+            from ..utils.rich_progress_manager import RichProgressManager
+            from ..pipelines.enhanced_pipeline_wrapper import EnhancedPipelineWrapper
+
+            with RichProgressManager(
+                show_json_every=1,
+                compact_mode=False
+            ) as progress_manager:
+                enhanced_pipeline = EnhancedPipelineWrapper(
+                    pipeline_with_progress,
+                    progress_manager
+                )
+
+                state = enhanced_pipeline.run_pipeline(pipeline_config)
+
+                if state.errors:
+                    error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
+                    self.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
+                    return
+
+            # Display results
+            annotation_results = state.annotation_results or {}
+            output_file = annotation_results.get('output_file', str(default_output_path))
+
+            self.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
+            self.console.print(f"\n[bold cyan]📄 Output File:[/bold cyan]")
+            self.console.print(f"   {output_file}")
+
+            total_annotated = annotation_results.get('total_annotated', 0)
+            if total_annotated:
+                self.console.print(f"\n[bold cyan]📊 Statistics:[/bold cyan]")
+                self.console.print(f"   Rows annotated: {total_annotated:,}")
+
+                success_count = annotation_results.get('success_count', 0)
+                if success_count:
+                    success_rate = (success_count / total_annotated * 100)
+                    self.console.print(f"   Success rate: {success_rate:.1f}%")
+
+            # Export to Doccano JSONL if enabled in preferences
+            if export_to_doccano:
+                # Build prompt_configs for export
+                prompt_configs_for_export = []
+                for p in prompts:
+                    prompt_configs_for_export.append({
+                        'prompt': {
+                            'keys': p.get('expected_keys', []),
+                            'content': p.get('prompt_content', p.get('prompt', '')),
+                            'name': p.get('name', 'prompt')
+                        },
+                        'prefix': p.get('prefix', '')
+                    })
+
+                self._export_to_doccano_jsonl(
+                    output_file=output_file,
+                    text_column=data_source.get('text_column', 'text'),
+                    prompt_configs=prompt_configs_for_export,
+                    data_path=data_path,
+                    timestamp=datetime.now().strftime('%Y%m%d_%H%M%S'),
+                    sample_size=export_sample_size
+                )
+
+            # Export to Label Studio JSONL if enabled in preferences
+            if export_to_labelstudio:
+                # Build prompt_configs for export
+                prompt_configs_for_export = []
+                for p in prompts:
+                    prompt_configs_for_export.append({
+                        'prompt': {
+                            'keys': p.get('expected_keys', []),
+                            'content': p.get('prompt_content', p.get('prompt', '')),
+                            'name': p.get('name', 'prompt')
+                        },
+                        'prefix': p.get('prefix', '')
+                    })
+
+                self._export_to_labelstudio_jsonl(
+                    output_file=output_file,
+                    text_column=data_source.get('text_column', 'text'),
+                    prompt_configs=prompt_configs_for_export,
+                    data_path=data_path,
+                    timestamp=datetime.now().strftime('%Y%m%d_%H%M%S'),
+                    sample_size=export_sample_size
+                )
+
+        except Exception as exc:
+            self.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
+            self.logger.exception("Resume/Relaunch annotation failed")
+
+    def _clean_metadata(self):
+        """Clean old metadata files"""
+        self.console.print("\n[bold cyan]🗑️  Clean Old Metadata[/bold cyan]\n")
+        self.console.print("[dim]Delete saved annotation parameters to free space[/dim]\n")
+
+        annotations_dir = self.settings.paths.data_dir / 'annotations'
+
+        if not annotations_dir.exists():
+            self.console.print("[yellow]No annotations directory found.[/yellow]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        # Find all metadata JSON files
+        metadata_files = list(annotations_dir.glob("*_metadata_*.json"))
+
+        if not metadata_files:
+            self.console.print("[yellow]No metadata files found.[/yellow]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        # Sort by modification time (oldest first for cleaning)
+        metadata_files.sort(key=lambda x: x.stat().st_mtime)
+
+        self.console.print(f"[green]Found {len(metadata_files)} metadata file(s)[/green]\n")
+
+        # Display cleaning options
+        self.console.print("[bold]Cleaning Options:[/bold]")
+        self.console.print("  [cyan]1[/cyan] - Delete ALL metadata files")
+        self.console.print("  [cyan]2[/cyan] - Delete metadata older than X days")
+        self.console.print("  [cyan]3[/cyan] - Select specific files to delete")
+        self.console.print("  [cyan]0[/cyan] - Cancel")
+
+        clean_choice = Prompt.ask(
+            "\n[bold yellow]Select cleaning option[/bold yellow]",
+            choices=["0", "1", "2", "3"],
+            default="0"
+        )
+
+        if clean_choice == "0":
+            self.console.print("[yellow]Cleaning cancelled[/yellow]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        files_to_delete = []
+
+        if clean_choice == "1":
+            # Delete ALL
+            self.console.print(f"\n[red]⚠️  Warning: This will delete ALL {len(metadata_files)} metadata files![/red]")
+            confirm = Confirm.ask("Are you sure?", default=False)
+
+            if confirm:
+                files_to_delete = metadata_files
+            else:
+                self.console.print("[yellow]Deletion cancelled[/yellow]")
+                self.console.print("\n[dim]Press Enter to continue...[/dim]")
+                input()
+                return
+
+        elif clean_choice == "2":
+            # Delete older than X days
+            days = self._int_prompt_with_validation(
+                "Delete files older than how many days?",
+                30, 1, 365
+            )
+
+            from datetime import datetime, timedelta
+            cutoff_time = datetime.now() - timedelta(days=days)
+
+            for mf in metadata_files:
+                file_time = datetime.fromtimestamp(mf.stat().st_mtime)
+                if file_time < cutoff_time:
+                    files_to_delete.append(mf)
+
+            if not files_to_delete:
+                self.console.print(f"\n[yellow]No files older than {days} days found[/yellow]")
+                self.console.print("\n[dim]Press Enter to continue...[/dim]")
+                input()
+                return
+
+            self.console.print(f"\n[yellow]Found {len(files_to_delete)} file(s) older than {days} days[/yellow]")
+            confirm = Confirm.ask("Delete these files?", default=False)
+
+            if not confirm:
+                self.console.print("[yellow]Deletion cancelled[/yellow]")
+                self.console.print("\n[dim]Press Enter to continue...[/dim]")
+                input()
+                return
+
+        elif clean_choice == "3":
+            # Select specific files
+            import json
+            from datetime import datetime
+
+            # Display files with details
+            files_table = Table(border_style="cyan", show_header=True)
+            files_table.add_column("#", style="cyan", width=4)
+            files_table.add_column("Filename", style="white", width=50)
+            files_table.add_column("Date", style="yellow", width=16)
+            files_table.add_column("Size", style="green", width=10)
+
+            valid_files = []
+            for i, mf in enumerate(metadata_files, 1):
+                try:
+                    size_kb = mf.stat().st_size / 1024
+                    mtime = datetime.fromtimestamp(mf.stat().st_mtime)
+                    date_str = mtime.strftime('%Y-%m-%d %H:%M')
+
+                    files_table.add_row(
+                        str(i),
+                        mf.name[:50],
+                        date_str,
+                        f"{size_kb:.1f} KB"
+                    )
+                    valid_files.append(mf)
+                except Exception as e:
+                    continue
+
+            self.console.print("\n")
+            self.console.print(files_table)
+
+            self.console.print("\n[yellow]Select files to delete:[/yellow]")
+            self.console.print("[dim]Enter comma-separated numbers (e.g., 1,3,5) or 'all' for all files[/dim]")
+
+            selection = Prompt.ask("Files to delete")
+
+            if selection.lower() == 'all':
+                files_to_delete = valid_files
+            else:
+                try:
+                    indices = [int(x.strip()) for x in selection.split(',')]
+                    for idx in indices:
+                        if 1 <= idx <= len(valid_files):
+                            files_to_delete.append(valid_files[idx - 1])
+                except ValueError:
+                    self.console.print("[red]Invalid selection[/red]")
+                    self.console.print("\n[dim]Press Enter to continue...[/dim]")
+                    input()
+                    return
+
+            if not files_to_delete:
+                self.console.print("[yellow]No files selected[/yellow]")
+                self.console.print("\n[dim]Press Enter to continue...[/dim]")
+                input()
+                return
+
+            self.console.print(f"\n[yellow]Selected {len(files_to_delete)} file(s) for deletion[/yellow]")
+            confirm = Confirm.ask("Delete these files?", default=False)
+
+            if not confirm:
+                self.console.print("[yellow]Deletion cancelled[/yellow]")
+                self.console.print("\n[dim]Press Enter to continue...[/dim]")
+                input()
+                return
+
+        # Perform deletion
+        deleted_count = 0
+        failed_count = 0
+
+        self.console.print("\n[bold]Deleting files...[/bold]")
+
+        for mf in files_to_delete:
+            try:
+                mf.unlink()
+                deleted_count += 1
+                self.console.print(f"  [green]✓[/green] Deleted: {mf.name}")
+            except Exception as e:
+                failed_count += 1
+                self.console.print(f"  [red]✗[/red] Failed: {mf.name} - {e}")
+
+        # Summary
+        self.console.print(f"\n[bold green]✅ Deletion complete[/bold green]")
+        self.console.print(f"   Deleted: {deleted_count} file(s)")
+        if failed_count > 0:
+            self.console.print(f"   [red]Failed: {failed_count} file(s)[/red]")
+
+        self.console.print("\n[dim]Press Enter to continue...[/dim]")
+        input()
+
+    def _export_to_doccano_jsonl(self, output_file: str, text_column: str,
+                                  prompt_configs: list, data_path: Path, timestamp: str,
+                                  sample_size=None):
+        """Export annotations to Doccano JSONL format
+
+        Parameters
+        ----------
+        sample_size : str or int, optional
+            Number of samples to export. Can be:
+            - 'all': export all annotations
+            - 'representative': export 10% (minimum 100)
+            - int: export specific number
+        """
+        import json
+        import pandas as pd
+
+        try:
+            self.console.print("\n[bold cyan]📤 Exporting to Doccano JSONL...[/bold cyan]")
+
+            # Load the annotated file
+            output_path = Path(output_file)
+            if output_path.suffix.lower() == '.csv':
+                df = pd.read_csv(output_path)
+            elif output_path.suffix.lower() in ['.xlsx', '.xls']:
+                df = pd.read_excel(output_path)
+            elif output_path.suffix.lower() == '.parquet':
+                df = pd.read_parquet(output_path)
+            else:
+                self.console.print(f"[yellow]⚠️  Unsupported format for Doccano export: {output_path.suffix}[/yellow]")
+                return
+
+            # Filter only annotated rows
+            if 'annotation' not in df.columns:
+                self.console.print("[yellow]⚠️  No annotation column found[/yellow]")
+                return
+
+            annotated_mask = (
+                df['annotation'].notna() &
+                (df['annotation'].astype(str).str.strip() != '') &
+                (df['annotation'].astype(str) != 'nan')
+            )
+            df_annotated = df[annotated_mask].copy()
+
+            if len(df_annotated) == 0:
+                self.console.print("[yellow]⚠️  No valid annotations to export[/yellow]")
+                return
+
+            total_annotated = len(df_annotated)
+            self.console.print(f"[cyan]  Found {total_annotated:,} annotated rows[/cyan]")
+
+            # Apply sampling if specified
+            if sample_size is not None and sample_size != 'all':
+                if sample_size == 'representative':
+                    # Stratified sampling: 10% from each label class (minimum 100 total)
+                    n_samples = max(100, int(total_annotated * 0.1))
+
+                    # Don't sample more than available
+                    n_samples = min(n_samples, total_annotated)
+
+                    if n_samples < total_annotated:
+                        self.console.print(f"[cyan]  Using stratified sampling: {n_samples:,} rows (proportional by labels)[/cyan]")
+
+                        # Parse annotations to get label distribution
+                        label_counts = {}
+                        for idx, row in df_annotated.iterrows():
+                            try:
+                                annotation = json.loads(row['annotation'])
+                                # Get first label key as stratification key
+                                for key in annotation.keys():
+                                    if key != 'text':
+                                        label_val = str(annotation[key])
+                                        label_counts[label_val] = label_counts.get(label_val, 0) + 1
+                                        break
+                            except:
+                                pass
+
+                        # Stratified sampling
+                        df_annotated = df_annotated.sample(n=n_samples, random_state=42).copy()
+                    else:
+                        self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows (sample size >= total)[/cyan]")
+                else:
+                    # Custom number - random sampling
+                    n_samples = int(sample_size)
+                    n_samples = min(n_samples, total_annotated)
+
+                    if n_samples < total_annotated:
+                        self.console.print(f"[cyan]  Random sampling: {n_samples:,} rows for export[/cyan]")
+                        df_annotated = df_annotated.sample(n=n_samples, random_state=42).copy()
+                    else:
+                        self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows[/cyan]")
+            else:
+                self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows[/cyan]")
+
+            # Prepare JSONL output
+            doccano_dir = self.settings.paths.data_dir / 'doccano_exports'
+            doccano_dir.mkdir(parents=True, exist_ok=True)
+
+            jsonl_filename = f"{data_path.stem}_doccano_{timestamp}.jsonl"
+            jsonl_path = doccano_dir / jsonl_filename
+
+            # Get all label keys from prompts
+            all_label_keys = set()
+            for pc in prompt_configs:
+                prefix = pc.get('prefix', '')
+                for key in pc['prompt']['keys']:
+                    if prefix:
+                        all_label_keys.add(f"{prefix}_{key}")
+                    else:
+                        all_label_keys.add(key)
+
+            # Extract labels from annotations (JSON strings)
+            exported_count = 0
+            with open(jsonl_path, 'w', encoding='utf-8') as f:
+                for idx, row in df_annotated.iterrows():
+                    try:
+                        # Parse annotation JSON
+                        annotation_str = row['annotation']
+                        if pd.isna(annotation_str) or str(annotation_str).strip() == '':
+                            continue
+
+                        annotation_data = json.loads(annotation_str)
+
+                        # Build Doccano entry
+                        doccano_entry = {
+                            'text': str(row[text_column]),
+                            'labels': []
+                        }
+
+                        # Extract labels from annotation
+                        for label_key in all_label_keys:
+                            if label_key in annotation_data:
+                                label_value = annotation_data[label_key]
+                                # Handle different label formats
+                                if isinstance(label_value, list):
+                                    doccano_entry['labels'].extend(label_value)
+                                elif isinstance(label_value, str) and label_value.strip():
+                                    doccano_entry['labels'].append(label_value)
+
+                        # Add metadata (everything except text and annotation columns)
+                        metadata = {}
+                        for col in df.columns:
+                            if col not in [text_column, 'annotation'] and col not in all_label_keys:
+                                val = row[col]
+                                # Convert to JSON-serializable format
+                                if pd.notna(val):
+                                    if isinstance(val, (pd.Timestamp, pd.DatetimeTZDtype)):
+                                        metadata[col] = str(val)
+                                    elif isinstance(val, (int, float, str, bool)):
+                                        metadata[col] = val
+                                    else:
+                                        metadata[col] = str(val)
+
+                        doccano_entry['meta'] = metadata
+
+                        # Write to JSONL
+                        f.write(json.dumps(doccano_entry, ensure_ascii=False) + '\n')
+                        exported_count += 1
+
+                    except json.JSONDecodeError as e:
+                        self.logger.warning(f"Could not parse annotation at row {idx}: {e}")
+                        continue
+                    except Exception as e:
+                        self.logger.warning(f"Error processing row {idx}: {e}")
+                        continue
+
+            # Display success
+            self.console.print(f"\n[bold green]✅ Doccano JSONL export completed![/bold green]")
+            self.console.print(f"[bold cyan]📄 JSONL File:[/bold cyan]")
+            self.console.print(f"   {jsonl_path}")
+            self.console.print(f"[cyan]   Exported: {exported_count:,} entries[/cyan]\n")
+
+            self.console.print("[yellow]📌 Next Steps:[/yellow]")
+            self.console.print("  1. Import this JSONL file into Doccano for validation")
+            self.console.print("  2. Review and correct annotations in Doccano")
+            self.console.print("  3. Export validated annotations from Doccano")
+            self.console.print("  4. Use LLM Tool to calculate metrics on validated data\n")
+
+        except Exception as e:
+            self.console.print(f"\n[red]❌ Doccano export failed: {e}[/red]")
+            self.logger.exception("Doccano JSONL export failed")
+
+    def _export_to_labelstudio_jsonl(self, output_file: str, text_column: str,
+                                      prompt_configs: list, data_path: Path, timestamp: str,
+                                      sample_size=None, prediction_mode='with'):
+        """Export annotations to Label Studio JSONL format
+
+        Parameters
+        ----------
+        sample_size : str or int, optional
+            Number of samples to export. Can be:
+            - 'all': export all annotations
+            - 'representative': export 10% (minimum 100)
+            - int: export specific number
+        prediction_mode : str, optional
+            How to include LLM predictions:
+            - 'with': Include predictions (default)
+            - 'without': Export without predictions
+            - 'both': Create two files (with and without)
+        """
+        import json
+        import pandas as pd
+
+        try:
+            self.console.print("\n[bold cyan]📤 Exporting to Label Studio JSONL...[/bold cyan]")
+
+            # Load the annotated file
+            output_path = Path(output_file)
+            if output_path.suffix.lower() == '.csv':
+                df = pd.read_csv(output_path)
+            elif output_path.suffix.lower() in ['.xlsx', '.xls']:
+                df = pd.read_excel(output_path)
+            elif output_path.suffix.lower() == '.parquet':
+                df = pd.read_parquet(output_path)
+            else:
+                self.console.print(f"[yellow]⚠️  Unsupported format for Label Studio export: {output_path.suffix}[/yellow]")
+                return
+
+            # Filter only annotated rows
+            if 'annotation' not in df.columns:
+                self.console.print("[yellow]⚠️  No annotation column found[/yellow]")
+                return
+
+            annotated_mask = (
+                df['annotation'].notna() &
+                (df['annotation'].astype(str).str.strip() != '') &
+                (df['annotation'].astype(str) != 'nan')
+            )
+            df_annotated = df[annotated_mask].copy()
+
+            if len(df_annotated) == 0:
+                self.console.print("[yellow]⚠️  No valid annotations to export[/yellow]")
+                return
+
+            total_annotated = len(df_annotated)
+            self.console.print(f"[cyan]  Found {total_annotated:,} annotated rows[/cyan]")
+
+            # Apply sampling if specified
+            if sample_size is not None and sample_size != 'all':
+                if sample_size == 'representative':
+                    # Stratified sampling: 10% from each label class (minimum 100 total)
+                    n_samples = max(100, int(total_annotated * 0.1))
+
+                    # Don't sample more than available
+                    n_samples = min(n_samples, total_annotated)
+
+                    if n_samples < total_annotated:
+                        self.console.print(f"[cyan]  Using stratified sampling: {n_samples:,} rows (proportional by labels)[/cyan]")
+
+                        # Parse annotations to get label distribution
+                        label_counts = {}
+                        for idx, row in df_annotated.iterrows():
+                            try:
+                                annotation = json.loads(row['annotation'])
+                                # Get first label key as stratification key
+                                for key in annotation.keys():
+                                    if key != 'text':
+                                        label_val = str(annotation[key])
+                                        label_counts[label_val] = label_counts.get(label_val, 0) + 1
+                                        break
+                            except:
+                                pass
+
+                        # Stratified sampling
+                        df_annotated = df_annotated.sample(n=n_samples, random_state=42).copy()
+                    else:
+                        self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows (sample size >= total)[/cyan]")
+                else:
+                    # Custom number - random sampling
+                    n_samples = int(sample_size)
+                    n_samples = min(n_samples, total_annotated)
+
+                    if n_samples < total_annotated:
+                        self.console.print(f"[cyan]  Random sampling: {n_samples:,} rows for export[/cyan]")
+                        df_annotated = df_annotated.sample(n=n_samples, random_state=42).copy()
+                    else:
+                        self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows[/cyan]")
+            else:
+                self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows[/cyan]")
+
+            # Prepare JSONL output
+            labelstudio_dir = self.settings.paths.data_dir / 'labelstudio_exports'
+            labelstudio_dir.mkdir(parents=True, exist_ok=True)
+
+            jsonl_filename = f"{data_path.stem}_labelstudio_{timestamp}.jsonl"
+            jsonl_path = labelstudio_dir / jsonl_filename
+
+            # Get all label keys from prompts
+            all_label_keys = set()
+            for pc in prompt_configs:
+                prefix = pc.get('prefix', '')
+                for key in pc['prompt']['keys']:
+                    if prefix:
+                        all_label_keys.add(f"{prefix}_{key}")
+                    else:
+                        all_label_keys.add(key)
+
+            # Export to Label Studio format
+            exported_count = 0
+            with open(jsonl_path, 'w', encoding='utf-8') as f:
+                for idx, row in df_annotated.iterrows():
+                    try:
+                        # Parse annotation JSON
+                        annotation_str = row['annotation']
+                        if pd.isna(annotation_str) or str(annotation_str).strip() == '':
+                            continue
+
+                        annotation_data = json.loads(annotation_str)
+
+                        # Build Label Studio entry
+                        # Data section
+                        data_entry = {
+                            'text': str(row[text_column])
+                        }
+
+                        # Add metadata
+                        for col in df.columns:
+                            if col not in [text_column, 'annotation'] and col not in all_label_keys:
+                                val = row[col]
+                                if pd.notna(val):
+                                    if isinstance(val, (pd.Timestamp, pd.DatetimeTZDtype)):
+                                        data_entry[col] = str(val)
+                                    elif isinstance(val, (int, float, str, bool)):
+                                        data_entry[col] = val
+                                    else:
+                                        data_entry[col] = str(val)
+
+                        # Predictions section (LLM annotations as predictions)
+                        predictions_result = []
+
+                        for label_key in all_label_keys:
+                            if label_key in annotation_data:
+                                label_value = annotation_data[label_key]
+
+                                # Handle list of labels
+                                if isinstance(label_value, list):
+                                    for lv in label_value:
+                                        if lv and str(lv).strip():
+                                            predictions_result.append({
+                                                "value": {
+                                                    "choices": [str(lv)]
+                                                },
+                                                "from_name": label_key,
+                                                "to_name": "text",
+                                                "type": "choices"
+                                            })
+                                # Handle single label
+                                elif isinstance(label_value, str) and label_value.strip():
+                                    predictions_result.append({
+                                        "value": {
+                                            "choices": [label_value]
+                                        },
+                                        "from_name": label_key,
+                                        "to_name": "text",
+                                        "type": "choices"
+                                    })
+
+                        # Build entry based on prediction mode
+                        if prediction_mode == 'without':
+                            # Export without predictions - just data
+                            labelstudio_entry = {"data": data_entry}
+                        else:
+                            # Export with predictions (default)
+                            labelstudio_entry = {
+                                "data": data_entry,
+                                "predictions": [{
+                                    "result": predictions_result,
+                                    "model_version": "llm_annotation"
+                                }]
+                            }
+
+                        # Write to JSONL
+                        f.write(json.dumps(labelstudio_entry, ensure_ascii=False) + '\n')
+                        exported_count += 1
+
+                    except json.JSONDecodeError as e:
+                        self.logger.warning(f"Could not parse annotation at row {idx}: {e}")
+                        continue
+                    except Exception as e:
+                        self.logger.warning(f"Error processing row {idx}: {e}")
+                        continue
+
+            # Create Label Studio config XML file
+            config_path = jsonl_path.with_suffix('.xml')
+            label_config = self._build_labelstudio_config(all_label_keys, prompt_configs)
+
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(label_config)
+
+            # Also create a JSON file (non-line-delimited) for easier import
+            suffix = "_with_predictions" if prediction_mode == 'with' else "_without_predictions"
+            json_path = jsonl_path.parent / f"{jsonl_path.stem}{suffix}.json"
+            jsonl_final = jsonl_path.parent / f"{jsonl_path.stem}{suffix}.jsonl"
+
+            # Rename jsonl if needed
+            if prediction_mode != 'with':
+                jsonl_path.rename(jsonl_final)
+                jsonl_path = jsonl_final
+
+            # Read the JSONL and convert to JSON array
+            tasks_array = []
+            with open(jsonl_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        tasks_array.append(json.loads(line))
+
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(tasks_array, f, indent=2, ensure_ascii=False)
+
+            # If mode is 'both', create second set without predictions
+            if prediction_mode == 'both':
+                self.console.print(f"[cyan]  Creating second file without predictions...[/cyan]")
+
+                # Call recursively with 'without' mode
+                self._export_to_labelstudio_jsonl(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs,
+                    data_path=data_path,
+                    timestamp=timestamp,
+                    sample_size='all',  # Use all already sampled data
+                    prediction_mode='without'
+                )
+
+                self.console.print(f"\n[bold green]✅ Label Studio export completed (both modes)![/bold green]")
+            else:
+                self.console.print(f"\n[bold green]✅ Label Studio export completed![/bold green]")
+
+            # Display files created
+            mode_desc = {
+                'with': 'with LLM predictions',
+                'without': 'without predictions (for manual annotation)',
+                'both': 'with predictions'
+            }.get(prediction_mode, '')
+
+            self.console.print(f"[bold cyan]📄 Files created ({mode_desc}):[/bold cyan]")
+            self.console.print(f"   {json_path} [dim](JSON array - use this for import)[/dim]")
+            self.console.print(f"   {jsonl_path} [dim](JSONL - alternative format)[/dim]")
+            self.console.print(f"   {config_path} [dim](labeling config XML)[/dim]")
+            self.console.print(f"[cyan]   Exported: {exported_count:,} entries[/cyan]\n")
+
+            self.console.print("[yellow]📌 Import Instructions:[/yellow]")
+            self.console.print("  [bold]Recommended: Use the JSON file[/bold]")
+            self.console.print("  1. In Label Studio, click 'Create Project'")
+            self.console.print("  2. Name your project and click 'Save'")
+            self.console.print("  3. Go to 'Settings' → 'Labeling Interface'")
+            self.console.print(f"  4. Click 'Code' and paste contents from: {config_path.name}")
+            self.console.print("  5. Save the configuration")
+            self.console.print(f"  6. Go to project, click 'Import' and upload: {json_path.name}\n")
+
+            self.console.print("  [dim]Alternative: Use direct API export for automatic setup[/dim]\n")
+
+        except Exception as e:
+            self.console.print(f"\n[red]❌ Label Studio export failed: {e}[/red]")
+            self.logger.exception("Label Studio JSONL export failed")
+
+    def _export_to_labelstudio_direct(self, output_file: str, text_column: str,
+                                        prompt_configs: list, data_path: Path, timestamp: str,
+                                        sample_size=None, prediction_mode='with', api_url=None, api_key=None):
+        """Export annotations directly to Label Studio via API
+
+        Parameters
+        ----------
+        api_url : str
+            Label Studio API URL (e.g., http://localhost:8080)
+        api_key : str
+            Label Studio API key from Account & Settings
+        prediction_mode : str, optional
+            How to include LLM predictions:
+            - 'with': Include predictions (default)
+            - 'without': Export without predictions
+            - 'both': Create two projects (with and without)
+        """
+        import json
+        import pandas as pd
+
+        # Check if requests is available
+        if not HAS_REQUESTS:
+            self.console.print("\n[yellow]⚠️  Direct export to Label Studio requires the 'requests' library[/yellow]")
+            self.console.print("[cyan]This library is not currently installed.[/cyan]\n")
+
+            install_requests = Confirm.ask(
+                "Would you like to install 'requests' now?",
+                default=True
+            )
+
+            if install_requests:
+                try:
+                    self.console.print("\n[cyan]Installing requests...[/cyan]")
+                    import subprocess
+                    result = subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "requests"],
+                        capture_output=True,
+                        text=True
+                    )
+
+                    if result.returncode == 0:
+                        self.console.print("[green]✅ Successfully installed 'requests'[/green]")
+                        # Import it now
+                        import requests as req_module
+                        # Note: requests is now available for the rest of this function
+                        globals()['requests'] = req_module
+                        globals()['HAS_REQUESTS'] = True
+                    else:
+                        self.console.print(f"[red]❌ Installation failed: {result.stderr}[/red]")
+                        self.console.print("\n[yellow]Please install manually:[/yellow]")
+                        self.console.print("  pip install requests")
+                        return
+
+                except Exception as e:
+                    self.console.print(f"[red]❌ Installation error: {e}[/red]")
+                    self.console.print("\n[yellow]Please install manually:[/yellow]")
+                    self.console.print("  pip install requests")
+                    return
+            else:
+                self.console.print("\n[yellow]Skipping direct export. You can:[/yellow]")
+                self.console.print("  1. Install requests: pip install requests")
+                self.console.print("  2. Use JSONL export instead (no extra dependencies)")
+                return
+
+        # Import requests locally for use in this function
+        import requests
+
+        try:
+            self.console.print("\n[bold cyan]📤 Exporting directly to Label Studio...[/bold cyan]")
+
+            # Load the annotated file
+            output_path = Path(output_file)
+            if output_path.suffix.lower() == '.csv':
+                df = pd.read_csv(output_path)
+            elif output_path.suffix.lower() in ['.xlsx', '.xls']:
+                df = pd.read_excel(output_path)
+            elif output_path.suffix.lower() == '.parquet':
+                df = pd.read_parquet(output_path)
+            else:
+                self.console.print(f"[yellow]⚠️  Unsupported format: {output_path.suffix}[/yellow]")
+                return
+
+            # Filter only annotated rows
+            if 'annotation' not in df.columns:
+                self.console.print("[yellow]⚠️  No annotation column found[/yellow]")
+                return
+
+            annotated_mask = (
+                df['annotation'].notna() &
+                (df['annotation'].astype(str).str.strip() != '') &
+                (df['annotation'].astype(str) != 'nan')
+            )
+            df_annotated = df[annotated_mask].copy()
+
+            if len(df_annotated) == 0:
+                self.console.print("[yellow]⚠️  No valid annotations to export[/yellow]")
+                return
+
+            total_annotated = len(df_annotated)
+            self.console.print(f"[cyan]  Found {total_annotated:,} annotated rows[/cyan]")
+
+            # Apply sampling (same logic as JSONL export)
+            if sample_size is not None and sample_size != 'all':
+                if sample_size == 'representative':
+                    n_samples = max(100, int(total_annotated * 0.1))
+                    n_samples = min(n_samples, total_annotated)
+                    if n_samples < total_annotated:
+                        self.console.print(f"[cyan]  Using stratified sampling: {n_samples:,} rows[/cyan]")
+                        df_annotated = df_annotated.sample(n=n_samples, random_state=42).copy()
+                else:
+                    n_samples = int(sample_size)
+                    n_samples = min(n_samples, total_annotated)
+                    if n_samples < total_annotated:
+                        self.console.print(f"[cyan]  Random sampling: {n_samples:,} rows[/cyan]")
+                        df_annotated = df_annotated.sample(n=n_samples, random_state=42).copy()
+
+            # Get all label keys from prompts
+            all_label_keys = set()
+            for pc in prompt_configs:
+                if 'keys' in pc['prompt']:
+                    for key in pc['prompt']['keys']:
+                        all_label_keys.add(key)
+
+            # Create Label Studio project
+            mode_suffix = "_with_predictions" if prediction_mode == 'with' else "_no_predictions"
+            self.console.print(f"\n[cyan]  Creating Label Studio project{mode_suffix}...[/cyan]")
+
+            # Title must be max 50 chars for Label Studio
+            # Format: LLM_{short_name}_{mode} where mode is 'pred' or 'nopred'
+            mode_short = "pred" if prediction_mode == 'with' else "nopred"
+            base_name = data_path.stem[:30]  # Truncate base name if needed
+            project_title = f"LLM_{base_name}_{mode_short}"[:50]
+
+            # Build labeling config
+            label_config = self._build_labelstudio_config(all_label_keys, prompt_configs)
+
+            # Create project via API
+            # Label Studio Personal Access Tokens (JWT refresh tokens) must be exchanged for access tokens
+            # Try to get an access token first if using JWT format
+            access_token = api_key
+
+            if api_key.startswith('eyJ'):
+                # This is a JWT refresh token - exchange for access token
+                try:
+                    token_response = requests.post(
+                        f'{api_url}/api/token/refresh',
+                        headers={'Content-Type': 'application/json'},
+                        json={'refresh': api_key}
+                    )
+                    if token_response.status_code == 200:
+                        token_data = token_response.json()
+                        access_token = token_data.get('access', api_key)
+                        self.console.print(f"[dim cyan]  ✓ Obtained access token from refresh token[/dim cyan]")
+                    else:
+                        self.console.print(f"[dim yellow]  Note: Token refresh returned {token_response.status_code}, trying direct use[/dim yellow]")
+                except Exception as e:
+                    # If exchange fails, try using the token directly
+                    self.console.print(f"[dim yellow]  Note: Could not exchange refresh token ({e}), trying direct use[/dim yellow]")
+                    pass
+
+            # Try different auth formats
+            # For JWT access tokens, Bearer is the correct format
+            auth_formats = [
+                f'Bearer {access_token}',     # JWT format (1.20+) - try first
+                f'Token {access_token}',      # Legacy format (pre-1.20)
+                access_token                   # Raw token (fallback)
+            ]
+
+            project_data = {
+                'title': project_title,
+                'label_config': label_config,
+                'description': f'LLM annotations exported from {data_path.name}'
+            }
+
+            response = None
+            for i, auth_format in enumerate(auth_formats):
+                headers = {
+                    'Authorization': auth_format,
+                    'Content-Type': 'application/json'
+                }
+
+                response = requests.post(
+                    f'{api_url}/api/projects',
+                    headers=headers,
+                    json=project_data
+                )
+
+                if response.status_code in [200, 201]:
+                    break
+                elif i < len(auth_formats) - 1:
+                    self.console.print(f"[yellow]  Trying alternative auth format ({i+2}/{len(auth_formats)})...[/yellow]")
+
+            if response.status_code not in [200, 201]:
+                self.console.print(f"[red]❌ Failed to create project: {response.text}[/red]")
+                return
+
+            project = response.json()
+            project_id = project['id']
+
+            self.console.print(f"[green]✅ Created project: {project_title} (ID: {project_id})[/green]")
+
+            # Import tasks
+            self.console.print(f"\n[cyan]  Importing {len(df_annotated):,} tasks...[/cyan]")
+
+            tasks = []
+            for idx, row in df_annotated.iterrows():
+                try:
+                    annotation_str = row['annotation']
+                    annotation_data = json.loads(annotation_str)
+
+                    # Build task data
+                    task_data = {'text': str(row[text_column])}
+
+                    # Add metadata
+                    for col in df.columns:
+                        if col not in [text_column, 'annotation'] and col not in all_label_keys:
+                            val = row[col]
+                            if pd.notna(val):
+                                task_data[col] = str(val)
+
+                    # Build task based on prediction mode
+                    if prediction_mode == 'without':
+                        # Export without predictions - just data
+                        task = {'data': task_data}
+                    else:
+                        # Build predictions (LLM annotations)
+                        predictions_result = []
+                        for label_key in all_label_keys:
+                            if label_key in annotation_data:
+                                label_value = annotation_data[label_key]
+                                if isinstance(label_value, list):
+                                    for lv in label_value:
+                                        if lv and str(lv).strip():
+                                            predictions_result.append({
+                                                "value": {"choices": [str(lv)]},
+                                                "from_name": label_key,
+                                                "to_name": "text",
+                                                "type": "choices"
+                                            })
+                                elif isinstance(label_value, str) and label_value.strip():
+                                    predictions_result.append({
+                                        "value": {"choices": [label_value]},
+                                        "from_name": label_key,
+                                        "to_name": "text",
+                                        "type": "choices"
+                                    })
+
+                        task = {
+                            'data': task_data,
+                            'predictions': [{
+                                'result': predictions_result,
+                                'model_version': 'llm_annotation'
+                            }]
+                        }
+
+                    tasks.append(task)
+
+                except Exception as e:
+                    self.console.print(f"[yellow]⚠️  Skipped row {idx}: {e}[/yellow]")
+                    continue
+
+            # Import tasks to project
+            response = requests.post(
+                f'{api_url}/api/projects/{project_id}/import',
+                headers=headers,
+                json=tasks
+            )
+
+            if response.status_code not in [200, 201]:
+                self.console.print(f"[red]❌ Failed to import tasks: {response.text}[/red]")
+                return
+
+            self.console.print(f"\n[bold green]✅ Successfully exported {len(tasks):,} tasks to Label Studio[/bold green]")
+            self.console.print(f"[cyan]🔗 Project URL: {api_url}/projects/{project_id}/[/cyan]\n")
+
+            # If mode is 'both', create second project without predictions
+            if prediction_mode == 'both':
+                self.console.print(f"\n[cyan]Creating second project without predictions...[/cyan]")
+
+                # Call recursively with 'without' mode
+                self._export_to_labelstudio_direct(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs,
+                    data_path=data_path,
+                    timestamp=timestamp,
+                    sample_size='all',  # Use all already sampled data
+                    prediction_mode='without',
+                    api_url=api_url,
+                    api_key=api_key
+                )
+
+            self.console.print("[yellow]Next steps:[/yellow]")
+            self.console.print("  1. Open Label Studio and navigate to your project(s)")
+            self.console.print("  2. Review and correct the LLM predictions (if applicable)")
+            self.console.print("  3. Export validated annotations")
+            self.console.print("  4. Use LLM Tool to calculate metrics\n")
+
+        except requests.exceptions.ConnectionError:
+            self.console.print(f"\n[red]❌ Connection error: Could not connect to {api_url}[/red]")
+            self.console.print("[yellow]Make sure Label Studio is running:[/yellow]")
+            self.console.print("  label-studio start")
+        except Exception as e:
+            self.console.print(f"\n[red]❌ Export failed: {e}[/red]")
+            self.logger.exception("Label Studio direct export failed")
+
+    def _build_labelstudio_config(self, label_keys, prompt_configs=None):
+        """Build Label Studio labeling configuration
+
+        Parameters
+        ----------
+        label_keys : set
+            Set of label keys (e.g., {'theme', 'party'})
+        prompt_configs : list, optional
+            List of prompt configurations containing the actual values for each key
+        """
+        config_parts = ['<View>']
+        config_parts.append('  <Text name="text" value="$text"/>')
+
+        # Extract actual values from prompt_configs if available
+        key_values_map = {}
+        if prompt_configs:
+            for pc in prompt_configs:
+                # Try new format first
+                if 'prompt' in pc and 'keys' in pc['prompt']:
+                    for key_def in pc['prompt']['keys']:
+                        if isinstance(key_def, dict):
+                            # New format: {'name': 'theme', 'values': ['env', 'health']}
+                            key_name = key_def.get('name')
+                            values = key_def.get('values', [])
+                            if key_name:
+                                key_values_map[key_name] = values
+
+                # Try extracting from prompt_content (old wizard format)
+                if 'prompt_content' in pc and not key_values_map:
+                    import re
+                    prompt_text = pc['prompt_content']
+
+                    # Pattern: - "theme": "value1" si ..., "value2" si ..., "null" si ...
+                    # or: - "theme" (can be multiple values): "value1" si ..., "value2" si ...
+                    for label_key in label_keys:
+                        # Find lines starting with - "key"
+                        pattern = rf'- "{label_key}"[^:]*:\s*(.+?)(?=\n-|\n\*\*|\Z)'
+                        match = re.search(pattern, prompt_text, re.DOTALL)
+
+                        if match:
+                            values_text = match.group(1)
+                            # Extract all quoted values except "null"
+                            value_pattern = r'"([^"]+)"\s+si'
+                            values = re.findall(value_pattern, values_text)
+                            # Filter out 'null'
+                            values = [v for v in values if v != 'null']
+                            if values:
+                                key_values_map[label_key] = values
+
+        for label_key in sorted(label_keys):
+            config_parts.append(f'  <Choices name="{label_key}" toName="text" choice="single">')
+
+            # Use actual values if available, otherwise placeholder
+            if label_key in key_values_map and key_values_map[label_key]:
+                for value in key_values_map[label_key]:
+                    config_parts.append(f'    <Choice value="{value}"/>')
+            else:
+                # Fallback to placeholder
+                config_parts.append(f'    <Choice value="placeholder_{label_key}"/>')
+
+            config_parts.append('  </Choices>')
+
+        config_parts.append('</View>')
+        return '\n'.join(config_parts)
+
+    def _database_annotator(self):
+        """PostgreSQL direct annotator"""
+        self.console.print("\n[bold cyan]🗄️  Database Annotator[/bold cyan]\n")
+        self.console.print("[yellow]⚙️  Database Annotator coming soon...[/yellow]")
+        self.console.print("[dim]Press Enter to continue...[/dim]")
+        input()
 
     def show_documentation(self):
         """Show documentation"""
+        # Display welcome banner
+        self._display_welcome_banner()
+
         if HAS_RICH and self.console:
             doc_text = """
 # LLMTool Documentation
