@@ -205,6 +205,20 @@ class SwedishBert(BertBase):
         )
 
 
+class MultiBERT(BertBase):
+    def __init__(
+            self,
+            model_name='bert-base-multilingual-cased',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=BertTokenizer,
+            device=device,
+            model_sequence_classifier=BertForSequenceClassification
+        )
+
+
 class XLMRoberta(BertBase):
     def __init__(
             self,

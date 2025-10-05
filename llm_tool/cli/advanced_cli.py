@@ -120,6 +120,87 @@ from ..trainers.training_data_builder import (
 )
 
 
+# ============================================================================
+# MODEL DESCRIPTIONS - Factual information about popular LLM models
+# ============================================================================
+MODEL_DESCRIPTIONS = {
+    # Meta Llama models
+    'llama3.3': 'Meta Llama 3.3 70B - Multilingual model with 128K context, strong reasoning',
+    'llama3.2': 'Meta Llama 3.2 - Small efficient models (1B/3B) for edge deployment',
+    'llama3.1': 'Meta Llama 3.1 - Multimodal model with tool use, 128K context (8B/70B/405B)',
+    'llama3': 'Meta Llama 3 - Improved instruction following, 8K context (8B/70B)',
+    'llama2': 'Meta Llama 2 - Chat-optimized open model, 4K context (7B/13B/70B)',
+    'codellama': 'Meta Code Llama - Code generation specialist, supports Python/C++/Java (7B/13B/34B)',
+
+    # Google Gemma models
+    'gemma3': 'Google Gemma 3 - Latest efficient model for everyday devices (2B/9B/27B)',
+    'gemma2': 'Google Gemma 2 - Lightweight deployment across consumer devices (2B/9B/27B)',
+    'gemma': 'Google Gemma - Efficient open model by Google DeepMind (2B/7B)',
+
+    # Alibaba Qwen models
+    'qwen3': 'Qwen 3 - Latest generation with dense and MoE variants (8B-235B), 128K context',
+    'qwen2.5': 'Qwen 2.5 - Pretrained on 18T tokens, multilingual support, 128K context',
+    'qwen2': 'Qwen 2 - Multilingual model with strong coding abilities (0.5B-72B)',
+    'qwen': 'Qwen - Alibaba large language model series',
+
+    # DeepSeek models
+    'deepseek-r1': 'DeepSeek-R1 - Reasoning model, strong in math/coding/logic (8B/671B)',
+    'deepseek-coder': 'DeepSeek Coder - Specialized coding model with 16K context',
+    'deepseek': 'DeepSeek - General purpose model series',
+
+    # Mistral AI models
+    'mixtral': 'Mistral Mixtral - Mixture of Experts (MoE) model with open weights (8x7B/8x22B)',
+    'mistral': 'Mistral 7B - Efficient 7B model, approaches CodeLlama on code tasks',
+    'mistral-nemo': 'Mistral Nemo - 12B model with 128K context window',
+    'codestral': 'Codestral - Mistral AI code generation model, supports 80+ languages',
+
+    # NVIDIA Nemotron models
+    'nemotron': 'NVIDIA Nemotron-70B - Customized Llama 3.1 for helpful responses via RLHF',
+    'nemotron-mini': 'NVIDIA Nemotron Mini - Small language model for RAG/function calling, 4K context',
+
+    # Microsoft Phi models
+    'phi4': 'Microsoft Phi-4 - 14B reasoning model rivaling larger models',
+    'phi3': 'Microsoft Phi-3 - Lightweight state-of-the-art models (3B Mini/14B Medium)',
+    'phi': 'Microsoft Phi-2 - 2.7B model with strong reasoning/language understanding',
+
+    # Cohere models
+    'command-r': 'Cohere Command R - Optimized for conversational interaction and long context',
+    'command-r-plus': 'Cohere Command R+ - Enhanced version with stronger capabilities',
+
+    # Specialized models
+    'yi': 'Yi - Bilingual (English/Chinese) model with strong performance (6B/34B)',
+    'solar': 'Solar - Upstage Solar, depth-upscaled Llama 2 with 10.7B parameters',
+    'orca': 'Orca - Microsoft Orca, reasoning specialist trained on GPT-4 outputs',
+    'vicuna': 'Vicuna - Open-source chatbot fine-tuned from LLaMA',
+    'wizardcoder': 'WizardCoder - Code generation with Evol-Instruct method',
+    'starcoder': 'StarCoder - Code generation model trained on The Stack dataset',
+    'falcon': 'Falcon - TII open-source model, trained on refined web data (7B/40B)',
+    'stable-lm': 'StabilityAI Stable LM - Efficient language model series',
+    'bloom': 'BLOOM - Multilingual model supporting 46 languages (176B)',
+    'gpt4all': 'GPT4All - Ecosystem of open-source chatbots',
+
+    # OpenAI models
+    'gpt-5': 'OpenAI GPT-5 - Latest flagship model (2025)',
+    'gpt-4o': 'OpenAI GPT-4o - Multimodal (text/image), matches GPT-4 Turbo performance',
+    'gpt-4-turbo': 'OpenAI GPT-4 Turbo - Large multimodal model, optimized for chat/completions',
+    'gpt-4': 'OpenAI GPT-4 - Advanced reasoning, multimodal capabilities',
+    'gpt-3.5-turbo': 'OpenAI GPT-3.5 Turbo - Fast, cost-effective for most tasks',
+    'o1': 'OpenAI o1 - Reasoning model for science/coding/math',
+    'o3': 'OpenAI o3 - Latest reasoning model with enhanced performance',
+    'o4': 'OpenAI o4 - Advanced reasoning model (2025)',
+
+    # Anthropic Claude models
+    'claude-sonnet-4.5': 'Claude Sonnet 4.5 - Best for coding/computer use, autonomous for 30hrs (200K)',
+    'claude-3.7-sonnet': 'Claude 3.7 Sonnet - Hybrid reasoning, extended thinking for complex problems',
+    'claude-3.5-sonnet': 'Claude 3.5 Sonnet - Strong vision, 64% agentic coding eval (200K)',
+    'claude-opus-4.1': 'Claude Opus 4.1 - Most intelligent, frontier in coding/search/writing (200K)',
+    'claude-3-opus': 'Claude 3 Opus - Largest Claude 3 model, 200K-1M context window',
+    'claude-3.5-haiku': 'Claude 3.5 Haiku - Fast, surpasses Claude 3 Opus on benchmarks',
+    'claude-3-sonnet': 'Claude 3 Sonnet - Balanced performance and speed',
+    'claude-3-haiku': 'Claude 3 Haiku - Fastest Claude 3 model',
+}
+
+
 @dataclass
 class ModelInfo:
     """Information about an available model"""
@@ -180,18 +261,26 @@ class LLMDetector:
                 lines = result.stdout.strip().split('\n')
                 if len(lines) > 1:  # Has header and content
                     # Parse the table format from ollama list
+                    # Format: NAME                    ID              SIZE      MODIFIED
                     for line in lines[1:]:  # Skip header
                         if line.strip():
-                            # Parse: NAME                    ID              SIZE      MODIFIED
                             parts = line.split()
                             if len(parts) >= 1:
                                 name = parts[0]
-                                # Extract size if available (e.g., "27GB" -> "27 GB")
+
+                                # Extract size - look for GB/MB/KB in any part
                                 size = None
-                                if len(parts) >= 3:
-                                    size_str = parts[2]
-                                    if 'GB' in size_str or 'MB' in size_str:
-                                        size = size_str
+                                for part in parts[1:]:
+                                    part_upper = part.upper()
+                                    if 'GB' in part_upper or 'MB' in part_upper or 'KB' in part_upper:
+                                        # Format nicely: "27GB" -> "27 GB", "1.5GB" -> "1.5 GB"
+                                        import re
+                                        match = re.match(r'([\d.]+)\s*([KMGT]B)', part_upper)
+                                        if match:
+                                            size = f"{match.group(1)} {match.group(2)}"
+                                        else:
+                                            size = part
+                                        break
 
                                 models.append(ModelInfo(
                                     name=name,
@@ -283,10 +372,10 @@ class TrainerModelDetector:
                 {"name": "albert-base-v2", "params": "12M", "type": "ALBERT", "performance": "★★★"},
             ],
             "Multilingual Models": [
-                {"name": "bert-base-multilingual", "params": "177M", "type": "mBERT", "languages": "104", "performance": "★★★"},
+                {"name": "bert-base-multilingual-cased", "params": "177M", "type": "mBERT", "languages": "104", "performance": "★★★"},
                 {"name": "xlm-roberta-base", "params": "278M", "type": "XLM-R", "languages": "100+", "performance": "★★★★"},
                 {"name": "xlm-roberta-large", "params": "560M", "type": "XLM-R", "languages": "100+", "performance": "★★★★★"},
-                {"name": "mdeberta-v3-base", "params": "280M", "type": "mDeBERTa", "languages": "100+", "performance": "★★★★★"},
+                {"name": "microsoft/mdeberta-v3-base", "params": "280M", "type": "mDeBERTa", "languages": "100+", "performance": "★★★★★"},
             ],
             "French Models": [
                 {"name": "camembert-base", "params": "110M", "type": "CamemBERT", "performance": "★★★★"},
@@ -378,8 +467,23 @@ class LanguageNormalizer:
 
     @staticmethod
     def recommend_models(languages: Set[str], all_models: Dict[str, List[Dict]]) -> List[Dict[str, Any]]:
-        """Recommend training models based on detected languages"""
+        """Recommend training models based on detected languages - supports 11+ languages"""
         recommendations = []
+
+        # Language-specific model mappings (comprehensive list)
+        LANGUAGE_SPECIFIC_MODELS = {
+            'en': ('English Models', ['bert-base-uncased', 'roberta-base', 'deberta-v3-base']),
+            'fr': ('French Models', ['camembert-base', 'flaubert-base', 'distilcamembert']),
+            'es': ('Spanish Models', ['dccuchile/bert-base-spanish-wwm-cased', 'BSC-TeMU/roberta-base-bne']),
+            'de': ('German Models', ['bert-base-german-cased', 'deepset/gbert-base']),
+            'it': ('Italian Models', ['dbmdz/bert-base-italian-cased', 'idb-ita/gilberto-uncased-from-camembert']),
+            'pt': ('Portuguese Models', ['neuralmind/bert-base-portuguese-cased', 'portuguese-bert-base']),
+            'nl': ('Dutch Models', ['GroNLP/bert-base-dutch-cased', 'wietsedv/bert-base-dutch-cased']),
+            'ru': ('Russian Models', ['DeepPavlov/rubert-base-cased', 'sberbank-ai/ruBert-base']),
+            'zh': ('Chinese Models', ['bert-base-chinese', 'hfl/chinese-bert-wwm-ext']),
+            'ja': ('Japanese Models', ['cl-tohoku/bert-base-japanese', 'nlp-waseda/roberta-base-japanese']),
+            'ar': ('Arabic Models', ['asafaya/bert-base-arabic', 'CAMeL-Lab/bert-base-arabic-camelbert-ca']),
+        }
 
         if not languages:
             # No language info - recommend multilingual as safe default
@@ -395,35 +499,39 @@ class LanguageNormalizer:
         if len(languages) == 1:
             lang = list(languages)[0]
 
-            if lang == 'en':
-                for model in all_models.get('English Models', []):
-                    recommendations.append({
-                        'model': model['name'],
-                        'category': 'English Models',
-                        'reason': f"Optimized for English ({model.get('performance', 'N/A')} performance)",
-                        'priority': 1,
-                        'details': model
-                    })
+            if lang in LANGUAGE_SPECIFIC_MODELS:
+                category, model_names = LANGUAGE_SPECIFIC_MODELS[lang]
 
-            elif lang == 'fr':
-                for model in all_models.get('French Models', []):
-                    recommendations.append({
-                        'model': model['name'],
-                        'category': 'French Models',
-                        'reason': f"Specialized for French ({model.get('performance', 'N/A')} performance)",
-                        'priority': 1,
-                        'details': model
-                    })
+                # Add language-specific models from all_models if available
+                if category in all_models:
+                    for model in all_models[category]:
+                        recommendations.append({
+                            'model': model['name'],
+                            'category': category,
+                            'reason': f"Optimized for {lang.upper()} ({model.get('performance', 'N/A')} performance)",
+                            'priority': 1,
+                            'details': model
+                        })
+                else:
+                    # Fallback: use hardcoded models
+                    for model_name in model_names[:3]:  # Top 3 models
+                        recommendations.append({
+                            'model': model_name,
+                            'category': category,
+                            'reason': f"Specialized for {lang.upper()}",
+                            'priority': 1
+                        })
+
                 # Also suggest multilingual as fallback
                 recommendations.append({
                     'model': 'xlm-roberta-base',
                     'category': 'Multilingual Models',
-                    'reason': 'Multilingual fallback (supports French + 100 languages)',
+                    'reason': f'Multilingual fallback (supports {lang.upper()} + 100 languages)',
                     'priority': 2
                 })
 
             else:
-                # Other single language - recommend multilingual
+                # Language not in specific models - recommend multilingual
                 for model in all_models.get('Multilingual Models', []):
                     recommendations.append({
                         'model': model['name'],
@@ -470,7 +578,14 @@ class DataDetector:
         if not directory.exists():
             return datasets
 
-        patterns = ['**/*.csv', '**/*.json', '**/*.jsonl', '**/*.xlsx', '**/*.parquet', '**/*.tsv']
+        # Only include formats fully supported by the annotation pipeline
+        patterns = [
+            '**/*.csv',  # CSV - fully supported
+            '**/*.json', '**/*.jsonl',  # JSON formats - fully supported
+            '**/*.xlsx', '**/*.xls',  # Excel formats - fully supported
+            '**/*.parquet',  # Parquet - fully supported
+            '**/*.RData', '**/*.rdata',  # R format - fully supported (requires pyreadr)
+        ]
 
         for pattern in patterns:
             for file_path in directory.glob(pattern):
@@ -496,18 +611,39 @@ class DataDetector:
         # Try to read and analyze the file
         if HAS_PANDAS:
             try:
+                # CSV format
                 if info.format == 'csv':
                     df = pd.read_csv(file_path, nrows=100)
+
+                # JSON formats
                 elif info.format == 'json':
                     df = pd.read_json(file_path, lines=False, nrows=100)
                 elif info.format == 'jsonl':
                     df = pd.read_json(file_path, lines=True, nrows=100)
-                elif info.format == 'xlsx':
+
+                # Excel formats
+                elif info.format in ['xlsx', 'xls']:
                     df = pd.read_excel(file_path, nrows=100)
+
+                # Parquet format
                 elif info.format == 'parquet':
-                    df = pd.read_parquet(file_path)
-                    df = df.head(100)
+                    df = pd.read_parquet(file_path).head(100)
+
+                # R format
+                elif info.format.lower() in ['rdata']:
+                    try:
+                        import pyreadr
+                        result = pyreadr.read_r(str(file_path))
+                        if result:
+                            df = list(result.values())[0].head(100)
+                        else:
+                            return info
+                    except ImportError:
+                        # If pyreadr not available, return basic info without columns
+                        return info
+
                 else:
+                    # Unsupported format - return basic info only
                     return info
 
                 info.rows = len(df)
@@ -956,6 +1092,14 @@ class AdvancedCLI:
 
             return value
 
+    def _check_cuda_available(self) -> bool:
+        """Check if CUDA is available for training"""
+        try:
+            import torch
+            return torch.cuda.is_available()
+        except:
+            return False
+
     def display_banner(self):
         """Display professional welcome banner with system info"""
         if HAS_RICH and self.console:
@@ -1161,13 +1305,12 @@ class AdvancedCLI:
 
             options = [
                 ("1", "🎨 LLM Annotation Studio - Annotate with LLM (No Training)"),
-                ("2", "🎯 Quick Start - Intelligent Pipeline Setup"),
-                ("3", "📝 Annotation Wizard - Guided LLM Annotation"),
-                ("4", "🚀 Complete Pipeline - Full Automated Workflow"),
-                ("5", "🏋️ Training Studio - Model Training & Benchmarking"),
-                ("6", "🔍 Validation Lab - Quality Assurance Tools"),
-                ("7", "💾 Profile Manager - Save & Load Configurations"),
-                ("8", "📚 Documentation & Help"),
+                ("2", "🎯 LLM Annotation → Training - Complete Workflow"),
+                ("3", "🏋️ Training Studio - Model Training & Benchmarking"),
+                ("4", "🤖 BERT Annotation Studio - Annotate with Trained Models"),
+                ("5", "🔍 Validation Lab - Quality Assurance Tools"),
+                ("6", "💾 Profile Manager - Save & Load Configurations"),
+                ("7", "📚 Documentation & Help"),
                 ("0", "❌ Exit")
             ]
 
@@ -1189,10 +1332,10 @@ class AdvancedCLI:
 
             self.console.print(panel)
 
-            # Smart prompt with validation (now 0-8 since we have 9 options)
+            # Smart prompt with validation (now 0-7 since we have 8 options)
             choice = Prompt.ask(
                 "\n[bold yellow]Select option[/bold yellow]",
-                choices=["0", "1", "2", "3", "4", "5", "6", "7", "8"],
+                choices=["0", "1", "2", "3", "4", "5", "6", "7"],
                 default="1"
             )
 
@@ -1201,14 +1344,12 @@ class AdvancedCLI:
             print("Main Menu")
             print("="*50)
             print("1. LLM Annotation Studio - Annotate with LLM (No Training)")
-            print("2. Quick Start - Intelligent Pipeline Setup")
-            print("3. Annotation Wizard - Guided LLM Annotation")
-            print("4. Complete Pipeline - Full Automated Workflow")
-            print("5. Training Studio - Model Training & Benchmarking")
-            print("6. Validation Lab - Quality Assurance Tools")
-            print("7. Analytics Dashboard - Performance Insights")
-            print("8. Profile Manager - Save & Load Configurations")
-            print("9. Advanced Settings - Fine-tune Everything")
+            print("2. LLM Annotation → Training - Complete Workflow")
+            print("3. Training Studio - Model Training & Benchmarking")
+            print("4. BERT Annotation Studio - Annotate with Trained Models")
+            print("5. Validation Lab - Quality Assurance Tools")
+            print("6. Profile Manager - Save & Load Configurations")
+            print("7. Documentation & Help")
             print("0. Exit")
             print("-"*50)
 
@@ -1216,7 +1357,7 @@ class AdvancedCLI:
             if suggestions:
                 print(f"💡 {suggestions}")
 
-            choice = input("\nSelect option (0-9): ").strip()
+            choice = input("\nSelect option (0-7): ").strip()
 
         return choice
 
@@ -1505,16 +1646,106 @@ class AdvancedCLI:
         response = input(f"Identifier column [{default_choice}]: ").strip()
         return response or default_choice
 
-    def _display_section_header(self, title: str, description: str):
-        """Display a simple section header without full banner"""
+    def _display_ascii_logo(self):
+        """Display only the ASCII logo, tagline, and workflow (without info panel)"""
         if HAS_RICH and self.console:
-            self.console.print(f"\n[bold cyan]Welcome to LLM Tool[/bold cyan]")
-            self.console.print(Panel.fit(
-                f"[bold cyan]{title}[/bold cyan]\n{description}",
-                border_style="cyan"
-            ))
+            from rich.align import Align
+            from rich.text import Text
+
+            # Get terminal width
+            width = self.console.width
+
+            self.console.print()
+            self.console.print("[on bright_blue]" + " " * width + "[/on bright_blue]")
+            self.console.print("[on bright_magenta]" + " " * width + "[/on bright_magenta]")
+            self.console.print()
+
+            # Giant LLM TOOL text with each letter in different color
+            self.console.print(Align.center("[bright_magenta]██╗     [bright_yellow]██╗     [bright_green]███╗   ███╗    [bright_cyan]████████╗ [bright_red]██████╗  [bright_blue]██████╗ [bright_white]██╗     "))
+            self.console.print(Align.center("[bright_magenta]██║     [bright_yellow]██║     [bright_green]████╗ ████║    [bright_cyan]╚══██╔══╝[bright_red]██╔═══██╗[bright_blue]██╔═══██╗[bright_white]██║     "))
+            self.console.print(Align.center("[bright_magenta]██║     [bright_yellow]██║     [bright_green]██╔████╔██║       [bright_cyan]██║   [bright_red]██║   ██║[bright_blue]██║   ██║[bright_white]██║     "))
+            self.console.print(Align.center("[bright_magenta]██║     [bright_yellow]██║     [bright_green]██║╚██╔╝██║       [bright_cyan]██║   [bright_red]██║   ██║[bright_blue]██║   ██║[bright_white]██║     "))
+            self.console.print(Align.center("[bright_magenta]███████╗[bright_yellow]███████╗[bright_green]██║ ╚═╝ ██║       [bright_cyan]██║   [bright_red]╚██████╔╝[bright_blue]╚██████╔╝[bright_white]███████╗"))
+            self.console.print(Align.center("[bright_magenta]╚══════╝[bright_yellow]╚══════╝[bright_green]╚═╝     ╚═╝       [bright_cyan]╚═╝    [bright_red]╚═════╝  [bright_blue]╚═════╝ [bright_white]╚══════╝"))
+
+            self.console.print()
+            self.console.print(Align.center("[bold bright_yellow on blue]  🚀 LLM-powered Intelligent Annotation & Training Pipeline 🚀  [/bold bright_yellow on blue]"))
+            self.console.print()
+
+            # Colorful pipeline with emojis
+            pipeline_text = Text()
+            pipeline_text.append("📊 Data ", style="bold bright_yellow on black")
+            pipeline_text.append("→ ", style="bold white")
+            pipeline_text.append("🤖 LLM Annotation ", style="bold bright_green on black")
+            pipeline_text.append("→ ", style="bold white")
+            pipeline_text.append("🧹 Clean ", style="bold bright_cyan on black")
+            pipeline_text.append("→ ", style="bold white")
+            pipeline_text.append("🎯 Label ", style="bold bright_magenta on black")
+            pipeline_text.append("→ ", style="bold white")
+            pipeline_text.append("🧠 Train ", style="bold bright_red on black")
+            pipeline_text.append("→ ", style="bold white")
+            pipeline_text.append("📈 Deploy ", style="bold bright_blue on black")
+
+            self.console.print(Align.center(pipeline_text))
+            self.console.print()
+            self.console.print("[on bright_magenta]" + " " * width + "[/on bright_magenta]")
+            self.console.print("[on bright_blue]" + " " * width + "[/on bright_blue]")
+            self.console.print()
         else:
-            print(f"\nWelcome to LLM Tool")
+            print("="*80)
+            print(" " * 28 + "LLM TOOL")
+            print(" " * 18 + "Intelligent Annotation & Training Pipeline")
+            print("="*80)
+            print("\n  🤖 -> 📝 -> 🧹 -> 🎯 -> 🧠 -> 📊 -> ✨")
+            print("  AI   Annotate Clean Label Train Test Deploy\n")
+            print("="*80 + "\n")
+
+    def _display_section_header(self, title: str, description: str, mode_info: Optional[Dict[str, Any]] = None):
+        """Display a personalized section header with mode-specific information"""
+        if HAS_RICH and self.console:
+            # If mode_info provided, create a detailed panel
+            if mode_info:
+                from rich.table import Table
+
+                info_table = Table(show_header=False, box=None, padding=(0, 2))
+
+                # Always add author first
+                info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
+
+                # Add mode-specific rows
+                if 'workflow' in mode_info:
+                    info_table.add_row("📊 Workflow:", f"[cyan]{mode_info['workflow']}[/cyan]")
+
+                if 'capabilities' in mode_info:
+                    caps = ' • '.join(mode_info['capabilities'])
+                    info_table.add_row("🎯 Capabilities:", f"[yellow]{caps}[/yellow]")
+
+                if 'input' in mode_info:
+                    info_table.add_row("📥 Input:", f"[green]{mode_info['input']}[/green]")
+
+                if 'output' in mode_info:
+                    info_table.add_row("📤 Output:", f"[magenta]{mode_info['output']}[/magenta]")
+
+                if 'best_for' in mode_info:
+                    info_table.add_row("✨ Best For:", f"[bright_blue]{mode_info['best_for']}[/bright_blue]")
+
+                if 'duration' in mode_info:
+                    info_table.add_row("⏱️  Duration:", f"[dim]{mode_info['duration']}[/dim]")
+
+                self.console.print(Panel(
+                    info_table,
+                    title=f"[bold cyan]{title}[/bold cyan]",
+                    subtitle=f"[dim]{description}[/dim]",
+                    border_style="cyan",
+                    padding=(1, 2)
+                ))
+            else:
+                # Fallback to simple panel
+                self.console.print(Panel.fit(
+                    f"[bold cyan]{title}[/bold cyan]\n{description}",
+                    border_style="cyan"
+                ))
+        else:
             print(f"\n{title}")
             print(description)
 
@@ -1596,455 +1827,1773 @@ class AdvancedCLI:
             print("="*80 + "\n")
 
     def quick_start_wizard(self):
-        """Intelligent quick start wizard with auto-configuration"""
-        # Display welcome banner
-        self._display_welcome_banner()
+        """Smart guided annotation wizard with all options"""
+        # Display ASCII logo only
+        self._display_ascii_logo()
 
-        if HAS_RICH and self.console:
-            self.console.print(Panel.fit(
-                "[bold cyan]🎯 Quick Start Wizard[/bold cyan]\n"
-                "I'll help you set up your pipeline intelligently",
-                border_style="cyan"
-            ))
-
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=self.console
-            ) as progress:
-
-                # Step 1: Analyze environment
-                task = progress.add_task("[cyan]Analyzing your environment...", total=None)
-                time.sleep(1)  # Simulate analysis
-
-                # Auto-select best LLM
-                best_llm = self._auto_select_llm()
-                progress.update(task, description=f"[green]✓ Selected LLM: {best_llm.name}")
-
-                # Step 2: Detect dataset
-                task2 = progress.add_task("[cyan]Detecting datasets...", total=None)
-                time.sleep(0.5)
-
-                best_dataset = self._auto_select_dataset()
-                if best_dataset:
-                    progress.update(task2, description=f"[green]✓ Found dataset: {best_dataset.path.name}")
-                else:
-                    progress.update(task2, description="[yellow]No dataset found - will ask for path")
-
-            # Interactive configuration with smart defaults
-            self.console.print("\n[bold]Let's configure your pipeline:[/bold]\n")
-
-            # LLM configuration - ASK FIRST
-            self.console.print(f"\n[bold]Step 1: LLM Selection[/bold]")
-            self.console.print(f"[dim]Auto-selected: {best_llm.name} ({best_llm.provider})[/dim]")
-
-            use_auto_llm = Confirm.ask("Use this LLM?", default=True)
-
-            if use_auto_llm:
-                selected_llm = best_llm
-            else:
-                # Show available LLMs and let user choose
-                selected_llm = self._select_llm_interactive()
-
-
-            self.console.print(f"[green]✓ Selected LLM: {selected_llm.name}[/green]")
-
-            # Check if user wants to return to menu
-            if self._check_return_to_menu("with dataset selection"):
-                return
-
-            # Handle API key with secure storage
-            if selected_llm.requires_api_key:
-                api_key = self._get_or_prompt_api_key(selected_llm.provider, selected_llm.name)
-            else:
-                api_key = None
-
-            # Ensure downstream steps use the user-selected model
-            best_llm = selected_llm
-
-            # Dataset selection - ASK SECOND
-            self.console.print(f"\n[bold]Step 2: Dataset Selection[/bold]")
-            if best_dataset:
-                use_detected = Confirm.ask(
-                    f"Use detected dataset [cyan]{best_dataset.path.name}[/cyan]?",
-                    default=True
-                )
-                if use_detected:
-                    dataset_info = best_dataset
-                    dataset_path = str(best_dataset.path)
-                else:
-                    dataset_path = self._prompt_file_path("Enter dataset path")
-                    dataset_info = DataDetector.analyze_file(Path(dataset_path)) or DatasetInfo(path=Path(dataset_path), format=Path(dataset_path).suffix.lstrip('.'))
-            else:
-                dataset_path = self._prompt_file_path("Enter dataset path")
-                dataset_info = DataDetector.analyze_file(Path(dataset_path)) or DatasetInfo(path=Path(dataset_path), format=Path(dataset_path).suffix.lstrip('.'))
-
-            available_columns = dataset_info.columns if dataset_info and dataset_info.columns else []
-            suggested_text = self.data_detector.suggest_text_column(dataset_info) if dataset_info else None
-            text_column = self._prompt_for_text_column(available_columns, suggested_text)
-
-            suggested_id = None
-            if available_columns:
-                for col in available_columns:
-                    lowered = col.lower()
-                    if lowered == 'id' or lowered.endswith('_id') or 'identifier' in lowered:
-                        suggested_id = col
-                        break
-
-            identifier_column = self._prompt_for_identifier_column(available_columns, suggested_id)
-
-            # Check if user wants to return to menu
-            if self._check_return_to_menu("with column configuration"):
-                return
-
-            # Language column detection and prompt
-            lang_column = None
-            if available_columns:
-                # Detect potential language columns
-                potential_lang_cols = [col for col in available_columns
-                                      if col.lower() in ['lang', 'language', 'langue', 'lng', 'iso_lang']]
-
-                if potential_lang_cols:
-                    self.console.print(f"\n[bold cyan]🌍 Found language column(s):[/bold cyan]")
-                    for col in potential_lang_cols:
-                        self.console.print(f"  • [cyan]{col}[/cyan]")
-
-                    use_lang_col = Confirm.ask("Use a language column for training metadata?", default=True)
-                    if use_lang_col:
-                        if len(potential_lang_cols) == 1:
-                            lang_column = potential_lang_cols[0]
-                            self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
-                        else:
-                            lang_column = Prompt.ask(
-                                "Which language column to use?",
-                                choices=potential_lang_cols,
-                                default=potential_lang_cols[0]
-                            )
-                    else:
-                        # Ask if automatic language detection is needed
-                        auto_detect = Confirm.ask(
-                            "[yellow]⚠️  Language information is needed for annotation. Enable automatic language detection?[/yellow]",
-                            default=True
-                        )
-                        if auto_detect:
-                            self.console.print("[dim]Language will be automatically detected for each text during annotation.[/dim]")
-                            # Store flag for automatic detection
-                            lang_column = None  # Will trigger auto-detection later
-                        else:
-                            self.console.print("[yellow]⚠️  Warning: Proceeding without language information may affect annotation quality.[/yellow]")
-                            lang_column = None
-                else:
-                    # No language column detected
-                    has_lang = Confirm.ask("Does your dataset have a language column?", default=False)
-                    if has_lang:
-                        lang_column = Prompt.ask(
-                            "Language column name",
-                            choices=available_columns,
-                            default=available_columns[0]
-                        )
-
-            # Max token budget per completion
-            max_tokens = self._prompt_max_tokens(best_llm)
-
-            # Prompt configuration
-            self.console.print("\n[bold]Step 4/6: Prompt Configuration[/bold]")
-
-            # Auto-detect prompts
-            detected_prompts = self._detect_prompts_in_folder()
-
-            if detected_prompts:
-                self.console.print(f"\n[green]✓ Found {len(detected_prompts)} prompts in prompts/ folder:[/green]")
-                for i, p in enumerate(detected_prompts, 1):
-                    keys_str = ', '.join(p['keys'])
-                    self.console.print(f"  {i}. [cyan]{p['name']}[/cyan]")
-                    self.console.print(f"     Keys ({len(p['keys'])}): {keys_str}")
-
-                # Explain the options clearly
-                self.console.print("\n[bold]Prompt Selection Options:[/bold]")
-                self.console.print("  [cyan]all[/cyan]     - Use ALL detected prompts (multi-prompt mode)")
-                self.console.print("           → Each text will be annotated with all prompts")
-                self.console.print("           → Useful when you want complete annotations from all perspectives")
-                self.console.print("\n  [cyan]select[/cyan]  - Choose SPECIFIC prompts by number (e.g., 1,3,5)")
-                self.console.print("           → Only selected prompts will be used")
-                self.console.print("           → Useful when testing or when you need only certain annotations")
-                self.console.print("\n  [cyan]wizard[/cyan]  - 🧙‍♂️ Create NEW prompt using Social Science Wizard")
-                self.console.print("           → Interactive guided prompt creation")
-                self.console.print("           → Optional AI assistance for definitions")
-                self.console.print("           → [bold green]Recommended for new research projects![/bold green]")
-                self.console.print("\n  [cyan]custom[/cyan]  - Provide path to a prompt file NOT in prompts/ folder")
-                self.console.print("           → Use a prompt from another location")
-                self.console.print("           → Useful for testing new prompts or one-off annotations")
-
-                prompt_choice = Prompt.ask(
-                    "\n[bold yellow]Prompt selection[/bold yellow]",
-                    choices=["all", "select", "wizard", "custom"],
-                    default="all"
-                )
-
-                if prompt_choice == "all":
-                    # Use all prompts in multi-prompt mode
-                    prompt = [p['content'] for p in detected_prompts]
-                    prompt_mode = "multi"
-                    self.console.print(f"[green]✓ Using all {len(prompt)} prompts[/green]")
-                elif prompt_choice == "select":
-                    indices = Prompt.ask("Enter prompt numbers (comma-separated, e.g., 1,3,5)")
-                    try:
-                        selected_indices = [int(x.strip()) - 1 for x in indices.split(',')]
-                        selected = [detected_prompts[i] for i in selected_indices if 0 <= i < len(detected_prompts)]
-                        if selected:
-                            prompt = [p['content'] for p in selected]
-                            prompt_mode = "multi" if len(prompt) > 1 else "single"
-                            self.console.print(f"[green]✓ Selected {len(prompt)} prompts[/green]")
-                        else:
-                            self.console.print("[red]Invalid selection. Using first prompt.[/red]")
-                            prompt = detected_prompts[0]['content']
-                            prompt_mode = "single"
-                    except (ValueError, IndexError):
-                        self.console.print("[red]Invalid input. Using first prompt.[/red]")
-                        prompt = detected_prompts[0]['content']
-                        prompt_mode = "single"
-                elif prompt_choice == "wizard":
-                    # Create new prompt using wizard - skip detection since user explicitly chose wizard
-                    prompt = self._get_custom_prompt(skip_detection=True)
-                    prompt_mode = "wizard"
-                else:  # custom
-                    # Ask for custom prompt path
-                    custom_path = self._prompt_file_path("Enter path to prompt file")
-                    try:
-                        prompt = Path(custom_path).read_text(encoding='utf-8')
-                        prompt_mode = "custom"
-                        self.console.print(f"[green]✓ Loaded custom prompt from {custom_path}[/green]")
-                    except Exception as e:
-                        self.console.print(f"[red]Error loading custom prompt: {e}[/red]")
-                        prompt = self._get_custom_prompt()
-                        prompt_mode = "wizard"
-            else:
-                # No prompts detected, offer to create one
-                self.console.print("\n[yellow]No prompts found in prompts/ folder.[/yellow]")
-                create_prompt = Confirm.ask("Create a new prompt using the wizard?", default=True)
-                if create_prompt:
-                    prompt = self._get_custom_prompt()
-                    prompt_mode = "wizard"
-                else:
-                    custom_path = self._prompt_file_path("Enter path to prompt file")
-                    try:
-                        prompt = Path(custom_path).read_text(encoding='utf-8')
-                        prompt_mode = "custom"
-                        self.console.print(f"[green]✓ Loaded custom prompt from {custom_path}[/green]")
-                    except Exception as e:
-                        self.console.print(f"[red]Error loading custom prompt: {e}[/red]")
-                        self.console.print("[yellow]Creating prompt using wizard...[/yellow]")
-                        prompt = self._get_custom_prompt()
-                        prompt_mode = "wizard"
-
-            # Check if user wants to return to menu
-            if self._check_return_to_menu("with training configuration"):
-                return
-
-            # Training configuration
-            self.console.print("\n[bold]Training Configuration:[/bold]")
-
-            # Display training modes explanation
-            if Confirm.ask("Display training modes guide?", default=True):
-                self._display_training_modes_explanation()
-
-            training_mode = Prompt.ask(
-                "Training mode",
-                choices=["quick", "balanced", "thorough", "custom"],
-                default="balanced"
-            )
-
-            training_config = self._get_training_preset(training_mode)
-
-            # Annotation sample configuration
-            annotation_sample_size = self._int_prompt_with_validation(
-                "How many sentences should we annotate for training? (0 = all)",
-                default=200,
-                min_value=0
-            )
-            annotation_sampling_strategy = 'head'
-            annotation_sample_seed = 42
-            if annotation_sample_size and annotation_sample_size > 0:
-                if Confirm.ask("Sample sentences randomly?", default=True):
-                    annotation_sampling_strategy = 'random'
-                    annotation_sample_seed = self._int_prompt_with_validation(
-                        "Random seed",
-                        default=42,
-                        min_value=0
-                    )
-
-            annotation_settings = {
-                'annotation_sample_size': annotation_sample_size if annotation_sample_size > 0 else None,
-                'annotation_sampling_strategy': annotation_sampling_strategy,
-                'annotation_sample_seed': annotation_sample_seed,
-                'max_tokens': max_tokens,
+        # Display personalized mode info
+        self._display_section_header(
+            "🎯 Quick Start - Intelligent Pipeline Setup",
+            "Automated end-to-end pipeline with smart defaults",
+            mode_info={
+                'workflow': 'Data → Auto-Detect → LLM Annotate → Convert → Train → Export',
+                'capabilities': ['Auto-detection', 'Smart Configuration', 'One-Click Execution'],
+                'input': 'CSV/Excel/JSON with text column',
+                'output': 'Annotated data + Trained model + Doccano export',
+                'best_for': 'Researchers wanting fast results with minimal configuration',
+                'duration': '~5-15 min (depends on dataset size)'
             }
+        )
 
-            # Ask if user wants to prepare training data
-            self.console.print("\n[bold]Training Data Preparation:[/bold]")
-            run_training = Confirm.ask("Prepare data for model training after annotation?", default=True)
+        # Step 1: Data Source Selection
+        self.console.print("[bold]Step 1/7: Data Source Selection[/bold]\n")
 
-            training_strategy = None
-            training_annotation_keys = None
-            label_strategy = None
+        # Ask user to choose between files and SQL database
+        self.console.print("[yellow]Choose data source:[/yellow]")
+        self.console.print("  1. 📁 Files (CSV/Excel/JSON/etc.) - Auto-detected or manual")
+        self.console.print("  2. 🗄️  SQL Database (PostgreSQL/MySQL/SQLite/SQL Server)\n")
 
-            if run_training:
-                # Training strategy configuration
-                self._display_training_strategy_explanation(prompt)
+        data_source_choice = Prompt.ask(
+            "Data source",
+            choices=["1", "2"],
+            default="1"
+        )
 
-                training_strategy = Prompt.ask(
-                    "Training strategy",
-                    choices=["single-label", "multi-label"],
-                    default="multi-label"
-                )
+        use_sql_database = (data_source_choice == "2")
 
-                # Ask which keys/values to train
-                schema = self._extract_annotation_schema(prompt)
+        if use_sql_database:
+            # SQL DATABASE WORKFLOW
+            self.console.print("\n[bold cyan]🗄️  SQL Database (Training Sample)[/bold cyan]\n")
+            self.console.print("[yellow]Note: For training, you'll select a representative sample from your database[/yellow]\n")
 
-                if training_strategy == "single-label":
-                    # Show all possible values from schema
-                    self.console.print("\n[dim]Detected annotation schema from prompt:[/dim]")
-                    all_values = []
-                    for key, values in schema.items():
-                        if values:
-                            self.console.print(f"  • [cyan]{key}[/cyan]: {', '.join(values[:5])}")
-                            all_values.extend([f"{key}_{v}" for v in values])
-                        else:
-                            self.console.print(f"  • [cyan]{key}[/cyan]: [yellow]values will be detected from annotations[/yellow]")
+            # Database type selection
+            db_choices = ["PostgreSQL", "MySQL", "SQLite", "Microsoft SQL Server"]
+            db_table = Table(title="Database Types", border_style="cyan")
+            db_table.add_column("#", style="cyan", width=6)
+            db_table.add_column("Database Type", style="white")
+            for i, choice in enumerate(db_choices, 1):
+                db_table.add_row(str(i), choice)
+            self.console.print(db_table)
 
-                    if Confirm.ask("\nCreate binary models for ALL values from ALL keys?", default=True):
-                        training_annotation_keys = None  # Will use all keys
-                    else:
-                        keys_input = Prompt.ask("Enter annotation keys to use (comma-separated)")
-                        training_annotation_keys = [k.strip() for k in keys_input.split(',') if k.strip()]
+            db_choice = self._int_prompt_with_validation("Select database type", 1, 1, len(db_choices))
+            db_type_name = db_choices[db_choice - 1]
+
+            # Connection details
+            if db_type_name == "SQLite":
+                db_file = Prompt.ask("SQLite database file path")
+                connection_string = f"sqlite:///{db_file}"
+            else:
+                host = Prompt.ask("Database host", default="localhost")
+                default_ports = {"PostgreSQL": "5432", "MySQL": "3306", "Microsoft SQL Server": "1433"}
+                port = Prompt.ask("Port", default=default_ports.get(db_type_name, "5432"))
+                username = Prompt.ask("Username", default="postgres" if db_type_name == "PostgreSQL" else "root")
+                password = Prompt.ask("Password", password=True)
+                database = Prompt.ask("Database name")
+
+                if db_type_name == "PostgreSQL":
+                    connection_string = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+                elif db_type_name == "MySQL":
+                    connection_string = f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
                 else:
-                    # multi-label: show all keys
-                    self.console.print("\n[dim]Detected annotation keys from prompt:[/dim]")
-                    for key in schema.keys():
-                        self.console.print(f"  • [cyan]{key}[/cyan]")
+                    connection_string = f"mssql+pyodbc://{username}:{password}@{host}:{port}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
 
-                    if Confirm.ask("\nCreate multi-class models for ALL keys?", default=True):
-                        training_annotation_keys = None  # Will use all keys
-                    else:
-                        keys_input = Prompt.ask("Enter annotation keys to use (comma-separated)")
-                        training_annotation_keys = [k.strip() for k in keys_input.split(',') if k.strip()]
-
-                # Label creation strategy
-                self.console.print("\n[bold]Label Creation Strategy:[/bold]")
-                self.console.print("• [cyan]key_value[/cyan]: Labels include key name (e.g., 'sentiment_positive')")
-                self.console.print("• [cyan]value_only[/cyan]: Labels are just values (e.g., 'positive')")
-
-                label_strategy = Prompt.ask(
-                    "Label strategy",
-                    choices=["key_value", "value_only"],
-                    default="key_value"
-                )
-
-            # Summary and confirmation
-            self._display_configuration_summary({
-                'dataset': dataset_path,
-                'text_column': text_column,
-                'identifier_column': identifier_column or "llm_annotation_id (auto)",
-                'model': best_llm.name,
-                'prompt_mode': prompt_mode,
-                'training_mode': training_mode,
-                'training_strategy': training_strategy,
-                'label_strategy': label_strategy,
-                'annotation_sample_size': annotation_settings['annotation_sample_size'] or 'all',
-                'max_tokens': max_tokens,
-                **training_config
-            })
-
-            # Check if user wants to return to menu before execution
-            if self._check_return_to_menu("with execution"):
+            # Test connection
+            self.console.print("\nTesting connection...")
+            try:
+                from sqlalchemy import create_engine, inspect, text
+                import pandas as pd
+                engine = create_engine(connection_string)
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                self.console.print("[green]✓ Connected successfully![/green]\n")
+            except Exception as e:
+                self.console.print(f"[red]✗ Connection failed: {str(e)}[/red]")
+                input("\nPress Enter to continue...")
                 return
 
-            if Confirm.ask("\n[bold yellow]Start execution?[/bold yellow]", default=True):
-                # Save as profile for future use
-                if Confirm.ask("Save this configuration as a profile?", default=True):
-                    profile_name = Prompt.ask("Profile name", default="quick_start")
-                    self._save_profile(profile_name, {
-                    'dataset': dataset_path,
-                    'text_column': text_column,
-                    'identifier_column': identifier_column,
-                    'model': best_llm.name,
-                    'api_key': api_key,
-                    'prompt': prompt,
-                    'training_config': training_config,
-                    'annotation_settings': annotation_settings
-                    })
+            # Table selection
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+            if not tables:
+                self.console.print("[red]No tables found[/red]")
+                input("\nPress Enter to continue...")
+                return
 
-                # Execute pipeline
-                self._execute_quick_start({
-                    'dataset': dataset_path,
-                    'text_column': text_column,
-                    'identifier_column': identifier_column,
-                    'lang_column': lang_column,
-                    'model': selected_llm,
-                    'api_key': api_key,
-                    'prompt': prompt,
-                    'training_config': training_config,
-                    'annotation_settings': annotation_settings,
-                    'run_training': run_training,
-                    'training_strategy': training_strategy,
-                    'label_strategy': label_strategy,
-                    'training_annotation_keys': training_annotation_keys
-                })
+            # Get row counts
+            table_info = []
+            for table in tables:
+                try:
+                    with engine.connect() as conn:
+                        result = conn.execute(text(f"SELECT COUNT(*) FROM {table}"))
+                        table_info.append((table, result.scalar()))
+                except:
+                    table_info.append((table, None))
+
+            tables_table = Table(title="Available Tables", border_style="cyan")
+            tables_table.add_column("#", style="cyan", width=3)
+            tables_table.add_column("Table Name", style="white")
+            tables_table.add_column("Rows", style="green", justify="right")
+            for i, (table, rows) in enumerate(table_info, 1):
+                tables_table.add_row(str(i), table, f"{rows:,}" if rows else "?")
+            self.console.print(tables_table)
+
+            table_choice = self._int_prompt_with_validation("Select table", 1, 1, len(table_info))
+            selected_table, total_rows = table_info[table_choice - 1]
+            self.console.print(f"\n[green]✓ Selected: {selected_table} ({total_rows:,} rows)[/green]\n")
+
+            # Load ALL data to temporary CSV (will use SAME workflow as files)
+            from datetime import datetime
+            import pandas as pd
+
+            df = pd.read_sql(f"SELECT * FROM {selected_table}", engine)
+
+            # Save to CSV in data/annotations
+            annotations_dir = self.settings.paths.data_dir / 'annotations'
+            annotations_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            data_path = annotations_dir / f"quickstart_sql_{selected_table}_{timestamp}.csv"
+            df.to_csv(data_path, index=False)
+            data_format = 'csv'
+
+            self.console.print(f"[green]✓ Loaded {len(df):,} rows from {selected_table}[/green]")
+            self.console.print(f"[dim]Saved to: {data_path}[/dim]")
 
         else:
-            # Simplified version for non-Rich environments
-            print("\n=== Quick Start Wizard ===\n")
-            print("Analyzing environment...")
-
-            best_llm = self._auto_select_llm()
-            print(f"Selected LLM: {best_llm.name}")
-
-            dataset_path = input("Dataset path: ").strip()
-            text_column = input("Text column (default: text): ").strip() or "text"
-
-            if best_llm.requires_api_key:
-                api_key = input("API Key: ").strip()
+            # FILE-BASED WORKFLOW (original code)
+            if not self.detected_datasets:
+                self.console.print("[yellow]No datasets auto-detected.[/yellow]")
+                data_path = Path(self._prompt_file_path("Dataset path"))
             else:
-                api_key = None
+                self.console.print(f"\n[bold cyan]📊 Found {len(self.detected_datasets)} dataset(s):[/bold cyan]\n")
 
-            suggested_max_tokens = self._suggest_max_tokens(best_llm)
-            max_tokens_input = input(
-                f"Max tokens per response (default {suggested_max_tokens}): "
-            ).strip()
-            try:
-                max_tokens = int(max_tokens_input) if max_tokens_input else suggested_max_tokens
-            except ValueError:
-                max_tokens = suggested_max_tokens
-            if max_tokens <= 0:
-                max_tokens = suggested_max_tokens
+                # Create table for datasets
+                datasets_table = Table(border_style="cyan", show_header=True)
+                datasets_table.add_column("#", style="bold yellow", width=4)
+                datasets_table.add_column("Filename", style="white")
+                datasets_table.add_column("Format", style="green", width=10)
+                datasets_table.add_column("Size", style="magenta", width=10)
+                datasets_table.add_column("Rows", style="cyan", width=10)
+                datasets_table.add_column("Columns", style="blue", width=10)
 
-            # Prompt configuration (simple text input)
-            print("\nStarting pipeline...")
-            # Execute simplified pipeline
-            annotation_sample_size = input("How many sentences to annotate for training (0 = all, default 200)? ").strip()
-            try:
-                annotation_sample_size = int(annotation_sample_size) if annotation_sample_size else 200
-            except ValueError:
-                annotation_sample_size = 200
+                for i, ds in enumerate(self.detected_datasets[:20], 1):
+                    # Format size
+                    if ds.size_mb < 0.1:
+                        size_str = f"{ds.size_mb * 1024:.1f} KB"
+                    else:
+                        size_str = f"{ds.size_mb:.1f} MB"
 
-            annotation_sample_seed = 42
-            annotation_sampling_strategy = 'head'
-            if annotation_sample_size and annotation_sample_size > 0:
-                random_choice = input("Sample sentences randomly? (y/N): ").strip().lower()
-                if random_choice == 'y':
-                    annotation_sampling_strategy = 'random'
-                    seed_input = input("Random seed (default 42): ").strip()
-                    try:
-                        annotation_sample_seed = int(seed_input) if seed_input else 42
-                    except ValueError:
-                        annotation_sample_seed = 42
+                    # Format rows and columns
+                    rows_str = f"{ds.rows:,}" if ds.rows else "?"
+                    cols_str = str(len(ds.columns)) if ds.columns else "?"
 
-            annotation_settings = {
-                'annotation_sample_size': annotation_sample_size if annotation_sample_size > 0 else None,
-                'annotation_sampling_strategy': annotation_sampling_strategy,
-                'annotation_sample_seed': annotation_sample_seed,
-                'max_tokens': max_tokens,
+                    datasets_table.add_row(
+                        str(i),
+                        ds.path.name,
+                        ds.format.upper(),
+                        size_str,
+                        rows_str,
+                        cols_str
+                    )
+
+                self.console.print(datasets_table)
+                self.console.print()
+
+                use_detected = Confirm.ask("[bold yellow]Use detected dataset?[/bold yellow]", default=True)
+                if use_detected:
+                    choice = self._int_prompt_with_validation("Select dataset", 1, 1, len(self.detected_datasets))
+                    data_path = self.detected_datasets[choice - 1].path
+                else:
+                    data_path = Path(self._prompt_file_path("Dataset path"))
+
+            # Detect format
+            data_format = data_path.suffix[1:].lower()
+            if data_format == 'xlsx':
+                data_format = 'excel'
+
+            self.console.print(f"[green]✓ Selected: {data_path.name} ({data_format})[/green]")
+
+        # Step 2: Column Selection with Intelligent Detection (SAME AS MODE 1)
+        self.console.print("\n[bold]Step 2/7: Column Selection with Intelligent Detection[/bold]")
+        self.console.print("[dim]Analyzing columns...[/dim]\n")
+
+        # Load sample data for intelligent detection (SAME AS MODE 1 DATABASE ANNOTATOR)
+        import pandas as pd
+        df_sample = pd.read_csv(data_path, nrows=100) if data_path.suffix == '.csv' else pd.read_excel(data_path, nrows=100)
+
+        # Detect text columns intelligently (SAME LOGIC AS MODE 1)
+        text_candidates = []
+        id_candidates = []
+
+        for col_name in df_sample.columns:
+            # Check if it's a potential ID column
+            col_lower = col_name.lower()
+            if any(id_keyword in col_lower for id_keyword in ['id', 'key', 'index', 'number', 'num', 'pk']):
+                # Check if values are unique
+                is_unique = df_sample[col_name].nunique() == len(df_sample[col_name].dropna())
+                if is_unique:
+                    id_candidates.append({
+                        'name': col_name,
+                        'type': str(df_sample[col_name].dtype),
+                        'confidence': 'high' if 'id' in col_lower else 'medium'
+                    })
+
+            # Check if it's a text column (object/string type)
+            if df_sample[col_name].dtype == 'object':
+                # Get non-null samples
+                non_null = df_sample[col_name].dropna()
+                if len(non_null) == 0:
+                    continue
+
+                # Calculate average length
+                avg_length = non_null.astype(str).str.len().mean()
+                sample_value = str(non_null.iloc[0])[:80] if len(non_null) > 0 else ""
+
+                # Determine confidence based on average length
+                if avg_length > 100:
+                    confidence = "high"
+                elif avg_length > 50:
+                    confidence = "medium"
+                elif avg_length > 20:
+                    confidence = "low"
+                else:
+                    continue  # Skip very short text
+
+                text_candidates.append({
+                    'name': col_name,
+                    'confidence': confidence,
+                    'avg_length': avg_length,
+                    'sample': sample_value
+                })
+
+        # Sort candidates (SAME AS MODE 1)
+        confidence_order = {"high": 0, "medium": 1, "low": 2}
+        text_candidates.sort(key=lambda x: (confidence_order[x['confidence']], -x['avg_length']))
+        id_candidates.sort(key=lambda x: (confidence_order.get(x['confidence'], 3)))
+
+        # Display columns with intelligent suggestions (SAME TABLE AS MODE 1)
+        col_table = Table(title=f"Columns in Dataset", box=box.ROUNDED)
+        col_table.add_column("#", style="cyan", justify="right", width=4)
+        col_table.add_column("Column Name", style="green", width=25)
+        col_table.add_column("Type", style="yellow", width=20)
+        col_table.add_column("Detection", style="magenta", width=30)
+
+        detected_text_col = None
+        detected_id_col = None
+        columns_list = list(df_sample.columns)
+
+        for idx, col_name in enumerate(columns_list, 1):
+            col_type = str(df_sample[col_name].dtype)
+            detection = ""
+
+            # Check if it's a suggested text column
+            text_match = next((tc for tc in text_candidates if tc['name'] == col_name), None)
+            if text_match:
+                if text_match['confidence'] == 'high':
+                    detection = "📝 Text (High confidence)"
+                    if detected_text_col is None:
+                        detected_text_col = idx
+                elif text_match['confidence'] == 'medium':
+                    detection = "📝 Text (Medium)"
+                else:
+                    detection = "📝 Text (Low)"
+
+            # Check if it's a suggested ID column
+            id_match = next((ic for ic in id_candidates if ic['name'] == col_name), None)
+            if id_match:
+                if id_match['confidence'] == 'high':
+                    detection = "🔑 ID (Recommended)"
+                    if detected_id_col is None:
+                        detected_id_col = idx
+                else:
+                    detection = "🔑 ID (Possible)"
+
+            col_table.add_row(str(idx), col_name, col_type, detection)
+
+        self.console.print(col_table)
+
+        # Select text column with intelligent default (SAME AS MODE 1)
+        if detected_text_col:
+            self.console.print(f"\n[cyan]💡 Suggested text column: '{columns_list[detected_text_col-1]}' (detected automatically)[/cyan]")
+
+        text_col_choice = Prompt.ask(
+            "\n[cyan]Select TEXT column (to annotate)[/cyan]",
+            choices=[str(i) for i in range(1, len(columns_list) + 1)],
+            default=str(detected_text_col) if detected_text_col else "1"
+        )
+        text_column = columns_list[int(text_col_choice) - 1]
+
+        # Select ID column with intelligent default (SAME AS MODE 1)
+        identifier_column = None
+        if Confirm.ask("\n[cyan]Do you want to select an ID column?[/cyan]", default=True):
+            if detected_id_col:
+                self.console.print(f"\n[cyan]💡 Suggested ID column: '{columns_list[detected_id_col-1]}' (unique values detected)[/cyan]")
+
+            id_col_choice = Prompt.ask(
+                "\n[cyan]Select ID column[/cyan]",
+                choices=[str(i) for i in range(1, len(columns_list) + 1)],
+                default=str(detected_id_col) if detected_id_col else "1"
+            )
+            identifier_column = columns_list[int(id_col_choice) - 1]
+
+        self.console.print(f"\n[green]✓ Text column: {text_column}[/green]")
+        if identifier_column:
+            self.console.print(f"[green]✓ ID column: {identifier_column}[/green]")
+
+        # Store column info for later use
+        column_info = {
+            'all_columns': columns_list,
+            'text_candidates': text_candidates,
+            'df': df_sample
+        }
+    
+        # Step 3: Model Selection
+        self.console.print("\n[bold]Step 3/7: Model Selection[/bold]")
+        self.console.print("[dim]Tested API models: OpenAI & Anthropic[/dim]\n")
+    
+        selected_llm = self._select_llm_interactive()
+        provider = selected_llm.provider
+        model_name = selected_llm.name
+    
+        # Get API key if needed
+        api_key = None
+        if selected_llm.requires_api_key:
+            api_key = self._get_or_prompt_api_key(provider, model_name)
+    
+        # Step 4: Prompt Configuration
+        self.console.print("\n[bold]Step 4/7: Prompt Configuration[/bold]")
+    
+        # Auto-detect prompts
+        detected_prompts = self._detect_prompts_in_folder()
+    
+        if detected_prompts:
+            self.console.print(f"\n[green]✓ Found {len(detected_prompts)} prompts in prompts/ folder:[/green]")
+            for i, p in enumerate(detected_prompts, 1):
+                # Display ALL keys, not truncated
+                keys_str = ', '.join(p['keys'])
+                self.console.print(f"  {i}. [cyan]{p['name']}[/cyan]")
+                self.console.print(f"     Keys ({len(p['keys'])}): {keys_str}")
+    
+            # Explain the options clearly
+            self.console.print("\n[bold]Prompt Selection Options:[/bold]")
+            self.console.print("  [cyan]all[/cyan]     - Use ALL detected prompts (multi-prompt mode)")
+            self.console.print("           → Each text will be annotated with all prompts")
+            self.console.print("           → Useful when you want complete annotations from all perspectives")
+            self.console.print("\n  [cyan]select[/cyan]  - Choose SPECIFIC prompts by number (e.g., 1,3,5)")
+            self.console.print("           → Only selected prompts will be used")
+            self.console.print("           → Useful when testing or when you need only certain annotations")
+            self.console.print("\n  [cyan]wizard[/cyan]  - 🧙‍♂️ Create NEW prompt using Social Science Wizard")
+            self.console.print("           → Interactive guided prompt creation")
+            self.console.print("           → Optional AI assistance for definitions")
+            self.console.print("           → [bold green]Recommended for new research projects![/bold green]")
+            self.console.print("\n  [cyan]custom[/cyan]  - Provide path to a prompt file NOT in prompts/ folder")
+            self.console.print("           → Use a prompt from another location")
+            self.console.print("           → Useful for testing new prompts or one-off annotations")
+    
+            prompt_choice = Prompt.ask(
+                "\n[bold yellow]Prompt selection[/bold yellow]",
+                choices=["all", "select", "wizard", "custom"],
+                default="all"
+            )
+    
+            selected_prompts = []
+            if prompt_choice == "all":
+                selected_prompts = detected_prompts
+                self.console.print(f"[green]✓ Using all {len(selected_prompts)} prompts[/green]")
+            elif prompt_choice == "select":
+                indices = Prompt.ask("Enter prompt numbers (comma-separated, e.g., 1,3,5)")
+                if indices.strip():  # Only process if not empty
+                    for idx_str in indices.split(','):
+                        idx_str = idx_str.strip()
+                        if idx_str:  # Skip empty strings
+                            try:
+                                idx = int(idx_str) - 1
+                                if 0 <= idx < len(detected_prompts):
+                                    selected_prompts.append(detected_prompts[idx])
+                            except ValueError:
+                                self.console.print(f"[yellow]⚠️  Skipping invalid number: '{idx_str}'[/yellow]")
+                if not selected_prompts:
+                    self.console.print("[yellow]No valid prompts selected. Using all prompts.[/yellow]")
+                    selected_prompts = detected_prompts
+                else:
+                    self.console.print(f"[green]✓ Selected {len(selected_prompts)} prompts[/green]")
+            elif prompt_choice == "wizard":
+                # Launch Social Science Wizard
+                wizard_prompt = self._run_social_science_wizard()
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(wizard_prompt)
+                selected_prompts = [{
+                    'path': None,  # Wizard-generated, not from file
+                    'name': 'wizard_generated',
+                    'keys': keys,
+                    'content': wizard_prompt
+                }]
+                self.console.print(f"[green]✓ Using wizard-generated prompt with {len(keys)} keys[/green]")
+            else:
+                # Custom path
+                custom_path = Path(self._prompt_file_path("Prompt file path (.txt)"))
+                content = custom_path.read_text(encoding='utf-8')
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(content)
+                selected_prompts = [{
+                    'path': custom_path,
+                    'name': custom_path.stem,
+                    'keys': keys,
+                    'content': content
+                }]
+        else:
+            self.console.print("[yellow]No prompts found in prompts/ folder[/yellow]")
+    
+            # Offer wizard or custom path
+            self.console.print("\n[bold]Prompt Options:[/bold]")
+            self.console.print("  [cyan]wizard[/cyan] - 🧙‍♂️ Create prompt using Social Science Wizard (Recommended)")
+            self.console.print("  [cyan]custom[/cyan] - Provide path to existing prompt file")
+    
+            choice = Prompt.ask(
+                "\n[bold yellow]Select option[/bold yellow]",
+                choices=["wizard", "custom"],
+                default="wizard"
+            )
+    
+            if choice == "wizard":
+                # Launch Social Science Wizard
+                wizard_prompt = self._run_social_science_wizard()
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(wizard_prompt)
+                selected_prompts = [{
+                    'path': None,  # Wizard-generated, not from file
+                    'name': 'wizard_generated',
+                    'keys': keys,
+                    'content': wizard_prompt
+                }]
+                self.console.print(f"[green]✓ Using wizard-generated prompt with {len(keys)} keys[/green]")
+            else:
+                custom_path = Path(self._prompt_file_path("Prompt file path (.txt)"))
+                content = custom_path.read_text(encoding='utf-8')
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(content)
+                selected_prompts = [{
+                    'path': custom_path,
+                    'name': custom_path.stem,
+                    'keys': keys,
+                    'content': content
+                }]
+    
+    
+        # Step 4b: Language Column Detection (FROM QUICK START)
+        self.console.print("\n[bold]Step 4b/7: Language Column Detection[/bold]")
+
+        lang_column = None
+        available_columns = column_info.get('all_columns', []) if column_info else []
+        if available_columns:
+            # Detect potential language columns
+            potential_lang_cols = [col for col in available_columns
+                                  if col.lower() in ['lang', 'language', 'langue', 'lng', 'iso_lang']]
+    
+            if potential_lang_cols:
+                self.console.print(f"\n[bold cyan]🌍 Found language column(s):[/bold cyan]")
+                for col in potential_lang_cols:
+                    self.console.print(f"  • [cyan]{col}[/cyan]")
+    
+                use_lang_col = Confirm.ask("Use a language column for training metadata?", default=True)
+                if use_lang_col:
+                    if len(potential_lang_cols) == 1:
+                        lang_column = potential_lang_cols[0]
+                        self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
+                    else:
+                        lang_column = Prompt.ask(
+                            "Which language column to use?",
+                            choices=potential_lang_cols,
+                            default=potential_lang_cols[0]
+                        )
+                else:
+                    # Ask if automatic language detection is needed
+                    auto_detect = Confirm.ask(
+                        "[yellow]⚠️  Language information is needed for training. Enable automatic language detection?[/yellow]",
+                        default=True
+                    )
+                    if auto_detect:
+                        self.console.print("[dim]Language will be automatically detected for each text during annotation.[/dim]")
+                        lang_column = None  # Will trigger auto-detection later
+                    else:
+                        self.console.print("[yellow]⚠️  Warning: Proceeding without language information may affect training quality.[/yellow]")
+                        lang_column = None
+            else:
+                # No language column detected
+                has_lang = Confirm.ask("Does your dataset have a language column?", default=False)
+                if has_lang:
+                    lang_column = Prompt.ask(
+                        "Language column name",
+                        choices=available_columns,
+                        default=available_columns[0] if available_columns else "language"
+                    )
+        # Step 5: Multi-prompt prefix configuration
+        prompt_configs = []
+        if len(selected_prompts) > 1:
+            self.console.print("\n[bold]Multi-Prompt Mode:[/bold] Configure key prefixes")
+            self.console.print("[dim]Prefixes help identify which prompt generated which keys[/dim]\n")
+    
+            for i, prompt in enumerate(selected_prompts, 1):
+                self.console.print(f"\n[cyan]Prompt {i}: {prompt['name']}[/cyan]")
+                self.console.print(f"  Keys: {', '.join(prompt['keys'])}")
+    
+                add_prefix = Confirm.ask(f"Add prefix to keys for this prompt?", default=True)
+                prefix = ""
+                if add_prefix:
+                    default_prefix = prompt['name'].lower().replace(' ', '_')
+                    prefix = Prompt.ask("Prefix", default=default_prefix)
+                    self.console.print(f"  [green]Keys will become: {', '.join([f'{prefix}_{k}' for k in prompt['keys'][:3]])}[/green]")
+    
+                prompt_configs.append({
+                    'prompt': prompt,
+                    'prefix': prefix
+                })
+        else:
+            # Single prompt - no prefix needed
+            prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
+    
+        # Step 6: Advanced Options
+        self.console.print("\n[bold]Step 5/7: Advanced Options[/bold]")
+    
+        # ============================================================
+        # DATASET SCOPE
+        # ============================================================
+        self.console.print("\n[bold cyan]📊 Dataset Scope[/bold cyan]")
+        self.console.print("[dim]Determine how many rows to annotate from your dataset[/dim]\n")
+    
+        # Get total rows if possible
+        total_rows = None
+        if column_info.get('df') is not None:
+            # We have a sample, extrapolate
+            total_rows = len(pd.read_csv(data_path)) if data_format == 'csv' else None
+    
+        if total_rows:
+            self.console.print(f"[green]✓ Dataset contains {total_rows:,} rows[/green]\n")
+    
+        # Option 1: Annotate all or limited
+        self.console.print("[yellow]Option 1:[/yellow] Annotate ALL rows vs LIMIT to specific number")
+        self.console.print("  • [cyan]all[/cyan]   - Annotate the entire dataset")
+        self.console.print("           [dim]Use this for production annotations[/dim]")
+        self.console.print("  • [cyan]limit[/cyan] - Specify exact number of rows to annotate")
+        self.console.print("           [dim]Use this for testing or partial annotation[/dim]")
+
+        scope_choice = Prompt.ask(
+            "\nAnnotate entire dataset or limit rows?",
+            choices=["all", "limit"],
+            default="all"
+        )
+
+        annotation_limit = None
+        use_sample = False
+        sample_strategy = "head"
+        recommended_sample = None
+
+        if scope_choice == "limit":
+            # Option 2: FIRST ask about representative sample calculation (before asking for number)
+            if total_rows and total_rows > 1000:
+                self.console.print("\n[yellow]Option 2:[/yellow] Representative Sample Calculation")
+                self.console.print("  Calculate statistically representative sample size (95% confidence interval)")
+                self.console.print("  [dim]This helps determine the minimum sample needed for statistical validity[/dim]")
+
+                calculate_sample = Confirm.ask("Calculate representative sample size?", default=True)
+
+                if calculate_sample:
+                    # Formula: n = (Z² × p × (1-p)) / E²
+                    # For 95% CI: Z=1.96, p=0.5 (max variance), E=0.05 (5% margin)
+                    import math
+                    z = 1.96
+                    p = 0.5
+                    e = 0.05
+                    n_infinite = (z**2 * p * (1-p)) / (e**2)
+                    n_adjusted = n_infinite / (1 + ((n_infinite - 1) / total_rows))
+                    recommended_sample = int(math.ceil(n_adjusted))
+
+                    self.console.print(f"\n[green]📈 Recommended sample size: {recommended_sample} rows[/green]")
+                    self.console.print(f"[dim]   (95% confidence level, 5% margin of error)[/dim]")
+                    self.console.print(f"[dim]   Population: {total_rows:,} rows[/dim]\n")
+
+            # THEN ask for specific number (with recommendation as default if calculated)
+            default_limit = recommended_sample if recommended_sample else 100
+            annotation_limit = self._int_prompt_with_validation(
+                f"How many rows to annotate?",
+                default=default_limit,
+                min_value=1,
+                max_value=total_rows if total_rows else 1000000
+            )
+
+            # Check if user chose the recommended sample
+            if recommended_sample and annotation_limit == recommended_sample:
+                use_sample = True
+
+            # Option 3: Random sampling
+            self.console.print("\n[yellow]Option 3:[/yellow] Sampling Strategy")
+            self.console.print("  Choose how to select the rows to annotate")
+            self.console.print("  • [cyan]head[/cyan]   - Take first N rows (faster, sequential)")
+            self.console.print("           [dim]Good for testing, preserves order[/dim]")
+            self.console.print("  • [cyan]random[/cyan] - Random sample of N rows (representative)")
+            self.console.print("           [dim]Better for statistical validity, unbiased[/dim]")
+    
+            sample_strategy = Prompt.ask(
+                "\nSampling strategy",
+                choices=["head", "random"],
+                default="random" if use_sample else "head"
+            )
+    
+        # ============================================================
+        # PARALLEL PROCESSING
+        # ============================================================
+        self.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
+        self.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
+    
+        self.console.print("[yellow]Parallel Workers:[/yellow]")
+        self.console.print("  Number of simultaneous annotation processes")
+        self.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
+        self.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
+        self.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
+        self.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
+        self.console.print("           [dim]Recommended for: Local models (Ollama), first time users, debugging[/dim]")
+        self.console.print("  • [cyan]2-4 workers[/cyan] - Moderate parallelism")
+        self.console.print("           [dim]Recommended for: API models (OpenAI, Claude) - avoid rate limits[/dim]")
+        self.console.print("  • [cyan]4-8 workers[/cyan] - High parallelism")
+        self.console.print("           [dim]Recommended for: API models only - requires high rate limits[/dim]")
+    
+        num_processes = self._int_prompt_with_validation("Parallel workers", 1, 1, 16)
+    
+        # ============================================================
+        # INCREMENTAL SAVE
+        # ============================================================
+        self.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
+        self.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
+    
+        self.console.print("[yellow]Enable incremental save?[/yellow]")
+        self.console.print("  • [green]Yes[/green] - Save progress regularly during annotation (recommended)")
+        self.console.print("           [dim]Protects against crashes, allows resuming, safer for long runs[/dim]")
+        self.console.print("  • [red]No[/red]  - Save only at the end")
+        self.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
+    
+        save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
+    
+        # Only ask for batch size if incremental save is enabled
+        if save_incrementally:
+            self.console.print("\n[yellow]Batch Size:[/yellow]")
+            self.console.print("  Number of rows processed between each save")
+            self.console.print("  • [cyan]Smaller (1-10)[/cyan]   - Very frequent saves, maximum safety")
+            self.console.print("           [dim]Use for: Unstable systems, expensive APIs, testing[/dim]")
+            self.console.print("  • [cyan]Medium (10-50)[/cyan]   - Balanced safety and performance")
+            self.console.print("           [dim]Use for: Most production cases[/dim]")
+            self.console.print("  • [cyan]Larger (50-200)[/cyan]  - Less frequent saves, better performance")
+            self.console.print("           [dim]Use for: Stable systems, large datasets, local models[/dim]")
+    
+            batch_size = self._int_prompt_with_validation("Batch size", 1, 1, 1000)
+        else:
+            batch_size = None  # Not used when incremental save is disabled
+    
+        # ============================================================
+        # MODEL PARAMETERS
+        # ============================================================
+        self.console.print("\n[bold cyan]🎛️  Model Parameters[/bold cyan]")
+        self.console.print("[dim]Configure advanced model generation parameters[/dim]\n")
+    
+        # Check if model supports parameter tuning
+        model_name_lower = model_name.lower()
+        is_o_series = any(x in model_name_lower for x in ['o1', 'o3', 'o4'])
+        supports_params = not is_o_series
+    
+        if not supports_params:
+            self.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
+            self.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
+            configure_params = False
+        else:
+            self.console.print("[yellow]Configure model parameters?[/yellow]")
+            self.console.print("  Adjust how the model generates responses")
+            self.console.print("  [dim]• Default values work well for most cases[/dim]")
+            self.console.print("  [dim]• Advanced users can fine-tune for specific needs[/dim]")
+            configure_params = Confirm.ask("\nConfigure model parameters?", default=False)
+    
+        # Default values
+        temperature = 0.7
+        max_tokens = 1000
+        top_p = 1.0
+        top_k = 40
+    
+        if configure_params:
+            self.console.print("\n[bold]Parameter Explanations:[/bold]\n")
+    
+            # Temperature
+            self.console.print("[cyan]🌡️  Temperature (0.0 - 2.0):[/cyan]")
+            self.console.print("  Controls randomness in responses")
+            self.console.print("  • [green]Low (0.0-0.3)[/green]  - Deterministic, focused, consistent")
+            self.console.print("           [dim]Use for: Structured tasks, factual extraction, classification[/dim]")
+            self.console.print("  • [yellow]Medium (0.4-0.9)[/yellow] - Balanced creativity and consistency")
+            self.console.print("           [dim]Use for: General annotation, most use cases[/dim]")
+            self.console.print("  • [red]High (1.0-2.0)[/red]  - Creative, varied, unpredictable")
+            self.console.print("           [dim]Use for: Brainstorming, diverse perspectives[/dim]")
+            temperature = FloatPrompt.ask("Temperature", default=0.7)
+    
+            # Max tokens
+            self.console.print("\n[cyan]📏 Max Tokens:[/cyan]")
+            self.console.print("  Maximum length of the response")
+            self.console.print("  • [green]Short (100-500)[/green]   - Brief responses, simple annotations")
+            self.console.print("  • [yellow]Medium (500-2000)[/yellow]  - Standard responses, detailed annotations")
+            self.console.print("  • [red]Long (2000+)[/red]     - Extensive responses, complex reasoning")
+            self.console.print("  [dim]Note: More tokens = higher API costs[/dim]")
+            max_tokens = self._int_prompt_with_validation("Max tokens", 1000, 50, 8000)
+    
+            # Top_p (nucleus sampling)
+            self.console.print("\n[cyan]🎯 Top P (0.0 - 1.0):[/cyan]")
+            self.console.print("  Nucleus sampling - alternative to temperature")
+            self.console.print("  • [green]Low (0.1-0.5)[/green]  - Focused on most likely tokens")
+            self.console.print("           [dim]More deterministic, safer outputs[/dim]")
+            self.console.print("  • [yellow]High (0.9-1.0)[/yellow] - Consider broader token range")
+            self.console.print("           [dim]More creative, diverse outputs[/dim]")
+            self.console.print("  [dim]Tip: Use either temperature OR top_p, not both aggressively[/dim]")
+            top_p = FloatPrompt.ask("Top P", default=1.0)
+    
+            # Top_k (only for some models)
+            if provider in ['ollama', 'google']:
+                self.console.print("\n[cyan]🔢 Top K:[/cyan]")
+                self.console.print("  Limits vocabulary to K most likely next tokens")
+                self.console.print("  • [green]Small (1-10)[/green]   - Very focused, repetitive")
+                self.console.print("  • [yellow]Medium (20-50)[/yellow]  - Balanced diversity")
+                self.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
+                top_k = self._int_prompt_with_validation("Top K", 40, 1, 100)
+    
+        # Step 7: Execute
+        self.console.print("\n[bold]Step 6/7: Review & Execute[/bold]")
+    
+        # Display comprehensive summary
+        summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
+        summary_table.add_column("Category", style="bold cyan", width=20)
+        summary_table.add_column("Setting", style="yellow", width=25)
+        summary_table.add_column("Value", style="white")
+    
+        # Data section
+        summary_table.add_row("📁 Data", "Dataset", str(data_path.name))
+        summary_table.add_row("", "Format", data_format.upper())
+        summary_table.add_row("", "Text Column", text_column)
+        if total_rows:
+            summary_table.add_row("", "Total Rows", f"{total_rows:,}")
+        if annotation_limit:
+            summary_table.add_row("", "Rows to Annotate", f"{annotation_limit:,} ({sample_strategy})")
+        else:
+            summary_table.add_row("", "Rows to Annotate", "ALL")
+    
+        # Model section
+        summary_table.add_row("🤖 Model", "Provider/Model", f"{provider}/{model_name}")
+        summary_table.add_row("", "Temperature", f"{temperature}")
+        summary_table.add_row("", "Max Tokens", f"{max_tokens}")
+        if configure_params:
+            summary_table.add_row("", "Top P", f"{top_p}")
+            if provider in ['ollama', 'google']:
+                summary_table.add_row("", "Top K", f"{top_k}")
+    
+        # Prompts section
+        summary_table.add_row("📝 Prompts", "Count", f"{len(prompt_configs)}")
+        for i, pc in enumerate(prompt_configs, 1):
+            prefix_info = f" (prefix: {pc['prefix']}_)" if pc['prefix'] else " (no prefix)"
+            summary_table.add_row("", f"  Prompt {i}", f"{pc['prompt']['name']}{prefix_info}")
+    
+        # Processing section
+        summary_table.add_row("⚙️  Processing", "Parallel Workers", str(num_processes))
+        summary_table.add_row("", "Batch Size", str(batch_size))
+        summary_table.add_row("", "Incremental Save", "Yes" if save_incrementally else "No")
+    
+        self.console.print("\n")
+        self.console.print(summary_table)
+    
+        if not Confirm.ask("\n[bold yellow]Start annotation?[/bold yellow]", default=True):
+            return
+    
+        # ============================================================
+        # REPRODUCIBILITY METADATA
+        # ============================================================
+        self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
+        self.console.print("[yellow]⚠️  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
+    
+        self.console.print("  [green]1. Resume Capability[/green]")
+        self.console.print("     • Continue this annotation if it stops or crashes")
+        self.console.print("     • Annotate additional rows later with same settings")
+        self.console.print("     • Access via 'Resume/Relaunch Annotation' workflow\n")
+    
+        self.console.print("  [green]2. Scientific Reproducibility[/green]")
+        self.console.print("     • Document exact parameters for research papers")
+        self.console.print("     • Reproduce identical annotations in the future")
+        self.console.print("     • Track model version, prompts, and all settings\n")
+    
+        self.console.print("  [red]⚠️  If you choose NO:[/red]")
+        self.console.print("     • You CANNOT resume this annotation later")
+        self.console.print("     • You CANNOT relaunch with same parameters")
+        self.console.print("     • Parameters will be lost forever\n")
+    
+        save_metadata = Confirm.ask(
+            "[bold yellow]Save annotation parameters to JSON file?[/bold yellow]",
+            default=True
+        )
+    
+        # ============================================================
+        # VALIDATION TOOL EXPORT OPTION
+        # ============================================================
+        self.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
+        self.console.print("[dim]Export annotations to JSONL format for human validation[/dim]\n")
+    
+        self.console.print("[yellow]Available validation tools:[/yellow]")
+        self.console.print("  • [cyan]Doccano[/cyan] - Simple, lightweight NLP annotation tool")
+        self.console.print("  • [cyan]Label Studio[/cyan] - Advanced, feature-rich annotation platform")
+        self.console.print("  • Both are open-source and free\n")
+    
+        self.console.print("[green]Why validate with external tools?[/green]")
+        self.console.print("  • Review and correct LLM annotations")
+        self.console.print("  • Calculate inter-annotator agreement")
+        self.console.print("  • Export validated data for metrics calculation\n")
+    
+        # Initialize export flags
+        export_to_doccano = False
+        export_to_labelstudio = False
+        export_sample_size = None
+    
+        # Step 1: Ask if user wants to export
+        export_confirm = Confirm.ask(
+            "[bold yellow]Export to validation tool?[/bold yellow]",
+            default=False
+        )
+    
+        if export_confirm:
+            # Step 2: Ask which tool to export to
+            tool_choice = Prompt.ask(
+                "[bold yellow]Which validation tool?[/bold yellow]",
+                choices=["doccano", "labelstudio"],
+                default="doccano"
+            )
+    
+            # Set the appropriate export flag
+            if tool_choice == "doccano":
+                export_to_doccano = True
+            else:  # labelstudio
+                export_to_labelstudio = True
+    
+            # Step 2b: If Label Studio, ask export method
+            labelstudio_direct_export = False
+            labelstudio_api_url = None
+            labelstudio_api_key = None
+    
+            if export_to_labelstudio:
+                self.console.print("\n[yellow]Label Studio export method:[/yellow]")
+                self.console.print("  • [cyan]jsonl[/cyan] - Export to JSONL file (manual import)")
+                if HAS_REQUESTS:
+                    self.console.print("  • [cyan]direct[/cyan] - Direct export to Label Studio via API\n")
+                    export_choices = ["jsonl", "direct"]
+                else:
+                    self.console.print("  • [dim]direct[/dim] - Direct export via API [dim](requires 'requests' library)[/dim]\n")
+                    export_choices = ["jsonl"]
+    
+                export_method = Prompt.ask(
+                    "[bold yellow]Export method[/bold yellow]",
+                    choices=export_choices,
+                    default="jsonl"
+                )
+    
+                if export_method == "direct":
+                    labelstudio_direct_export = True
+    
+                    self.console.print("\n[cyan]Label Studio API Configuration:[/cyan]")
+                    labelstudio_api_url = Prompt.ask(
+                        "Label Studio URL",
+                        default="http://localhost:8080"
+                    )
+    
+                    labelstudio_api_key = Prompt.ask(
+                        "API Key (from Label Studio Account & Settings)"
+                    )
+    
+            # Step 3: Ask about LLM predictions inclusion
+            self.console.print("\n[yellow]Include LLM predictions in export?[/yellow]")
+            self.console.print("  • [cyan]with[/cyan] - Include LLM annotations as predictions (for review/correction)")
+            self.console.print("  • [cyan]without[/cyan] - Export only data without predictions (for manual annotation)")
+            self.console.print("  • [cyan]both[/cyan] - Create two files: one with and one without predictions\n")
+    
+            prediction_mode = Prompt.ask(
+                "[bold yellow]Prediction mode[/bold yellow]",
+                choices=["with", "without", "both"],
+                default="with"
+            )
+    
+            # Step 4: Ask how many sentences to export
+            self.console.print("\n[yellow]How many annotated sentences to export?[/yellow]")
+            self.console.print("  • [cyan]all[/cyan] - Export all annotated sentences")
+            self.console.print("  • [cyan]representative[/cyan] - Representative sample (stratified by labels)")
+            self.console.print("  • [cyan]number[/cyan] - Specify exact number\n")
+    
+            sample_choice = Prompt.ask(
+                "[bold yellow]Export sample[/bold yellow]",
+                choices=["all", "representative", "number"],
+                default="all"
+            )
+    
+            if sample_choice == "all":
+                export_sample_size = "all"
+            elif sample_choice == "representative":
+                export_sample_size = "representative"
+            else:  # number
+                export_sample_size = self._int_prompt_with_validation(
+                    "Number of sentences to export",
+                    100,
+                    1,
+                    999999
+                )
+    
+        # ============================================================
+        # EXECUTE ANNOTATION
+        # ============================================================
+    
+        # Prepare output path
+        annotations_dir = self.settings.paths.data_dir / 'annotations'
+        annotations_dir.mkdir(parents=True, exist_ok=True)
+        safe_model_name = model_name.replace(':', '_').replace('/', '_')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
+        default_output_path = annotations_dir / output_filename
+    
+        self.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
+        self.console.print(f"   {default_output_path}")
+        self.console.print()
+    
+        # Prepare prompts payload for pipeline
+        prompts_payload = []
+        for pc in prompt_configs:
+            prompts_payload.append({
+                'prompt': pc['prompt']['content'],
+                'expected_keys': pc['prompt']['keys'],
+                'prefix': pc['prefix']
+            })
+    
+        # Determine annotation mode
+        annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
+    
+        # Build pipeline config
+        pipeline_config = {
+            'mode': 'file',
+            'data_source': data_format,
+            'data_format': data_format,
+            'file_path': str(data_path),
+            'text_column': text_column,
+            'text_columns': [text_column],
+            'annotation_column': 'annotation',
+            'identifier_column': identifier_column,  # From Step 2b: User-selected ID strategy
+            'run_annotation': True,
+            'annotation_mode': annotation_mode,
+            'annotation_provider': provider,
+            'annotation_model': model_name,
+            'api_key': api_key if api_key else None,
+            'prompts': prompts_payload,
+            'annotation_sample_size': annotation_limit,
+            'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
+            'annotation_sample_seed': 42,
+            'max_tokens': max_tokens,
+            'temperature': temperature,
+            'top_p': top_p,
+            'top_k': top_k if provider in ['ollama', 'google'] else None,
+            'max_workers': num_processes,
+            'num_processes': num_processes,
+            'use_parallel': num_processes > 1,
+            'warmup': False,
+            'disable_tqdm': True,  # Use Rich progress instead
+            'output_format': data_format,
+            'output_path': str(default_output_path),
+            'save_incrementally': save_incrementally,
+            'batch_size': batch_size,
+            'run_validation': False,
+            'run_training': False,
+            'lang_column': lang_column,  # From Step 4b: Language column for training metadata
+        }
+    
+        # Add model-specific options
+        if provider == 'ollama':
+            options = {
+                'temperature': temperature,
+                'num_predict': max_tokens,
+                'top_p': top_p,
+                'top_k': top_k
             }
+            pipeline_config['options'] = options
+    
+        # ============================================================
+        # SAVE REPRODUCIBILITY METADATA
+        # ============================================================
+        if save_metadata:
+            import json
+    
+            # Build comprehensive metadata
+            metadata = {
+                'annotation_session': {
+                    'timestamp': timestamp,
+                    'tool_version': 'LLMTool v1.0',
+                    'workflow': 'LLM Annotation Studio - Smart Annotate'
+                },
+                'data_source': {
+                    'file_path': str(data_path),
+                    'file_name': data_path.name,
+                    'data_format': data_format,
+                    'text_column': text_column,
+                    'total_rows': annotation_limit if annotation_limit else 'all',
+                    'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
+                    'sample_seed': 42 if sample_strategy == 'random' else None
+                },
+                'model_configuration': {
+                    'provider': provider,
+                    'model_name': model_name,
+                    'annotation_mode': annotation_mode,
+                    'temperature': temperature,
+                    'max_tokens': max_tokens,
+                    'top_p': top_p,
+                    'top_k': top_k if provider in ['ollama', 'google'] else None
+                },
+                'prompts': [
+                    {
+                        'name': pc['prompt']['name'],
+                        'file_path': str(pc['prompt']['path']) if 'path' in pc['prompt'] else None,
+                        'expected_keys': pc['prompt']['keys'],
+                        'prefix': pc['prefix'],
+                        'prompt_content': pc['prompt']['content']
+                    }
+                    for pc in prompt_configs
+                ],
+                'processing_configuration': {
+                    'parallel_workers': num_processes,
+                    'batch_size': batch_size,
+                    'incremental_save': save_incrementally,
+                    'identifier_column': 'annotation_id'
+                },
+                'output': {
+                    'output_path': str(default_output_path),
+                    'output_format': data_format
+                },
+                'export_preferences': {
+                    'export_to_doccano': export_to_doccano,
+                    'export_to_labelstudio': export_to_labelstudio,
+                    'export_sample_size': export_sample_size,
+                    'prediction_mode': prediction_mode if (export_to_doccano or export_to_labelstudio) else 'with',
+                    'labelstudio_direct_export': labelstudio_direct_export if export_to_labelstudio else False,
+                    'labelstudio_api_url': labelstudio_api_url if export_to_labelstudio else None,
+                    'labelstudio_api_key': labelstudio_api_key if export_to_labelstudio else None
+                },
+                'training_workflow': {
+                    'enabled': False,  # Will be updated after training workflow
+                    'training_params_file': None,  # Will be added after training
+                    'note': 'Training parameters will be saved separately after annotation completes'
+                }
+            }
+
+            # Save metadata JSON (PRE-ANNOTATION SAVE POINT 1)
+            metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
+            metadata_path = annotations_dir / metadata_filename
+
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            self.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
+            self.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
+            self.console.print(f"   {metadata_path}\n")
+    
+        # Execute pipeline with Rich progress
+        try:
+            self.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
+    
+            # Create pipeline controller
+            from ..pipelines.pipeline_controller import PipelineController
+            pipeline_with_progress = PipelineController(settings=self.settings)
+    
+            # Use RichProgressManager for elegant display
+            from ..utils.rich_progress_manager import RichProgressManager
+            from ..pipelines.enhanced_pipeline_wrapper import EnhancedPipelineWrapper
+    
+            with RichProgressManager(
+                show_json_every=1,  # Show JSON sample for every annotation
+                compact_mode=False   # Full preview panels
+            ) as progress_manager:
+                # Wrap pipeline for enhanced JSON tracking
+                enhanced_pipeline = EnhancedPipelineWrapper(
+                    pipeline_with_progress,
+                    progress_manager
+                )
+    
+                # Run pipeline
+                state = enhanced_pipeline.run_pipeline(pipeline_config)
+    
+                # Check for errors
+                if state.errors:
+                    error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
+                    self.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
+                    self.console.print("[dim]Press Enter to return to menu...[/dim]")
+                    input()
+                    return
+    
+            # Get results
+            annotation_results = state.annotation_results or {}
+            output_file = annotation_results.get('output_file', str(default_output_path))
+
+            # Display success message
+            self.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
+            self.console.print(f"\n[bold cyan]📄 Output File:[/bold cyan]")
+            self.console.print(f"   {output_file}")
+
+            # Display statistics if available
+            total_annotated = annotation_results.get('total_annotated', 0)
+            if total_annotated:
+                self.console.print(f"\n[bold cyan]📊 Statistics:[/bold cyan]")
+                self.console.print(f"   Rows annotated: {total_annotated:,}")
+
+                success_count = annotation_results.get('success_count', 0)
+                if success_count:
+                    success_rate = (success_count / total_annotated * 100)
+                    self.console.print(f"   Success rate: {success_rate:.1f}%")
+
+            # ============================================================
+            # AUTOMATIC LANGUAGE DETECTION (if no language column provided)
+            # ============================================================
+            if not lang_column:
+                self.console.print("\n[bold cyan]🌍 Language Detection for Training[/bold cyan]")
+                self.console.print("[yellow]No language column was provided. Detecting languages for training...[/yellow]\n")
+
+                try:
+                    import pandas as pd
+                    from llm_tool.utils.language_detector import LanguageDetector
+
+                    # Load annotated file
+                    df_annotated = pd.read_csv(output_file)
+
+                    # CRITICAL: Only detect languages for ANNOTATED rows
+                    # The output file may contain ALL original rows, but we only want to detect
+                    # languages for rows that were actually annotated
+                    original_row_count = len(df_annotated)
+
+                    # Try to identify annotated rows by checking for annotation columns
+                    # Common annotation column names: 'label', 'category', 'annotation', 'labels'
+                    annotation_cols = [col for col in df_annotated.columns if col in ['label', 'labels', 'category', 'annotation', 'predicted_label']]
+
+                    if annotation_cols:
+                        # Filter to only rows that have annotations (non-null in annotation column)
+                        annotation_col = annotation_cols[0]
+                        df_annotated = df_annotated[df_annotated[annotation_col].notna()].copy()
+                        self.console.print(f"[dim]Filtering to {len(df_annotated):,} annotated rows (out of {original_row_count:,} total rows in file)[/dim]")
+                    else:
+                        self.console.print(f"[yellow]⚠️  Could not identify annotation column. Processing all {original_row_count:,} rows.[/yellow]")
+
+                    if len(df_annotated) == 0:
+                        self.console.print("[yellow]⚠️  No annotated rows found. Skipping language detection.[/yellow]")
+                    elif text_column in df_annotated.columns:
+                        # Get ALL texts (including NaN) to maintain index alignment
+                        all_texts = df_annotated[text_column].tolist()
+
+                        # Count non-empty texts for display
+                        non_empty_texts = sum(1 for text in all_texts if pd.notna(text) and len(str(text).strip()) > 10)
+
+                        if non_empty_texts > 0:
+                            detector = LanguageDetector()
+                            detected_languages = []
+
+                            # Progress indicator
+                            from tqdm import tqdm
+                            self.console.print(f"[dim]Analyzing {non_empty_texts} texts...[/dim]")
+
+                            for text in tqdm(all_texts, desc="Detecting languages", disable=not HAS_RICH):
+                                # Handle NaN and empty texts
+                                if pd.isna(text) or not text or len(str(text).strip()) <= 10:
+                                    detected_languages.append('unknown')
+                                else:
+                                    try:
+                                        detected = detector.detect(str(text))
+                                        if detected and detected.get('language'):
+                                            detected_languages.append(detected['language'])
+                                        else:
+                                            detected_languages.append('unknown')
+                                    except Exception as e:
+                                        self.logger.debug(f"Language detection failed for text: {e}")
+                                        detected_languages.append('unknown')
+
+                            # Add language column to the filtered dataframe
+                            df_annotated['lang'] = detected_languages
+
+                            # Reload the FULL original file and update only the annotated rows
+                            df_full = pd.read_csv(output_file)
+
+                            # Initialize lang column if it doesn't exist
+                            if 'lang' not in df_full.columns:
+                                df_full['lang'] = 'unknown'
+
+                            # Update language for annotated rows only
+                            # Match by index of df_annotated within df_full
+                            df_full.loc[df_annotated.index, 'lang'] = df_annotated['lang'].values
+
+                            # Save updated full file with language column
+                            df_full.to_csv(output_file, index=False)
+
+                            # Show distribution
+                            lang_counts = {}
+                            for lang in detected_languages:
+                                if lang != 'unknown':
+                                    lang_counts[lang] = lang_counts.get(lang, 0) + 1
+
+                            if lang_counts:
+                                total = sum(lang_counts.values())
+                                self.console.print(f"\n[bold]🌍 Languages Detected ({total:,} texts):[/bold]")
+
+                                lang_table = Table(border_style="cyan", show_header=True, header_style="bold")
+                                lang_table.add_column("Language", style="cyan", width=12)
+                                lang_table.add_column("Count", style="yellow", justify="right", width=12)
+                                lang_table.add_column("Percentage", style="green", justify="right", width=12)
+
+                                for lang, count in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True):
+                                    percentage = (count / total * 100) if total > 0 else 0
+                                    lang_table.add_row(
+                                        lang.upper(),
+                                        f"{count:,}",
+                                        f"{percentage:.1f}%"
+                                    )
+
+                                self.console.print(lang_table)
+                                self.console.print(f"\n[green]✓ Language column 'lang' added to {output_file}[/green]")
+                            else:
+                                self.console.print("[yellow]⚠️  No languages detected successfully[/yellow]")
+
+                except Exception as e:
+                    self.console.print(f"[yellow]⚠️  Language detection failed: {e}[/yellow]")
+                    self.logger.exception("Language detection failed")
+
+            # ============================================================
+            # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)
+            # ============================================================
+            self._post_annotation_training_workflow(
+                output_file=output_file,
+                text_column=text_column,
+                prompt_configs=prompt_configs
+            )
+
+            # Export to Doccano JSONL if requested
+            if export_to_doccano:
+                self._export_to_doccano_jsonl(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs,
+                    data_path=data_path,
+                    timestamp=timestamp,
+                    sample_size=export_sample_size
+                )
+    
+            # Export to Label Studio if requested
+            if export_to_labelstudio:
+                if labelstudio_direct_export:
+                    # Direct export to Label Studio via API
+                    self._export_to_labelstudio_direct(
+                        output_file=output_file,
+                        text_column=text_column,
+                        prompt_configs=prompt_configs,
+                        data_path=data_path,
+                        timestamp=timestamp,
+                        sample_size=export_sample_size,
+                        prediction_mode=prediction_mode,
+                        api_url=labelstudio_api_url,
+                        api_key=labelstudio_api_key
+                    )
+                else:
+                    # Export to JSONL file
+                    self._export_to_labelstudio_jsonl(
+                        output_file=output_file,
+                        text_column=text_column,
+                        prompt_configs=prompt_configs,
+                        data_path=data_path,
+                        timestamp=timestamp,
+                        sample_size=export_sample_size,
+                        prediction_mode=prediction_mode
+                    )
+    
+            self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
+            input()
+    
+        except Exception as exc:
+            self.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
+            self.logger.exception("Annotation execution failed")
+            self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
+            input()
+    def _post_annotation_training_workflow(
+        self,
+        output_file: str,
+        text_column: str,
+        prompt_configs: list
+    ):
+        """
+        Comprehensive post-annotation training workflow.
+        Inspired by Training Studio (Mode 5) but adapted for annotated data.
+
+        Features:
+        - Language detection & analysis (with low-percentage reclassification)
+        - Text length analysis for long-document model recommendation
+        - Model recommendation based on languages & text length
+        - Training strategy selection (multilingual/specialized/hybrid)
+        - Benchmark mode option for specific categories
+        - Full training pipeline integration
+        """
+        try:
+            self.console.print("\n[bold cyan]🎓 Post-Annotation Training[/bold cyan]")
+            self.console.print("[dim]Intelligent model training from your LLM annotations[/dim]\n")
+
+            # Ask if user wants to train a model
+            train_model = Confirm.ask(
+                "[bold]Would you like to train a classifier model from these annotations?[/bold]",
+                default=True
+            )
+
+            if not train_model:
+                self.console.print("[yellow]Skipping training. Annotations are ready for manual use or export.[/yellow]")
+                return
+
+            # Load annotated data
+            import pandas as pd
+            df = pd.read_csv(output_file)
+
+            # Filter to annotated rows only
+            annotation_cols = [col for col in df.columns if col in ['label', 'labels', 'category', 'annotation', 'predicted_label']]
+            if not annotation_cols:
+                self.console.print("[yellow]⚠️  No annotation columns found. Cannot proceed with training.[/yellow]")
+                return
+
+            annotation_col = annotation_cols[0]
+            df_annotated = df[df[annotation_col].notna()].copy()
+
+            if len(df_annotated) == 0:
+                self.console.print("[yellow]⚠️  No annotated rows found. Cannot proceed with training.[/yellow]")
+                return
+
+            self.console.print(f"[green]✓ Found {len(df_annotated):,} annotated rows for training[/green]\n")
+
+            # Step 1: Category/Label Analysis
+            self.console.print("[bold cyan]Step 1: Label/Category Analysis[/bold cyan]\n")
+
+            # Detect label format (single vs multi-label)
+            is_multi_label = False
+            try:
+                first_label = df_annotated[annotation_col].iloc[0]
+                if isinstance(first_label, str) and (first_label.startswith('[') or first_label.startswith('{')):
+                    import json
+                    parsed = json.loads(first_label)
+                    is_multi_label = isinstance(parsed, list)
+            except:
+                pass
+
+            # Analyze categories
+            if is_multi_label:
+                self.console.print("[yellow]Multi-label classification detected[/yellow]")
+                all_labels = []
+                for val in df_annotated[annotation_col]:
+                    try:
+                        import json
+                        parsed = json.loads(str(val)) if isinstance(val, str) else val
+                        if isinstance(parsed, list):
+                            all_labels.extend(parsed)
+                    except:
+                        pass
+                label_counts = pd.Series(all_labels).value_counts()
+            else:
+                self.console.print("[yellow]Single-label classification detected[/yellow]")
+                label_counts = df_annotated[annotation_col].value_counts()
+
+            # Display category distribution
+            from rich.table import Table
+            cat_table = Table(title="Category Distribution", border_style="cyan", show_header=True, header_style="bold")
+            cat_table.add_column("Category", style="cyan", width=30)
+            cat_table.add_column("Count", style="yellow", justify="right", width=12)
+            cat_table.add_column("Percentage", style="green", justify="right", width=12)
+
+            total_labels = sum(label_counts.values())
+            for label, count in label_counts.head(20).items():
+                percentage = (count / total_labels * 100)
+                cat_table.add_row(
+                    str(label)[:30],
+                    f"{count:,}",
+                    f"{percentage:.1f}%"
+                )
+
+            if len(label_counts) > 20:
+                cat_table.add_row("...", f"... and {len(label_counts) - 20} more", "...")
+
+            self.console.print(cat_table)
+            self.console.print(f"\n[green]✓ {len(label_counts)} unique categories detected[/green]\n")
+
+            # Step 2: Benchmark Mode Option
+            self.console.print("[bold cyan]Step 2: Training Mode Selection[/bold cyan]\n")
+            self.console.print("[yellow]Training Mode Options:[/yellow]")
+            self.console.print("  • [cyan]full[/cyan]     - Train on ALL categories")
+            self.console.print("             Best for: Production deployment")
+            self.console.print("  • [cyan]benchmark[/cyan] - Test MULTIPLE models on ONE specific category")
+            self.console.print("             Best for: Finding the best model for your data")
+            self.console.print("             Output: Comparison metrics to choose optimal model\n")
+
+            training_mode = Prompt.ask(
+                "Select training mode",
+                choices=["full", "benchmark"],
+                default="full"
+            )
+
+            benchmark_category = None
+            if training_mode == "benchmark":
+                self.console.print("\n[bold]Benchmark Mode: Select Target Category[/bold]")
+                self.console.print("[dim]You'll train multiple models on this category to find the best one[/dim]\n")
+
+                # Show top categories
+                top_cats = list(label_counts.head(10).index)
+                for i, cat in enumerate(top_cats, 1):
+                    count = label_counts[cat]
+                    pct = (count / total_labels * 100)
+                    self.console.print(f"  {i}. {cat} ({count:,} samples, {pct:.1f}%)")
+
+                cat_choice = Prompt.ask(
+                    "\nSelect category number or enter name",
+                    default="1"
+                )
+
+                if cat_choice.isdigit() and 0 < int(cat_choice) <= len(top_cats):
+                    benchmark_category = top_cats[int(cat_choice) - 1]
+                else:
+                    benchmark_category = cat_choice
+
+                self.console.print(f"[green]✓ Benchmark category: {benchmark_category}[/green]\n")
+
+            # Step 3: Text Length Analysis (from Training Studio)
+            self.console.print("[bold cyan]Step 3: Text Length Analysis[/bold cyan]\n")
+
+            text_length_stats = {}
+            requires_long_document_model = False
+
+            if text_column in df_annotated.columns:
+                all_texts = df_annotated[text_column].dropna().astype(str).tolist()
+
+                if len(all_texts) > 0:
+                    try:
+                        from transformers import AutoTokenizer
+                        import numpy as np
+                        from tqdm import tqdm
+
+                        tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
+                        token_lengths = []
+
+                        for text in tqdm(all_texts, desc="Analyzing text lengths", disable=not HAS_RICH):
+                            tokens = tokenizer.encode(text, truncation=False, add_special_tokens=True)
+                            token_lengths.append(len(tokens))
+
+                        token_lengths = np.array(token_lengths)
+
+                        text_length_stats = {
+                            'token_mean': float(np.mean(token_lengths)),
+                            'token_median': float(np.median(token_lengths)),
+                            'token_max': int(np.max(token_lengths)),
+                            'token_p95': float(np.percentile(token_lengths, 95))
+                        }
+
+                        # Classify documents
+                        long_docs = np.sum(token_lengths >= 512)
+                        total = len(token_lengths)
+                        long_pct = (long_docs / total * 100) if total > 0 else 0
+
+                        self.console.print(f"[dim]Average: {text_length_stats['token_mean']:.0f} tokens | Max: {text_length_stats['token_max']} tokens[/dim]")
+
+                        if long_pct > 20:
+                            requires_long_document_model = True
+                            self.console.print(f"[yellow]⚠ {long_pct:.1f}% of texts exceed 512 tokens[/yellow]")
+                            use_long = Confirm.ask("Use long-document models (Longformer/BigBird)?", default=True)
+                            text_length_stats['user_prefers_long_models'] = use_long
+                        else:
+                            self.console.print(f"[green]✓ {100-long_pct:.1f}% fit within standard BERT limits[/green]")
+                            text_length_stats['user_prefers_long_models'] = False
+
+                    except Exception as e:
+                        self.logger.debug(f"Text length analysis failed: {e}")
+                        self.console.print("[yellow]Could not perform detailed length analysis[/yellow]")
+
+            self.console.print()
+
+            # Step 4: Language Strategy Analysis (from Training Studio)
+            self.console.print("[bold cyan]Step 4: Language Strategy[/bold cyan]\n")
+
+            # Check if language column exists
+            has_lang_col = 'lang' in df_annotated.columns
+            confirmed_languages = set()
+            language_distribution = {}
+
+            if has_lang_col:
+                lang_counts = df_annotated['lang'].value_counts()
+                total_lang = len(df_annotated)
+
+                # Display language distribution
+                lang_table = Table(border_style="cyan", show_header=True, header_style="bold")
+                lang_table.add_column("Language", style="cyan", width=12)
+                lang_table.add_column("Count", style="yellow", justify="right", width=12)
+                lang_table.add_column("Percentage", style="green", justify="right", width=12)
+
+                for lang, count in lang_counts.items():
+                    if lang != 'unknown':
+                        pct = (count / total_lang * 100)
+                        lang_table.add_row(lang.upper(), f"{count:,}", f"{pct:.1f}%")
+                        language_distribution[lang] = int(count)
+                        confirmed_languages.add(lang)
+
+                self.console.print(lang_table)
+                self.console.print(f"\n[green]✓ {len(confirmed_languages)} language(s) detected[/green]\n")
+            else:
+                self.console.print("[yellow]No language column found. Assuming single language.[/yellow]\n")
+
+            # Language training strategy
+            model_strategy = "multilingual"
+            language_model_mapping = {}
+
+            if len(confirmed_languages) > 1:
+                self.console.print("[yellow]Multiple languages detected. Select training strategy:[/yellow]")
+                self.console.print("  • [cyan]multilingual[/cyan] - ONE model for all languages")
+                self.console.print("  • [cyan]specialized[/cyan] - SEPARATE model per language")
+                self.console.print("  • [cyan]hybrid[/cyan] - Multilingual base + specialized fine-tuning\n")
+
+                model_strategy = Prompt.ask(
+                    "Training strategy",
+                    choices=["multilingual", "specialized", "hybrid"],
+                    default="multilingual"
+                )
+
+                self.console.print(f"[green]✓ Strategy: {model_strategy}[/green]\n")
+
+            # Step 5: Model Selection
+            self.console.print("[bold cyan]Step 5: Model Selection[/bold cyan]\n")
+
+            # Get model recommendations based on languages and text length
+            recommended_models = []
+
+            if text_length_stats.get('user_prefers_long_models'):
+                self.console.print("[yellow]Long-document models:[/yellow]")
+                recommended_models = [
+                    "allenai/longformer-base-4096",
+                    "google/bigbird-roberta-base",
+                    "facebook/xlm-roberta-longformer-base-4096"
+                ]
+            else:
+                if confirmed_languages:
+                    from llm_tool.utils.language_normalizer import LanguageNormalizer
+                    recs = LanguageNormalizer.recommend_models(confirmed_languages, self.available_trainer_models)
+                    recommended_models = [r['model'] for r in recs[:5]] if recs else []
+
+                if not recommended_models:
+                    recommended_models = ["bert-base-multilingual-cased", "xlm-roberta-base", "distilbert-base-multilingual-cased"]
+
+            self.console.print("[green]Recommended models:[/green]")
+            for i, model in enumerate(recommended_models[:5], 1):
+                self.console.print(f"  {i}. {model}")
+
+            selected_model = Prompt.ask(
+                "\nSelect model (number or name)",
+                default="1"
+            )
+
+            if selected_model.isdigit() and 0 < int(selected_model) <= len(recommended_models):
+                training_model = recommended_models[int(selected_model) - 1]
+            else:
+                training_model = selected_model
+
+            self.console.print(f"[green]✓ Selected model: {training_model}[/green]\n")
+
+            # Step 6: Training Configuration
+            self.console.print("[bold cyan]Step 6: Training Configuration[/bold cyan]\n")
+
+            # Training mode selection
+            training_modes = {
+                "quick": "Quick training (2 epochs, fast)",
+                "benchmark": "Benchmark mode (compare models)",
+                "custom": "Custom configuration"
+            }
+
+            self.console.print("[yellow]Training modes:[/yellow]")
+            for mode, desc in training_modes.items():
+                self.console.print(f"  • [cyan]{mode}[/cyan]: {desc}")
+
+            train_mode = Prompt.ask(
+                "\nSelect training mode",
+                choices=list(training_modes.keys()),
+                default="quick"
+            )
+
+            # Epochs
+            if train_mode == "quick":
+                epochs = 2
+            elif train_mode == "benchmark":
+                epochs = 3
+            else:
+                epochs = self._int_prompt_with_validation("Number of epochs", default=3, min_value=1, max_value=20)
+
+            # Batch size
+            batch_size = self._int_prompt_with_validation("Batch size", default=16, min_value=1, max_value=128)
+
+            # Learning rate
+            learning_rate = 2e-5
+            if train_mode == "custom":
+                lr_input = Prompt.ask("Learning rate", default="2e-5")
+                try:
+                    learning_rate = float(lr_input)
+                except:
+                    learning_rate = 2e-5
+
+            self.console.print(f"\n[green]✓ Configuration:[/green]")
+            self.console.print(f"  Epochs: {epochs}")
+            self.console.print(f"  Batch size: {batch_size}")
+            self.console.print(f"  Learning rate: {learning_rate}\n")
+
+            # ===========================================================
+            # SAVE TRAINING PARAMETERS (Second save point)
+            # ===========================================================
+            self.console.print("[bold cyan]💾 Saving Training Parameters[/bold cyan]\n")
+
+            training_params = {
+                "training_metadata": {
+                    "timestamp": pd.Timestamp.now().isoformat(),
+                    "annotation_file": output_file,
+                    "total_annotated_rows": len(df_annotated),
+                    "training_mode": training_mode,
+                    "benchmark_category": benchmark_category
+                },
+                "data_config": {
+                    "text_column": text_column,
+                    "label_column": annotation_col,
+                    "is_multi_label": is_multi_label,
+                    "num_categories": len(label_counts),
+                    "category_distribution": label_counts.to_dict()
+                },
+                "language_config": {
+                    "confirmed_languages": list(confirmed_languages),
+                    "language_distribution": language_distribution,
+                    "model_strategy": model_strategy,
+                    "language_model_mapping": language_model_mapping
+                },
+                "text_analysis": {
+                    "text_length_stats": text_length_stats,
+                    "requires_long_document_model": requires_long_document_model
+                },
+                "model_config": {
+                    "selected_model": training_model,
+                    "epochs": epochs,
+                    "batch_size": batch_size,
+                    "learning_rate": learning_rate
+                },
+                "prompt_configs": prompt_configs
+            }
+
+            # Save training parameters
+            import json
+            from pathlib import Path
+
+            params_file = Path(output_file).parent / f"{Path(output_file).stem}_training_params.json"
+            with open(params_file, 'w', encoding='utf-8') as f:
+                json.dump(training_params, f, indent=2, ensure_ascii=False)
+
+            self.console.print(f"[green]✓ Training parameters saved to:[/green]")
+            self.console.print(f"  {params_file}\n")
+
+            # Step 7: Execute Training
+            self.console.print("[bold cyan]Step 7: Model Training[/bold cyan]\n")
+
+            start_training = Confirm.ask(
+                "[bold]Start training now?[/bold]",
+                default=True
+            )
+
+            if start_training:
+                self.console.print("[green]🚀 Starting training...[/green]\n")
+
+                # Call Training Studio's training method
+                try:
+                    from llm_tool.pipeline.training_pipeline import TrainingPipeline
+                    from llm_tool.trainers.dataset_builder import TrainingDatasetBuilder
+
+                    # Prepare training dataset
+                    builder = TrainingDatasetBuilder()
+
+                    # Convert annotated data to training format
+                    training_data_path = Path(output_file).parent / f"{Path(output_file).stem}_training.csv"
+
+                    # Prepare data in correct format
+                    train_df = df_annotated[[text_column, annotation_col]].copy()
+                    train_df.columns = ['text', 'label']
+                    train_df.to_csv(training_data_path, index=False)
+
+                    self.console.print(f"[green]✓ Training data prepared: {training_data_path}[/green]")
+
+                    # Initialize training pipeline
+                    from llm_tool.trainers.model_trainer import ModelTrainer
+
+                    trainer = ModelTrainer(
+                        model_name=training_model,
+                        num_labels=len(label_counts),
+                        device="cuda" if self._check_cuda_available() else "cpu"
+                    )
+
+                    self.console.print(f"[yellow]Training {training_model} for {epochs} epochs...[/yellow]")
+
+                    # Load and split data
+                    from sklearn.model_selection import train_test_split
+
+                    train_data, val_data = train_test_split(
+                        train_df,
+                        test_size=0.2,
+                        random_state=42,
+                        stratify=train_df['label'] if not is_multi_label else None
+                    )
+
+                    # Train model
+                    results = trainer.train(
+                        train_texts=train_data['text'].tolist(),
+                        train_labels=train_data['label'].tolist(),
+                        val_texts=val_data['text'].tolist() if len(val_data) > 0 else None,
+                        val_labels=val_data['label'].tolist() if len(val_data) > 0 else None,
+                        epochs=epochs,
+                        batch_size=batch_size,
+                        learning_rate=learning_rate
+                    )
+
+                    # Save model
+                    model_save_path = Path(output_file).parent / f"{Path(output_file).stem}_model"
+                    trainer.save_model(str(model_save_path))
+
+                    self.console.print(f"\n[bold green]✅ Training completed![/bold green]")
+                    self.console.print(f"[green]Model saved to: {model_save_path}[/green]")
+
+                    if results:
+                        self.console.print(f"\n[bold cyan]Training Results:[/bold cyan]")
+                        for key, value in results.items():
+                            self.console.print(f"  {key}: {value}")
+
+                except Exception as train_error:
+                    self.console.print(f"[red]❌ Training error: {train_error}[/red]")
+                    self.logger.exception("Training execution failed")
+            else:
+                self.console.print("[yellow]Training skipped. You can resume later using the saved parameters.[/yellow]")
+
+        except Exception as e:
+            self.console.print(f"[red]Training workflow error: {e}[/red]")
+            self.logger.exception("Post-annotation training workflow failed")
+
+    def _get_model_description(self, model_name: str) -> str:
+        """Get factual description for a model based on its name"""
+        # Normalize model name for matching
+        name_lower = model_name.lower()
+
+        # Try exact match first
+        if name_lower in MODEL_DESCRIPTIONS:
+            return MODEL_DESCRIPTIONS[name_lower]
+
+        # Try prefix match for variants (e.g., "llama3.2:3b" matches "llama3.2")
+        for key in MODEL_DESCRIPTIONS:
+            if name_lower.startswith(key):
+                return MODEL_DESCRIPTIONS[key]
+
+        # Try substring match for common patterns
+        for key in MODEL_DESCRIPTIONS:
+            if key in name_lower or name_lower.split(':')[0] == key:
+                return MODEL_DESCRIPTIONS[key]
+
+        # Default for unknown models
+        return "Custom or community model"
 
     def _select_llm_interactive(self) -> ModelInfo:
         """Let user interactively select an LLM from available options"""
@@ -2058,34 +3607,86 @@ class AdvancedCLI:
             openai_llms = self.detected_llms.get('openai', [])
             anthropic_llms = self.detected_llms.get('anthropic', [])
 
-            # Display by category
+            # Display Local Models with Rich Table
             if local_llms:
-                self.console.print("\n[cyan]Local Models (Ollama):[/cyan]")
-                for i, llm in enumerate(local_llms, 1):
+                self.console.print("\n[bold cyan]🖥️  Local Models (Ollama):[/bold cyan]\n")
+
+                local_table = Table(border_style="cyan", show_header=True)
+                local_table.add_column("#", style="bold yellow", width=4)
+                local_table.add_column("Model Name", style="white", width=25)
+                local_table.add_column("Size", style="green", width=8)
+                local_table.add_column("Description", style="dim", width=70)
+
+                for llm in local_llms:
                     idx = len(all_llms) + 1
-                    self.console.print(f"  {idx}. {llm.name} ({llm.size or 'N/A'})")
+                    description = self._get_model_description(llm.name)
+                    local_table.add_row(
+                        str(idx),
+                        llm.name,
+                        llm.size or "N/A",
+                        description
+                    )
                     all_llms.append(llm)
 
+                self.console.print(local_table)
+
+            # Display OpenAI Models with Rich Table
             if openai_llms:
-                self.console.print("\n[cyan]OpenAI Models:[/cyan]")
-                for llm in openai_llms:  # Show all OpenAI models
+                self.console.print("\n[bold cyan]☁️  OpenAI Models:[/bold cyan]\n")
+
+                openai_table = Table(border_style="blue", show_header=True)
+                openai_table.add_column("#", style="bold yellow", width=4)
+                openai_table.add_column("Model Name", style="white", width=30)
+                openai_table.add_column("Cost", style="magenta", width=12)
+                openai_table.add_column("Description", style="dim", width=65)
+
+                for llm in openai_llms:
                     idx = len(all_llms) + 1
                     cost = f"${llm.cost_per_1k_tokens}/1K" if llm.cost_per_1k_tokens else "N/A"
-                    self.console.print(f"  {idx}. {llm.name} ({cost})")
+                    description = self._get_model_description(llm.name)
+                    openai_table.add_row(
+                        str(idx),
+                        llm.name,
+                        cost,
+                        description
+                    )
                     all_llms.append(llm)
 
-                # Add option for custom OpenAI model
+                # Add custom option row
                 idx = len(all_llms) + 1
-                self.console.print(f"  {idx}. [bold]Custom OpenAI model (enter name manually)[/bold]")
+                openai_table.add_row(
+                    str(idx),
+                    "[bold]Custom model[/bold]",
+                    "-",
+                    "[dim]Enter OpenAI model name manually[/dim]"
+                )
                 custom_openai_option_idx = idx
 
+                self.console.print(openai_table)
+
+            # Display Anthropic Models with Rich Table
             if anthropic_llms:
-                self.console.print("\n[cyan]Anthropic Models:[/cyan]")
+                self.console.print("\n[bold cyan]🤖 Anthropic Models:[/bold cyan]\n")
+
+                anthropic_table = Table(border_style="magenta", show_header=True)
+                anthropic_table.add_column("#", style="bold yellow", width=4)
+                anthropic_table.add_column("Model Name", style="white", width=30)
+                anthropic_table.add_column("Cost", style="cyan", width=12)
+                anthropic_table.add_column("Description", style="dim", width=65)
+
                 for llm in anthropic_llms[:3]:  # Show top 3
                     idx = len(all_llms) + 1
                     cost = f"${llm.cost_per_1k_tokens}/1K" if llm.cost_per_1k_tokens else "N/A"
-                    self.console.print(f"  {idx}. {llm.name} ({cost})")
+                    description = self._get_model_description(llm.name)
+                    anthropic_table.add_row(
+                        str(idx),
+                        llm.name,
+                        cost,
+                        description
+                    )
                     all_llms.append(llm)
+
+                self.console.print(anthropic_table)
 
             if not all_llms:
                 self.console.print("[red]No LLMs detected![/red]")
@@ -2931,11 +4532,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'prefix': ''
             })
 
-        # Recommend training models based on detected language
-        training_reco = self._recommend_models_for_training(dataset_path, text_column)
-        candidate_models = training_reco['candidate_models']
-        default_model = training_reco['default_model']
-        detected_language = training_reco['language_name']
+        # Use recommended training model if available from earlier detection
+        if config.get('recommended_training_model'):
+            default_model = config['recommended_training_model']
+            detected_language = ', '.join([l.upper() for l in config.get('detected_languages', [])])
+            candidate_models = [default_model]
+            if HAS_RICH and self.console:
+                self.console.print(f"[green]✓ Using recommended model from language detection: {default_model}[/green]")
+        else:
+            # Fallback to old recommendation method
+            training_reco = self._recommend_models_for_training(dataset_path, text_column)
+            candidate_models = training_reco['candidate_models']
+            default_model = training_reco['default_model']
+            detected_language = training_reco['language_name']
 
         # Quick start focuses on a single recommended model for speed/stability
         models_to_test = [default_model]
@@ -3378,19 +4987,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 elif choice == "2":
                     self.quick_start_wizard()
                 elif choice == "3":
-                    self.annotation_wizard()
-                elif choice == "4":
-                    self.complete_pipeline()
-                elif choice == "5":
                     self.training_studio()
-                elif choice == "6":
+                elif choice == "4":
+                    self.bert_annotation_studio()
+                elif choice == "5":
                     self.validation_lab()
-                elif choice == "7":
-                    self.analytics_dashboard()
-                elif choice == "8":
+                elif choice == "6":
                     self.profile_manager_ui()
-                elif choice == "9":
-                    self.advanced_settings()
+                elif choice == "7":
+                    self.show_documentation()
                 elif choice == "0":
                     if HAS_RICH and self.console:
                         self.console.print("\n[bold cyan]Thank you for using LLMTool! 👋[/bold cyan]\n")
@@ -3431,8 +5036,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         - Automatic ID creation and tracking
         - Organized output structure
         """
-        # Display welcome banner
-        self._display_welcome_banner()
+        # Display ASCII logo only
+        self._display_ascii_logo()
+
+        # Display personalized mode info
+        self._display_section_header(
+            "🎨 LLM Annotation Studio",
+            "Professional annotation workflow without model training",
+            mode_info={
+                'workflow': 'Data → Select Prompts → LLM Annotate → Export (JSON/Doccano/Label Studio)',
+                'capabilities': ['Multi-Prompt Support', 'Incremental Save', 'Resume Capability', 'Export Formats'],
+                'input': 'Raw text data (CSV/Excel/JSON/Database)',
+                'output': 'Annotated JSON + Doccano/Label Studio exports',
+                'best_for': 'Pure annotation tasks without training (data collection, labeling, export)',
+                'duration': '~2-10 min (depends on dataset and LLM speed)'
+            }
+        )
 
         if HAS_RICH and self.console:
             # Get smart suggestions
@@ -3503,13 +5122,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def annotation_wizard(self):
         """Guided annotation wizard with step-by-step configuration"""
-        # Display welcome banner
-        self._display_welcome_banner()
+        # Display ASCII logo only
+        self._display_ascii_logo()
 
-        # Display simple section header
+        # Display personalized mode info
         self._display_section_header(
             "📝 Annotation Wizard",
-            "Interactive guided setup for LLM annotation"
+            "Interactive step-by-step configuration for LLM annotation",
+            mode_info={
+                'workflow': 'Mode Selection → Data Config → Model Selection → Prompt Setup → Training Options → Execute',
+                'capabilities': ['Step-by-Step Guidance', 'Prompt Wizard', 'Training Integration', 'Multi-Prompt'],
+                'input': 'Any text data (CSV/JSON/Excel/Parquet)',
+                'output': 'Annotated data + Optional trained models',
+                'best_for': 'Users who want detailed control over each configuration step',
+                'duration': '~5-20 min setup + annotation time'
+            }
         )
 
         if HAS_RICH and self.console:
@@ -3738,13 +5365,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def complete_pipeline(self):
         """Complete pipeline workflow - Full annotation to deployment"""
-        # Display welcome banner
-        self._display_welcome_banner()
+        # Display ASCII logo only
+        self._display_ascii_logo()
 
-        # Display simple section header
+        # Display personalized mode info
         self._display_section_header(
             "🚀 Complete Pipeline",
-            "Full workflow: Annotation → Training → Validation → Deployment"
+            "End-to-end automated workflow from raw data to deployed model",
+            mode_info={
+                'workflow': 'Data → Annotate → Validate → Train → Benchmark → Deploy → Export',
+                'capabilities': ['Full Automation', 'Quality Control', 'Model Selection', 'Doccano Export'],
+                'input': 'Raw text data (any format)',
+                'output': 'Annotated + Validated + Trained models + Deployment-ready files',
+                'best_for': 'Complete research projects requiring annotation, training, and validation',
+                'duration': '~15-60 min (full pipeline with all steps)'
+            }
         )
 
         if HAS_RICH and self.console:
@@ -4119,13 +5754,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def training_studio(self):
         """Training studio bringing dataset builders and trainers together."""
-        # Display welcome banner
-        self._display_welcome_banner()
+        # Display ASCII logo only
+        self._display_ascii_logo()
 
-        # Display simple section header
+        # Display personalized mode info
         self._display_section_header(
             "🏋️ Training Studio",
-            "Advanced model training and benchmarking"
+            "Professional model training with intelligent dataset preparation",
+            mode_info={
+                'workflow': 'Load Data → Auto-Detect Columns → Detect Languages → Recommend Models → Train → Benchmark',
+                'capabilities': ['Multi-format Support', 'Language Detection', 'Model Recommendations', '50+ BERT Models'],
+                'input': 'Annotated CSV/JSON/JSONL or Category labels',
+                'output': 'Trained BERT models + Performance metrics + Best model selection',
+                'best_for': 'Training custom models on annotated data with optimal model selection',
+                'duration': '~10-30 min per model (benchmark mode: 1-3 hours)'
+            }
         )
 
         if not (HAS_RICH and self.console):
@@ -4196,6 +5839,885 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             table.add_row(category, sample)
 
         self.console.print(table)
+
+    def _training_studio_intelligent_dataset_selector(
+        self,
+        format_type: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Universal sophisticated interface for dataset and column selection.
+        Adapted specifically for Training Studio with:
+        - Automatic dataset detection
+        - Intelligent column analysis with confidence scores
+        - Category/label detection and display
+        - Sophisticated ID strategy (single/combine/none)
+        - Model recommendations based on languages and data
+
+        Args:
+            format_type: One of 'llm-json', 'category-csv', 'binary-long', 'jsonl-single', 'jsonl-multi'
+
+        Returns:
+            Dictionary with selected dataset path and all column information, or None if cancelled
+        """
+
+        # Step 1: Dataset Detection and Selection
+        self.console.print("\n[bold cyan]Step 1: Dataset Selection[/bold cyan]\n")
+
+        # Show detected datasets if available
+        if self.detected_datasets:
+            datasets_table = Table(title="📊 Detected Datasets", border_style="cyan")
+            datasets_table.add_column("#", style="cyan", width=3)
+            datasets_table.add_column("Name", style="white")
+            datasets_table.add_column("Format", style="yellow")
+            datasets_table.add_column("Size", style="green")
+            datasets_table.add_column("Path", style="dim")
+
+            for i, ds in enumerate(self.detected_datasets[:10], 1):
+                datasets_table.add_row(
+                    str(i),
+                    ds.path.name,
+                    ds.format,
+                    f"{ds.size:,} bytes" if hasattr(ds, 'size') else "—",
+                    str(ds.path.parent) if len(str(ds.path.parent)) < 40 else "..." + str(ds.path.parent)[-37:]
+                )
+
+            self.console.print(datasets_table)
+            self.console.print()
+
+            use_detected = Confirm.ask("[bold yellow]Use detected dataset?[/bold yellow]", default=True)
+            if use_detected:
+                choice = self._int_prompt_with_validation("Select dataset", 1, 1, len(self.detected_datasets))
+                data_path = self.detected_datasets[choice - 1].path
+            else:
+                data_path = Path(self._prompt_file_path("Dataset path"))
+        else:
+            self.console.print("[dim]No datasets auto-detected in data/ folder[/dim]")
+            data_path = Path(self._prompt_file_path("Dataset path"))
+
+        self.console.print(f"[green]✓ Selected: {data_path.name} ({data_path.suffix[1:]})[/green]\n")
+
+        # Step 2: Intelligent File Analysis
+        self.console.print("[bold cyan]Step 2: Analyzing Dataset Structure[/bold cyan]\n")
+        self.console.print("[dim]🔍 Analyzing columns, detecting languages, and extracting samples...[/dim]")
+
+        analysis = DataDetector.analyze_file_intelligently(data_path)
+
+        if analysis['issues']:
+            self.console.print("\n[yellow]⚠️  Analysis warnings:[/yellow]")
+            for issue in analysis['issues']:
+                self.console.print(f"  • {issue}")
+
+        # Step 3: Intelligent Language Detection (MOVED HERE - before column selection)
+        self.console.print("\n[bold cyan]Step 3: Language Detection[/bold cyan]\n")
+
+        languages_found_in_column = set(analysis.get('languages_detected', {}).keys())
+        confirmed_languages = set()
+        lang_column = None
+        languages_from_content = {}
+
+        # Check if we have a language column with detected languages
+        has_lang_column = bool(analysis.get('language_column_candidates'))
+
+        if has_lang_column and languages_found_in_column:
+            # Option 1: Language column exists - offer to use it or detect automatically
+            self.console.print("[bold]🌍 Languages Found in Column:[/bold]")
+            for lang, count in analysis['languages_detected'].items():
+                self.console.print(f"  • {lang.upper()}: {count:,} rows")
+
+            lang_column_candidate = analysis['language_column_candidates'][0]
+            self.console.print(f"\n[green]✓ Language column detected: '{lang_column_candidate}'[/green]")
+
+            use_lang_column = Confirm.ask(
+                f"\n[bold]Use language column '{lang_column_candidate}'?[/bold]",
+                default=True
+            )
+
+            if use_lang_column:
+                confirmed_languages = languages_found_in_column
+                lang_column = lang_column_candidate
+                self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
+            else:
+                # User said no to language column - offer automatic detection
+                self.console.print("\n[yellow]Language column not used. Applying automatic detection...[/yellow]")
+                apply_auto_detection = True
+        else:
+            # Option 2: No language column - go straight to automatic detection
+            self.console.print("[yellow]ℹ️  No language column detected[/yellow]")
+            apply_auto_detection = Confirm.ask("Apply automatic language detection on text content?", default=True)
+
+        # We need to detect text column first for content-based language detection
+        # Quick text column detection for language analysis
+        temp_column_info = self._detect_text_columns(data_path)
+        temp_text_column = None
+        if temp_column_info.get('text_candidates'):
+            temp_text_column = temp_column_info['text_candidates'][0]['name']
+        else:
+            temp_text_column = "text"  # fallback
+
+        # Automatic language detection from text content
+        language_distribution = {}  # Store exact language counts
+
+        if not lang_column and ('apply_auto_detection' not in locals() or apply_auto_detection):
+            self.console.print("\n[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
+
+            try:
+                import pandas as pd
+                from llm_tool.utils.language_detector import LanguageDetector
+
+                df = pd.read_csv(data_path) if data_path.suffix == '.csv' else pd.read_json(data_path, lines=data_path.suffix == '.jsonl')
+
+                if temp_text_column in df.columns:
+                    # Analyze ALL texts (not just sample) for precise distribution
+                    all_texts = df[temp_text_column].dropna().tolist()
+
+                    if all_texts:
+                        detector = LanguageDetector()
+                        lang_counts = {}
+
+                        # Progress indicator
+                        from tqdm import tqdm
+                        self.console.print(f"[dim]Analyzing {len(all_texts)} texts...[/dim]")
+
+                        for text in tqdm(all_texts, desc="Detecting languages", disable=not HAS_RICH):
+                            if text and len(str(text).strip()) > 10:
+                                try:
+                                    detected = detector.detect(str(text))
+                                    if detected and detected.get('language'):
+                                        lang = detected['language']
+                                        lang_counts[lang] = lang_counts.get(lang, 0) + 1
+                                except Exception as e:
+                                    self.logger.debug(f"Language detection failed for text: {e}")
+                                    continue
+
+                        if lang_counts:
+                            # Store exact distribution
+                            language_distribution = lang_counts
+                            total = sum(lang_counts.values())
+
+                            self.console.print(f"\n[bold]🌍 Languages Detected from Content ({total:,} texts analyzed):[/bold]")
+
+                            # Create detailed table
+                            lang_table = Table(border_style="cyan", show_header=True, header_style="bold")
+                            lang_table.add_column("Language", style="cyan", width=12)
+                            lang_table.add_column("Count", style="yellow", justify="right", width=12)
+                            lang_table.add_column("Percentage", style="green", justify="right", width=12)
+
+                            for lang, count in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True):
+                                percentage = (count / total * 100) if total > 0 else 0
+                                lang_table.add_row(
+                                    lang.upper(),
+                                    f"{count:,}",
+                                    f"{percentage:.1f}%"
+                                )
+
+                            self.console.print(lang_table)
+
+                            # Detect low-percentage languages (likely detection errors)
+                            LOW_PERCENTAGE_THRESHOLD = 1.0  # Languages with < 1% are considered low
+                            majority_languages = {}  # Languages above threshold
+                            minority_languages = {}  # Languages below threshold (likely errors)
+
+                            for lang, count in lang_counts.items():
+                                percentage = (count / total * 100) if total > 0 else 0
+                                if percentage >= LOW_PERCENTAGE_THRESHOLD:
+                                    majority_languages[lang] = count
+                                else:
+                                    minority_languages[lang] = count
+
+                            confirmed_languages = set(lang_counts.keys())
+                            texts_to_reclassify = []  # Store texts that need manual classification
+
+                            # Handle low-percentage languages if detected
+                            if minority_languages:
+                                self.console.print(f"\n[yellow]⚠ Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
+                                for lang, count in sorted(minority_languages.items(), key=lambda x: x[1], reverse=True):
+                                    percentage = (count / total * 100)
+                                    self.console.print(f"  • {lang.upper()}: {count} texts ({percentage:.2f}%)")
+
+                                self.console.print("\n[dim]These are likely detection errors. You have two options:[/dim]")
+                                self.console.print("  [cyan]1. reclassify[/cyan] - Manually review and reclassify these texts")
+                                self.console.print("  [cyan]2. exclude[/cyan] - Exclude these texts from training")
+                                self.console.print("  [cyan]3. keep[/cyan] - Keep them as detected (not recommended)")
+
+                                minority_action = Prompt.ask(
+                                    "\n[bold yellow]How to handle low-percentage languages?[/bold yellow]",
+                                    choices=["reclassify", "exclude", "keep"],
+                                    default="reclassify"
+                                )
+
+                                if minority_action == "reclassify":
+                                    # Manual reclassification
+                                    self.console.print("\n[bold cyan]Manual Reclassification[/bold cyan]\n")
+                                    self.console.print(f"[dim]Available majority languages: {', '.join([l.upper() for l in sorted(majority_languages.keys())])}[/dim]\n")
+
+                                    # Create mapping for reclassification
+                                    reclassification_map = {}
+
+                                    # Get the texts for each minority language and show samples
+                                    minority_lang_codes = list(minority_languages.keys())
+
+                                    # Load texts with their detected languages
+                                    all_texts_with_lang = []
+                                    for idx, text in enumerate(all_texts):
+                                        if text and len(str(text).strip()) > 10:
+                                            try:
+                                                detected = detector.detect(str(text))
+                                                if detected and detected.get('language'):
+                                                    lang = detected['language']
+                                                    if lang in minority_languages:
+                                                        all_texts_with_lang.append({
+                                                            'index': idx,
+                                                            'text': str(text),
+                                                            'detected_lang': lang
+                                                        })
+                                            except:
+                                                continue
+
+                                    # Show samples for reclassification
+                                    if all_texts_with_lang:
+                                        self.console.print(f"[bold]Found {len(all_texts_with_lang)} texts to reclassify[/bold]\n")
+
+                                        # Group by detected language
+                                        from collections import defaultdict
+                                        texts_by_lang = defaultdict(list)
+                                        for item in all_texts_with_lang:
+                                            texts_by_lang[item['detected_lang']].append(item)
+
+                                        # For each minority language, show samples and ask for reclassification
+                                        for minority_lang in sorted(minority_lang_codes):
+                                            if minority_lang in texts_by_lang:
+                                                lang_texts = texts_by_lang[minority_lang]
+                                                self.console.print(f"\n[bold yellow]Reclassifying {minority_lang.upper()} ({len(lang_texts)} texts)[/bold yellow]")
+
+                                                majority_choices = sorted(majority_languages.keys())
+
+                                                # PHRASE-BY-PHRASE RECLASSIFICATION
+                                                # Each text can be assigned to a different language
+                                                reclassification_choices = {}  # Store per-text choices
+
+                                                for item in lang_texts:
+                                                    idx = item['index']
+                                                    text = item['text']
+
+                                                    # Show current text
+                                                    sample_table = Table(border_style="yellow", show_header=True, header_style="bold", title=f"Text {lang_texts.index(item) + 1}/{len(lang_texts)}")
+                                                    sample_table.add_column("Text", width=90)
+                                                    display_text = text if len(text) <= 200 else text[:200] + "..."
+                                                    sample_table.add_row(display_text)
+                                                    self.console.print(sample_table)
+
+                                                    # Ask for this specific text
+                                                    majority_choices_str = '/'.join([l.lower() for l in majority_choices])
+
+                                                    reclassify_choice = Prompt.ask(
+                                                        f"Classify this text as [{majority_choices_str}/exclude]",
+                                                        choices=majority_choices + ["exclude"],
+                                                        default=majority_choices[0] if majority_choices else "exclude"
+                                                    )
+
+                                                    reclassification_choices[idx] = reclassify_choice
+
+                                                # Count the choices
+                                                choice_counts = {}
+                                                for choice in reclassification_choices.values():
+                                                    choice_counts[choice] = choice_counts.get(choice, 0) + 1
+
+                                                # Update language distribution
+                                                for choice, count in choice_counts.items():
+                                                    if choice != "exclude":
+                                                        language_distribution[choice] = language_distribution.get(choice, 0) + count
+                                                        if choice not in reclassification_map:
+                                                            reclassification_map[choice] = {}
+                                                        # Store the mapping
+                                                        if minority_lang not in reclassification_map[choice]:
+                                                            reclassification_map[choice][minority_lang] = count
+                                                        else:
+                                                            reclassification_map[choice][minority_lang] += count
+
+                                                # Remove from original language distribution
+                                                language_distribution[minority_lang] = 0
+
+                                                # Display summary
+                                                self.console.print(f"\n[bold]Reclassification Summary for {minority_lang.upper()}:[/bold]")
+                                                for choice, count in sorted(choice_counts.items(), key=lambda x: x[1], reverse=True):
+                                                    if choice == "exclude":
+                                                        self.console.print(f"  [yellow]✗ {count} text(s) excluded[/yellow]")
+                                                    else:
+                                                        self.console.print(f"  [green]✓ {count} text(s) → {choice.upper()}[/green]")
+
+                                    # Update confirmed languages (remove excluded)
+                                    # Filter out metadata keys and only keep languages with count > 0
+                                    confirmed_languages = set([lang for lang, count in language_distribution.items()
+                                                             if not lang.startswith('_') and isinstance(count, (int, float)) and count > 0])
+
+                                    # Store reclassification map for later use
+                                    if reclassification_map:
+                                        language_distribution['_reclassification_map'] = reclassification_map
+
+                                    self.console.print(f"\n[green]✓ Reclassification complete. Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+
+                                elif minority_action == "exclude":
+                                    # Exclude low-percentage languages
+                                    for lang in minority_languages.keys():
+                                        language_distribution[lang] = 0  # Mark as excluded
+
+                                    confirmed_languages = set(majority_languages.keys())
+                                    excluded_count = sum(minority_languages.values())
+                                    self.console.print(f"\n[yellow]✗ Excluded {excluded_count} texts from {len(minority_languages)} low-percentage language(s)[/yellow]")
+                                    self.console.print(f"[green]✓ Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+
+                                else:  # keep
+                                    self.console.print("[yellow]⚠ Keeping all detected languages (including low-percentage ones)[/yellow]")
+
+                            # Final confirmation
+                            lang_list = ', '.join([l.upper() for l in sorted(confirmed_languages)])
+                            lang_confirmed = Confirm.ask(
+                                f"\n[bold]Detected languages: {lang_list}. Is this correct?[/bold]",
+                                default=True
+                            )
+
+                            if not lang_confirmed:
+                                self.console.print("\n[yellow]Please specify languages manually[/yellow]")
+                                manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
+                                confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+                                # Reset distribution if manual
+                                language_distribution = {}
+                            else:
+                                self.console.print("[green]✓ Languages confirmed from content analysis[/green]")
+                        else:
+                            # Fallback: ask user
+                            self.console.print("[yellow]Could not detect languages automatically[/yellow]")
+                            manual_langs = Prompt.ask("Expected language codes (e.g., en,fr,de)", default="")
+                            if manual_langs.strip():
+                                confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+                    else:
+                        self.console.print("[yellow]Not enough text samples for language detection[/yellow]")
+                        manual_langs = Prompt.ask("Expected language codes (optional, e.g., en,fr,de)", default="")
+                        if manual_langs.strip():
+                            confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+
+            except Exception as e:
+                self.logger.debug(f"Language detection from content failed: {e}")
+                self.console.print("[yellow]Automatic detection failed. Please specify manually[/yellow]")
+                manual_langs = Prompt.ask("Expected language codes (optional, e.g., en,fr,de)", default="")
+                if manual_langs.strip():
+                    confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+
+        # Step 3b: Sophisticated Text Length Analysis for Long-Document Model Recommendation
+        self.console.print("\n[bold cyan]Step 3b: Text Length Analysis[/bold cyan]\n")
+
+        text_length_stats = {}
+        requires_long_document_model = False
+
+        try:
+            import pandas as pd
+            import numpy as np
+            from transformers import AutoTokenizer
+
+            # Load dataset to analyze text lengths
+            df = None
+            if data_path.suffix == '.csv':
+                df = pd.read_csv(data_path)
+            elif data_path.suffix == '.json':
+                df = pd.read_json(data_path)
+            elif data_path.suffix == '.jsonl':
+                df = pd.read_json(data_path, lines=True)
+            elif data_path.suffix in ['.xlsx', '.xls']:
+                df = pd.read_excel(data_path)
+            elif data_path.suffix == '.parquet':
+                df = pd.read_parquet(data_path)
+
+            if df is not None and temp_text_column and temp_text_column in df.columns:
+                self.console.print("[dim]Analyzing text lengths for all documents...[/dim]\n")
+
+                # Get all texts
+                all_texts = df[temp_text_column].dropna().astype(str).tolist()
+
+                # Load a tokenizer for accurate token counting (use multilingual BERT as baseline)
+                try:
+                    tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
+
+                    # Analyze lengths in both characters and tokens
+                    char_lengths = []
+                    token_lengths = []
+
+                    for text in tqdm(all_texts, desc="Measuring text lengths", disable=not HAS_RICH):
+                        char_lengths.append(len(text))
+                        # Count tokens
+                        tokens = tokenizer.encode(text, truncation=False, add_special_tokens=True)
+                        token_lengths.append(len(tokens))
+
+                    char_lengths = np.array(char_lengths)
+                    token_lengths = np.array(token_lengths)
+
+                    # Calculate comprehensive statistics
+                    text_length_stats = {
+                        'char_min': int(np.min(char_lengths)),
+                        'char_max': int(np.max(char_lengths)),
+                        'char_mean': float(np.mean(char_lengths)),
+                        'char_median': float(np.median(char_lengths)),
+                        'char_std': float(np.std(char_lengths)),
+                        'char_p25': float(np.percentile(char_lengths, 25)),
+                        'char_p75': float(np.percentile(char_lengths, 75)),
+                        'char_p95': float(np.percentile(char_lengths, 95)),
+                        'token_min': int(np.min(token_lengths)),
+                        'token_max': int(np.max(token_lengths)),
+                        'token_mean': float(np.mean(token_lengths)),
+                        'token_median': float(np.median(token_lengths)),
+                        'token_std': float(np.std(token_lengths)),
+                        'token_p25': float(np.percentile(token_lengths, 25)),
+                        'token_p75': float(np.percentile(token_lengths, 75)),
+                        'token_p95': float(np.percentile(token_lengths, 95)),
+                    }
+
+                    # Classify documents by length
+                    short_docs = np.sum(token_lengths < 128)  # Very short
+                    medium_docs = np.sum((token_lengths >= 128) & (token_lengths < 512))  # Standard BERT range
+                    long_docs = np.sum((token_lengths >= 512) & (token_lengths < 1024))  # Long
+                    very_long_docs = np.sum(token_lengths >= 1024)  # Very long
+
+                    total_docs = len(token_lengths)
+
+                    text_length_stats['distribution'] = {
+                        'short': {'count': int(short_docs), 'percentage': float(short_docs / total_docs * 100)},
+                        'medium': {'count': int(medium_docs), 'percentage': float(medium_docs / total_docs * 100)},
+                        'long': {'count': int(long_docs), 'percentage': float(long_docs / total_docs * 100)},
+                        'very_long': {'count': int(very_long_docs), 'percentage': float(very_long_docs / total_docs * 100)},
+                    }
+
+                    # Display sophisticated statistics table
+                    stats_table = Table(title="Text Length Statistics", border_style="cyan", show_header=True, header_style="bold")
+                    stats_table.add_column("Metric", style="cyan", width=20)
+                    stats_table.add_column("Characters", style="yellow", justify="right", width=15)
+                    stats_table.add_column("Tokens", style="green", justify="right", width=15)
+
+                    stats_table.add_row("Minimum", f"{text_length_stats['char_min']:,}", f"{text_length_stats['token_min']:,}")
+                    stats_table.add_row("25th Percentile", f"{text_length_stats['char_p25']:,.0f}", f"{text_length_stats['token_p25']:,.0f}")
+                    stats_table.add_row("Median", f"{text_length_stats['char_median']:,.0f}", f"{text_length_stats['token_median']:,.0f}")
+                    stats_table.add_row("Mean", f"{text_length_stats['char_mean']:,.0f}", f"{text_length_stats['token_mean']:,.0f}")
+                    stats_table.add_row("75th Percentile", f"{text_length_stats['char_p75']:,.0f}", f"{text_length_stats['token_p75']:,.0f}")
+                    stats_table.add_row("95th Percentile", f"{text_length_stats['char_p95']:,.0f}", f"{text_length_stats['token_p95']:,.0f}")
+                    stats_table.add_row("Maximum", f"{text_length_stats['char_max']:,}", f"{text_length_stats['token_max']:,}")
+                    stats_table.add_row("Std Deviation", f"{text_length_stats['char_std']:,.0f}", f"{text_length_stats['token_std']:,.0f}")
+
+                    self.console.print(stats_table)
+
+                    # Display distribution table
+                    self.console.print("\n")
+                    dist_table = Table(title="Document Length Distribution", border_style="cyan", show_header=True, header_style="bold")
+                    dist_table.add_column("Category", style="cyan", width=20)
+                    dist_table.add_column("Token Range", style="white", width=20)
+                    dist_table.add_column("Count", style="yellow", justify="right", width=12)
+                    dist_table.add_column("Percentage", style="green", justify="right", width=12)
+
+                    dist_table.add_row(
+                        "Short",
+                        "< 128 tokens",
+                        f"{short_docs:,}",
+                        f"{short_docs / total_docs * 100:.1f}%"
+                    )
+                    dist_table.add_row(
+                        "Medium",
+                        "128-511 tokens",
+                        f"{medium_docs:,}",
+                        f"{medium_docs / total_docs * 100:.1f}%"
+                    )
+                    dist_table.add_row(
+                        "Long",
+                        "512-1023 tokens",
+                        f"{long_docs:,}",
+                        f"{long_docs / total_docs * 100:.1f}%",
+                        style="bold yellow" if long_docs > 0 else None
+                    )
+                    dist_table.add_row(
+                        "Very Long",
+                        "≥ 1024 tokens",
+                        f"{very_long_docs:,}",
+                        f"{very_long_docs / total_docs * 100:.1f}%",
+                        style="bold red" if very_long_docs > 0 else None
+                    )
+
+                    self.console.print(dist_table)
+
+                    # Determine if long-document models are recommended
+                    long_document_percentage = (long_docs + very_long_docs) / total_docs * 100
+
+                    if long_document_percentage > 20:  # More than 20% are long documents
+                        requires_long_document_model = True
+                        self.console.print(f"\n[bold yellow]⚠ Warning: {long_document_percentage:.1f}% of documents exceed 512 tokens[/bold yellow]")
+                        self.console.print("[dim]Standard BERT models truncate at 512 tokens, which may lose important information.[/dim]")
+                        self.console.print("[dim]Long-document models (Longformer, BigBird) can handle up to 4096 tokens.[/dim]\n")
+
+                        # Ask user if they want to use long-document models
+                        use_long_model = Confirm.ask(
+                            "[bold cyan]Would you like to see long-document model recommendations?[/bold cyan]",
+                            default=True
+                        )
+
+                        if use_long_model:
+                            # Store this preference for later model recommendation
+                            text_length_stats['user_prefers_long_models'] = True
+                            self.console.print("[green]✓ Long-document models will be prioritized in recommendations[/green]")
+                        else:
+                            text_length_stats['user_prefers_long_models'] = False
+                            self.console.print("[yellow]Standard models will be used (texts will be truncated to 512 tokens)[/yellow]")
+                    else:
+                        self.console.print(f"\n[green]✓ Most documents ({100 - long_document_percentage:.1f}%) fit within standard BERT limits (512 tokens)[/green]")
+                        text_length_stats['user_prefers_long_models'] = False
+
+                except Exception as tokenizer_error:
+                    self.logger.debug(f"Tokenizer-based analysis failed: {tokenizer_error}")
+                    self.console.print("[yellow]Could not load tokenizer for precise token counting[/yellow]")
+
+                    # Fallback: use character-based analysis only
+                    char_lengths = [len(str(text)) for text in all_texts]
+                    char_lengths = np.array(char_lengths)
+
+                    text_length_stats = {
+                        'char_min': int(np.min(char_lengths)),
+                        'char_max': int(np.max(char_lengths)),
+                        'char_mean': float(np.mean(char_lengths)),
+                        'char_median': float(np.median(char_lengths)),
+                        'char_p95': float(np.percentile(char_lengths, 95)),
+                    }
+
+                    self.console.print(f"[dim]Average text length: {text_length_stats['char_mean']:.0f} characters[/dim]")
+
+        except Exception as e:
+            self.logger.debug(f"Text length analysis failed: {e}")
+            self.console.print("[yellow]Could not perform text length analysis[/yellow]")
+
+        # Step 4: Text Column Selection with Sophisticated Table
+        self.console.print("\n[bold cyan]Step 4: Text Column Selection[/bold cyan]\n")
+
+        column_info = self._detect_text_columns(data_path)
+        all_columns = column_info.get('all_columns', analysis.get('all_columns', []))
+
+        if column_info.get('text_candidates'):
+            self.console.print("[dim]Detected text columns (sorted by confidence):[/dim]")
+
+            col_table = Table(border_style="blue")
+            col_table.add_column("#", style="cyan", width=5)
+            col_table.add_column("Column", style="white", width=15)
+            col_table.add_column("Confidence", style="yellow", width=12)
+            col_table.add_column("Avg Length", style="green", width=12)
+            col_table.add_column("Sample", style="dim", width=55)
+
+            for i, candidate in enumerate(column_info['text_candidates'][:10], 1):
+                conf_color = {
+                    "high": "[green]High[/green]",
+                    "medium": "[yellow]Medium[/yellow]",
+                    "low": "[orange1]Low[/orange1]",
+                    "very_low": "[red]Very Low[/red]"
+                }
+                conf_display = conf_color.get(candidate.get('confidence', 'low'), candidate.get('confidence', 'Unknown'))
+
+                sample = candidate.get('sample', '')
+                sample_display = (sample[:50] + "...") if len(sample) > 50 else sample
+
+                col_table.add_row(
+                    str(i),
+                    candidate['name'],
+                    conf_display,
+                    f"{candidate.get('avg_length', 0):.0f} chars",
+                    sample_display
+                )
+
+            self.console.print(col_table)
+            self.console.print(f"\n[dim]All columns ({len(all_columns)}): {', '.join(all_columns)}[/dim]")
+
+            default_text_col = column_info['text_candidates'][0]['name']
+        else:
+            self.console.print("[yellow]No text columns auto-detected[/yellow]")
+            self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
+            default_text_col = "text"
+
+        text_column = Prompt.ask("\n[bold yellow]Enter column name[/bold yellow] (or choose from above)", default=default_text_col)
+
+        # Step 5: Label/Category Column Selection with Category Analysis
+        self.console.print("\n[bold cyan]Step 5: Label/Category Column Selection[/bold cyan]\n")
+
+        label_column_default = "labels" if "multi" in format_type else "label"
+
+        if analysis.get('annotation_column_candidates'):
+            best_label = analysis['annotation_column_candidates'][0]['name']
+            label_column_default = best_label
+
+            self.console.print(f"[green]✓ Label column detected: '{best_label}'[/green]")
+
+            stats = analysis.get('annotation_stats', {}).get(best_label, {})
+            fill_rate = stats.get('fill_rate', 0)
+            if fill_rate > 0:
+                self.console.print(f"[dim]  ({fill_rate*100:.1f}% of rows have labels)[/dim]")
+
+            # NOUVEAU: Analyze and display categories/labels
+            try:
+                import pandas as pd
+                df = pd.read_csv(data_path) if data_path.suffix == '.csv' else pd.read_json(data_path, lines=data_path.suffix == '.jsonl')
+
+                if best_label in df.columns:
+                    # Get unique categories and their counts
+                    if "multi" in format_type:
+                        # Multi-label: try to parse lists/JSON
+                        all_labels = []
+                        for val in df[best_label].dropna():
+                            if isinstance(val, list):
+                                all_labels.extend(val)
+                            elif isinstance(val, str):
+                                try:
+                                    parsed = json.loads(val)
+                                    if isinstance(parsed, list):
+                                        all_labels.extend(parsed)
+                                except:
+                                    pass
+                        label_counts = pd.Series(all_labels).value_counts()
+                    else:
+                        # Single-label: direct value counts
+                        label_counts = df[best_label].value_counts()
+
+                    # Display categories table
+                    if len(label_counts) > 0:
+                        self.console.print(f"\n[bold]📊 Detected {len(label_counts)} Categories:[/bold]")
+
+                        cat_table = Table(border_style="green", show_header=True, header_style="bold cyan")
+                        cat_table.add_column("#", style="cyan", width=5)
+                        cat_table.add_column("Category", style="white", width=30)
+                        cat_table.add_column("Count", style="yellow", width=10, justify="right")
+                        cat_table.add_column("Percentage", style="green", width=12, justify="right")
+
+                        total = label_counts.sum()
+                        for i, (cat, count) in enumerate(label_counts.head(20).items(), 1):
+                            percentage = (count / total * 100) if total > 0 else 0
+                            cat_table.add_row(
+                                str(i),
+                                str(cat)[:28],
+                                f"{count:,}",
+                                f"{percentage:.1f}%"
+                            )
+
+                        if len(label_counts) > 20:
+                            cat_table.add_row("...", f"... and {len(label_counts) - 20} more", "...", "...")
+
+                        self.console.print(cat_table)
+                        self.console.print(f"[dim]Total samples: {total:,}[/dim]")
+            except Exception as e:
+                self.logger.debug(f"Could not analyze categories: {e}")
+
+        if all_columns:
+            self.console.print(f"\n[dim]Available columns: {', '.join(all_columns)}[/dim]")
+
+        label_column = Prompt.ask("\n[bold yellow]Category/label column[/bold yellow]", default=label_column_default)
+
+        # Step 6: ID Column Selection with Sophisticated Strategy
+        self.console.print("\n[bold cyan]Step 6: Identifier Column Selection[/bold cyan]\n")
+
+        id_columns = self._detect_id_columns(all_columns)
+        id_column = None
+
+        if len(id_columns) > 1:
+            self.console.print(f"[bold cyan]📋 Found {len(id_columns)} ID columns:[/bold cyan]")
+            for i, col in enumerate(id_columns, 1):
+                self.console.print(f"  {i}. [cyan]{col}[/cyan]")
+
+            self.console.print("\n[bold]ID Strategy:[/bold]")
+            self.console.print("[dim]IDs are used to track samples and link results to your original data.[/dim]")
+            self.console.print("• [cyan]single[/cyan]: Use one column as ID")
+            self.console.print("• [cyan]combine[/cyan]: Combine multiple columns (e.g., 'promesse_id+sentence_id')")
+            self.console.print("• [cyan]none[/cyan]: Generate automatic IDs")
+
+            id_strategy = Prompt.ask("ID strategy", choices=["single", "combine", "none"], default="single")
+
+            if id_strategy == "none":
+                self.console.print("[dim]An automatic ID will be generated[/dim]")
+                id_column = None
+            elif id_strategy == "combine":
+                self.console.print("\n[bold]Select columns to combine:[/bold]")
+                self.console.print("[dim]Enter column numbers separated by commas (e.g., '1,2')[/dim]")
+
+                while True:
+                    selection = Prompt.ask("Columns to combine")
+                    try:
+                        indices = [int(x.strip()) - 1 for x in selection.split(',')]
+                        if all(0 <= i < len(id_columns) for i in indices):
+                            selected_cols = [id_columns[i] for i in indices]
+                            id_column = "+".join(selected_cols)
+                            self.console.print(f"[green]✓ Will combine: {' + '.join(selected_cols)}[/green]")
+                            break
+                        else:
+                            self.console.print("[red]Invalid column numbers. Try again.[/red]")
+                    except (ValueError, IndexError):
+                        self.console.print("[red]Invalid format. Use comma-separated numbers (e.g., '1,2')[/red]")
+            else:  # single
+                id_column = Prompt.ask("Which ID column to use?", choices=id_columns, default=id_columns[0])
+        elif len(id_columns) == 1:
+            self.console.print(f"[green]✓ ID column detected: '{id_columns[0]}'[/green]")
+            if all_columns:
+                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+            id_column = Prompt.ask("Identifier column (optional)", default=id_columns[0])
+        else:
+            self.console.print("[dim]No ID columns detected - automatic IDs will be generated[/dim]")
+            id_column = None
+
+        if id_column:
+            self.console.print(f"[green]✓ Identifier strategy: {id_column}[/green]")
+
+        # Step 7: Model Strategy Selection
+        self.console.print("\n[bold cyan]Step 7: Model Strategy Selection[/bold cyan]\n")
+
+        model_to_use = None
+        model_strategy = "multilingual"  # default
+        language_model_mapping = {}  # For per-language models
+
+        if confirmed_languages and len(confirmed_languages) > 1:
+            # Multiple languages detected - offer strategy choice
+            self.console.print(f"[bold]📊 Dataset contains {len(confirmed_languages)} languages:[/bold]")
+
+            if language_distribution:
+                # Filter out metadata keys (like _reclassification_map)
+                lang_counts = {k: v for k, v in language_distribution.items() if not k.startswith('_') and isinstance(v, (int, float))}
+
+                for lang, count in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True):
+                    total = sum(lang_counts.values())
+                    pct = (count / total * 100) if total > 0 else 0
+                    self.console.print(f"  • {lang.upper()}: {count:,} texts ({pct:.1f}%)")
+            else:
+                for lang in sorted(confirmed_languages):
+                    self.console.print(f"  • {lang.upper()}")
+
+            self.console.print("\n[bold]Model Strategy Options:[/bold]")
+            self.console.print("  [cyan]1. multilingual[/cyan] - Train ONE multilingual model for all languages")
+            self.console.print("     ✓ Simpler, faster, handles cross-lingual patterns")
+            self.console.print("     ✗ May have slightly lower performance per language")
+            self.console.print()
+            self.console.print("  [cyan]2. specialized[/cyan] - Train SEPARATE specialized models per language")
+            self.console.print("     ✓ Best performance for each language")
+            self.console.print("     ✗ More training time, requires language column or detection")
+            self.console.print()
+            self.console.print("  [cyan]3. hybrid[/cyan] - Multilingual model + fine-tuned per-language models")
+            self.console.print("     ✓ Best of both worlds")
+            self.console.print("     ✗ Most training time and complexity")
+
+            model_strategy = Prompt.ask(
+                "\n[bold yellow]Select model strategy[/bold yellow]",
+                choices=["multilingual", "specialized", "hybrid"],
+                default="multilingual"
+            )
+
+            self.console.print(f"\n[green]✓ Selected strategy: {model_strategy}[/green]")
+
+            if model_strategy == "multilingual":
+                # Get ONE multilingual model for all languages
+                # Consider long-document models if user prefers them
+                if text_length_stats.get('user_prefers_long_models', False):
+                    model_to_use = self._get_long_document_model_recommendation(confirmed_languages)
+                else:
+                    model_to_use = self._get_model_recommendation_from_languages(confirmed_languages)
+
+            elif model_strategy == "specialized":
+                # Get specialized model for EACH language
+                self.console.print("\n[bold]Selecting specialized models for each language:[/bold]")
+
+                for lang in sorted(confirmed_languages):
+                    # Consider long-document models if user prefers them
+                    if text_length_stats.get('user_prefers_long_models', False):
+                        lang_recommendations = self._get_long_document_models_for_language(lang)
+                    else:
+                        lang_recommendations = LanguageNormalizer.recommend_models({lang}, self.available_trainer_models)
+
+                    if lang_recommendations:
+                        self.console.print(f"\n[cyan]For {lang.upper()}:[/cyan]")
+                        for i, rec in enumerate(lang_recommendations[:3], 1):
+                            self.console.print(f"  {i}. {rec['model']} - {rec['reason']}")
+
+                        choice = Prompt.ask(
+                            f"Model for {lang.upper()} (1-{min(3, len(lang_recommendations))}, or enter model name)",
+                            default="1"
+                        )
+
+                        if choice.isdigit() and 0 < int(choice) <= len(lang_recommendations):
+                            language_model_mapping[lang] = lang_recommendations[int(choice) - 1]['model']
+                        else:
+                            language_model_mapping[lang] = choice
+
+                        self.console.print(f"  [green]✓ {lang.upper()}: {language_model_mapping[lang]}[/green]")
+                    else:
+                        # Fallback to multilingual
+                        self.console.print(f"[yellow]No specific model for {lang.upper()}, using multilingual[/yellow]")
+                        if not model_to_use:
+                            model_to_use = self._get_model_recommendation_from_languages(confirmed_languages)
+                        language_model_mapping[lang] = model_to_use
+
+            elif model_strategy == "hybrid":
+                # First get multilingual base model
+                self.console.print("\n[bold]1. Select base multilingual model:[/bold]")
+                model_to_use = self._get_model_recommendation_from_languages(confirmed_languages)
+
+                # Then get specialized models for fine-tuning
+                self.console.print("\n[bold]2. Select specialized models for fine-tuning:[/bold]")
+                for lang in sorted(confirmed_languages):
+                    lang_recommendations = LanguageNormalizer.recommend_models({lang}, self.available_trainer_models)
+
+                    if lang_recommendations:
+                        self.console.print(f"\n[cyan]Fine-tuning model for {lang.upper()}:[/cyan]")
+                        for i, rec in enumerate(lang_recommendations[:3], 1):
+                            self.console.print(f"  {i}. {rec['model']}")
+
+                        choice = Prompt.ask(
+                            f"Model for {lang.upper()} (1-{min(3, len(lang_recommendations))}, or 'skip')",
+                            default="1"
+                        )
+
+                        if choice.lower() != 'skip':
+                            if choice.isdigit() and 0 < int(choice) <= len(lang_recommendations):
+                                language_model_mapping[lang] = lang_recommendations[int(choice) - 1]['model']
+                            else:
+                                language_model_mapping[lang] = choice
+
+                            self.console.print(f"  [green]✓ {lang.upper()}: {language_model_mapping[lang]}[/green]")
+
+        elif confirmed_languages and len(confirmed_languages) == 1:
+            # Single language - get specialized model
+            lang = list(confirmed_languages)[0]
+            self.console.print(f"[bold]Single language detected: {lang.upper()}[/bold]")
+
+            # Consider long-document models if user prefers them
+            if text_length_stats.get('user_prefers_long_models', False):
+                lang_recommendations = self._get_long_document_models_for_language(lang)
+            else:
+                lang_recommendations = LanguageNormalizer.recommend_models({lang}, self.available_trainer_models)
+
+            if lang_recommendations:
+                self.console.print(f"\n[bold]🤖 Recommended Models for {lang.upper()}:[/bold]")
+                for i, rec in enumerate(lang_recommendations[:5], 1):
+                    self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
+
+                choice = Prompt.ask("Select model (1-5, or enter model name)", default="1")
+
+                if choice.isdigit() and 0 < int(choice) <= len(lang_recommendations):
+                    model_to_use = lang_recommendations[int(choice) - 1]['model']
+                else:
+                    model_to_use = choice
+
+                self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")
+        else:
+            # No languages detected - use default
+            model_to_use = self._get_model_recommendation_from_languages(set())
+
+        # Return all collected information
+        return {
+            'data_path': data_path,
+            'text_column': text_column,
+            'label_column': label_column,
+            'id_column': id_column,
+            'lang_column': lang_column,
+            'confirmed_languages': confirmed_languages,
+            'language_distribution': language_distribution,  # Exact counts per language
+            'text_length_stats': text_length_stats,  # Text length statistics and long-document preference
+            'model_strategy': model_strategy,  # multilingual, specialized, or hybrid
+            'recommended_model': model_to_use,  # Main/base model
+            'language_model_mapping': language_model_mapping,  # Per-language models (if specialized)
+            'analysis': analysis
+        }
 
     def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Optional[TrainingDataBundle]:
         """
@@ -4604,65 +7126,95 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return bundle
 
         if format_choice == "category-csv":
-            csv_path = Path(self._prompt_file_path("Category CSV path"))
-            text_column = Prompt.ask("Text column", default="text")
-            label_column = Prompt.ask("Category/label column", default="label")
+            # Use sophisticated universal selector
+            selection = self._training_studio_intelligent_dataset_selector(format_type="category-csv")
+            if not selection:
+                return None
+
             request = TrainingDataRequest(
-                input_path=csv_path,
+                input_path=selection['data_path'],
                 format="category_csv",
-                text_column=text_column,
-                label_column=label_column,
+                text_column=selection['text_column'],
+                label_column=selection['label_column'],
+                id_column=selection.get('id_column'),
+                lang_column=selection.get('lang_column'),
                 mode="single-label",
             )
-            return builder.build(request)
+            bundle = builder.build(request)
+
+            # Store recommended model in bundle for later use
+            if bundle and selection.get('recommended_model'):
+                bundle.recommended_model = selection['recommended_model']
+
+            return bundle
 
         if format_choice == "binary-long":
-            csv_path = Path(self._prompt_file_path("Binary CSV path"))
-            text_column = Prompt.ask("Text column", default="text")
-            category_column = Prompt.ask("Category column", default="category")
-            value_column = Prompt.ask("Value column (0/1)", default="value")
-            id_column = Prompt.ask("Identifier column (optional)", default="")
-            lang_column = Prompt.ask("Language column (optional)", default="")
+            # Use sophisticated universal selector
+            selection = self._training_studio_intelligent_dataset_selector(format_type="binary-long")
+            if not selection:
+                return None
+
+            # Binary-long specific: need category and value columns
+            category_column = Prompt.ask("\n[bold yellow]Category column[/bold yellow]", default="category")
+            value_column = Prompt.ask("[bold yellow]Value column (0/1)[/bold yellow]", default="value")
+
             request = TrainingDataRequest(
-                input_path=csv_path,
+                input_path=selection['data_path'],
                 format="binary_long_csv",
-                text_column=text_column,
+                text_column=selection['text_column'],
                 category_column=category_column,
                 value_column=value_column,
-                id_column=id_column or None,
-                lang_column=lang_column or None,
+                id_column=selection.get('id_column'),
+                lang_column=selection.get('lang_column'),
                 mode="multi-label",
             )
-            return builder.build(request)
+            bundle = builder.build(request)
+
+            if bundle and selection.get('recommended_model'):
+                bundle.recommended_model = selection['recommended_model']
+
+            return bundle
 
         if format_choice == "jsonl-single":
-            data_path = Path(self._prompt_file_path("JSONL path"))
-            text_column = Prompt.ask("Text field", default="text")
-            label_column = Prompt.ask("Label field", default="label")
+            # Use sophisticated universal selector
+            selection = self._training_studio_intelligent_dataset_selector(format_type="jsonl-single")
+            if not selection:
+                return None
+
             request = TrainingDataRequest(
-                input_path=data_path,
+                input_path=selection['data_path'],
                 format="jsonl_single",
-                text_column=text_column,
-                label_column=label_column,
+                text_column=selection['text_column'],
+                label_column=selection['label_column'],
                 mode="single-label",
             )
-            return builder.build(request)
+            bundle = builder.build(request)
 
-        data_path = Path(self._prompt_file_path("JSONL path"))
-        text_column = Prompt.ask("Text field", default="text")
-        label_column = Prompt.ask("Label field", default="labels")
-        id_column = Prompt.ask("Identifier field (optional)", default="")
-        lang_column = Prompt.ask("Language field (optional)", default="")
+            if bundle and selection.get('recommended_model'):
+                bundle.recommended_model = selection['recommended_model']
+
+            return bundle
+
+        # jsonl-multi (default)
+        selection = self._training_studio_intelligent_dataset_selector(format_type="jsonl-multi")
+        if not selection:
+            return None
+
         request = TrainingDataRequest(
-            input_path=data_path,
+            input_path=selection['data_path'],
             format="jsonl_multi",
-            text_column=text_column,
-            label_column=label_column,
-            id_column=id_column or None,
-            lang_column=lang_column or None,
+            text_column=selection['text_column'],
+            label_column=selection['label_column'],
+            id_column=selection.get('id_column'),
+            lang_column=selection.get('lang_column'),
             mode="multi-label",
         )
-        return builder.build(request)
+        bundle = builder.build(request)
+
+        if bundle and selection.get('recommended_model'):
+            bundle.recommended_model = selection['recommended_model']
+
+        return bundle
 
     def _training_studio_render_bundle_summary(self, bundle: TrainingDataBundle) -> None:
         table = Table(title="Dataset Summary", border_style="green")
@@ -5111,15 +7663,275 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         models = self._flatten_trainer_models()
         return "bert-base-uncased" if "bert-base-uncased" in models else (models[0] if models else "bert-base-uncased")
 
+    def _show_analysis_and_get_columns(self, analysis: Dict[str, Any], format_type: str = "general") -> Dict[str, Any]:
+        """
+        Show file analysis results and intelligently detect columns with user confirmation.
+        Returns dictionary with detected column names and confirmed languages.
+        """
+        result = {
+            'text': 'text',
+            'label': 'label',
+            'id': None,
+            'lang': None,
+            'confirmed_languages': set()
+        }
+
+        # Show analysis issues
+        if analysis['issues']:
+            self.console.print("\n[yellow]⚠️  Analysis Results:[/yellow]")
+            for issue in analysis['issues']:
+                self.console.print(f"  {issue}")
+
+        all_columns = analysis.get('all_columns', [])
+
+        # Auto-suggest text column
+        text_column_default = "text"
+        if analysis['text_column_candidates']:
+            best_text = analysis['text_column_candidates'][0]['name']
+            text_column_default = best_text
+            self.console.print(f"\n[green]✓ Text column detected: '{best_text}'[/green]")
+
+        if all_columns:
+            self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+
+        result['text'] = Prompt.ask("Text column", default=text_column_default)
+
+        # Auto-suggest label column
+        label_column_default = "labels" if "multi" in format_type else "label"
+        if analysis['annotation_column_candidates']:
+            best_label = analysis['annotation_column_candidates'][0]['name']
+            label_column_default = best_label
+            self.console.print(f"\n[green]✓ Label column detected: '{best_label}'[/green]")
+            stats = analysis['annotation_stats'].get(best_label, {})
+            fill_rate = stats.get('fill_rate', 0)
+            if fill_rate > 0:
+                self.console.print(f"[dim]  ({fill_rate*100:.1f}% of rows have labels)[/dim]")
+
+        if all_columns:
+            self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+
+        result['label'] = Prompt.ask("Label/Category column", default=label_column_default)
+
+        # Language detection
+        languages_found = set(analysis['languages_detected'].keys())
+
+        if languages_found:
+            self.console.print(f"\n[bold]🌍 Languages Detected:[/bold]")
+            for lang, count in analysis['languages_detected'].items():
+                self.console.print(f"  • {lang.upper()}: {count} rows")
+
+            lang_list = ', '.join([l.upper() for l in sorted(languages_found)])
+            lang_confirmed = Confirm.ask(
+                f"\n[bold]Detected languages: {lang_list}. Is this correct?[/bold]",
+                default=True
+            )
+
+            if lang_confirmed:
+                result['confirmed_languages'] = languages_found
+                self.console.print("[green]✓ Languages confirmed[/green]")
+            else:
+                self.console.print("\n[yellow]Please specify languages manually[/yellow]")
+                manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
+                result['confirmed_languages'] = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+
+            # Auto-suggest language column if detected
+            if analysis['language_column_candidates']:
+                lang_column_default = analysis['language_column_candidates'][0]
+                self.console.print(f"\n[green]✓ Language column detected: '{lang_column_default}'[/green]")
+                if all_columns:
+                    self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+                result['lang'] = Prompt.ask("Language column (optional)", default=lang_column_default)
+        else:
+            # No language column detected - ask if user wants to apply language detection
+            self.console.print("\n[yellow]ℹ️  No language column detected in data[/yellow]")
+            apply_lang_detection = Confirm.ask(
+                "Would you like to apply automatic language detection on the text column?",
+                default=True
+            )
+
+            if apply_lang_detection:
+                self.console.print("[cyan]🔍 Detecting languages from text content...[/cyan]")
+                self.console.print("[dim]  Language detection will be applied during training[/dim]")
+                manual_langs = Prompt.ask(
+                    "Expected language codes (optional, comma-separated, e.g., en,fr,de)",
+                    default=""
+                )
+                if manual_langs.strip():
+                    result['confirmed_languages'] = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+
+        # Auto-suggest ID column
+        if analysis['id_column_candidates']:
+            id_column_default = analysis['id_column_candidates'][0]
+            self.console.print(f"\n[green]✓ ID column detected: '{id_column_default}'[/green]")
+            if all_columns:
+                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+            result['id'] = Prompt.ask("Identifier column (optional)", default=id_column_default)
+
+        return result
+
+    def _get_long_document_model_recommendation(self, confirmed_languages: set) -> Optional[str]:
+        """
+        Get long-document model recommendations based on languages.
+        Prioritizes models that can handle >512 tokens.
+        """
+        # Available long-document models
+        LONG_DOCUMENT_MODELS = [
+            {
+                'model': 'allenai/longformer-base-4096',
+                'max_tokens': 4096,
+                'languages': ['en'],
+                'reason': 'English long-document model (4096 tokens)'
+            },
+            {
+                'model': 'google/bigbird-roberta-base',
+                'max_tokens': 4096,
+                'languages': ['en'],
+                'reason': 'English sparse-attention long-document model (4096 tokens)'
+            },
+            {
+                'model': 'facebook/xlm-roberta-longformer-base-4096',
+                'max_tokens': 4096,
+                'languages': ['multilingual'],
+                'reason': 'Multilingual long-document model (4096 tokens)'
+            },
+            {
+                'model': 'xlm-roberta-base',
+                'max_tokens': 512,
+                'languages': ['multilingual'],
+                'reason': 'Multilingual baseline (512 tokens, fallback)'
+            },
+        ]
+
+        # Filter models based on languages
+        suitable_models = []
+        for model in LONG_DOCUMENT_MODELS:
+            if 'multilingual' in model['languages']:
+                suitable_models.append(model)
+            elif confirmed_languages:
+                if any(lang in model['languages'] for lang in confirmed_languages):
+                    suitable_models.append(model)
+
+        if not suitable_models:
+            suitable_models = LONG_DOCUMENT_MODELS  # Fallback to all
+
+        self.console.print(f"\n[bold]🤖 Long-Document Model Recommendations:[/bold]")
+        for i, model_info in enumerate(suitable_models[:5], 1):
+            self.console.print(f"  {i}. [cyan]{model_info['model']}[/cyan] - {model_info['reason']}")
+
+        choice = Prompt.ask(
+            f"Select model (1-{min(5, len(suitable_models))}, or enter model name)",
+            default="1"
+        )
+
+        if choice.isdigit() and 0 < int(choice) <= len(suitable_models):
+            model_to_use = suitable_models[int(choice) - 1]['model']
+            self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")
+            return model_to_use
+        else:
+            return choice
+
+    def _get_long_document_models_for_language(self, lang: str) -> list:
+        """
+        Get long-document model recommendations for a specific language.
+        Returns list in LanguageNormalizer.recommend_models format.
+        """
+        # Language-specific long-document models
+        LANG_LONG_MODELS = {
+            'en': [
+                {'model': 'allenai/longformer-base-4096', 'reason': 'English long-document (4096 tokens)'},
+                {'model': 'google/bigbird-roberta-base', 'reason': 'English sparse-attention (4096 tokens)'},
+                {'model': 'roberta-base', 'reason': 'English baseline (512 tokens, fallback)'},
+            ],
+            'fr': [
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual long-document (4096 tokens)'},
+                {'model': 'camembert-base', 'reason': 'French baseline (512 tokens, fallback)'},
+            ],
+            'es': [
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual long-document (4096 tokens)'},
+                {'model': 'dccuchile/bert-base-spanish-wwm-cased', 'reason': 'Spanish baseline (512 tokens, fallback)'},
+            ],
+            'de': [
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual long-document (4096 tokens)'},
+                {'model': 'bert-base-german-cased', 'reason': 'German baseline (512 tokens, fallback)'},
+            ],
+            'multilingual': [
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual long-document (4096 tokens)'},
+                {'model': 'xlm-roberta-base', 'reason': 'Multilingual baseline (512 tokens, fallback)'},
+            ],
+        }
+
+        # Return language-specific models or multilingual as fallback
+        return LANG_LONG_MODELS.get(lang, LANG_LONG_MODELS.get('multilingual', []))
+
+    def _get_model_recommendation_from_languages(self, confirmed_languages: set) -> Optional[str]:
+        """
+        Get model recommendations based on detected/confirmed languages.
+        Returns selected model name or None.
+        """
+        if not confirmed_languages:
+            return None
+
+        recommendations = LanguageNormalizer.recommend_models(confirmed_languages, self.available_trainer_models)
+
+        if not recommendations:
+            return None
+
+        self.console.print(f"\n[bold]🤖 Recommended Models for Your Languages:[/bold]")
+        for i, rec in enumerate(recommendations[:5], 1):
+            self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
+
+        # Interactive model selection
+        self.console.print(f"\n[bold]Select a model:[/bold]")
+        self.console.print("  [cyan]1-{num}[/cyan] - Select from recommendations above".format(num=min(5, len(recommendations))))
+        self.console.print("  [cyan]manual[/cyan] - Enter model name manually")
+        self.console.print("  [cyan]skip[/cyan] - Use default (bert-base-uncased)")
+
+        model_choice = Prompt.ask("Your choice", default="1")
+
+        if model_choice == "manual":
+            return Prompt.ask("\nEnter model name", default="xlm-roberta-base")
+        elif model_choice == "skip":
+            return "bert-base-uncased"
+        elif model_choice.isdigit():
+            idx = int(model_choice) - 1
+            if 0 <= idx < len(recommendations):
+                model_to_use = recommendations[idx]['model']
+                self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")
+                return model_to_use
+            else:
+                self.console.print("[yellow]Invalid selection, using first recommendation[/yellow]")
+                return recommendations[0]['model']
+        else:
+            return recommendations[0]['model']
+
+    def bert_annotation_studio(self):
+        """BERT Annotation Studio - Advanced annotation with trained models"""
+        from .bert_annotation_studio import BERTAnnotationStudio
+
+        studio = BERTAnnotationStudio(
+            console=self.console,
+            settings=self.settings,
+            logger=self.logger
+        )
+        studio.run()
+
     def validation_lab(self):
         """Validation lab for quality control and Doccano export"""
-        # Display welcome banner
-        self._display_welcome_banner()
+        # Display ASCII logo only
+        self._display_ascii_logo()
 
-        # Display simple section header
+        # Display personalized mode info
         self._display_section_header(
             "🔍 Validation Lab",
-            "Quality control and human review preparation"
+            "Quality control and human review preparation tools",
+            mode_info={
+                'workflow': 'Load Annotations → Quality Metrics → Sample Review → Export to Doccano/Label Studio',
+                'capabilities': ['Quality Scoring', 'Sample Analysis', 'Export Tools', 'Inter-rater Reliability'],
+                'input': 'Annotated JSON files from LLM',
+                'output': 'Quality reports + Doccano/Label Studio export files',
+                'best_for': 'Validating LLM annotations before training or publication',
+                'duration': '~2-5 min'
+            }
         )
 
         if HAS_RICH and self.console:
@@ -5226,13 +8038,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def profile_manager_ui(self):
         """Profile manager interface"""
-        # Display welcome banner
-        self._display_welcome_banner()
+        # Display ASCII logo only
+        self._display_ascii_logo()
 
-        # Display simple section header
+        # Display personalized mode info
         self._display_section_header(
             "💾 Profile Manager",
-            "Manage saved configuration profiles"
+            "Save and reuse your favorite pipeline configurations",
+            mode_info={
+                'workflow': 'Browse Profiles → Select → Load Configuration → Execute',
+                'capabilities': ['Save Configs', 'Quick Reload', 'Profile Sharing', 'Version Control'],
+                'input': 'Saved profile from previous runs',
+                'output': 'Executed pipeline with saved configuration',
+                'best_for': 'Rerunning the same pipeline configuration multiple times',
+                'duration': '~1 min + pipeline execution time'
+            }
         )
 
         if HAS_RICH and self.console:
@@ -5269,10 +8089,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def advanced_settings(self):
         """Advanced settings interface"""
-        # Display simple section header
+        # Display ASCII logo only
+        self._display_ascii_logo()
+
+        # Display personalized mode info
         self._display_section_header(
             "⚙️ Advanced Settings",
-            "Configure advanced options (Coming Soon)"
+            "Fine-tune system configuration and preferences",
+            mode_info={
+                'workflow': 'Browse Settings → Modify → Save → Apply',
+                'capabilities': ['API Keys', 'Model Defaults', 'Path Configuration', 'Performance Tuning'],
+                'input': 'Current system settings',
+                'output': 'Updated configuration',
+                'best_for': 'Customizing system behavior and defaults',
+                'duration': '~2-5 min'
+            }
         )
 
         if HAS_RICH and self.console:
@@ -5649,41 +8480,71 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
     def _smart_annotate(self):
         """Smart guided annotation wizard with all options"""
         self.console.print("\n[bold cyan]🎯 Smart Annotate - Guided Wizard[/bold cyan]\n")
-
+    
         # Step 1: Data Selection
-        self.console.print("[bold]Step 1/6: Data Selection[/bold]")
+        self.console.print("[bold]Step 1/7: Data Selection[/bold]")
 
         if not self.detected_datasets:
             self.console.print("[yellow]No datasets auto-detected.[/yellow]")
             data_path = Path(self._prompt_file_path("Dataset path"))
         else:
-            self.console.print(f"\n[dim]Found {len(self.detected_datasets)} datasets:[/dim]")
-            for i, ds in enumerate(self.detected_datasets[:10], 1):
-                self.console.print(f"  {i}. {ds.path.name} ({ds.format.upper()}, {ds.size_mb:.1f} MB)")
+            self.console.print(f"\n[bold cyan]📊 Found {len(self.detected_datasets)} dataset(s):[/bold cyan]\n")
 
-            use_detected = Confirm.ask("\nUse detected dataset?", default=True)
+            # Create table for datasets
+            datasets_table = Table(border_style="cyan", show_header=True)
+            datasets_table.add_column("#", style="bold yellow", width=4)
+            datasets_table.add_column("Filename", style="white")
+            datasets_table.add_column("Format", style="green", width=10)
+            datasets_table.add_column("Size", style="magenta", width=10)
+            datasets_table.add_column("Rows", style="cyan", width=10)
+            datasets_table.add_column("Columns", style="blue", width=10)
+
+            for i, ds in enumerate(self.detected_datasets[:20], 1):
+                # Format size
+                if ds.size_mb < 0.1:
+                    size_str = f"{ds.size_mb * 1024:.1f} KB"
+                else:
+                    size_str = f"{ds.size_mb:.1f} MB"
+
+                # Format rows and columns
+                rows_str = f"{ds.rows:,}" if ds.rows else "?"
+                cols_str = str(len(ds.columns)) if ds.columns else "?"
+
+                datasets_table.add_row(
+                    str(i),
+                    ds.path.name,
+                    ds.format.upper(),
+                    size_str,
+                    rows_str,
+                    cols_str
+                )
+
+            self.console.print(datasets_table)
+            self.console.print()
+
+            use_detected = Confirm.ask("[bold yellow]Use detected dataset?[/bold yellow]", default=True)
             if use_detected:
                 choice = self._int_prompt_with_validation("Select dataset", 1, 1, len(self.detected_datasets))
                 data_path = self.detected_datasets[choice - 1].path
             else:
                 data_path = Path(self._prompt_file_path("Dataset path"))
-
+    
         # Detect format
         data_format = data_path.suffix[1:].lower()
         if data_format == 'xlsx':
             data_format = 'excel'
-
+    
         self.console.print(f"[green]✓ Selected: {data_path.name} ({data_format})[/green]")
-
+    
         # Step 2: Text column selection with intelligent detection
-        self.console.print("\n[bold]Step 2/6: Text Column Selection[/bold]")
-
+        self.console.print("\n[bold]Step 2/7: Text Column Selection[/bold]")
+    
         # Detect text columns
         column_info = self._detect_text_columns(data_path)
-
+    
         if column_info['text_candidates']:
             self.console.print("\n[dim]Detected text columns (sorted by confidence):[/dim]")
-
+    
             # Create table for candidates
             col_table = Table(border_style="blue")
             col_table.add_column("#", style="cyan", width=3)
@@ -5691,7 +8552,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             col_table.add_column("Confidence", style="yellow")
             col_table.add_column("Avg Length", style="green")
             col_table.add_column("Sample", style="dim")
-
+    
             for i, candidate in enumerate(column_info['text_candidates'][:10], 1):
                 # Color code confidence
                 conf_color = {
@@ -5701,7 +8562,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     "very_low": "[red]Very Low[/red]"
                 }
                 conf_display = conf_color.get(candidate['confidence'], candidate['confidence'])
-
+    
                 col_table.add_row(
                     str(i),
                     candidate['name'],
@@ -5709,12 +8570,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     f"{candidate['avg_length']:.0f} chars",
                     candidate['sample'][:50] + "..." if len(candidate['sample']) > 50 else candidate['sample']
                 )
-
+    
             self.console.print(col_table)
-
+    
             # Show all columns option
             self.console.print(f"\n[dim]All columns ({len(column_info['all_columns'])}): {', '.join(column_info['all_columns'])}[/dim]")
-
+    
             # Ask user to select
             default_col = column_info['text_candidates'][0]['name'] if column_info['text_candidates'] else "text"
             text_column = Prompt.ask(
@@ -5727,26 +8588,49 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(f"\n[yellow]Could not auto-detect text columns.[/yellow]")
                 self.console.print(f"[dim]Available columns: {', '.join(column_info['all_columns'])}[/dim]")
             text_column = Prompt.ask("Text column name", default="text")
-
+    
+        # Step 2b: ID Column Selection (FROM QUICK START)
+        self.console.print("\n[bold]Step 2b/7: Identifier Column Selection[/bold]")
+    
+        # Get available columns
+        available_columns = column_info['all_columns'] if column_info and column_info.get('all_columns') else []
+    
+        # Auto-detect potential ID columns
+        suggested_id = None
+        if available_columns:
+            for col in available_columns:
+                lowered = col.lower()
+                if lowered == 'id' or lowered.endswith('_id') or 'identifier' in lowered:
+                    suggested_id = col
+                    break
+    
+        identifier_column = self._prompt_for_identifier_column(available_columns, suggested_id)
+    
+        self.console.print(f"[green]✓ Identifier strategy: {identifier_column}[/green]")
+    
+        # Check if user wants to return to menu
+        if self._check_return_to_menu("with column configuration"):
+            return
+    
         # Step 3: Model Selection
-        self.console.print("\n[bold]Step 3/6: Model Selection[/bold]")
+        self.console.print("\n[bold]Step 3/7: Model Selection[/bold]")
         self.console.print("[dim]Tested API models: OpenAI & Anthropic[/dim]\n")
-
+    
         selected_llm = self._select_llm_interactive()
         provider = selected_llm.provider
         model_name = selected_llm.name
-
+    
         # Get API key if needed
         api_key = None
         if selected_llm.requires_api_key:
             api_key = self._get_or_prompt_api_key(provider, model_name)
-
+    
         # Step 4: Prompt Configuration
-        self.console.print("\n[bold]Step 4/6: Prompt Configuration[/bold]")
-
+        self.console.print("\n[bold]Step 4/7: Prompt Configuration[/bold]")
+    
         # Auto-detect prompts
         detected_prompts = self._detect_prompts_in_folder()
-
+    
         if detected_prompts:
             self.console.print(f"\n[green]✓ Found {len(detected_prompts)} prompts in prompts/ folder:[/green]")
             for i, p in enumerate(detected_prompts, 1):
@@ -5754,7 +8638,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 keys_str = ', '.join(p['keys'])
                 self.console.print(f"  {i}. [cyan]{p['name']}[/cyan]")
                 self.console.print(f"     Keys ({len(p['keys'])}): {keys_str}")
-
+    
             # Explain the options clearly
             self.console.print("\n[bold]Prompt Selection Options:[/bold]")
             self.console.print("  [cyan]all[/cyan]     - Use ALL detected prompts (multi-prompt mode)")
@@ -5770,24 +8654,34 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("\n  [cyan]custom[/cyan]  - Provide path to a prompt file NOT in prompts/ folder")
             self.console.print("           → Use a prompt from another location")
             self.console.print("           → Useful for testing new prompts or one-off annotations")
-
+    
             prompt_choice = Prompt.ask(
                 "\n[bold yellow]Prompt selection[/bold yellow]",
                 choices=["all", "select", "wizard", "custom"],
                 default="all"
             )
-
+    
             selected_prompts = []
             if prompt_choice == "all":
                 selected_prompts = detected_prompts
                 self.console.print(f"[green]✓ Using all {len(selected_prompts)} prompts[/green]")
             elif prompt_choice == "select":
                 indices = Prompt.ask("Enter prompt numbers (comma-separated, e.g., 1,3,5)")
-                for idx_str in indices.split(','):
-                    idx = int(idx_str.strip()) - 1
-                    if 0 <= idx < len(detected_prompts):
-                        selected_prompts.append(detected_prompts[idx])
-                self.console.print(f"[green]✓ Selected {len(selected_prompts)} prompts[/green]")
+                if indices.strip():  # Only process if not empty
+                    for idx_str in indices.split(','):
+                        idx_str = idx_str.strip()
+                        if idx_str:  # Skip empty strings
+                            try:
+                                idx = int(idx_str) - 1
+                                if 0 <= idx < len(detected_prompts):
+                                    selected_prompts.append(detected_prompts[idx])
+                            except ValueError:
+                                self.console.print(f"[yellow]⚠️  Skipping invalid number: '{idx_str}'[/yellow]")
+                if not selected_prompts:
+                    self.console.print("[yellow]No valid prompts selected. Using all prompts.[/yellow]")
+                    selected_prompts = detected_prompts
+                else:
+                    self.console.print(f"[green]✓ Selected {len(selected_prompts)} prompts[/green]")
             elif prompt_choice == "wizard":
                 # Launch Social Science Wizard
                 wizard_prompt = self._run_social_science_wizard()
@@ -5814,18 +8708,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 }]
         else:
             self.console.print("[yellow]No prompts found in prompts/ folder[/yellow]")
-
+    
             # Offer wizard or custom path
             self.console.print("\n[bold]Prompt Options:[/bold]")
             self.console.print("  [cyan]wizard[/cyan] - 🧙‍♂️ Create prompt using Social Science Wizard (Recommended)")
             self.console.print("  [cyan]custom[/cyan] - Provide path to existing prompt file")
-
+    
             choice = Prompt.ask(
                 "\n[bold yellow]Select option[/bold yellow]",
                 choices=["wizard", "custom"],
                 default="wizard"
             )
-
+    
             if choice == "wizard":
                 # Launch Social Science Wizard
                 wizard_prompt = self._run_social_science_wizard()
@@ -5849,24 +8743,72 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'keys': keys,
                     'content': content
                 }]
+    
+    
+        # Step 4b: Language Column Detection (FROM QUICK START)
+        self.console.print("\n[bold]Step 4b/7: Language Column Detection[/bold]")
 
+        lang_column = None
+        available_columns = column_info.get('all_columns', []) if column_info else []
+        if available_columns:
+            # Detect potential language columns
+            potential_lang_cols = [col for col in available_columns
+                                  if col.lower() in ['lang', 'language', 'langue', 'lng', 'iso_lang']]
+    
+            if potential_lang_cols:
+                self.console.print(f"\n[bold cyan]🌍 Found language column(s):[/bold cyan]")
+                for col in potential_lang_cols:
+                    self.console.print(f"  • [cyan]{col}[/cyan]")
+    
+                use_lang_col = Confirm.ask("Use a language column for training metadata?", default=True)
+                if use_lang_col:
+                    if len(potential_lang_cols) == 1:
+                        lang_column = potential_lang_cols[0]
+                        self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
+                    else:
+                        lang_column = Prompt.ask(
+                            "Which language column to use?",
+                            choices=potential_lang_cols,
+                            default=potential_lang_cols[0]
+                        )
+                else:
+                    # Ask if automatic language detection is needed
+                    auto_detect = Confirm.ask(
+                        "[yellow]⚠️  Language information is needed for training. Enable automatic language detection?[/yellow]",
+                        default=True
+                    )
+                    if auto_detect:
+                        self.console.print("[dim]Language will be automatically detected for each text during annotation.[/dim]")
+                        lang_column = None  # Will trigger auto-detection later
+                    else:
+                        self.console.print("[yellow]⚠️  Warning: Proceeding without language information may affect training quality.[/yellow]")
+                        lang_column = None
+            else:
+                # No language column detected
+                has_lang = Confirm.ask("Does your dataset have a language column?", default=False)
+                if has_lang:
+                    lang_column = Prompt.ask(
+                        "Language column name",
+                        choices=available_columns,
+                        default=available_columns[0] if available_columns else "language"
+                    )
         # Step 5: Multi-prompt prefix configuration
         prompt_configs = []
         if len(selected_prompts) > 1:
             self.console.print("\n[bold]Multi-Prompt Mode:[/bold] Configure key prefixes")
             self.console.print("[dim]Prefixes help identify which prompt generated which keys[/dim]\n")
-
+    
             for i, prompt in enumerate(selected_prompts, 1):
                 self.console.print(f"\n[cyan]Prompt {i}: {prompt['name']}[/cyan]")
                 self.console.print(f"  Keys: {', '.join(prompt['keys'])}")
-
+    
                 add_prefix = Confirm.ask(f"Add prefix to keys for this prompt?", default=True)
                 prefix = ""
                 if add_prefix:
                     default_prefix = prompt['name'].lower().replace(' ', '_')
                     prefix = Prompt.ask("Prefix", default=default_prefix)
                     self.console.print(f"  [green]Keys will become: {', '.join([f'{prefix}_{k}' for k in prompt['keys'][:3]])}[/green]")
-
+    
                 prompt_configs.append({
                     'prompt': prompt,
                     'prefix': prefix
@@ -5874,25 +8816,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         else:
             # Single prompt - no prefix needed
             prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
-
+    
         # Step 6: Advanced Options
-        self.console.print("\n[bold]Step 5/6: Advanced Options[/bold]")
-
+        self.console.print("\n[bold]Step 5/7: Advanced Options[/bold]")
+    
         # ============================================================
         # DATASET SCOPE
         # ============================================================
         self.console.print("\n[bold cyan]📊 Dataset Scope[/bold cyan]")
         self.console.print("[dim]Determine how many rows to annotate from your dataset[/dim]\n")
-
+    
         # Get total rows if possible
         total_rows = None
         if column_info.get('df') is not None:
             # We have a sample, extrapolate
             total_rows = len(pd.read_csv(data_path)) if data_format == 'csv' else None
-
+    
         if total_rows:
             self.console.print(f"[green]✓ Dataset contains {total_rows:,} rows[/green]\n")
-
+    
         # Option 1: Annotate all or limited
         self.console.print("[yellow]Option 1:[/yellow] Annotate ALL rows vs LIMIT to specific number")
         self.console.print("  • [cyan]all[/cyan]   - Annotate the entire dataset")
@@ -5909,23 +8851,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         annotation_limit = None
         use_sample = False
         sample_strategy = "head"
+        recommended_sample = None
 
         if scope_choice == "limit":
-            # Ask for specific number
-            annotation_limit = self._int_prompt_with_validation(
-                "How many rows to annotate?",
-                default=100,
-                min_value=1,
-                max_value=total_rows if total_rows else 1000000
-            )
-
-            # Option 2: Calculate representative sample
+            # Option 2: FIRST ask about representative sample calculation (before asking for number)
             if total_rows and total_rows > 1000:
                 self.console.print("\n[yellow]Option 2:[/yellow] Representative Sample Calculation")
                 self.console.print("  Calculate statistically representative sample size (95% confidence interval)")
-                self.console.print(f"  [dim]• Current selection: {annotation_limit} rows[/dim]")
+                self.console.print("  [dim]This helps determine the minimum sample needed for statistical validity[/dim]")
 
-                calculate_sample = Confirm.ask("Calculate representative sample size?", default=False)
+                calculate_sample = Confirm.ask("Calculate representative sample size?", default=True)
 
                 if calculate_sample:
                     # Formula: n = (Z² × p × (1-p)) / E²
@@ -5940,11 +8875,20 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     self.console.print(f"\n[green]📈 Recommended sample size: {recommended_sample} rows[/green]")
                     self.console.print(f"[dim]   (95% confidence level, 5% margin of error)[/dim]")
+                    self.console.print(f"[dim]   Population: {total_rows:,} rows[/dim]\n")
 
-                    use_recommended = Confirm.ask(f"Use recommended sample size ({recommended_sample} rows)?", default=True)
-                    if use_recommended:
-                        annotation_limit = recommended_sample
-                        use_sample = True
+            # THEN ask for specific number (with recommendation as default if calculated)
+            default_limit = recommended_sample if recommended_sample else 100
+            annotation_limit = self._int_prompt_with_validation(
+                f"How many rows to annotate?",
+                default=default_limit,
+                min_value=1,
+                max_value=total_rows if total_rows else 1000000
+            )
+
+            # Check if user chose the recommended sample
+            if recommended_sample and annotation_limit == recommended_sample:
+                use_sample = True
 
             # Option 3: Random sampling
             self.console.print("\n[yellow]Option 3:[/yellow] Sampling Strategy")
@@ -5953,19 +8897,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("           [dim]Good for testing, preserves order[/dim]")
             self.console.print("  • [cyan]random[/cyan] - Random sample of N rows (representative)")
             self.console.print("           [dim]Better for statistical validity, unbiased[/dim]")
-
+    
             sample_strategy = Prompt.ask(
                 "\nSampling strategy",
                 choices=["head", "random"],
                 default="random" if use_sample else "head"
             )
-
+    
         # ============================================================
         # PARALLEL PROCESSING
         # ============================================================
         self.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
         self.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
-
+    
         self.console.print("[yellow]Parallel Workers:[/yellow]")
         self.console.print("  Number of simultaneous annotation processes")
         self.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
@@ -5977,23 +8921,23 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("           [dim]Recommended for: API models (OpenAI, Claude) - avoid rate limits[/dim]")
         self.console.print("  • [cyan]4-8 workers[/cyan] - High parallelism")
         self.console.print("           [dim]Recommended for: API models only - requires high rate limits[/dim]")
-
+    
         num_processes = self._int_prompt_with_validation("Parallel workers", 1, 1, 16)
-
+    
         # ============================================================
         # INCREMENTAL SAVE
         # ============================================================
         self.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
         self.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
-
+    
         self.console.print("[yellow]Enable incremental save?[/yellow]")
         self.console.print("  • [green]Yes[/green] - Save progress regularly during annotation (recommended)")
         self.console.print("           [dim]Protects against crashes, allows resuming, safer for long runs[/dim]")
         self.console.print("  • [red]No[/red]  - Save only at the end")
         self.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
-
+    
         save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
-
+    
         # Only ask for batch size if incremental save is enabled
         if save_incrementally:
             self.console.print("\n[yellow]Batch Size:[/yellow]")
@@ -6004,22 +8948,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("           [dim]Use for: Most production cases[/dim]")
             self.console.print("  • [cyan]Larger (50-200)[/cyan]  - Less frequent saves, better performance")
             self.console.print("           [dim]Use for: Stable systems, large datasets, local models[/dim]")
-
+    
             batch_size = self._int_prompt_with_validation("Batch size", 1, 1, 1000)
         else:
             batch_size = None  # Not used when incremental save is disabled
-
+    
         # ============================================================
         # MODEL PARAMETERS
         # ============================================================
         self.console.print("\n[bold cyan]🎛️  Model Parameters[/bold cyan]")
         self.console.print("[dim]Configure advanced model generation parameters[/dim]\n")
-
+    
         # Check if model supports parameter tuning
         model_name_lower = model_name.lower()
         is_o_series = any(x in model_name_lower for x in ['o1', 'o3', 'o4'])
         supports_params = not is_o_series
-
+    
         if not supports_params:
             self.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
             self.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
@@ -6030,16 +8974,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("  [dim]• Default values work well for most cases[/dim]")
             self.console.print("  [dim]• Advanced users can fine-tune for specific needs[/dim]")
             configure_params = Confirm.ask("\nConfigure model parameters?", default=False)
-
+    
         # Default values
         temperature = 0.7
         max_tokens = 1000
         top_p = 1.0
         top_k = 40
-
+    
         if configure_params:
             self.console.print("\n[bold]Parameter Explanations:[/bold]\n")
-
+    
             # Temperature
             self.console.print("[cyan]🌡️  Temperature (0.0 - 2.0):[/cyan]")
             self.console.print("  Controls randomness in responses")
@@ -6050,7 +8994,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("  • [red]High (1.0-2.0)[/red]  - Creative, varied, unpredictable")
             self.console.print("           [dim]Use for: Brainstorming, diverse perspectives[/dim]")
             temperature = FloatPrompt.ask("Temperature", default=0.7)
-
+    
             # Max tokens
             self.console.print("\n[cyan]📏 Max Tokens:[/cyan]")
             self.console.print("  Maximum length of the response")
@@ -6059,7 +9003,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("  • [red]Long (2000+)[/red]     - Extensive responses, complex reasoning")
             self.console.print("  [dim]Note: More tokens = higher API costs[/dim]")
             max_tokens = self._int_prompt_with_validation("Max tokens", 1000, 50, 8000)
-
+    
             # Top_p (nucleus sampling)
             self.console.print("\n[cyan]🎯 Top P (0.0 - 1.0):[/cyan]")
             self.console.print("  Nucleus sampling - alternative to temperature")
@@ -6069,7 +9013,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("           [dim]More creative, diverse outputs[/dim]")
             self.console.print("  [dim]Tip: Use either temperature OR top_p, not both aggressively[/dim]")
             top_p = FloatPrompt.ask("Top P", default=1.0)
-
+    
             # Top_k (only for some models)
             if provider in ['ollama', 'google']:
                 self.console.print("\n[cyan]🔢 Top K:[/cyan]")
@@ -6078,16 +9022,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print("  • [yellow]Medium (20-50)[/yellow]  - Balanced diversity")
                 self.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
                 top_k = self._int_prompt_with_validation("Top K", 40, 1, 100)
-
+    
         # Step 7: Execute
-        self.console.print("\n[bold]Step 6/6: Review & Execute[/bold]")
-
+        self.console.print("\n[bold]Step 6/7: Review & Execute[/bold]")
+    
         # Display comprehensive summary
         summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
         summary_table.add_column("Category", style="bold cyan", width=20)
         summary_table.add_column("Setting", style="yellow", width=25)
         summary_table.add_column("Value", style="white")
-
+    
         # Data section
         summary_table.add_row("📁 Data", "Dataset", str(data_path.name))
         summary_table.add_row("", "Format", data_format.upper())
@@ -6098,7 +9042,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             summary_table.add_row("", "Rows to Annotate", f"{annotation_limit:,} ({sample_strategy})")
         else:
             summary_table.add_row("", "Rows to Annotate", "ALL")
-
+    
         # Model section
         summary_table.add_row("🤖 Model", "Provider/Model", f"{provider}/{model_name}")
         summary_table.add_row("", "Temperature", f"{temperature}")
@@ -6107,77 +9051,77 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             summary_table.add_row("", "Top P", f"{top_p}")
             if provider in ['ollama', 'google']:
                 summary_table.add_row("", "Top K", f"{top_k}")
-
+    
         # Prompts section
         summary_table.add_row("📝 Prompts", "Count", f"{len(prompt_configs)}")
         for i, pc in enumerate(prompt_configs, 1):
             prefix_info = f" (prefix: {pc['prefix']}_)" if pc['prefix'] else " (no prefix)"
             summary_table.add_row("", f"  Prompt {i}", f"{pc['prompt']['name']}{prefix_info}")
-
+    
         # Processing section
         summary_table.add_row("⚙️  Processing", "Parallel Workers", str(num_processes))
         summary_table.add_row("", "Batch Size", str(batch_size))
         summary_table.add_row("", "Incremental Save", "Yes" if save_incrementally else "No")
-
+    
         self.console.print("\n")
         self.console.print(summary_table)
-
+    
         if not Confirm.ask("\n[bold yellow]Start annotation?[/bold yellow]", default=True):
             return
-
+    
         # ============================================================
         # REPRODUCIBILITY METADATA
         # ============================================================
         self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
         self.console.print("[yellow]⚠️  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
-
+    
         self.console.print("  [green]1. Resume Capability[/green]")
         self.console.print("     • Continue this annotation if it stops or crashes")
         self.console.print("     • Annotate additional rows later with same settings")
         self.console.print("     • Access via 'Resume/Relaunch Annotation' workflow\n")
-
+    
         self.console.print("  [green]2. Scientific Reproducibility[/green]")
         self.console.print("     • Document exact parameters for research papers")
         self.console.print("     • Reproduce identical annotations in the future")
         self.console.print("     • Track model version, prompts, and all settings\n")
-
+    
         self.console.print("  [red]⚠️  If you choose NO:[/red]")
         self.console.print("     • You CANNOT resume this annotation later")
         self.console.print("     • You CANNOT relaunch with same parameters")
         self.console.print("     • Parameters will be lost forever\n")
-
+    
         save_metadata = Confirm.ask(
             "[bold yellow]Save annotation parameters to JSON file?[/bold yellow]",
             default=True
         )
-
+    
         # ============================================================
         # VALIDATION TOOL EXPORT OPTION
         # ============================================================
         self.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
         self.console.print("[dim]Export annotations to JSONL format for human validation[/dim]\n")
-
+    
         self.console.print("[yellow]Available validation tools:[/yellow]")
         self.console.print("  • [cyan]Doccano[/cyan] - Simple, lightweight NLP annotation tool")
         self.console.print("  • [cyan]Label Studio[/cyan] - Advanced, feature-rich annotation platform")
         self.console.print("  • Both are open-source and free\n")
-
+    
         self.console.print("[green]Why validate with external tools?[/green]")
         self.console.print("  • Review and correct LLM annotations")
         self.console.print("  • Calculate inter-annotator agreement")
         self.console.print("  • Export validated data for metrics calculation\n")
-
+    
         # Initialize export flags
         export_to_doccano = False
         export_to_labelstudio = False
         export_sample_size = None
-
+    
         # Step 1: Ask if user wants to export
         export_confirm = Confirm.ask(
             "[bold yellow]Export to validation tool?[/bold yellow]",
             default=False
         )
-
+    
         if export_confirm:
             # Step 2: Ask which tool to export to
             tool_choice = Prompt.ask(
@@ -6185,18 +9129,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 choices=["doccano", "labelstudio"],
                 default="doccano"
             )
-
+    
             # Set the appropriate export flag
             if tool_choice == "doccano":
                 export_to_doccano = True
             else:  # labelstudio
                 export_to_labelstudio = True
-
+    
             # Step 2b: If Label Studio, ask export method
             labelstudio_direct_export = False
             labelstudio_api_url = None
             labelstudio_api_key = None
-
+    
             if export_to_labelstudio:
                 self.console.print("\n[yellow]Label Studio export method:[/yellow]")
                 self.console.print("  • [cyan]jsonl[/cyan] - Export to JSONL file (manual import)")
@@ -6206,50 +9150,50 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 else:
                     self.console.print("  • [dim]direct[/dim] - Direct export via API [dim](requires 'requests' library)[/dim]\n")
                     export_choices = ["jsonl"]
-
+    
                 export_method = Prompt.ask(
                     "[bold yellow]Export method[/bold yellow]",
                     choices=export_choices,
                     default="jsonl"
                 )
-
+    
                 if export_method == "direct":
                     labelstudio_direct_export = True
-
+    
                     self.console.print("\n[cyan]Label Studio API Configuration:[/cyan]")
                     labelstudio_api_url = Prompt.ask(
                         "Label Studio URL",
                         default="http://localhost:8080"
                     )
-
+    
                     labelstudio_api_key = Prompt.ask(
                         "API Key (from Label Studio Account & Settings)"
                     )
-
+    
             # Step 3: Ask about LLM predictions inclusion
             self.console.print("\n[yellow]Include LLM predictions in export?[/yellow]")
             self.console.print("  • [cyan]with[/cyan] - Include LLM annotations as predictions (for review/correction)")
             self.console.print("  • [cyan]without[/cyan] - Export only data without predictions (for manual annotation)")
             self.console.print("  • [cyan]both[/cyan] - Create two files: one with and one without predictions\n")
-
+    
             prediction_mode = Prompt.ask(
                 "[bold yellow]Prediction mode[/bold yellow]",
                 choices=["with", "without", "both"],
                 default="with"
             )
-
+    
             # Step 4: Ask how many sentences to export
             self.console.print("\n[yellow]How many annotated sentences to export?[/yellow]")
             self.console.print("  • [cyan]all[/cyan] - Export all annotated sentences")
             self.console.print("  • [cyan]representative[/cyan] - Representative sample (stratified by labels)")
             self.console.print("  • [cyan]number[/cyan] - Specify exact number\n")
-
+    
             sample_choice = Prompt.ask(
                 "[bold yellow]Export sample[/bold yellow]",
                 choices=["all", "representative", "number"],
                 default="all"
             )
-
+    
             if sample_choice == "all":
                 export_sample_size = "all"
             elif sample_choice == "representative":
@@ -6261,11 +9205,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     1,
                     999999
                 )
-
+    
         # ============================================================
         # EXECUTE ANNOTATION
         # ============================================================
-
+    
         # Prepare output path
         annotations_dir = self.settings.paths.data_dir / 'annotations'
         annotations_dir.mkdir(parents=True, exist_ok=True)
@@ -6273,11 +9217,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
         default_output_path = annotations_dir / output_filename
-
+    
         self.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
         self.console.print(f"   {default_output_path}")
         self.console.print()
-
+    
         # Prepare prompts payload for pipeline
         prompts_payload = []
         for pc in prompt_configs:
@@ -6286,10 +9230,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'expected_keys': pc['prompt']['keys'],
                 'prefix': pc['prefix']
             })
-
+    
         # Determine annotation mode
         annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
-
+    
         # Build pipeline config
         pipeline_config = {
             'mode': 'file',
@@ -6299,7 +9243,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'text_column': text_column,
             'text_columns': [text_column],
             'annotation_column': 'annotation',
-            'identifier_column': 'annotation_id',  # Will be created if doesn't exist
+            'identifier_column': identifier_column,  # From Step 2b: User-selected ID strategy
             'run_annotation': True,
             'annotation_mode': annotation_mode,
             'annotation_provider': provider,
@@ -6324,8 +9268,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'batch_size': batch_size,
             'run_validation': False,
             'run_training': False,
+            'lang_column': lang_column,  # From Step 4b: Language column for training metadata
         }
-
+    
         # Add model-specific options
         if provider == 'ollama':
             options = {
@@ -6335,13 +9280,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'top_k': top_k
             }
             pipeline_config['options'] = options
-
+    
         # ============================================================
         # SAVE REPRODUCIBILITY METADATA
         # ============================================================
         if save_metadata:
             import json
-
+    
             # Build comprehensive metadata
             metadata = {
                 'annotation_session': {
@@ -6395,10 +9340,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'labelstudio_direct_export': labelstudio_direct_export if export_to_labelstudio else False,
                     'labelstudio_api_url': labelstudio_api_url if export_to_labelstudio else None,
                     'labelstudio_api_key': labelstudio_api_key if export_to_labelstudio else None
+                },
+                'training_workflow': {
+                    'enabled': False,  # Will be updated after training workflow
+                    'training_params_file': None,  # Will be added after training
+                    'note': 'Training parameters will be saved separately after annotation completes'
                 }
             }
 
-            # Save metadata JSON
+            # Save metadata JSON (PRE-ANNOTATION SAVE POINT 1)
             metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
             metadata_path = annotations_dir / metadata_filename
 
@@ -6408,19 +9358,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
             self.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
             self.console.print(f"   {metadata_path}\n")
-
+    
         # Execute pipeline with Rich progress
         try:
             self.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
-
+    
             # Create pipeline controller
             from ..pipelines.pipeline_controller import PipelineController
             pipeline_with_progress = PipelineController(settings=self.settings)
-
+    
             # Use RichProgressManager for elegant display
             from ..utils.rich_progress_manager import RichProgressManager
             from ..pipelines.enhanced_pipeline_wrapper import EnhancedPipelineWrapper
-
+    
             with RichProgressManager(
                 show_json_every=1,  # Show JSON sample for every annotation
                 compact_mode=False   # Full preview panels
@@ -6430,10 +9380,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     pipeline_with_progress,
                     progress_manager
                 )
-
+    
                 # Run pipeline
                 state = enhanced_pipeline.run_pipeline(pipeline_config)
-
+    
                 # Check for errors
                 if state.errors:
                     error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
@@ -6441,7 +9391,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print("[dim]Press Enter to return to menu...[/dim]")
                     input()
                     return
-
+    
             # Get results
             annotation_results = state.annotation_results or {}
             output_file = annotation_results.get('output_file', str(default_output_path))
@@ -6462,6 +9412,127 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     success_rate = (success_count / total_annotated * 100)
                     self.console.print(f"   Success rate: {success_rate:.1f}%")
 
+            # ============================================================
+            # AUTOMATIC LANGUAGE DETECTION (if no language column provided)
+            # ============================================================
+            if not lang_column:
+                self.console.print("\n[bold cyan]🌍 Language Detection for Training[/bold cyan]")
+                self.console.print("[yellow]No language column was provided. Detecting languages for training...[/yellow]\n")
+
+                try:
+                    import pandas as pd
+                    from llm_tool.utils.language_detector import LanguageDetector
+
+                    # Load annotated file
+                    df_annotated = pd.read_csv(output_file)
+
+                    # CRITICAL: Only detect languages for ANNOTATED rows
+                    # The output file may contain ALL original rows, but we only want to detect
+                    # languages for rows that were actually annotated
+                    original_row_count = len(df_annotated)
+
+                    # Try to identify annotated rows by checking for annotation columns
+                    # Common annotation column names: 'label', 'category', 'annotation', 'labels'
+                    annotation_cols = [col for col in df_annotated.columns if col in ['label', 'labels', 'category', 'annotation', 'predicted_label']]
+
+                    if annotation_cols:
+                        # Filter to only rows that have annotations (non-null in annotation column)
+                        annotation_col = annotation_cols[0]
+                        df_annotated = df_annotated[df_annotated[annotation_col].notna()].copy()
+                        self.console.print(f"[dim]Filtering to {len(df_annotated):,} annotated rows (out of {original_row_count:,} total rows in file)[/dim]")
+                    else:
+                        self.console.print(f"[yellow]⚠️  Could not identify annotation column. Processing all {original_row_count:,} rows.[/yellow]")
+
+                    if len(df_annotated) == 0:
+                        self.console.print("[yellow]⚠️  No annotated rows found. Skipping language detection.[/yellow]")
+                    elif text_column in df_annotated.columns:
+                        # Get ALL texts (including NaN) to maintain index alignment
+                        all_texts = df_annotated[text_column].tolist()
+
+                        # Count non-empty texts for display
+                        non_empty_texts = sum(1 for text in all_texts if pd.notna(text) and len(str(text).strip()) > 10)
+
+                        if non_empty_texts > 0:
+                            detector = LanguageDetector()
+                            detected_languages = []
+
+                            # Progress indicator
+                            from tqdm import tqdm
+                            self.console.print(f"[dim]Analyzing {non_empty_texts} texts...[/dim]")
+
+                            for text in tqdm(all_texts, desc="Detecting languages", disable=not HAS_RICH):
+                                # Handle NaN and empty texts
+                                if pd.isna(text) or not text or len(str(text).strip()) <= 10:
+                                    detected_languages.append('unknown')
+                                else:
+                                    try:
+                                        detected = detector.detect(str(text))
+                                        if detected and detected.get('language'):
+                                            detected_languages.append(detected['language'])
+                                        else:
+                                            detected_languages.append('unknown')
+                                    except Exception as e:
+                                        self.logger.debug(f"Language detection failed for text: {e}")
+                                        detected_languages.append('unknown')
+
+                            # Add language column to the filtered dataframe
+                            df_annotated['lang'] = detected_languages
+
+                            # Reload the FULL original file and update only the annotated rows
+                            df_full = pd.read_csv(output_file)
+
+                            # Initialize lang column if it doesn't exist
+                            if 'lang' not in df_full.columns:
+                                df_full['lang'] = 'unknown'
+
+                            # Update language for annotated rows only
+                            # Match by index of df_annotated within df_full
+                            df_full.loc[df_annotated.index, 'lang'] = df_annotated['lang'].values
+
+                            # Save updated full file with language column
+                            df_full.to_csv(output_file, index=False)
+
+                            # Show distribution
+                            lang_counts = {}
+                            for lang in detected_languages:
+                                if lang != 'unknown':
+                                    lang_counts[lang] = lang_counts.get(lang, 0) + 1
+
+                            if lang_counts:
+                                total = sum(lang_counts.values())
+                                self.console.print(f"\n[bold]🌍 Languages Detected ({total:,} texts):[/bold]")
+
+                                lang_table = Table(border_style="cyan", show_header=True, header_style="bold")
+                                lang_table.add_column("Language", style="cyan", width=12)
+                                lang_table.add_column("Count", style="yellow", justify="right", width=12)
+                                lang_table.add_column("Percentage", style="green", justify="right", width=12)
+
+                                for lang, count in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True):
+                                    percentage = (count / total * 100) if total > 0 else 0
+                                    lang_table.add_row(
+                                        lang.upper(),
+                                        f"{count:,}",
+                                        f"{percentage:.1f}%"
+                                    )
+
+                                self.console.print(lang_table)
+                                self.console.print(f"\n[green]✓ Language column 'lang' added to {output_file}[/green]")
+                            else:
+                                self.console.print("[yellow]⚠️  No languages detected successfully[/yellow]")
+
+                except Exception as e:
+                    self.console.print(f"[yellow]⚠️  Language detection failed: {e}[/yellow]")
+                    self.logger.exception("Language detection failed")
+
+            # ============================================================
+            # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)
+            # ============================================================
+            self._post_annotation_training_workflow(
+                output_file=output_file,
+                text_column=text_column,
+                prompt_configs=prompt_configs
+            )
+
             # Export to Doccano JSONL if requested
             if export_to_doccano:
                 self._export_to_doccano_jsonl(
@@ -6472,7 +9543,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     timestamp=timestamp,
                     sample_size=export_sample_size
                 )
-
+    
             # Export to Label Studio if requested
             if export_to_labelstudio:
                 if labelstudio_direct_export:
@@ -6499,17 +9570,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         sample_size=export_sample_size,
                         prediction_mode=prediction_mode
                     )
-
+    
             self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
             input()
-
+    
         except Exception as exc:
             self.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
             self.logger.exception("Annotation execution failed")
             self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
             input()
-
-    def _display_metadata_parameters(self, metadata: dict):
         """Display all parameters from metadata in a formatted way"""
         self.console.print("\n[bold cyan]📋 Saved Parameters[/bold cyan]\n")
 
@@ -6982,6 +10051,27 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 if success_count:
                     success_rate = (success_count / total_annotated * 100)
                     self.console.print(f"   Success rate: {success_rate:.1f}%")
+
+            # ============================================================
+            # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)
+            # ============================================================
+            # Build prompt_configs for training workflow
+            prompt_configs_for_training = []
+            for p in prompts:
+                prompt_configs_for_training.append({
+                    'prompt': {
+                        'keys': p.get('expected_keys', []),
+                        'content': p.get('prompt_content', p.get('prompt', '')),
+                        'name': p.get('name', 'prompt')
+                    },
+                    'prefix': p.get('prefix', '')
+                })
+
+            self._post_annotation_training_workflow(
+                output_file=output_file,
+                text_column=data_source.get('text_column', 'text'),
+                prompt_configs=prompt_configs_for_training
+            )
 
             # Export to Doccano JSONL if enabled in preferences
             if export_to_doccano:
@@ -8040,17 +11130,1412 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         config_parts.append('</View>')
         return '\n'.join(config_parts)
 
+    def _get_common_annotation_options(self, total_rows=None, provider=None, model_name=None):
+        """
+        Common annotation options workflow used by both CSV and SQL annotation modes.
+
+        Returns a dict with all configuration options:
+        - annotation_limit, sample_strategy, num_processes, save_incrementally, batch_size
+        - temperature, max_tokens, top_p, top_k
+        - save_metadata, export_to_doccano, export_to_labelstudio, etc.
+        """
+        config = {}
+
+        # ============================================================
+        # DATASET SCOPE
+        # ============================================================
+        self.console.print("\n[bold cyan]📊 Dataset Scope[/bold cyan]")
+        self.console.print("[dim]Determine how many rows to annotate from your dataset[/dim]\n")
+
+        if total_rows:
+            self.console.print(f"[green]✓ Dataset contains {total_rows:,} rows[/green]\n")
+
+        # Option 1: Annotate all or limited
+        self.console.print("[yellow]Option 1:[/yellow] Annotate ALL rows vs LIMIT to specific number")
+        self.console.print("  • [cyan]all[/cyan]   - Annotate the entire dataset")
+        self.console.print("           [dim]Use this for production annotations[/dim]")
+        self.console.print("  • [cyan]limit[/cyan] - Specify exact number of rows to annotate")
+        self.console.print("           [dim]Use this for testing or partial annotation[/dim]")
+
+        scope_choice = Prompt.ask(
+            "\nAnnotate entire dataset or limit rows?",
+            choices=["all", "limit"],
+            default="all"
+        )
+
+        annotation_limit = None
+        use_sample = False
+        sample_strategy = "head"
+
+        if scope_choice == "limit":
+            # Ask for specific number
+            annotation_limit = self._int_prompt_with_validation(
+                "How many rows to annotate?",
+                default=100,
+                min_value=1,
+                max_value=total_rows if total_rows else 1000000
+            )
+
+            # Option 2: Calculate representative sample
+            if total_rows and total_rows > 1000:
+                self.console.print("\n[yellow]Option 2:[/yellow] Representative Sample Calculation")
+                self.console.print("  Calculate statistically representative sample size (95% confidence interval)")
+                self.console.print(f"  [dim]• Current selection: {annotation_limit} rows[/dim]")
+
+                calculate_sample = Confirm.ask("Calculate representative sample size?", default=False)
+
+                if calculate_sample:
+                    # Formula: n = (Z² × p × (1-p)) / E²
+                    # For 95% CI: Z=1.96, p=0.5 (max variance), E=0.05 (5% margin)
+                    import math
+                    z = 1.96
+                    p = 0.5
+                    e = 0.05
+                    n_infinite = (z**2 * p * (1-p)) / (e**2)
+                    n_adjusted = n_infinite / (1 + ((n_infinite - 1) / total_rows))
+                    recommended_sample = int(math.ceil(n_adjusted))
+
+                    self.console.print(f"\n[green]📈 Recommended sample size: {recommended_sample} rows[/green]")
+                    self.console.print(f"[dim]   (95% confidence level, 5% margin of error)[/dim]")
+
+                    use_recommended = Confirm.ask(f"Use recommended sample size ({recommended_sample} rows)?", default=True)
+                    if use_recommended:
+                        annotation_limit = recommended_sample
+                        use_sample = True
+
+            # Option 3: Random sampling
+            self.console.print("\n[yellow]Option 3:[/yellow] Sampling Strategy")
+            self.console.print("  Choose how to select the rows to annotate")
+            self.console.print("  • [cyan]head[/cyan]   - Take first N rows (faster, sequential)")
+            self.console.print("           [dim]Good for testing, preserves order[/dim]")
+            self.console.print("  • [cyan]random[/cyan] - Random sample of N rows (representative)")
+            self.console.print("           [dim]Better for statistical validity, unbiased[/dim]")
+
+            sample_strategy = Prompt.ask(
+                "\nSampling strategy",
+                choices=["head", "random"],
+                default="random" if use_sample else "head"
+            )
+
+        config['annotation_limit'] = annotation_limit
+        config['sample_strategy'] = sample_strategy
+
+        # ============================================================
+        # PARALLEL PROCESSING
+        # ============================================================
+        self.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
+        self.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
+
+        self.console.print("[yellow]Parallel Workers:[/yellow]")
+        self.console.print("  Number of simultaneous annotation processes")
+        self.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
+        self.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
+        self.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
+        self.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
+        self.console.print("           [dim]Recommended for: Local models (Ollama), first time users, debugging[/dim]")
+        self.console.print("  • [cyan]2-4 workers[/cyan] - Moderate parallelism")
+        self.console.print("           [dim]Recommended for: API models (OpenAI, Claude) - avoid rate limits[/dim]")
+        self.console.print("  • [cyan]4-8 workers[/cyan] - High parallelism")
+        self.console.print("           [dim]Recommended for: API models only - requires high rate limits[/dim]")
+
+        num_processes = self._int_prompt_with_validation("Parallel workers", 1, 1, 16)
+        config['num_processes'] = num_processes
+
+        # ============================================================
+        # INCREMENTAL SAVE
+        # ============================================================
+        self.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
+        self.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
+
+        self.console.print("[yellow]Enable incremental save?[/yellow]")
+        self.console.print("  • [green]Yes[/green] - Save progress regularly during annotation (recommended)")
+        self.console.print("           [dim]Protects against crashes, allows resuming, safer for long runs[/dim]")
+        self.console.print("  • [red]No[/red]  - Save only at the end")
+        self.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
+
+        save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
+        config['save_incrementally'] = save_incrementally
+
+        # Only ask for batch size if incremental save is enabled
+        if save_incrementally:
+            self.console.print("\n[yellow]Batch Size:[/yellow]")
+            self.console.print("  Number of rows processed between each save")
+            self.console.print("  • [cyan]Smaller (1-10)[/cyan]   - Very frequent saves, maximum safety")
+            self.console.print("           [dim]Use for: Unstable systems, expensive APIs, testing[/dim]")
+            self.console.print("  • [cyan]Medium (10-50)[/cyan]   - Balanced safety and performance")
+            self.console.print("           [dim]Use for: Most production cases[/dim]")
+            self.console.print("  • [cyan]Larger (50-200)[/cyan]  - Less frequent saves, better performance")
+            self.console.print("           [dim]Use for: Stable systems, large datasets, local models[/dim]")
+
+            batch_size = self._int_prompt_with_validation("Batch size", 10, 1, 1000)
+        else:
+            batch_size = None  # Not used when incremental save is disabled
+
+        config['batch_size'] = batch_size
+
+        # ============================================================
+        # MODEL PARAMETERS
+        # ============================================================
+        self.console.print("\n[bold cyan]🎛️  Model Parameters[/bold cyan]")
+        self.console.print("[dim]Configure advanced model generation parameters[/dim]\n")
+
+        # Check if model supports parameter tuning
+        model_name_lower = model_name.lower() if model_name else ""
+        is_o_series = any(x in model_name_lower for x in ['o1', 'o3', 'o4'])
+        supports_params = not is_o_series
+
+        if not supports_params:
+            self.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
+            self.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
+            configure_params = False
+        else:
+            self.console.print("[yellow]Configure model parameters?[/yellow]")
+            self.console.print("  Adjust how the model generates responses")
+            self.console.print("  [dim]• Default values work well for most cases[/dim]")
+            self.console.print("  [dim]• Advanced users can fine-tune for specific needs[/dim]")
+            configure_params = Confirm.ask("\nConfigure model parameters?", default=False)
+
+        # Default values
+        temperature = 0.7
+        max_tokens = 1000
+        top_p = 1.0
+        top_k = 40
+
+        if configure_params:
+            self.console.print("\n[bold]Parameter Explanations:[/bold]\n")
+
+            # Temperature
+            self.console.print("[cyan]🌡️  Temperature (0.0 - 2.0):[/cyan]")
+            self.console.print("  Controls randomness in responses")
+            self.console.print("  • [green]Low (0.0-0.3)[/green]  - Deterministic, focused, consistent")
+            self.console.print("           [dim]Use for: Structured tasks, factual extraction, classification[/dim]")
+            self.console.print("  • [yellow]Medium (0.4-0.9)[/yellow] - Balanced creativity and consistency")
+            self.console.print("           [dim]Use for: General annotation, most use cases[/dim]")
+            self.console.print("  • [red]High (1.0-2.0)[/red]  - Creative, varied, unpredictable")
+            self.console.print("           [dim]Use for: Brainstorming, diverse perspectives[/dim]")
+            temperature = FloatPrompt.ask("Temperature", default=0.7)
+
+            # Max tokens
+            self.console.print("\n[cyan]📏 Max Tokens:[/cyan]")
+            self.console.print("  Maximum length of the response")
+            self.console.print("  • [green]Short (100-500)[/green]   - Brief responses, simple annotations")
+            self.console.print("  • [yellow]Medium (500-2000)[/yellow]  - Standard responses, detailed annotations")
+            self.console.print("  • [red]Long (2000+)[/red]     - Extensive responses, complex reasoning")
+            self.console.print("  [dim]Note: More tokens = higher API costs[/dim]")
+            max_tokens = self._int_prompt_with_validation("Max tokens", 1000, 50, 8000)
+
+            # Top_p (nucleus sampling)
+            self.console.print("\n[cyan]🎯 Top P (0.0 - 1.0):[/cyan]")
+            self.console.print("  Nucleus sampling - alternative to temperature")
+            self.console.print("  • [green]Low (0.1-0.5)[/green]  - Focused on most likely tokens")
+            self.console.print("           [dim]More deterministic, safer outputs[/dim]")
+            self.console.print("  • [yellow]High (0.9-1.0)[/yellow] - Consider broader token range")
+            self.console.print("           [dim]More creative, diverse outputs[/dim]")
+            self.console.print("  [dim]Tip: Use either temperature OR top_p, not both aggressively[/dim]")
+            top_p = FloatPrompt.ask("Top P", default=1.0)
+
+            # Top_k (only for some models)
+            if provider and provider in ['ollama', 'google']:
+                self.console.print("\n[cyan]🔢 Top K:[/cyan]")
+                self.console.print("  Limits vocabulary to K most likely next tokens")
+                self.console.print("  • [green]Small (1-10)[/green]   - Very focused, repetitive")
+                self.console.print("  • [yellow]Medium (20-50)[/yellow]  - Balanced diversity")
+                self.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
+                top_k = self._int_prompt_with_validation("Top K", 40, 1, 100)
+
+        config['temperature'] = temperature
+        config['max_tokens'] = max_tokens
+        config['top_p'] = top_p
+        config['top_k'] = top_k
+
+        # ============================================================
+        # REPRODUCIBILITY METADATA
+        # ============================================================
+        self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
+        self.console.print("[yellow]⚠️  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
+
+        self.console.print("  [green]1. Resume Capability[/green]")
+        self.console.print("     • Continue this annotation if it stops or crashes")
+        self.console.print("     • Annotate additional rows later with same settings")
+        self.console.print("     • Access via 'Resume/Relaunch Annotation' workflow\n")
+
+        self.console.print("  [green]2. Scientific Reproducibility[/green]")
+        self.console.print("     • Document exact parameters for research papers")
+        self.console.print("     • Reproduce identical annotations in the future")
+        self.console.print("     • Track model version, prompts, and all settings\n")
+
+        self.console.print("  [red]⚠️  If you choose NO:[/red]")
+        self.console.print("     • You CANNOT resume this annotation later")
+        self.console.print("     • You CANNOT relaunch with same parameters")
+        self.console.print("     • Parameters will be lost forever\n")
+
+        save_metadata = Confirm.ask(
+            "[bold yellow]Save annotation parameters to JSON file?[/bold yellow]",
+            default=True
+        )
+        config['save_metadata'] = save_metadata
+
+        # ============================================================
+        # VALIDATION TOOL EXPORT OPTION
+        # ============================================================
+        self.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
+        self.console.print("[dim]Export annotations to JSONL format for human validation[/dim]\n")
+
+        self.console.print("[yellow]Available validation tools:[/yellow]")
+        self.console.print("  • [cyan]Doccano[/cyan] - Simple, lightweight NLP annotation tool")
+        self.console.print("  • [cyan]Label Studio[/cyan] - Advanced, feature-rich annotation platform")
+        self.console.print("  • Both are open-source and free\n")
+
+        self.console.print("[green]Why validate with external tools?[/green]")
+        self.console.print("  • Review and correct LLM annotations")
+        self.console.print("  • Calculate inter-annotator agreement")
+        self.console.print("  • Export validated data for metrics calculation\n")
+
+        # Initialize export flags
+        export_to_doccano = False
+        export_to_labelstudio = False
+        export_sample_size = None
+        labelstudio_direct_export = False
+        labelstudio_api_url = None
+        labelstudio_api_key = None
+        prediction_mode = "with"
+
+        # Step 1: Ask if user wants to export
+        export_confirm = Confirm.ask(
+            "[bold yellow]Export to validation tool?[/bold yellow]",
+            default=False
+        )
+
+        if export_confirm:
+            # Step 2: Ask which tool to export to
+            tool_choice = Prompt.ask(
+                "[bold yellow]Which validation tool?[/bold yellow]",
+                choices=["doccano", "labelstudio"],
+                default="doccano"
+            )
+
+            # Set the appropriate export flag
+            if tool_choice == "doccano":
+                export_to_doccano = True
+            else:  # labelstudio
+                export_to_labelstudio = True
+
+            # Step 2b: If Label Studio, ask export method
+            if export_to_labelstudio:
+                self.console.print("\n[yellow]Label Studio export method:[/yellow]")
+                self.console.print("  • [cyan]jsonl[/cyan] - Export to JSONL file (manual import)")
+                if HAS_REQUESTS:
+                    self.console.print("  • [cyan]direct[/cyan] - Direct export to Label Studio via API\n")
+                    export_choices = ["jsonl", "direct"]
+                else:
+                    self.console.print("  • [dim]direct[/dim] - Direct export via API [dim](requires 'requests' library)[/dim]\n")
+                    export_choices = ["jsonl"]
+
+                export_method = Prompt.ask(
+                    "[bold yellow]Export method[/bold yellow]",
+                    choices=export_choices,
+                    default="jsonl"
+                )
+
+                if export_method == "direct":
+                    labelstudio_direct_export = True
+
+                    self.console.print("\n[cyan]Label Studio API Configuration:[/cyan]")
+                    labelstudio_api_url = Prompt.ask(
+                        "Label Studio URL",
+                        default="http://localhost:8080"
+                    )
+
+                    labelstudio_api_key = Prompt.ask(
+                        "API Key (from Label Studio Account & Settings)"
+                    )
+
+            # Step 3: Ask about LLM predictions inclusion
+            self.console.print("\n[yellow]Include LLM predictions in export?[/yellow]")
+            self.console.print("  • [cyan]with[/cyan] - Include LLM annotations as predictions (for review/correction)")
+            self.console.print("  • [cyan]without[/cyan] - Export only data without predictions (for manual annotation)")
+            self.console.print("  • [cyan]both[/cyan] - Create two files: one with and one without predictions\n")
+
+            prediction_mode = Prompt.ask(
+                "[bold yellow]Prediction mode[/bold yellow]",
+                choices=["with", "without", "both"],
+                default="with"
+            )
+
+            # Step 4: Ask how many sentences to export
+            self.console.print("\n[yellow]How many annotated sentences to export?[/yellow]")
+            self.console.print("  • [cyan]all[/cyan] - Export all annotated sentences")
+            self.console.print("  • [cyan]number[/cyan] - Specify exact number\n")
+
+            sample_choice = Prompt.ask(
+                "[bold yellow]Export sample[/bold yellow]",
+                choices=["all", "number"],
+                default="all"
+            )
+
+            if sample_choice == "number":
+                export_sample_size = IntPrompt.ask(
+                    "Number of items to export",
+                    default=100
+                )
+            else:
+                export_sample_size = "all"
+
+        config['export_to_doccano'] = export_to_doccano
+        config['export_to_labelstudio'] = export_to_labelstudio
+        config['labelstudio_direct_export'] = labelstudio_direct_export
+        config['labelstudio_api_url'] = labelstudio_api_url
+        config['labelstudio_api_key'] = labelstudio_api_key
+        config['prediction_mode'] = prediction_mode
+        config['export_sample_size'] = export_sample_size
+
+        return config
+
     def _database_annotator(self):
-        """PostgreSQL direct annotator"""
-        self.console.print("\n[bold cyan]🗄️  Database Annotator[/bold cyan]\n")
-        self.console.print("[yellow]⚙️  Database Annotator coming soon...[/yellow]")
-        self.console.print("[dim]Press Enter to continue...[/dim]")
-        input()
+        """
+        Comprehensive SQL Database Annotator
+
+        Supports multiple database systems with intelligent sampling and flexible output options.
+        """
+        self.console.print("\n[bold cyan]🗄️  SQL Database Annotator[/bold cyan]\n")
+
+        # ========================================
+        # STEP 1/9: Database Connection
+        # ========================================
+        self.console.print("[bold cyan]Step 1/9: Database Connection[/bold cyan]\n")
+
+        # Database type selection
+        db_choices = [
+            "PostgreSQL",
+            "MySQL",
+            "SQLite",
+            "Microsoft SQL Server",
+            "← Back to main menu"
+        ]
+
+        # Display database type choices
+        db_table = Table(title="Database Types", box=box.ROUNDED)
+        db_table.add_column("#", style="cyan", justify="right", width=4)
+        db_table.add_column("Database Type", style="green", width=30)
+
+        for idx, db_choice in enumerate(db_choices, 1):
+            db_table.add_row(str(idx), db_choice)
+
+        self.console.print(db_table)
+
+        db_type = Prompt.ask(
+            "\n[cyan]Select database type[/cyan]",
+            choices=[str(i) for i in range(1, len(db_choices) + 1)],
+            default="1"
+        )
+
+        db_type_idx = int(db_type) - 1
+        if db_type_idx == len(db_choices) - 1:
+            return
+
+        db_type_name = db_choices[db_type_idx]
+
+        # Build connection string based on database type
+        if db_type_name == "SQLite":
+            db_path = Prompt.ask("\n[cyan]Enter SQLite database file path[/cyan]")
+            db_path = os.path.expanduser(db_path)
+            if not os.path.exists(db_path):
+                self.console.print(f"[red]✗ Database file not found: {db_path}[/red]")
+                input("\nPress Enter to continue...")
+                return
+            connection_string = f"sqlite:///{db_path}"
+        else:
+            # For server-based databases
+            host = Prompt.ask("\n[cyan]Database host[/cyan]", default="localhost")
+            port_defaults = {
+                "PostgreSQL": "5432",
+                "MySQL": "3306",
+                "Microsoft SQL Server": "1433"
+            }
+            port = Prompt.ask("[cyan]Port[/cyan]", default=port_defaults.get(db_type_name, "5432"))
+            username = Prompt.ask("[cyan]Username[/cyan]", default="postgres" if db_type_name == "PostgreSQL" else "root")
+
+            # Password (hidden input)
+            import getpass
+            self.console.print("[cyan]Password:[/cyan] ", end="")
+            password = getpass.getpass("")
+
+            database = Prompt.ask("[cyan]Database name[/cyan]")
+
+            # Build connection string
+            if db_type_name == "PostgreSQL":
+                connection_string = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+            elif db_type_name == "MySQL":
+                connection_string = f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
+            elif db_type_name == "Microsoft SQL Server":
+                connection_string = f"mssql+pyodbc://{username}:{password}@{host}:{port}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
+
+        # Test connection
+        self.console.print("\n[cyan]Testing database connection...[/cyan]")
+        try:
+            from sqlalchemy import create_engine, inspect, text
+            engine = create_engine(connection_string)
+            with engine.connect() as conn:
+                self.console.print("[green]✓ Connection successful![/green]")
+        except Exception as e:
+            self.console.print(f"[red]✗ Connection failed: {str(e)}[/red]")
+            input("\nPress Enter to continue...")
+            return
+
+        # ========================================
+        # STEP 2/9: Table Selection
+        # ========================================
+        self.console.print("\n[bold cyan]Step 2/9: Table Selection[/bold cyan]\n")
+
+        try:
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+
+            if not tables:
+                self.console.print("[yellow]No tables found in database[/yellow]")
+                input("\nPress Enter to continue...")
+                return
+
+            # Display tables with row counts
+            table_info = Table(title="Available Tables", box=box.ROUNDED)
+            table_info.add_column("#", style="cyan", justify="right")
+            table_info.add_column("Table Name", style="green")
+            table_info.add_column("Rows", style="yellow", justify="right")
+
+            table_row_counts = {}
+            for idx, table_name in enumerate(tables, 1):
+                try:
+                    with engine.connect() as conn:
+                        result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
+                        row_count = result.scalar()
+                        table_row_counts[table_name] = row_count
+                        table_info.add_row(str(idx), table_name, f"{row_count:,}")
+                except:
+                    table_info.add_row(str(idx), table_name, "N/A")
+
+            self.console.print(table_info)
+
+            table_choice = Prompt.ask(
+                "\n[cyan]Select table[/cyan]",
+                choices=[str(i) for i in range(1, len(tables) + 1)]
+            )
+
+            selected_table = tables[int(table_choice) - 1]
+            total_rows = table_row_counts.get(selected_table, 0)
+
+            self.console.print(f"\n[green]✓ Selected table: {selected_table} ({total_rows:,} rows)[/green]")
+
+        except Exception as e:
+            self.console.print(f"[red]✗ Error accessing tables: {str(e)}[/red]")
+            input("\nPress Enter to continue...")
+            return
+
+        # ========================================
+        # STEP 3/9: Column Selection (Intelligent Detection)
+        # ========================================
+        self.console.print("\n[bold cyan]Step 3/9: Column Selection with Intelligent Detection[/bold cyan]\n")
+
+        try:
+            columns = inspector.get_columns(selected_table)
+
+            # Load sample data for intelligent detection
+            self.console.print("[cyan]Analyzing columns...[/cyan]")
+            sample_query = f"SELECT * FROM {selected_table} LIMIT 100"
+            df_sample = pd.read_sql(sample_query, engine)
+
+            # Detect text columns intelligently
+            text_candidates = []
+            id_candidates = []
+
+            for col_info in columns:
+                col_name = col_info['name']
+                if col_name not in df_sample.columns:
+                    continue
+
+                # Check if it's a potential ID column
+                col_lower = col_name.lower()
+                if any(id_keyword in col_lower for id_keyword in ['id', 'key', 'index', 'number', 'num', 'pk']):
+                    # Check if values are unique
+                    is_unique = df_sample[col_name].nunique() == len(df_sample[col_name].dropna())
+                    if is_unique:
+                        id_candidates.append({
+                            'name': col_name,
+                            'type': str(col_info['type']),
+                            'confidence': 'high' if 'id' in col_lower else 'medium'
+                        })
+
+                # Check if it's a text column (object/string type)
+                if df_sample[col_name].dtype == 'object':
+                    # Get non-null samples
+                    non_null = df_sample[col_name].dropna()
+                    if len(non_null) == 0:
+                        continue
+
+                    # Calculate average length
+                    avg_length = non_null.astype(str).str.len().mean()
+                    sample_value = str(non_null.iloc[0])[:80] if len(non_null) > 0 else ""
+
+                    # Determine confidence based on average length
+                    if avg_length > 100:
+                        confidence = "high"
+                    elif avg_length > 50:
+                        confidence = "medium"
+                    elif avg_length > 20:
+                        confidence = "low"
+                    else:
+                        continue  # Skip very short text
+
+                    text_candidates.append({
+                        'name': col_name,
+                        'confidence': confidence,
+                        'avg_length': avg_length,
+                        'sample': sample_value
+                    })
+
+            # Sort candidates
+            confidence_order = {"high": 0, "medium": 1, "low": 2}
+            text_candidates.sort(key=lambda x: (confidence_order[x['confidence']], -x['avg_length']))
+            id_candidates.sort(key=lambda x: (confidence_order.get(x['confidence'], 3)))
+
+            # Display columns with intelligent suggestions
+            col_table = Table(title=f"Columns in '{selected_table}'", box=box.ROUNDED)
+            col_table.add_column("#", style="cyan", justify="right", width=4)
+            col_table.add_column("Column Name", style="green", width=25)
+            col_table.add_column("Type", style="yellow", width=20)
+            col_table.add_column("Detection", style="magenta", width=30)
+
+            detected_text_col = None
+            detected_id_col = None
+
+            for idx, col in enumerate(columns, 1):
+                col_name = col['name']
+                col_type = str(col['type'])
+                detection = ""
+
+                # Check if it's a suggested text column
+                text_match = next((tc for tc in text_candidates if tc['name'] == col_name), None)
+                if text_match:
+                    if text_match['confidence'] == 'high':
+                        detection = "📝 Text (High confidence)"
+                        if detected_text_col is None:
+                            detected_text_col = idx
+                    elif text_match['confidence'] == 'medium':
+                        detection = "📝 Text (Medium)"
+                    else:
+                        detection = "📝 Text (Low)"
+
+                # Check if it's a suggested ID column
+                id_match = next((ic for ic in id_candidates if ic['name'] == col_name), None)
+                if id_match:
+                    if id_match['confidence'] == 'high':
+                        detection = "🔑 ID (Recommended)"
+                        if detected_id_col is None:
+                            detected_id_col = idx
+                    else:
+                        detection = "🔑 ID (Possible)"
+
+                col_table.add_row(str(idx), col_name, col_type, detection)
+
+            self.console.print(col_table)
+
+            # Select text column with intelligent default
+            if detected_text_col:
+                self.console.print(f"\n[cyan]💡 Suggested text column: '{columns[detected_text_col-1]['name']}' (detected automatically)[/cyan]")
+
+            text_col_choice = Prompt.ask(
+                "\n[cyan]Select TEXT column (to annotate)[/cyan]",
+                choices=[str(i) for i in range(1, len(columns) + 1)],
+                default=str(detected_text_col) if detected_text_col else "1"
+            )
+            text_column = columns[int(text_col_choice) - 1]['name']
+
+            # Select ID column with intelligent default
+            if Confirm.ask("\n[cyan]Do you want to select an ID column?[/cyan]", default=True):
+                if detected_id_col:
+                    self.console.print(f"\n[cyan]💡 Suggested ID column: '{columns[detected_id_col-1]['name']}' (unique values detected)[/cyan]")
+
+                id_col_choice = Prompt.ask(
+                    "\n[cyan]Select ID column[/cyan]",
+                    choices=[str(i) for i in range(1, len(columns) + 1)],
+                    default=str(detected_id_col) if detected_id_col else "1"
+                )
+                id_column = columns[int(id_col_choice) - 1]['name']
+            else:
+                id_column = None
+
+            self.console.print(f"\n[green]✓ Text column: {text_column}[/green]")
+            if id_column:
+                self.console.print(f"[green]✓ ID column: {id_column}[/green]")
+
+        except Exception as e:
+            self.console.print(f"[red]✗ Error accessing columns: {str(e)}[/red]")
+            import traceback
+            self.console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            input("\nPress Enter to continue...")
+            return
+
+        # ========================================
+        # STEP 4/9: Sampling Strategy
+        # ========================================
+        self.console.print("\n[bold cyan]Step 4/9: Sampling Strategy[/bold cyan]\n")
+
+        # Calculate representative sample sizes using Cochran's formula
+        def calculate_representative_sample(population_size: int, confidence_level: float = 0.95, margin_error: float = 0.05) -> int:
+            """
+            Calculate representative sample size using Cochran's formula.
+
+            Args:
+                population_size: Total population size
+                confidence_level: Confidence level (0.90, 0.95, 0.99)
+                margin_error: Margin of error (0.03, 0.05, 0.10)
+
+            Returns:
+                Required sample size
+            """
+            import math
+
+            # Z-scores for common confidence levels
+            z_scores = {0.90: 1.645, 0.95: 1.96, 0.99: 2.576}
+            z = z_scores.get(confidence_level, 1.96)
+
+            # Assume maximum variability (p = 0.5)
+            p = 0.5
+
+            # Cochran's formula for infinite population
+            n0 = (z ** 2 * p * (1 - p)) / (margin_error ** 2)
+
+            # Adjust for finite population
+            n = n0 / (1 + (n0 - 1) / population_size)
+
+            return math.ceil(n)
+
+        # Calculate sample sizes for different confidence levels
+        sample_sizes = {
+            "95% confidence, ±5% margin": calculate_representative_sample(total_rows, 0.95, 0.05),
+            "95% confidence, ±3% margin": calculate_representative_sample(total_rows, 0.95, 0.03),
+            "99% confidence, ±5% margin": calculate_representative_sample(total_rows, 0.99, 0.05),
+            "99% confidence, ±3% margin": calculate_representative_sample(total_rows, 0.99, 0.03)
+        }
+
+        # Display sampling options
+        self.console.print(f"[cyan]Total rows in table: {total_rows:,}[/cyan]\n")
+
+        sampling_choices = [
+            f"Representative sample - {sample_sizes['95% confidence, ±5% margin']:,} rows (95% confidence, ±5% margin)",
+            f"Representative sample - {sample_sizes['95% confidence, ±3% margin']:,} rows (95% confidence, ±3% margin)",
+            f"Representative sample - {sample_sizes['99% confidence, ±5% margin']:,} rows (99% confidence, ±5% margin)",
+            f"Representative sample - {sample_sizes['99% confidence, ±3% margin']:,} rows (99% confidence, ±3% margin)",
+            "Exact number of rows (I'll specify)",
+            "Percentage of total rows",
+            "All rows (no sampling)"
+        ]
+
+        # Display sampling choices table
+        sampling_table = Table(title="Sampling Strategy Options", box=box.ROUNDED)
+        sampling_table.add_column("#", style="cyan", justify="right", width=4)
+        sampling_table.add_column("Strategy", style="green", width=70)
+
+        for idx, choice in enumerate(sampling_choices, 1):
+            sampling_table.add_row(str(idx), choice)
+
+        self.console.print(sampling_table)
+
+        sampling_choice = Prompt.ask(
+            "\n[cyan]Select sampling strategy[/cyan]",
+            choices=[str(i) for i in range(1, len(sampling_choices) + 1)],
+            default="1"
+        )
+
+        sampling_idx = int(sampling_choice) - 1
+
+        if sampling_idx < 4:
+            # Representative sample
+            sample_key = list(sample_sizes.keys())[sampling_idx]
+            num_rows = sample_sizes[sample_key]
+        elif sampling_idx == 4:
+            # Exact number
+            num_rows = IntPrompt.ask("\n[cyan]Enter exact number of rows to annotate[/cyan]", default=min(1000, total_rows))
+        elif sampling_idx == 5:
+            # Percentage
+            percentage = FloatPrompt.ask("\n[cyan]Enter percentage (0-100)[/cyan]", default=10.0)
+            num_rows = int(total_rows * percentage / 100)
+        else:
+            # All rows
+            num_rows = total_rows
+
+        # Cap at total rows
+        num_rows = min(num_rows, total_rows)
+
+        # Sampling method
+        if num_rows < total_rows:
+            sampling_method_choices = [
+                "Random sampling (recommended)",
+                "First N rows",
+                "Last N rows"
+            ]
+
+            # Display sampling method choices
+            method_table = Table(title="Sampling Method", box=box.ROUNDED)
+            method_table.add_column("#", style="cyan", justify="right", width=4)
+            method_table.add_column("Method", style="green", width=40)
+
+            for idx, method in enumerate(sampling_method_choices, 1):
+                method_table.add_row(str(idx), method)
+
+            self.console.print()
+            self.console.print(method_table)
+
+            sampling_method = Prompt.ask(
+                "\n[cyan]Select sampling method[/cyan]",
+                choices=[str(i) for i in range(1, len(sampling_method_choices) + 1)],
+                default="1"
+            )
+
+            sampling_method_idx = int(sampling_method) - 1
+            sampling_method_name = ["random", "first", "last"][sampling_method_idx]
+        else:
+            sampling_method_name = "all"
+
+        self.console.print(f"\n[green]✓ Will annotate {num_rows:,} rows using '{sampling_method_name}' sampling[/green]")
+
+        # ========================================
+        # STEP 5/9: Output Destination
+        # ========================================
+        self.console.print("\n[bold cyan]Step 5/9: Output Destination[/bold cyan]\n")
+
+        output_choices = [
+            f"Write back to same table ('{selected_table}')",
+            "Create new table in database",
+            "Export to CSV file",
+            "Export to JSON file",
+            "Export to JSONL file",
+            "Export to Excel file",
+            "Export to Parquet file",
+            "Export to RData file"
+        ]
+
+        # Display output destination choices
+        output_table = Table(title="Output Destination Options", box=box.ROUNDED)
+        output_table.add_column("#", style="cyan", justify="right", width=4)
+        output_table.add_column("Destination", style="green", width=50)
+
+        for idx, choice in enumerate(output_choices, 1):
+            output_table.add_row(str(idx), choice)
+
+        self.console.print(output_table)
+
+        output_choice = Prompt.ask(
+            "\n[cyan]Select output destination[/cyan]",
+            choices=[str(i) for i in range(1, len(output_choices) + 1)],
+            default="2"
+        )
+
+        output_idx = int(output_choice) - 1
+
+        if output_idx == 0:
+            # Same table - need annotation column name
+            annotation_column = Prompt.ask(
+                "\n[cyan]Enter name for annotation column[/cyan]",
+                default="llm_annotation"
+            )
+            output_dest = {
+                'type': 'same_table',
+                'table': selected_table,
+                'column': annotation_column
+            }
+        elif output_idx == 1:
+            # New table
+            new_table_name = Prompt.ask(
+                "\n[cyan]Enter new table name[/cyan]",
+                default=f"{selected_table}_annotated"
+            )
+            output_dest = {
+                'type': 'new_table',
+                'table': new_table_name
+            }
+        else:
+            # File export
+            file_extensions = {
+                2: 'csv',
+                3: 'json',
+                4: 'jsonl',
+                5: 'xlsx',
+                6: 'parquet',
+                7: 'rdata'
+            }
+
+            ext = file_extensions[output_idx]
+            default_filename = f"{selected_table}_annotated.{ext}"
+
+            output_file = Prompt.ask(
+                f"\n[cyan]Enter output file path[/cyan]",
+                default=default_filename
+            )
+
+            output_dest = {
+                'type': 'file',
+                'path': output_file,
+                'format': ext
+            }
+
+        # ========================================
+        # STEP 6/9: LLM Selection
+        # ========================================
+        self.console.print("\n[bold cyan]Step 6/9: LLM Selection[/bold cyan]\n")
+
+        # Reuse existing LLM selection logic
+        llm_config = self._select_llm_interactive()
+        if llm_config is None:
+            self.console.print("[yellow]LLM selection cancelled[/yellow]")
+            input("\nPress Enter to continue...")
+            return
+
+        # ========================================
+        # STEP 7/9: Prompt Configuration
+        # ========================================
+        self.console.print("\n[bold cyan]Step 7/9: Prompt Configuration[/bold cyan]\n")
+
+        # Detect prompts from prompts directory (same as other modes)
+        detected_prompts = self._detect_prompts_in_folder()
+
+        selected_prompts = []
+
+        if detected_prompts:
+            self.console.print("[bold green]✓ Detected prompts in prompts directory:[/bold green]")
+            for i, p in enumerate(detected_prompts, 1):
+                keys_str = ', '.join(p['keys'][:3]) + ('...' if len(p['keys']) > 3 else '')
+                self.console.print(f"  {i}. [cyan]{p['name']}[/cyan]")
+                self.console.print(f"     Keys ({len(p['keys'])}): {keys_str}")
+
+            # Prompt selection options
+            self.console.print("\n[bold]Prompt Selection Options:[/bold]")
+            self.console.print("  [cyan]all[/cyan]     - Use ALL detected prompts")
+            self.console.print("  [cyan]select[/cyan]  - Choose SPECIFIC prompts by number")
+            self.console.print("  [cyan]wizard[/cyan]  - 🧙‍♂️ Create NEW prompt using Social Science Wizard")
+            self.console.print("  [cyan]custom[/cyan]  - Provide path to a prompt file")
+
+            prompt_choice = Prompt.ask(
+                "\n[bold yellow]Prompt selection[/bold yellow]",
+                choices=["all", "select", "wizard", "custom"],
+                default="all"
+            )
+
+            if prompt_choice == "all":
+                selected_prompts = detected_prompts
+                self.console.print(f"[green]✓ Using all {len(selected_prompts)} prompts[/green]")
+            elif prompt_choice == "select":
+                indices = Prompt.ask("Enter prompt numbers (comma-separated, e.g., 1,3,5)")
+                if indices.strip():  # Only process if not empty
+                    for idx_str in indices.split(','):
+                        idx_str = idx_str.strip()
+                        if idx_str:  # Skip empty strings
+                            try:
+                                idx = int(idx_str) - 1
+                                if 0 <= idx < len(detected_prompts):
+                                    selected_prompts.append(detected_prompts[idx])
+                            except ValueError:
+                                self.console.print(f"[yellow]⚠️  Skipping invalid number: '{idx_str}'[/yellow]")
+                if not selected_prompts:
+                    self.console.print("[yellow]No valid prompts selected. Using all prompts.[/yellow]")
+                    selected_prompts = detected_prompts
+                else:
+                    self.console.print(f"[green]✓ Selected {len(selected_prompts)} prompts[/green]")
+            elif prompt_choice == "wizard":
+                wizard_prompt = self._run_social_science_wizard()
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(wizard_prompt)
+                selected_prompts = [{
+                    'path': None,
+                    'name': 'wizard_generated',
+                    'keys': keys,
+                    'content': wizard_prompt
+                }]
+                self.console.print(f"[green]✓ Using wizard-generated prompt with {len(keys)} keys[/green]")
+            else:
+                custom_path = Path(self._prompt_file_path("Prompt file path (.txt)"))
+                content = custom_path.read_text(encoding='utf-8')
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(content)
+                selected_prompts = [{
+                    'path': custom_path,
+                    'name': custom_path.stem,
+                    'keys': keys,
+                    'content': content
+                }]
+        else:
+            self.console.print("[yellow]No prompts found in prompts/ folder[/yellow]")
+
+            # Offer wizard or custom path
+            self.console.print("\n[bold]Prompt Options:[/bold]")
+            self.console.print("  [cyan]wizard[/cyan] - 🧙‍♂️ Create prompt using Social Science Wizard (Recommended)")
+            self.console.print("  [cyan]custom[/cyan] - Provide path to existing prompt file")
+
+            choice = Prompt.ask(
+                "\n[bold yellow]Select option[/bold yellow]",
+                choices=["wizard", "custom"],
+                default="wizard"
+            )
+
+            if choice == "wizard":
+                wizard_prompt = self._run_social_science_wizard()
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(wizard_prompt)
+                selected_prompts = [{
+                    'path': None,
+                    'name': 'wizard_generated',
+                    'keys': keys,
+                    'content': wizard_prompt
+                }]
+                self.console.print(f"[green]✓ Using wizard-generated prompt with {len(keys)} keys[/green]")
+            else:
+                custom_path = Path(self._prompt_file_path("Prompt file path (.txt)"))
+                content = custom_path.read_text(encoding='utf-8')
+                from ..annotators.json_cleaner import extract_expected_keys
+                keys = extract_expected_keys(content)
+                selected_prompts = [{
+                    'path': custom_path,
+                    'name': custom_path.stem,
+                    'keys': keys,
+                    'content': content
+                }]
+
+        if not selected_prompts:
+            self.console.print("[red]✗ No prompts selected[/red]")
+            input("\nPress Enter to continue...")
+            return
+
+        # Build prompt configs (same format as other modes)
+        prompt_configs = []
+        if len(selected_prompts) > 1:
+            self.console.print("\n[bold]Multi-Prompt Mode:[/bold] Configure key prefixes")
+            self.console.print("[dim]Prefixes help identify which prompt generated which keys[/dim]\n")
+
+            for i, p in enumerate(selected_prompts, 1):
+                default_prefix = p['name'].replace('_', '').replace('-', '')[:10]
+                prefix = Prompt.ask(
+                    f"  Prefix for '{p['name']}'",
+                    default=default_prefix
+                )
+                prompt_configs.append({
+                    'prompt': p,
+                    'prefix': prefix
+                })
+        else:
+            prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
+
+        # ========================================
+        # STEP 8/9: Common Annotation Options
+        # ========================================
+        # Use the shared function for all advanced options (same as CSV annotation)
+        common_options = self._get_common_annotation_options(
+            total_rows=total_rows,
+            provider=llm_config.provider,
+            model_name=llm_config.name
+        )
+
+        # Extract values from common options
+        annotation_limit = common_options.get('annotation_limit')
+        sample_strategy = common_options.get('sample_strategy', 'head')
+        num_processes = common_options.get('num_processes', 1)
+        save_incrementally = common_options.get('save_incrementally', True)
+        batch_size = common_options.get('batch_size', 10)
+        temperature = common_options.get('temperature', 0.7)
+        max_tokens = common_options.get('max_tokens', 1000)
+        top_p = common_options.get('top_p', 1.0)
+        top_k = common_options.get('top_k', 40)
+        save_metadata = common_options.get('save_metadata', True)
+        export_to_doccano = common_options.get('export_to_doccano', False)
+        export_to_labelstudio = common_options.get('export_to_labelstudio', False)
+        labelstudio_direct_export = common_options.get('labelstudio_direct_export', False)
+        labelstudio_api_url = common_options.get('labelstudio_api_url')
+        labelstudio_api_key = common_options.get('labelstudio_api_key')
+        prediction_mode = common_options.get('prediction_mode', 'with')
+        export_sample_size = common_options.get('export_sample_size', 'all')
+
+        # Apply annotation_limit to num_rows if specified
+        if annotation_limit:
+            num_rows = annotation_limit
+            # Update sampling_method_name based on sample_strategy
+            if sample_strategy == 'random':
+                sampling_method_name = 'random'
+            else:
+                sampling_method_name = 'first'
+
+        # Max retries parameter (not in common options, specific to annotation)
+        max_retries = IntPrompt.ask(
+            "[cyan]Max retries on failure[/cyan]",
+            default=3
+        )
+
+        # ========================================
+        # STEP 9/9: Confirmation and Execution
+        # ========================================
+        self.console.print("\n[bold cyan]Step 9/9: Review and Execute[/bold cyan]\n")
+
+        # Summary table
+        summary = Table(title="Annotation Configuration Summary", box=box.ROUNDED)
+        summary.add_column("Parameter", style="cyan")
+        summary.add_column("Value", style="green")
+
+        summary.add_row("Database Type", db_type_name)
+        summary.add_row("Table", selected_table)
+        summary.add_row("Text Column", text_column)
+        if id_column:
+            summary.add_row("ID Column", id_column)
+        summary.add_row("Total Rows", f"{total_rows:,}")
+        summary.add_row("Rows to Annotate", f"{num_rows:,}")
+        summary.add_row("Sampling Method", sampling_method_name)
+
+        if output_dest['type'] == 'same_table':
+            summary.add_row("Output", f"Same table, column '{output_dest['column']}'")
+        elif output_dest['type'] == 'new_table':
+            summary.add_row("Output", f"New table '{output_dest['table']}'")
+        else:
+            summary.add_row("Output", f"File: {output_dest['path']}")
+
+        summary.add_row("LLM Provider", llm_config.provider if llm_config else 'N/A')
+        summary.add_row("LLM Model", llm_config.name if llm_config else 'N/A')
+        summary.add_row("Prompts", f"{len(prompt_configs)} configured")
+
+        # Add all model parameters
+        summary.add_row("Temperature", str(temperature))
+        summary.add_row("Max Tokens", str(max_tokens))
+        summary.add_row("Top P", str(top_p))
+        if llm_config and llm_config.provider in ['ollama', 'google']:
+            summary.add_row("Top K", str(top_k))
+
+        # Add processing parameters
+        summary.add_row("Parallel Workers", str(num_processes))
+        summary.add_row("Batch Size", str(batch_size))
+        summary.add_row("Incremental Save", "Yes" if save_incrementally else "No")
+        summary.add_row("Max Retries", str(max_retries))
+
+        # Add export options if configured
+        if export_to_doccano or export_to_labelstudio:
+            export_tool = "Doccano" if export_to_doccano else "Label Studio"
+            summary.add_row("Export Tool", export_tool)
+            summary.add_row("Prediction Mode", prediction_mode)
+            if export_sample_size != "all":
+                summary.add_row("Export Sample", str(export_sample_size))
+
+        self.console.print(summary)
+
+        if not Confirm.ask("\n[cyan]Start annotation?[/cyan]", default=True):
+            self.console.print("[yellow]Annotation cancelled[/yellow]")
+            input("\nPress Enter to continue...")
+            return
+
+        # ========================================
+        # EXECUTION
+        # ========================================
+        self.console.print("\n[bold green]Starting annotation...[/bold green]\n")
+
+        try:
+            # Load data with sampling
+            self.console.print("[cyan]Loading data from database...[/cyan]")
+
+            if sampling_method_name == "all":
+                query = f"SELECT * FROM {selected_table}"
+            elif sampling_method_name == "random":
+                if db_type_name == "PostgreSQL":
+                    query = f"SELECT * FROM {selected_table} ORDER BY RANDOM() LIMIT {num_rows}"
+                elif db_type_name == "MySQL":
+                    query = f"SELECT * FROM {selected_table} ORDER BY RAND() LIMIT {num_rows}"
+                elif db_type_name == "SQLite":
+                    query = f"SELECT * FROM {selected_table} ORDER BY RANDOM() LIMIT {num_rows}"
+                else:
+                    query = f"SELECT TOP {num_rows} * FROM {selected_table} ORDER BY NEWID()"
+            elif sampling_method_name == "first":
+                query = f"SELECT * FROM {selected_table} LIMIT {num_rows}"
+            else:  # last
+                if db_type_name in ["PostgreSQL", "MySQL", "SQLite"]:
+                    query = f"SELECT * FROM (SELECT * FROM {selected_table} ORDER BY {id_column or '1'} DESC LIMIT {num_rows}) sub ORDER BY {id_column or '1'} ASC"
+                else:
+                    query = f"SELECT TOP {num_rows} * FROM {selected_table} ORDER BY {id_column or '1'} DESC"
+
+            df = pd.read_sql(query, engine)
+            self.console.print(f"[green]✓ Loaded {len(df):,} rows[/green]\n")
+
+            # Save DataFrame to file in data/annotations directory (same as Smart Annotate)
+            annotations_dir = self.settings.paths.data_dir / 'annotations'
+            annotations_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            safe_model_name = llm_config.name.replace(':', '_').replace('/', '_')
+
+            # Input file for pipeline
+            temp_input_filename = f"db_{selected_table}_{timestamp}.csv"
+            temp_input_file = annotations_dir / temp_input_filename
+            df.to_csv(temp_input_file, index=False)
+            self.console.print(f"[dim]Saved {len(df)} rows to: {temp_input_file}[/dim]\n")
+
+            # Output file for annotations (will be created by pipeline)
+            output_filename = f"db_{selected_table}_{safe_model_name}_annotations_{timestamp}.csv"
+            pipeline_output_file = annotations_dir / output_filename
+
+            # Build prompts payload (same format as Smart Annotate)
+            prompts_payload = []
+            for pc in prompt_configs:
+                prompt_dict = pc['prompt']
+                prefix = pc['prefix']
+                prompts_payload.append({
+                    'prompt': prompt_dict['content'],
+                    'expected_keys': prompt_dict['keys'],
+                    'prefix': prefix
+                })
+
+            # Get API key if needed
+            api_key = None
+            if llm_config.provider in ['openai', 'anthropic', 'google']:
+                api_key = self._get_api_key(llm_config.provider)
+                if not api_key:
+                    self.console.print(f"[red]API key required for {llm_config.provider}[/red]")
+                    return
+
+            # Build pipeline config (SAME as Smart Annotate)
+            pipeline_config = {
+                'mode': 'file',
+                'data_source': 'csv',
+                'data_format': 'csv',
+                'file_path': str(temp_input_file),
+                'text_column': text_column,
+                'text_columns': [text_column],
+                'annotation_column': 'annotation',
+                'identifier_column': id_column if id_column else 'annotation_id',
+                'run_annotation': True,
+                'annotation_mode': 'local' if llm_config.provider == 'ollama' else 'api',
+                'annotation_provider': llm_config.provider,
+                'annotation_model': llm_config.name,
+                'api_key': api_key,
+                'prompts': prompts_payload,
+                'annotation_sample_size': annotation_limit,
+                'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
+                'annotation_sample_seed': 42,
+                'max_tokens': max_tokens,
+                'temperature': temperature,
+                'top_p': top_p,
+                'top_k': top_k if llm_config.provider in ['ollama', 'google'] else None,
+                'max_workers': num_processes,
+                'num_processes': num_processes,
+                'use_parallel': num_processes > 1,
+                'warmup': False,
+                'disable_tqdm': False,  # Enable tqdm for same display as Smart Annotate
+                'output_format': 'csv',
+                'output_path': str(pipeline_output_file),
+                'save_incrementally': save_incrementally,
+                'batch_size': batch_size,
+                'run_validation': False,
+                'run_training': False,
+            }
+
+            # Add model-specific options (same as Smart Annotate)
+            if llm_config.provider == 'ollama':
+                options = {
+                    'temperature': temperature,
+                    'num_predict': max_tokens,
+                    'top_p': top_p,
+                    'top_k': top_k
+                }
+                pipeline_config['options'] = options
+
+            # Execute annotation using SAME pipeline as Smart Annotate
+            try:
+                self.console.print("[bold green]🚀 Starting annotation...[/bold green]\n")
+
+                from ..pipelines.pipeline_controller import PipelineController
+                from ..utils.rich_progress_manager import RichProgressManager
+                from ..pipelines.enhanced_pipeline_wrapper import EnhancedPipelineWrapper
+
+                pipeline_with_progress = PipelineController(settings=self.settings)
+
+                with RichProgressManager(
+                    show_json_every=1,
+                    compact_mode=False
+                ) as progress_manager:
+                    enhanced_pipeline = EnhancedPipelineWrapper(
+                        pipeline_with_progress,
+                        progress_manager
+                    )
+
+                    state = enhanced_pipeline.run_pipeline(pipeline_config)
+
+                # Check if annotation was successful
+                if not state or not state.annotation_results:
+                    self.console.print("\n[red]✗ Annotation failed or returned no results[/red]")
+                    input("\nPress Enter to continue...")
+                    return
+
+                # Load annotated data
+                if not pipeline_output_file.exists():
+                    self.console.print(f"\n[red]✗ Output file not found: {pipeline_output_file}[/red]")
+                    input("\nPress Enter to continue...")
+                    return
+
+                df_annotated = pd.read_csv(pipeline_output_file)
+                self.console.print(f"\n[green]✓ Annotation complete: {len(df_annotated)} rows annotated[/green]")
+
+            except Exception as e:
+                self.console.print(f"\n[red]✗ Error during annotation: {str(e)}[/red]")
+                import traceback
+                self.console.print(f"[dim]{traceback.format_exc()}[/dim]")
+                input("\nPress Enter to continue...")
+                return
+
+            # ========================================
+            # Save results to final destination
+            # ========================================
+            self.console.print("\n[bold cyan]📁 Saving to final destination...[/bold cyan]\n")
+
+            if output_dest['type'] == 'same_table':
+                # Update same table in database
+                from sqlalchemy import Table as SQLTable, MetaData, Column, JSON
+
+                metadata_obj = MetaData()
+                metadata_obj.reflect(bind=engine)
+                table = metadata_obj.tables[selected_table]
+
+                # Add annotation column if doesn't exist
+                annotation_col_name = output_dest['column']
+                if annotation_col_name not in [c.name for c in table.columns]:
+                    with engine.connect() as conn:
+                        if db_type_name == "PostgreSQL":
+                            conn.execute(text(f"ALTER TABLE {selected_table} ADD COLUMN {annotation_col_name} JSONB"))
+                        else:
+                            conn.execute(text(f"ALTER TABLE {selected_table} ADD COLUMN {annotation_col_name} TEXT"))
+                        conn.commit()
+                    self.console.print(f"[green]✓ Added column '{annotation_col_name}' to table[/green]")
+
+                # Update rows with annotations
+                with engine.connect() as conn:
+                    updated_count = 0
+                    for idx, row in df_annotated.iterrows():
+                        if id_column and id_column in row:
+                            id_value = row[id_column]
+                            annotation_value = row.get('annotation', '')
+                            update_query = text(f"UPDATE {selected_table} SET {annotation_col_name} = :annotation WHERE {id_column} = :id_val")
+                            conn.execute(update_query, {'annotation': str(annotation_value), 'id_val': id_value})
+                            updated_count += 1
+                        else:
+                            self.console.print("[yellow]⚠️  Warning: No ID column specified, cannot update specific rows[/yellow]")
+                            break
+                    conn.commit()
+
+                self.console.print(f"[green]✓ Updated {updated_count:,} rows in table '{selected_table}'[/green]")
+                self.console.print(f"[dim]Annotations saved in data/annotations: {pipeline_output_file.name}[/dim]")
+
+                # Clean up temporary input file
+                if temp_input_file.exists():
+                    temp_input_file.unlink()
+
+            elif output_dest['type'] == 'new_table':
+                # Create new table in database
+                df_annotated.to_sql(
+                    output_dest['table'],
+                    engine,
+                    if_exists='replace',
+                    index=False
+                )
+                self.console.print(f"[green]✓ Created new table '{output_dest['table']}' with {len(df_annotated):,} rows[/green]")
+                self.console.print(f"[dim]Annotations also saved in data/annotations: {pipeline_output_file.name}[/dim]")
+
+                # Clean up temporary input file
+                if temp_input_file.exists():
+                    temp_input_file.unlink()
+
+            else:
+                # Export to file - either copy to user path or keep in data/annotations
+                output_path = Path(output_dest['path'])
+                format_type = output_dest['format']
+
+                # If user specified a custom path, copy/convert there
+                if str(output_path) != str(pipeline_output_file):
+                    if format_type == 'csv':
+                        # Already CSV, just copy
+                        import shutil
+                        shutil.copy(pipeline_output_file, output_path)
+                    elif format_type == 'json':
+                        df_annotated.to_json(output_path, orient='records', indent=2)
+                    elif format_type == 'jsonl':
+                        df_annotated.to_json(output_path, orient='records', lines=True)
+                    elif format_type == 'xlsx':
+                        df_annotated.to_excel(output_path, index=False)
+                    elif format_type == 'parquet':
+                        df_annotated.to_parquet(output_path, index=False)
+                    elif format_type == 'rdata':
+                        import pyreadr
+                        pyreadr.write_rdata(str(output_path), df_annotated, df_name='annotated_data')
+
+                    self.console.print(f"[green]✓ Exported {len(df_annotated):,} rows to: {output_path}[/green]")
+                    self.console.print(f"[dim]Annotations also saved in data/annotations: {pipeline_output_file.name}[/dim]")
+                else:
+                    # Using default location in data/annotations
+                    self.console.print(f"[green]✓ Annotations saved: {pipeline_output_file}[/green]")
+
+                # Clean up temporary input file
+                if temp_input_file.exists():
+                    temp_input_file.unlink()
+
+            self.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
+
+            # ============================================================
+            # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)
+            # ============================================================
+            self._post_annotation_training_workflow(
+                output_file=str(pipeline_output_file),
+                text_column=text_column,
+                prompt_configs=prompt_configs
+            )
+
+            # Export to Doccano JSONL if requested
+            if export_to_doccano:
+                self._export_to_doccano_jsonl(
+                    output_file=str(pipeline_output_file),
+                    text_column=text_column,
+                    prompt_configs=prompt_configs,
+                    data_path=None,
+                    timestamp=timestamp,
+                    sample_size=export_sample_size
+                )
+
+            # Export to Label Studio if requested
+            if export_to_labelstudio:
+                if labelstudio_direct_export:
+                    # Direct export to Label Studio via API
+                    self._export_to_labelstudio_direct(
+                        output_file=str(pipeline_output_file),
+                        text_column=text_column,
+                        prompt_configs=prompt_configs,
+                        data_path=None,
+                        timestamp=timestamp,
+                        sample_size=export_sample_size,
+                        prediction_mode=prediction_mode,
+                        api_url=labelstudio_api_url,
+                        api_key=labelstudio_api_key
+                    )
+                else:
+                    # Export to JSONL file
+                    self._export_to_labelstudio_jsonl(
+                        output_file=str(pipeline_output_file),
+                        text_column=text_column,
+                        prompt_configs=prompt_configs,
+                        data_path=None,
+                        timestamp=timestamp,
+                        sample_size=export_sample_size,
+                        prediction_mode=prediction_mode
+                    )
+
+        except Exception as e:
+            self.console.print(f"\n[bold red]✗ Error during annotation: {str(e)}[/bold red]")
+            import traceback
+            self.console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+        input("\nPress Enter to continue...")
+
 
     def show_documentation(self):
         """Show documentation"""
-        # Display welcome banner
-        self._display_welcome_banner()
+        # Display ASCII logo only
+        self._display_ascii_logo()
 
         if HAS_RICH and self.console:
             doc_text = """

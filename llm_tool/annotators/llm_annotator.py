@@ -270,6 +270,10 @@ class LLMAnnotator:
             return pd.read_excel(path)
         elif format == 'parquet':
             return pd.read_parquet(path)
+        elif format == 'json':
+            return pd.read_json(path, lines=False)
+        elif format == 'jsonl':
+            return pd.read_json(path, lines=True)
         elif format in ['rdata', 'rds']:
             if not HAS_PYREADR:
                 raise ImportError("pyreadr required for RData/RDS files")
@@ -767,6 +771,10 @@ class LLMAnnotator:
             data.to_excel(path, index=False)
         elif format == 'parquet':
             data.to_parquet(path, index=False)
+        elif format == 'json':
+            data.to_json(path, orient='records', lines=False, force_ascii=False, indent=2)
+        elif format == 'jsonl':
+            data.to_json(path, orient='records', lines=True, force_ascii=False)
         elif format in ['rdata', 'rds']:
             if HAS_PYREADR:
                 if format == 'rdata':

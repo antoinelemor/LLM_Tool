@@ -1629,6 +1629,9 @@ Enhanced Description:"""
 
         values_text = "\n".join(values_info)
 
+        # Get the conditional word (if/si/wenn/etc.) for the target language using LLM
+        if_word = self._get_conditional_word_for_language(target_language)
+
         prompt = f"""You are helping create annotation guidelines in {target_language}.
 
 Category: {cat.name}
@@ -1638,8 +1641,8 @@ Values and their definitions:
 {values_text}
 
 Create grammatically correct value definitions for an annotation prompt that PRESERVE all important information from the original definitions.
-Each definition should complete this pattern naturally:
-'"{value}" if [condition that indicates when to use this value]'
+Each definition should complete this pattern naturally in {target_language}:
+'"{value}" {if_word} [condition that indicates when to use this value]'
 
 Important:
 1. Start definitions with lowercase (unless proper noun)
@@ -1648,12 +1651,13 @@ Important:
 4. Include specific subcategories, examples, or indicators mentioned in the original definition
 5. Return ONLY the formatted definitions, one per line
 6. Maintain the richness and specificity of the original definitions
+7. IMPORTANT: Use "{if_word}" as the conditional word in {target_language}
 
-Example transformation:
+Example transformation for {target_language}:
 Original: "Environment encompasses policies related to natural resources (air, water, land, biodiversity), pollution (including climate change, waste management, and toxic substances), and ecological preservation. Annotators should include texts addressing conservation efforts, environmental regulations, sustainability initiatives, or impacts of human activity on natural systems."
-Output: "environment" if the text discusses policies related to natural resources (air, water, land, biodiversity), pollution (including climate change, waste management, toxic substances), ecological preservation, conservation efforts, environmental regulations, sustainability initiatives, or impacts of human activity on natural systems
+Output: "environment" {if_word} the text discusses policies related to natural resources (air, water, land, biodiversity), pollution (including climate change, waste management, toxic substances), ecological preservation, conservation efforts, environmental regulations, sustainability initiatives, or impacts of human activity on natural systems
 
-Generate the definitions:"""
+Generate the definitions in {target_language}:"""
 
         try:
             response = self.llm_client.generate(prompt, temperature=0.3, max_tokens=1000)
@@ -1670,6 +1674,50 @@ Generate the definitions:"""
             return []
         except:
             return []
+
+    def _get_conditional_word_for_language(self, target_language: str) -> str:
+        """Get the conditional word (if/si/wenn/etc.) for the target language using LLM
+
+        Args:
+            target_language: Full language name (e.g., 'French', 'Spanish', 'Japanese')
+
+        Returns:
+            The conditional word in the target language (e.g., 'si' for French, 'wenn' for German)
+        """
+        if not self.llm_client:
+            # Fallback to template if no LLM
+            lang_code = self.spec.language if hasattr(self.spec, 'language') else 'en'
+            template = PROMPT_TEMPLATES.get(lang_code, PROMPT_TEMPLATES['en'])
+            return template.get("if_condition", "if")
+
+        try:
+            prompt = f"""What is the word for "if" (conditional) in {target_language}?
+
+Examples:
+- English: if
+- French: si
+- Spanish: si
+- German: wenn
+- Italian: se
+- Portuguese: se
+- Japanese: もし
+- Chinese: 如果
+- Arabic: إذا
+- Russian: если
+
+Return ONLY the single word for "if" in {target_language}, nothing else:"""
+
+            response = self.llm_client.generate(prompt, temperature=0.0, max_tokens=10)
+            if response:
+                # Clean the response - take only the first word
+                word = response.strip().split()[0]
+                # Remove any quotes or punctuation
+                word = word.strip('"\'.,:;!?')
+                return word if word else "if"
+            return "if"
+        except:
+            # Fallback to "if" if translation fails
+            return "if"
 
     def _translate_to_target_language(self, text: str, target_lang: str) -> str:
         """Translate text to target language using LLM if needed"""

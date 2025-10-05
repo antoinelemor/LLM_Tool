@@ -70,7 +70,7 @@ from .bert_base import BertBase
 from .models import (
     Bert, Camembert, ArabicBert, ChineseBert, GermanBert,
     HindiBert, ItalianBert, PortugueseBert, RussianBert,
-    SpanishBert, SwedishBert, XLMRoberta
+    SpanishBert, SwedishBert, MultiBERT, XLMRoberta
 )
 from .sota_models import (
     DeBERTaV3Base, DeBERTaV3Large, RoBERTaBase, RoBERTaLarge,
@@ -183,9 +183,9 @@ class ModelTrainer:
             "albert-large-v2": ALBERTLarge,
 
             # Multilingual models
-            "bert-base-multilingual-cased": Bert,
+            "bert-base-multilingual-cased": MultiBERT,
             "xlm-roberta-base": XLMRobertaBase,
-            "mdeberta-v3-base": MDeBERTaV3Base,
+            "microsoft/mdeberta-v3-base": MDeBERTaV3Base,
 
             # Language-specific models
             "camembert-base": Camembert,
