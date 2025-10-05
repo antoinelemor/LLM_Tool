@@ -386,7 +386,7 @@ class SocialSciencePromptWizard:
         annotation_type = self._get_annotation_type()
 
         # Step 4: Define categories
-        categories = self._define_categories(annotation_type)
+        categories = self._define_categories(annotation_type, language)
 
         # Build preliminary specification (needed for example generation)
         self.spec = PromptSpecification(
@@ -638,21 +638,21 @@ for your social science research project. You will:
 
         return annotation_type
 
-    def _define_categories(self, annotation_type: str) -> List[AnnotationCategory]:
+    def _define_categories(self, annotation_type: str, target_language: str = "en") -> List[AnnotationCategory]:
         """Guide user through defining annotation categories"""
         categories = []
 
         if annotation_type == "entity_extraction":
             # Only entity extraction
-            categories = self._define_entity_categories()
+            categories = self._define_entity_categories(target_language=target_language)
         else:
             # Start with categorical annotation
-            categories = self._define_categorical_categories()
+            categories = self._define_categorical_categories(target_language=target_language)
 
             # After categorical, offer to add NER categories
             if categories:  # Only if they added some categorical categories
                 if self._offer_additional_ner_categories():
-                    ner_categories = self._define_entity_categories(is_additional=True)
+                    ner_categories = self._define_entity_categories(is_additional=True, target_language=target_language)
                     categories.extend(ner_categories)
 
         return categories
@@ -695,11 +695,12 @@ for your social science research project. You will:
             default=False
         )
 
-    def _define_entity_categories(self, is_additional: bool = False) -> List[AnnotationCategory]:
+    def _define_entity_categories(self, is_additional: bool = False, target_language: str = "en") -> List[AnnotationCategory]:
         """Define categories for entity extraction
 
         Args:
             is_additional: If True, this is being called after categorical annotation
+            target_language: Target language for the prompt (for translation)
         """
         if not self.console:
             return []
@@ -784,6 +785,15 @@ for your social science research project. You will:
             # Sanitize name (accept Unicode letters for accents)
             cat_name = re.sub(r'[^\w]', '_', cat_name.lower(), flags=re.UNICODE)
 
+            # Translate category name to target language if needed
+            if self.llm_client:
+                translated_name = self._translate_to_target_language(cat_name, target_language)
+                if translated_name != cat_name:
+                    self.console.print(f"[dim]Translating '{cat_name}' → '{translated_name}'[/dim]")
+                    cat_name = translated_name
+                    # Re-sanitize after translation to ensure consistency
+                    cat_name = re.sub(r'[^\w]', '_', cat_name.lower(), flags=re.UNICODE)
+
             # Warn if name seems too long
             if len(cat_name) > 30:
                 self.console.print(
@@ -806,50 +816,65 @@ for your social science research project. You will:
 
             values = []
             value_defs = {}
-            type_category_name = None  # Initialize to None
 
             if has_subtypes:
-                # Explain the structure CLEARLY with JSON examples
+                # With sub-types, this becomes a CLASSIFICATION category (not extraction)
                 self.console.print(Panel(
-                    f"[bold cyan]Entity with Sub-types Structure:[/bold cyan]\n\n"
-                    f"You'll create TWO related categories in your JSON output:\n\n"
-                    f"1️⃣  [cyan]{cat_name}[/cyan] - Extracts the actual entities (names/mentions)\n"
-                    f"   Example JSON: \"{cat_name}\": [\"Justin Trudeau\", \"Angela Merkel\"]\n\n"
-                    f"2️⃣  [cyan]{cat_name}_type[/cyan] - Classifies EACH extracted entity\n"
-                    f"   Example JSON: \"{cat_name}_type\": [\"politician\", \"scientist\"]\n\n"
-                    f"[bold yellow]⚠️  IMPORTANT:[/bold yellow] The type category is AUTOMATICALLY named '{cat_name}_type'.\n"
-                    f"You will now define the POSSIBLE TYPES (e.g., 'politician', 'scientist').",
+                    f"[bold cyan]Entity Type Classification:[/bold cyan]\n\n"
+                    f"By choosing sub-types, '[cyan]{cat_name}[/cyan]' becomes a [bold]classification category[/bold].\n\n"
+                    f"You will [bold]classify the TYPE[/bold] of {cat_name} mentioned (not extract names).\n\n"
+                    f"[bold green]Example:[/bold green]\n"
+                    f"Text: \"The minister announced reforms.\"\n"
+                    f"JSON: \"{cat_name}\": \"politician\"\n\n"
+                    f"[dim]Define the possible types (e.g., 'politician', 'scientist', 'activist').[/dim]",
                     border_style="cyan"
                 ))
 
-                # Use fixed naming convention to avoid confusion
-                type_category_name = cat_name + "_type"
-                self.console.print(f"\n[green]✓[/green] Type category will be: [cyan]{type_category_name}[/cyan]")
-
-                # Brief explanation of what comes next
-                self.console.print(
-                    f"\n[dim]Now define the possible types for '[cyan]{cat_name}[/cyan]'[/dim]\n"
-                    f"[dim](Examples: politician, scientist, activist, journalist, etc.)[/dim]"
-                )
-
-                # Define subtypes - use type_category_name for clarity
+                # Define subtypes - these become the VALUES for this category
                 values, value_defs = self._define_category_values(
-                    type_category_name,
-                    f"possible types for {cat_name}",
-                    use_ai_for_entities
+                    cat_name,
+                    f"{cat_desc}. Types of {cat_name} to classify",
+                    use_ai_for_entities,
+                    target_language,
+                    is_entity_type=True  # This is for entity type classification
                 )
 
-                # Create TYPE classification category
-                type_cat = AnnotationCategory(
-                    name=type_category_name,
-                    description=f"Classify the type/role of each {cat_name} extracted from the text",
-                    category_type="entity_type",  # Different category type
-                    values=values,
-                    value_definitions=value_defs,
-                    allows_multiple=False,  # One type per entity
-                    allows_null=True
-                )
-                categories.append(type_cat)
+                # Generate enhanced description that integrates the user's description + types
+                if use_ai_for_entities and self.llm_client:
+                    types_list = ", ".join([f"'{v}'" for v in values if v != 'null'])
+                    enhanced_prompt = f"""Category: {cat_name}
+User Description: {cat_desc}
+Possible Types: {types_list}
+
+Generate a clear, concise description (1-2 sentences) for this classification category that:
+1. Incorporates the user's description context
+2. Explains it classifies the TYPE of {cat_name}
+3. Lists the possible types
+4. Is written in English for the annotation prompt
+
+Description:"""
+
+                    try:
+                        enhanced_desc = self.llm_client.generate(enhanced_prompt, temperature=0.3, max_tokens=150)
+                        if enhanced_desc:
+                            # Clean up
+                            enhanced_desc = enhanced_desc.strip()
+                            cat_desc = enhanced_desc
+                        else:
+                            # Fallback: translate if needed
+                            translated_desc = self._translate_to_english(cat_desc)
+                            types_str = ", ".join([f'"{v}"' for v in values if v != 'null'])
+                            cat_desc = f"Classify the type of {cat_name} mentioned. Context: {translated_desc}. Possible types: {types_str}"
+                    except:
+                        # Fallback: translate if needed
+                        translated_desc = self._translate_to_english(cat_desc)
+                        types_str = ", ".join([f'"{v}"' for v in values if v != 'null'])
+                        cat_desc = f"Classify the type of {cat_name} mentioned. Context: {translated_desc}. Possible types: {types_str}"
+                else:
+                    # No AI available: translate manually if needed
+                    translated_desc = self._translate_to_english(cat_desc) if self.llm_client else cat_desc
+                    types_str = ", ".join([f'"{v}"' for v in values if v != 'null'])
+                    cat_desc = f"Classify the type of {cat_name} mentioned. Context: {translated_desc}. Possible types: {types_str}"
             else:
                 # No sub-types - offer AI enhancement of the entity description
                 if use_ai_for_entities and self.llm_client:
@@ -905,25 +930,27 @@ for your social science research project. You will:
                                 )
                         # elif refine_choice == "3": keep original cat_desc
 
-            # Create main entity category
+            # Create entity category
+            # If has_subtypes, it's a classification category; otherwise it's free-form extraction
             entity_cat = AnnotationCategory(
                 name=cat_name,
                 description=cat_desc,
-                category_type="entity",
-                values=[],  # Entities are free-form
-                value_definitions={},
-                allows_multiple=True,
+                category_type="categorical" if has_subtypes else "entity",
+                values=values if has_subtypes else [],
+                value_definitions=value_defs if has_subtypes else {},
+                allows_multiple=False if has_subtypes else True,
                 allows_null=True,
-                parent_category=type_category_name  # Will be None if has_subtypes=False
+                parent_category=None  # No parent category in single-key structure
             )
 
-            # Confirm keeping this entity category
-            self.console.print(f"\n[bold green]✓ Entity '{cat_name}' configured[/bold green]")
-            if Confirm.ask(f"[cyan]Keep this entity '{cat_name}'?[/cyan]", default=True):
+            # Confirm keeping this category
+            category_label = "classification category" if has_subtypes else "entity"
+            self.console.print(f"\n[bold green]✓ {category_label.capitalize()} '{cat_name}' configured[/bold green]")
+            if Confirm.ask(f"[cyan]Keep this {category_label} '{cat_name}'?[/cyan]", default=True):
                 categories.append(entity_cat)
-                self.console.print(f"[green]✓[/green] Entity '{cat_name}' added\n")
+                self.console.print(f"[green]✓[/green] {category_label.capitalize()} '{cat_name}' added\n")
             else:
-                self.console.print(f"[yellow]⊘[/yellow] Entity '{cat_name}' rejected\n")
+                self.console.print(f"[yellow]⊘[/yellow] {category_label.capitalize()} '{cat_name}' rejected\n")
 
             # Ask if user wants to add more categories
             if not Confirm.ask("[cyan]Add another entity?[/cyan]", default=False):
@@ -931,7 +958,7 @@ for your social science research project. You will:
 
         return categories
 
-    def _define_categorical_categories(self) -> List[AnnotationCategory]:
+    def _define_categorical_categories(self, target_language: str = "en") -> List[AnnotationCategory]:
         """Define categories for categorical annotation"""
         if not self.console:
             return []
@@ -946,30 +973,26 @@ for your social science research project. You will:
         # Visual schema explanation for Category → Values system
         explanation_text = (
             "[bold cyan]📖 Understanding the Category → Values System[/bold cyan]\n\n"
-            "[bold]Visual Schema:[/bold]\n\n"
-            "┌────────────────────────────────────────────────────────────────────────────┐\n"
-            "│  [bold yellow]CATEGORY[/bold yellow] (the question)                        │\n"
-            "│  [dim]What dimension am I analyzing?[/dim]                                 │\n"
-            "│                                                                            │\n"
-            "│  Example: [cyan]theme[/cyan]  ← [dim]JSON key[/dim]                        │\n"
-            "│           │                                                                │\n"
-            "│           ├──→ [green]environment[/green]  ← [dim]Possible answer 1[/dim]  │\n"
-            "│           ├──→ [green]health[/green]        ← [dim]Possible answer 2[/dim] │\n"
-            "│           ├──→ [green]economy[/green]       ← [dim]Possible answer 3[/dim] │\n"
-            "│           └──→ [green]justice[/green]       ← [dim]Possible answer 4[/dim] │\n"
-            "│                                                                            │\n"
-            "│  [bold yellow]VALUES[/bold yellow] (the possible answers)                  │\n"
-            "└────────────────────────────────────────────────────────────────────────────┘\n\n"
-            "[bold green]📝 Result in JSON:[/bold green]\n"
+            "[bold]Think of it like a questionnaire:[/bold]\n\n"
+            "[bold yellow]CATEGORY = The Question[/bold yellow]\n"
+            "  What dimension am I analyzing?\n"
+            "  Example: [cyan]theme[/cyan] (becomes the JSON key)\n\n"
+            "[bold yellow]VALUES = Possible Answers[/bold yellow]\n"
+            "  [cyan]theme[/cyan] can be:\n"
+            "    • [green]environment[/green] - if text discusses ecology\n"
+            "    • [green]health[/green] - if text discusses healthcare  \n"
+            "    • [green]economy[/green] - if text discusses economics\n"
+            "    • [green]justice[/green] - if text discusses legal system\n\n"
+            "[bold green]📝 Final JSON output:[/bold green]\n"
             "{\n"
-            '  "[cyan]theme[/cyan]": "[green]environment[/green]",      ← Category: chosen value\n'
-            '  "[cyan]sentiment[/cyan]": "[green]positive[/green]"       ← Category: chosen value\n'
+            '  "[cyan]theme[/cyan]": "[green]environment[/green]",\n'
+            '  "[cyan]sentiment[/cyan]": "[green]positive[/green]"\n'
             "}\n\n"
-            "[bold]💡 The Process:[/bold]\n"
-            "1️⃣  Define CATEGORY name (e.g., 'theme') → the JSON key\n"
-            "2️⃣  Define CATEGORY description (what it classifies)\n"
-            "3️⃣  Define VALUES (e.g., 'environment', 'health') → possible answers\n"
-            "4️⃣  Define each VALUE's definition (when to use it)"
+            "[bold]💡 The 4 Steps:[/bold]\n"
+            "1. Choose a CATEGORY name (short keyword like 'theme')\n"
+            "2. Describe what the category classifies\n"
+            "3. Define possible VALUES (like 'environment', 'health')\n"
+            "4. Define when to use each value"
         )
 
         self.console.print(Panel(
@@ -1044,6 +1067,15 @@ for your social science research project. You will:
             # Sanitize name (accept Unicode letters for accents)
             cat_name = re.sub(r'[^\w]', '_', cat_name.lower(), flags=re.UNICODE)
 
+            # Translate category name to target language if needed
+            if self.llm_client:
+                translated_name = self._translate_to_target_language(cat_name, target_language)
+                if translated_name != cat_name:
+                    self.console.print(f"[dim]Translating '{cat_name}' → '{translated_name}'[/dim]")
+                    cat_name = translated_name
+                    # Re-sanitize after translation to ensure consistency
+                    cat_name = re.sub(r'[^\w]', '_', cat_name.lower(), flags=re.UNICODE)
+
             # Warn if name seems too long
             if len(cat_name) > 30:
                 self.console.print(
@@ -1087,7 +1119,7 @@ for your social science research project. You will:
                 )
 
                 # Define possible values
-                values, value_defs = self._define_category_values(cat_name, cat_desc, use_ai_for_categories)
+                values, value_defs = self._define_category_values(cat_name, cat_desc, use_ai_for_categories, target_language, is_entity_type=False)
             else:
                 # Open-ended category - offer AI enhancement of description
                 if use_ai_for_categories and self.llm_client:
@@ -1179,8 +1211,16 @@ for your social science research project. You will:
 
         return categories
 
-    def _define_category_values(self, cat_name: str, cat_desc: str, use_ai: bool = False) -> Tuple[List[str], Dict[str, str]]:
-        """Define values and their definitions for a category"""
+    def _define_category_values(self, cat_name: str, cat_desc: str, use_ai: bool = False, target_language: str = "en", is_entity_type: bool = False) -> Tuple[List[str], Dict[str, str]]:
+        """Define values and their definitions for a category
+
+        Args:
+            cat_name: Name of the category
+            cat_desc: Description of the category
+            use_ai: Whether to use AI for generating definitions
+            target_language: Target language for translations
+            is_entity_type: Whether this is for entity type classification (True) or categorical annotation (False)
+        """
         if not self.console:
             return [], {}
 
@@ -1191,7 +1231,40 @@ for your social science research project. You will:
         value_defs = {}
         value_count = 0
 
-        # Show value naming guidance
+        # Show value naming guidance with context-appropriate examples
+        if is_entity_type:
+            # Examples for entity type classification (e.g., types of persons)
+            good_examples = (
+                "[bold green]✅ GOOD value names:[/bold green]\n"
+                "• 'politician'\n"
+                "• 'scientist'\n"
+                "• 'activist'\n"
+                "• 'business_leader'"
+            )
+            bad_examples = (
+                "[bold red]❌ BAD value names:[/bold red]\n"
+                "• 'professional_politicians_and_career_bureaucrats' [dim](too long - use 'politician')[/dim]\n"
+                "• 'people who work in politics' [dim](description not label - use 'politician')[/dim]\n"
+                "• 'elected_officials_at_federal_level' [dim](too specific - use 'politician')[/dim]"
+            )
+            prompt_example = "'politician', 'scientist'"
+        else:
+            # Examples for categorical annotation (themes, sentiment, etc.)
+            good_examples = (
+                "[bold green]✅ GOOD value names:[/bold green]\n"
+                "• 'environment'\n"
+                "• 'positive'\n"
+                "• 'liberal'\n"
+                "• 'health_care'"
+            )
+            bad_examples = (
+                "[bold red]❌ BAD value names:[/bold red]\n"
+                "• 'environmental_protection_and_climate_change' [dim](too long - use 'environment')[/dim]\n"
+                "• 'very positive with strong enthusiasm' [dim](description - use 'positive')[/dim]\n"
+                "• 'statements made by liberal party' [dim](explanation - use 'liberal')[/dim]"
+            )
+            prompt_example = "'environment', 'positive'"
+
         self.console.print(Panel(
             f"[bold cyan]Defining Values for '{cat_name}'[/bold cyan]\n\n"
             "[bold yellow]⚠️  Value Naming Guidelines:[/bold yellow]\n\n"
@@ -1199,15 +1272,8 @@ for your social science research project. You will:
             "• It becomes the actual value in your JSON output\n"
             "• Keep it concise and clear\n"
             "• The detailed definition comes in the NEXT step\n\n"
-            "[bold green]✅ GOOD value names:[/bold green]\n"
-            "• 'environment'\n"
-            "• 'positive'\n"
-            "• 'liberal'\n"
-            "• 'health_care'\n\n"
-            "[bold red]❌ BAD value names:[/bold red]\n"
-            "• 'environmental_protection_and_climate_change' [dim](too long - use 'environment')[/dim]\n"
-            "• 'very positive with strong enthusiasm' [dim](description - use 'positive')[/dim]\n"
-            "• 'statements made by liberal party' [dim](explanation - use 'liberal')[/dim]",
+            f"{good_examples}\n\n"
+            f"{bad_examples}",
             border_style="cyan"
         ))
         self.console.print()
@@ -1220,7 +1286,7 @@ for your social science research project. You will:
 
             # Get value name
             value_name = Prompt.ask(
-                f"[cyan]Value #{value_count} - SHORT label (e.g., 'environment', 'positive')[/cyan]\n"
+                f"[cyan]Value #{value_count} - SHORT label (e.g., {prompt_example})[/cyan]\n"
                 "[dim]Press Enter without input to finish[/dim]"
             )
 
@@ -1229,6 +1295,15 @@ for your social science research project. You will:
 
             # Sanitize value (accept Unicode letters for accents)
             value_name = re.sub(r'[^\w]', '_', value_name.lower(), flags=re.UNICODE)
+
+            # Translate value name to target language if needed
+            if self.llm_client:
+                translated_value = self._translate_to_target_language(value_name, target_language)
+                if translated_value != value_name:
+                    self.console.print(f"[dim]Translating '{value_name}' → '{translated_value}'[/dim]")
+                    value_name = translated_value
+                    # Re-sanitize after translation to ensure consistency
+                    value_name = re.sub(r'[^\w]', '_', value_name.lower(), flags=re.UNICODE)
 
             # Warn if value name seems too long
             if len(value_name) > 40:
@@ -1529,6 +1604,109 @@ Enhanced Description:"""
             self.console.print(f"[yellow]⚠️  LLM generation failed: {e}[/yellow]")
             return user_description
 
+    def _integrate_value_definitions(self, cat: AnnotationCategory, lang: str) -> List[str]:
+        """Use AI to create better integrated value definitions"""
+        if not self.llm_client:
+            return []
+
+        # Get language-specific template
+        template = PROMPT_TEMPLATES.get(lang, PROMPT_TEMPLATES['en'])
+        lang_names = {
+            'en': 'English',
+            'fr': 'French',
+            'es': 'Spanish',
+            'de': 'German',
+            'it': 'Italian',
+            'pt': 'Portuguese'
+        }
+        target_language = lang_names.get(lang, 'English')
+
+        # Build the values and definitions string
+        values_info = []
+        for value in cat.values:
+            definition = cat.value_definitions.get(value, f"relates to {value}")
+            values_info.append(f"- {value}: {definition}")
+
+        values_text = "\n".join(values_info)
+
+        prompt = f"""You are helping create annotation guidelines in {target_language}.
+
+Category: {cat.name}
+Category Description: {cat.description if cat.description else f"Classification by {cat.name}"}
+
+Values and their definitions:
+{values_text}
+
+Create grammatically correct value definitions for an annotation prompt that PRESERVE all important information from the original definitions.
+Each definition should complete this pattern naturally:
+'"{value}" if [condition that indicates when to use this value]'
+
+Important:
+1. Start definitions with lowercase (unless proper noun)
+2. Keep definitions clear and complete - preserve key details, examples, policy context, and specific indicators from the original
+3. Use natural {target_language} phrasing
+4. Include specific subcategories, examples, or indicators mentioned in the original definition
+5. Return ONLY the formatted definitions, one per line
+6. Maintain the richness and specificity of the original definitions
+
+Example transformation:
+Original: "Environment encompasses policies related to natural resources (air, water, land, biodiversity), pollution (including climate change, waste management, and toxic substances), and ecological preservation. Annotators should include texts addressing conservation efforts, environmental regulations, sustainability initiatives, or impacts of human activity on natural systems."
+Output: "environment" if the text discusses policies related to natural resources (air, water, land, biodiversity), pollution (including climate change, waste management, toxic substances), ecological preservation, conservation efforts, environmental regulations, sustainability initiatives, or impacts of human activity on natural systems
+
+Generate the definitions:"""
+
+        try:
+            response = self.llm_client.generate(prompt, temperature=0.3, max_tokens=1000)
+            if response:
+                # Parse response into individual definitions
+                lines = response.strip().split('\n')
+                definitions = []
+                for line in lines:
+                    line = line.strip()
+                    if line and ('"' in line or "'" in line):
+                        # Clean up the line and add it
+                        definitions.append(line)
+                return definitions if definitions else []
+            return []
+        except:
+            return []
+
+    def _translate_to_target_language(self, text: str, target_lang: str) -> str:
+        """Translate text to target language using LLM if needed"""
+        if not self.llm_client:
+            return text
+
+        # Skip translation if text is very short
+        if len(text) < 3:
+            return text
+
+        # Language names for prompts
+        lang_names = {
+            'en': 'English',
+            'fr': 'French',
+            'es': 'Spanish',
+            'de': 'German',
+            'it': 'Italian',
+            'pt': 'Portuguese'
+        }
+
+        target_language = lang_names.get(target_lang, 'English')
+
+        try:
+            prompt = f"""Translate the following text to {target_language}. If it's already in {target_language}, return it unchanged.
+Important: Return ONLY the translation, nothing else.
+
+Text: {text}
+
+{target_language} translation:"""
+
+            translation = self.llm_client.generate(prompt, temperature=0.3, max_tokens=200)
+            if translation:
+                return translation.strip()
+            return text
+        except:
+            return text
+
     def _generate_introduction_with_llm(self, lang: str, template: Dict[str, str]) -> Optional[str]:
         """Generate contextualized prompt introduction using LLM"""
 
@@ -1664,6 +1842,21 @@ Generate the introduction paragraph in {language_name}:"""
         }
         dataset_language_name = lang_names.get(dataset_lang, 'English')
 
+        # Build a comprehensive example showing all categories with non-null values
+        all_categories_example = {}
+        for cat in categories:
+            if cat.values and cat.values != ['null']:
+                # Get first non-null value
+                non_null_values = [v for v in cat.values if v != 'null']
+                if non_null_values:
+                    if cat.allows_multiple:
+                        # For multiple-value categories, show array with multiple values if possible
+                        all_categories_example[cat.name] = non_null_values[:2] if len(non_null_values) >= 2 else non_null_values
+                    else:
+                        all_categories_example[cat.name] = non_null_values[0]
+
+        all_cats_json = json.dumps(all_categories_example, indent=2)
+
         prompt = f"""You are an expert in social science research methodology and text annotation.
 
 Project Context: {self.spec.project_description}
@@ -1684,6 +1877,12 @@ Requirements:
 5. Make examples clear and unambiguous for annotation purposes
 6. **ALL example texts MUST be in {dataset_language_name}**
 
+**MANDATORY STRUCTURE:**
+- The FIRST example MUST demonstrate ALL categories with non-null values
+- This first example should have annotations like this:
+{all_cats_json}
+- The remaining examples can show edge cases, null values, and other scenarios
+
 For each example, provide:
 1. The example text (in {dataset_language_name})
 2. The correct annotations for all categories
@@ -1700,7 +1899,8 @@ Output format (JSON):
   ...
 ]
 
-Generate exactly {num_examples} examples in valid JSON format (with all texts in {dataset_language_name}):"""
+Generate exactly {num_examples} examples in valid JSON format (with all texts in {dataset_language_name}).
+Remember: THE FIRST EXAMPLE MUST HAVE ALL CATEGORIES WITH NON-NULL VALUES:"""
 
         try:
             # Call LLM
@@ -1945,57 +2145,42 @@ Generate exactly {num_examples} examples in valid JSON format (with all texts in
 
         lines = [template['expected_keys']]
 
-        # Track which entity_type categories have been processed (to skip them later)
-        processed_type_cats = set()
-
         for cat in self.spec.categories:
-            # Skip entity_type categories - they're handled with their parent entity
-            if cat.category_type == "entity_type":
-                processed_type_cats.add(cat.name)
-                continue
-
-            # Build value descriptions
+            # Build value descriptions with better integration
             value_parts = []
-            for value in cat.values:
-                definition = cat.value_definitions.get(value, f"relates to {value}")
-                value_parts.append(f'"{value}" {template["if_condition"]} {definition}')
+
+            if cat.values and cat.value_definitions:
+                # Use AI to create more natural definition integration if available
+                if self.llm_client and len(cat.values) > 1:
+                    integrated_defs = self._integrate_value_definitions(cat, lang)
+                    if integrated_defs:
+                        value_parts = integrated_defs
+                    else:
+                        # Fallback to original format
+                        for value in cat.values:
+                            definition = cat.value_definitions.get(value, f"relates to {value}")
+                            # Better formatting: make definition lowercase after "if" (except for null)
+                            if value != 'null' and definition and definition[0].isupper():
+                                definition = definition[0].lower() + definition[1:]
+                            value_parts.append(f'"{value}" {template["if_condition"]} {definition}')
+                else:
+                    # Simple case or no LLM
+                    for value in cat.values:
+                        definition = cat.value_definitions.get(value, f"relates to {value}")
+                        # Better formatting: make definition lowercase after "if" (except for null)
+                        if value != 'null' and definition and definition[0].isupper():
+                            definition = definition[0].lower() + definition[1:]
+                        value_parts.append(f'"{value}" {template["if_condition"]} {definition}')
 
             # Category line
             multiple_note = " (can be multiple values)" if cat.allows_multiple else ""
 
-            # Check if this entity has a type category
-            has_type_category = False
-            type_cat = None
-            if cat.category_type == "entity" and cat.parent_category:
-                # Find the type category
-                for potential_type_cat in self.spec.categories:
-                    if potential_type_cat.name == cat.parent_category:
-                        type_cat = potential_type_cat
-                        has_type_category = True
-                        break
-
-            if cat.category_type == "entity" and has_type_category and type_cat:
-                # Entity with sub-types - explain structured format
-                description = cat.description if hasattr(cat, 'description') and cat.description else f"Extract all {cat.name} mentioned in the text"
-
-                # Build type value descriptions
-                type_value_parts = []
-                for value in type_cat.values:
-                    if value == 'null':
-                        continue
-                    definition = type_cat.value_definitions.get(value, f"is a {value}")
-                    type_value_parts.append(f'"{value}" {template["if_condition"]} {definition}')
-
-                type_values_str = ", ".join(type_value_parts) if type_value_parts else "appropriate type"
-
-                cat_line = (f'- "{cat.name}"{multiple_note}: {description} '
-                           f'For each {cat.name} extracted, provide an object with "name" (the extracted text) and "type" (classification): {type_values_str}.')
-            elif cat.category_type == "entity":
-                # Regular entity extraction (NER) without sub-types
+            if cat.category_type == "entity":
+                # Regular entity extraction (NER) - free-form extraction
                 description = cat.description if hasattr(cat, 'description') and cat.description else f"Extract all {cat.name} mentioned in the text"
                 cat_line = f'- "{cat.name}"{multiple_note}: {description}.'
             elif value_parts:
-                # Regular categorical annotation with fixed values
+                # Categorical annotation with fixed values (including former entity-with-subtypes)
                 values_str = ", ".join(value_parts)
                 cat_line = f'- "{cat.name}"{multiple_note}: {values_str}.'
             else:
@@ -2064,38 +2249,22 @@ Generate exactly {num_examples} examples in valid JSON format (with all texts in
         lines = [template_lang['expected_json_keys']]
 
         template = {}
-        # Track which entity_type categories to skip
         for cat in self.spec.categories:
-            # Skip entity_type categories - they're merged with their parent
-            if cat.category_type == "entity_type":
-                continue
-
-            # Check if this entity has a type category
-            has_type_category = False
-            type_cat = None
-            if cat.category_type == "entity" and cat.parent_category:
-                for potential_type_cat in self.spec.categories:
-                    if potential_type_cat.name == cat.parent_category:
-                        type_cat = potential_type_cat
-                        has_type_category = True
-                        break
-
             if cat.allows_multiple:
                 # Show list of possible values for multiple-value categories
-                if cat.category_type == "entity" and has_type_category and type_cat:
-                    # Entity with sub-types: show structured object format
-                    type_values = [v for v in type_cat.values if v != 'null']
-                    template[cat.name] = [{"name": "", "type": type_values[0] if type_values else ""}]
-                elif cat.values and cat.values != ['null']:
-                    # Remove 'null' from displayed values
-                    values = [v for v in cat.values if v != 'null']
-                    template[cat.name] = values if values else []
+                if cat.values:
+                    # Include ALL values including 'null' to show complete options
+                    template[cat.name] = cat.values
                 else:
-                    # For entity extraction without sub-types or open-ended, show empty array
+                    # For entity extraction or open-ended, show empty array
                     template[cat.name] = []
             else:
-                # Show possible values as a comment-style hint
-                template[cat.name] = ""
+                # Single value category - show first value (could be any valid value)
+                if cat.values:
+                    # Show the first value as example (not necessarily 'null')
+                    template[cat.name] = cat.values[0] if cat.values else ""
+                else:
+                    template[cat.name] = ""
 
         json_str = json.dumps(template, indent=2, ensure_ascii=False)
         lines.append(json_str)

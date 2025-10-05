@@ -1,0 +1,7 @@
+Utiliser la même détection de bases de données
+
+Utiliser la même détection de colonnes à annoter
+
+Utiliser la même présentation des modèles, et enlever la détection préalable
+
+Insérer la totalité des mêmes paramètres après le prompt wizard, ainsi que l'ensemble des paramètres d'exportation (comprenant l'export direct avec labelstudio)
