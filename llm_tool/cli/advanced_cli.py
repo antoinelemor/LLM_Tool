@@ -305,8 +305,8 @@ class TrainerModelDetector:
         }
 
 
-class LanguageDetector:
-    """Intelligent language detection and model recommendation system"""
+class LanguageNormalizer:
+    """Intelligent language normalization and mapping system"""
 
     # Comprehensive language mapping dictionary
     LANGUAGE_MAPPINGS = {
@@ -370,7 +370,7 @@ class LanguageDetector:
 
         lang_counts = {}
         for value in df[column_name].dropna():
-            normalized = LanguageDetector.normalize_language(value)
+            normalized = LanguageNormalizer.normalize_language(value)
             if normalized:
                 lang_counts[normalized] = lang_counts.get(normalized, 0) + 1
 
@@ -666,7 +666,7 @@ class DataDetector:
                 if any(candidate in col_lower for candidate in lang_candidates):
                     result['language_column_candidates'].append(col)
                     # Detect languages
-                    lang_counts = LanguageDetector.detect_languages_in_column(df, col)
+                    lang_counts = LanguageNormalizer.detect_languages_in_column(df, col)
                     if lang_counts:
                         result['languages_detected'] = lang_counts
 
@@ -1353,7 +1353,7 @@ class AdvancedCLI:
 
         if HAS_RICH and self.console:
             return Prompt.ask(
-                "Which column contains the text?",
+                "Which column contains the text to annotate?",
                 choices=choices,
                 default=default_choice
             )
@@ -1404,6 +1404,7 @@ class AdvancedCLI:
 
                 # Ask if user wants to use single or combined ID
                 self.console.print("\n[bold]ID Strategy:[/bold]")
+                self.console.print("[dim]IDs are used to track which texts have been annotated and link results to your original data.[/dim]")
                 self.console.print("• [cyan]single[/cyan]: Use one column as ID")
                 self.console.print("• [cyan]combine[/cyan]: Combine multiple columns (e.g., 'promesse_id+sentence_id')")
                 self.console.print("• [cyan]none[/cyan]: Generate automatic IDs")
@@ -1633,12 +1634,6 @@ class AdvancedCLI:
             # Interactive configuration with smart defaults
             self.console.print("\n[bold]Let's configure your pipeline:[/bold]\n")
 
-            # Ask if user wants to continue or go back to main menu
-            continue_setup = Confirm.ask("Continue with pipeline setup?", default=True)
-            if not continue_setup:
-                self.console.print("[yellow]Returning to main menu...[/yellow]")
-                return
-
             # LLM configuration - ASK FIRST
             self.console.print(f"\n[bold]Step 1: LLM Selection[/bold]")
             self.console.print(f"[dim]Auto-selected: {best_llm.name} ({best_llm.provider})[/dim]")
@@ -1651,31 +1646,12 @@ class AdvancedCLI:
                 # Show available LLMs and let user choose
                 selected_llm = self._select_llm_interactive()
 
-            # Warn if the selected model is likely to be extremely large
-            while True:
-                size_estimate = self._estimate_model_size_billion(selected_llm) if selected_llm.provider == 'ollama' else None
-                if size_estimate and size_estimate > 20:
-                    if HAS_RICH and self.console:
-                        proceed = Confirm.ask(
-                            f"[yellow]The model {selected_llm.name} is ~{size_estimate:.0f}B parameters and may be slow or unstable. Continue?[/yellow]",
-                            default=False
-                        )
-                    else:
-                        raw = input(
-                            f"Model {selected_llm.name} ≈ {size_estimate:.0f}B parameters. Continue? [y/N]: "
-                        ).strip().lower()
-                        proceed = raw.startswith('y')
-
-                    if not proceed:
-                        if HAS_RICH and self.console:
-                            self.console.print("[dim]Please choose a smaller model.[/dim]")
-                        else:
-                            print("Please choose a smaller model.")
-                        selected_llm = self._select_llm_interactive()
-                        continue
-                break
 
             self.console.print(f"[green]✓ Selected LLM: {selected_llm.name}[/green]")
+
+            # Check if user wants to return to menu
+            if self._check_return_to_menu("with dataset selection"):
+                return
 
             # Handle API key with secure storage
             if selected_llm.requires_api_key:
@@ -1717,6 +1693,10 @@ class AdvancedCLI:
 
             identifier_column = self._prompt_for_identifier_column(available_columns, suggested_id)
 
+            # Check if user wants to return to menu
+            if self._check_return_to_menu("with column configuration"):
+                return
+
             # Language column detection and prompt
             lang_column = None
             if available_columns:
@@ -1740,6 +1720,19 @@ class AdvancedCLI:
                                 choices=potential_lang_cols,
                                 default=potential_lang_cols[0]
                             )
+                    else:
+                        # Ask if automatic language detection is needed
+                        auto_detect = Confirm.ask(
+                            "[yellow]⚠️  Language information is needed for annotation. Enable automatic language detection?[/yellow]",
+                            default=True
+                        )
+                        if auto_detect:
+                            self.console.print("[dim]Language will be automatically detected for each text during annotation.[/dim]")
+                            # Store flag for automatic detection
+                            lang_column = None  # Will trigger auto-detection later
+                        else:
+                            self.console.print("[yellow]⚠️  Warning: Proceeding without language information may affect annotation quality.[/yellow]")
+                            lang_column = None
                 else:
                     # No language column detected
                     has_lang = Confirm.ask("Does your dataset have a language column?", default=False)
@@ -1754,21 +1747,99 @@ class AdvancedCLI:
             max_tokens = self._prompt_max_tokens(best_llm)
 
             # Prompt configuration
-            self.console.print("\n[bold]Prompt Configuration:[/bold]")
-            self.console.print("[dim]• simple: Single prompt for all texts[/dim]")
-            self.console.print("[dim]• multi: Multiple prompts applied to each text[/dim]")
-            self.console.print("[dim]• template: Pre-configured prompt templates [yellow](Under development - not available)[/yellow][/dim]")
+            self.console.print("\n[bold]Step 4/6: Prompt Configuration[/bold]")
 
-            prompt_mode = Prompt.ask(
-                "Prompt mode",
-                choices=["simple", "multi"],
-                default="simple"
-            )
+            # Auto-detect prompts
+            detected_prompts = self._detect_prompts_in_folder()
 
-            if prompt_mode == "simple":
-                prompt = self._get_custom_prompt()
-            else:  # multi
-                prompt = self._get_multi_prompts()
+            if detected_prompts:
+                self.console.print(f"\n[green]✓ Found {len(detected_prompts)} prompts in prompts/ folder:[/green]")
+                for i, p in enumerate(detected_prompts, 1):
+                    keys_str = ', '.join(p['keys'])
+                    self.console.print(f"  {i}. [cyan]{p['name']}[/cyan]")
+                    self.console.print(f"     Keys ({len(p['keys'])}): {keys_str}")
+
+                # Explain the options clearly
+                self.console.print("\n[bold]Prompt Selection Options:[/bold]")
+                self.console.print("  [cyan]all[/cyan]     - Use ALL detected prompts (multi-prompt mode)")
+                self.console.print("           → Each text will be annotated with all prompts")
+                self.console.print("           → Useful when you want complete annotations from all perspectives")
+                self.console.print("\n  [cyan]select[/cyan]  - Choose SPECIFIC prompts by number (e.g., 1,3,5)")
+                self.console.print("           → Only selected prompts will be used")
+                self.console.print("           → Useful when testing or when you need only certain annotations")
+                self.console.print("\n  [cyan]wizard[/cyan]  - 🧙‍♂️ Create NEW prompt using Social Science Wizard")
+                self.console.print("           → Interactive guided prompt creation")
+                self.console.print("           → Optional AI assistance for definitions")
+                self.console.print("           → [bold green]Recommended for new research projects![/bold green]")
+                self.console.print("\n  [cyan]custom[/cyan]  - Provide path to a prompt file NOT in prompts/ folder")
+                self.console.print("           → Use a prompt from another location")
+                self.console.print("           → Useful for testing new prompts or one-off annotations")
+
+                prompt_choice = Prompt.ask(
+                    "\n[bold yellow]Prompt selection[/bold yellow]",
+                    choices=["all", "select", "wizard", "custom"],
+                    default="all"
+                )
+
+                if prompt_choice == "all":
+                    # Use all prompts in multi-prompt mode
+                    prompt = [p['content'] for p in detected_prompts]
+                    prompt_mode = "multi"
+                    self.console.print(f"[green]✓ Using all {len(prompt)} prompts[/green]")
+                elif prompt_choice == "select":
+                    indices = Prompt.ask("Enter prompt numbers (comma-separated, e.g., 1,3,5)")
+                    try:
+                        selected_indices = [int(x.strip()) - 1 for x in indices.split(',')]
+                        selected = [detected_prompts[i] for i in selected_indices if 0 <= i < len(detected_prompts)]
+                        if selected:
+                            prompt = [p['content'] for p in selected]
+                            prompt_mode = "multi" if len(prompt) > 1 else "single"
+                            self.console.print(f"[green]✓ Selected {len(prompt)} prompts[/green]")
+                        else:
+                            self.console.print("[red]Invalid selection. Using first prompt.[/red]")
+                            prompt = detected_prompts[0]['content']
+                            prompt_mode = "single"
+                    except (ValueError, IndexError):
+                        self.console.print("[red]Invalid input. Using first prompt.[/red]")
+                        prompt = detected_prompts[0]['content']
+                        prompt_mode = "single"
+                elif prompt_choice == "wizard":
+                    # Create new prompt using wizard - skip detection since user explicitly chose wizard
+                    prompt = self._get_custom_prompt(skip_detection=True)
+                    prompt_mode = "wizard"
+                else:  # custom
+                    # Ask for custom prompt path
+                    custom_path = self._prompt_file_path("Enter path to prompt file")
+                    try:
+                        prompt = Path(custom_path).read_text(encoding='utf-8')
+                        prompt_mode = "custom"
+                        self.console.print(f"[green]✓ Loaded custom prompt from {custom_path}[/green]")
+                    except Exception as e:
+                        self.console.print(f"[red]Error loading custom prompt: {e}[/red]")
+                        prompt = self._get_custom_prompt()
+                        prompt_mode = "wizard"
+            else:
+                # No prompts detected, offer to create one
+                self.console.print("\n[yellow]No prompts found in prompts/ folder.[/yellow]")
+                create_prompt = Confirm.ask("Create a new prompt using the wizard?", default=True)
+                if create_prompt:
+                    prompt = self._get_custom_prompt()
+                    prompt_mode = "wizard"
+                else:
+                    custom_path = self._prompt_file_path("Enter path to prompt file")
+                    try:
+                        prompt = Path(custom_path).read_text(encoding='utf-8')
+                        prompt_mode = "custom"
+                        self.console.print(f"[green]✓ Loaded custom prompt from {custom_path}[/green]")
+                    except Exception as e:
+                        self.console.print(f"[red]Error loading custom prompt: {e}[/red]")
+                        self.console.print("[yellow]Creating prompt using wizard...[/yellow]")
+                        prompt = self._get_custom_prompt()
+                        prompt_mode = "wizard"
+
+            # Check if user wants to return to menu
+            if self._check_return_to_menu("with training configuration"):
+                return
 
             # Training configuration
             self.console.print("\n[bold]Training Configuration:[/bold]")
@@ -1883,6 +1954,10 @@ class AdvancedCLI:
                 'max_tokens': max_tokens,
                 **training_config
             })
+
+            # Check if user wants to return to menu before execution
+            if self._check_return_to_menu("with execution"):
+                return
 
             if Confirm.ask("\n[bold yellow]Start execution?[/bold yellow]", default=True):
                 # Save as profile for future use
@@ -2170,6 +2245,24 @@ class AdvancedCLI:
                 else:
                     print(f"File not found: {path}")
 
+    def _check_return_to_menu(self, step_name: str = "this step") -> bool:
+        """Ask user if they want to return to main menu. Returns True if user wants to go back."""
+        if HAS_RICH and self.console:
+            go_back = Confirm.ask(
+                f"[dim]Return to main menu? (or press Enter to continue {step_name})[/dim]",
+                default=False
+            )
+        else:
+            response = input(f"Return to main menu? [y/N] (or Enter to continue {step_name}): ").strip().lower()
+            go_back = response in ['y', 'yes']
+
+        if go_back:
+            if HAS_RICH and self.console:
+                self.console.print("[yellow]↩ Returning to main menu...[/yellow]\n")
+            else:
+                print("↩ Returning to main menu...\n")
+        return go_back
+
     def _generate_auto_prompt(self, dataset_path: str, text_column: str) -> str:
         """Generate intelligent prompt based on dataset analysis"""
         # Simple heuristic-based prompt generation
@@ -2195,9 +2288,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return sorted(list(prompts_dir.glob("*.txt")))
         return []
 
-    def _get_custom_prompt(self) -> str:
-        """Get custom prompt from user - detect from directory, file path, paste, or wizard"""
+    def _get_custom_prompt(self, skip_detection: bool = False) -> str:
+        """Get custom prompt from user - detect from directory, file path, paste, or wizard
+
+        Args:
+            skip_detection: If True, skip prompts directory detection and go straight to wizard
+        """
         if HAS_RICH and self.console:
+            # If skip_detection is True, go directly to wizard
+            if skip_detection:
+                return self._run_social_science_wizard()
+
             # Try to detect prompts in the prompts directory
             detected_prompts = self._detect_prompts_in_directory()
 
@@ -2285,7 +2386,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         try:
             # Check if user wants LLM assistance for definition generation
             use_llm_assist = Confirm.ask(
-                "\n[cyan]🤖 Do you want AI assistance for generating category definitions?[/cyan]",
+                "\n[cyan]🤖 Do you want AI assistance for creating your prompt (wizard mode)?[/cyan]",
                 default=True
             )
 
@@ -2305,17 +2406,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print("[yellow]⚠️  No LLM models detected. Continuing without AI assistance.[/yellow]")
                 else:
                     # Display available models
-                    self.console.print("\n[bold cyan]🤖 Modèles Disponibles pour Assistance IA :[/bold cyan]")
+                    self.console.print("\n[bold cyan]🤖 Available Models for AI Assistance:[/bold cyan]")
 
                     table = Table(
                         box=box.ROUNDED,
-                        title="[bold]Sélection du Modèle LLM[/bold]",
+                        title="[bold]LLM Model Selection[/bold]",
                         title_style="cyan"
                     )
                     table.add_column("#", justify="right", style="cyan bold", width=4)
-                    table.add_column("Modèle", style="white bold", width=35)
-                    table.add_column("Fournisseur", style="yellow", width=15)
-                    table.add_column("Type / Taille", style="green", width=20)
+                    table.add_column("Model", style="white bold", width=35)
+                    table.add_column("Provider", style="yellow", width=15)
+                    table.add_column("Type / Size", style="green", width=20)
 
                     for i, model in enumerate(available_models, 1):
                         # Determine model type and quality indicator
@@ -2325,23 +2426,23 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         # Extract size/quality info from model name
                         type_info = ""
                         if "120b" in model_name.lower():
-                            type_info = "🚀 Très Grand (120B)"
+                            type_info = "🚀 Very Large (120B)"
                         elif "72b" in model_name.lower() or "70b" in model_name.lower():
-                            type_info = "⚡ Grand (70B+)"
+                            type_info = "⚡ Large (70B+)"
                         elif "27b" in model_name.lower() or "22b" in model_name.lower():
-                            type_info = "💪 Moyen (20B+)"
+                            type_info = "💪 Medium (20B+)"
                         elif "8x" in model_name.lower():
                             type_info = "🔀 MoE (Mixture)"
                         elif "3.2" in model_name.lower() or "3.3" in model_name.lower():
-                            type_info = "⚡ Rapide (Llama 3)"
+                            type_info = "⚡ Fast (Llama 3)"
                         elif "gpt-5-nano" in model_name.lower():
-                            type_info = "⚡ Ultra Rapide"
+                            type_info = "⚡ Ultra Fast"
                         elif "gpt-5-mini" in model_name.lower():
-                            type_info = "🎯 Équilibré"
+                            type_info = "🎯 Balanced"
                         elif "deepseek-r1" in model_name.lower():
-                            type_info = "🧠 Raisonnement"
+                            type_info = "🧠 Reasoning"
                         elif "nemotron" in model_name.lower():
-                            type_info = "📝 Instructions"
+                            type_info = "📝 Instruction"
                         else:
                             type_info = model.size or "Standard"
 
@@ -2358,7 +2459,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         table.add_row(str(i), model_name, provider_styled, type_info)
 
                     self.console.print(table)
-                    self.console.print("\n[dim italic]💡 Conseil : Les modèles plus grands donnent de meilleurs résultats mais sont plus lents[/dim italic]\n")
+                    self.console.print("\n[dim italic]💡 Tip: Larger models give better results but are slower[/dim italic]\n")
 
                     # Let user select model
                     while True:
@@ -4226,7 +4327,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Get model recommendations based on confirmed languages
             model_to_use = None
             if confirmed_languages:
-                recommendations = LanguageDetector.recommend_models(confirmed_languages, self.available_trainer_models)
+                recommendations = LanguageNormalizer.recommend_models(confirmed_languages, self.available_trainer_models)
 
                 if recommendations:
                     self.console.print(f"\n[bold]🤖 Recommended Models for Your Languages:[/bold]")

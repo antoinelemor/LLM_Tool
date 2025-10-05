@@ -582,7 +582,7 @@ for your social science research project. You will:
             "• [cyan]topic:[/cyan] climate measures\n"
             "• [cyan]location:[/cyan] Toronto\n"
             "• [cyan]date:[/cyan] Friday\n\n"
-            "[yellow]→ Same text, [bold]multiple extractions[/bold][/yellow]"
+            "[yellow]→ One text = [bold]multiple extractions[/bold][/yellow]"
         )
 
         table.add_row(
@@ -719,12 +719,38 @@ for your social science research project. You will:
                 border_style="green"
             ))
 
+        # Ask about AI assistance ONCE at the beginning
+        use_ai_for_entities = False
+        if self.llm_client:
+            use_ai_for_entities = Confirm.ask(
+                "[cyan]🤖 Do you want AI assistance for creating your prompt (wizard mode)?[/cyan]",
+                default=True
+            )
+            if use_ai_for_entities:
+                self.console.print("[green]✓[/green] AI will help generate definitions for entity sub-types\n")
+            else:
+                self.console.print("[yellow]○[/yellow] You will write all definitions manually\n")
+
+        # Explain what comes next
+        self.console.print(Panel(
+            "[bold cyan]What you'll do next:[/bold cyan]\n\n"
+            "For each entity category, you will:\n"
+            "1️⃣  Provide a [bold]short entity name[/bold] (e.g., 'persons', 'organizations')\n"
+            "2️⃣  Provide a [bold]detailed description[/bold] of what to extract\n"
+            "3️⃣  Optionally define [bold]sub-types[/bold] (e.g., politician, scientist)\n"
+            "4️⃣  For each sub-type, provide a [bold]definition[/bold]" +
+            (" [dim](AI-assisted)[/dim]" if use_ai_for_entities else "") + "\n\n"
+            "[dim]Entities are extracted elements (WHO, WHAT, WHERE) mentioned in texts.[/dim]",
+            border_style="blue"
+        ))
+        self.console.print()
+
         categories = []
         category_count = 0
 
         while True:
             category_count += 1
-            self.console.print(f"\n[bold cyan]Entity Category #{category_count}[/bold cyan]")
+            self.console.print(f"\n[bold cyan]━━━ Entity Category #{category_count} ━━━[/bold cyan]")
 
             # Show naming guidance panel for first category
             if category_count == 1:
@@ -740,8 +766,9 @@ for your social science research project. You will:
                     "• 'locations'\n"
                     "• 'policy_topics'\n\n"
                     "[bold red]❌ BAD examples:[/bold red]\n"
-                    "• 'persons mentioned in political contexts' [dim](use just 'persons')[/dim]\n"
-                    "• 'all governmental organizations' [dim](use 'organizations')[/dim]",
+                    "• 'persons_and_their_roles_in_government' [dim](too long - use 'persons')[/dim]\n"
+                    "• 'organizations mentioned in the text' [dim](description - use 'organizations')[/dim]\n"
+                    "• 'all locations and places' [dim](explanation - use 'locations')[/dim]",
                     border_style="yellow"
                 ))
                 self.console.print()
@@ -779,30 +806,104 @@ for your social science research project. You will:
 
             values = []
             value_defs = {}
+            type_category_name = None  # Initialize to None
 
             if has_subtypes:
-                parent_name = Prompt.ask(
-                    "[cyan]What is the parent category name?[/cyan]",
-                    default=cat_name + "_type"
+                # Explain the structure CLEARLY with JSON examples
+                self.console.print(Panel(
+                    f"[bold cyan]Entity with Sub-types Structure:[/bold cyan]\n\n"
+                    f"You'll create TWO related categories in your JSON output:\n\n"
+                    f"1️⃣  [cyan]{cat_name}[/cyan] - Extracts the actual entities (names/mentions)\n"
+                    f"   Example JSON: \"{cat_name}\": [\"Justin Trudeau\", \"Angela Merkel\"]\n\n"
+                    f"2️⃣  [cyan]{cat_name}_type[/cyan] - Classifies EACH extracted entity\n"
+                    f"   Example JSON: \"{cat_name}_type\": [\"politician\", \"scientist\"]\n\n"
+                    f"[bold yellow]⚠️  IMPORTANT:[/bold yellow] The type category is AUTOMATICALLY named '{cat_name}_type'.\n"
+                    f"You will now define the POSSIBLE TYPES (e.g., 'politician', 'scientist').",
+                    border_style="cyan"
+                ))
+
+                # Use fixed naming convention to avoid confusion
+                type_category_name = cat_name + "_type"
+                self.console.print(f"\n[green]✓[/green] Type category will be: [cyan]{type_category_name}[/cyan]")
+
+                # Brief explanation of what comes next
+                self.console.print(
+                    f"\n[dim]Now define the possible types for '[cyan]{cat_name}[/cyan]'[/dim]\n"
+                    f"[dim](Examples: politician, scientist, activist, journalist, etc.)[/dim]"
                 )
 
-                # Define subtypes
+                # Define subtypes - use type_category_name for clarity
                 values, value_defs = self._define_category_values(
-                    cat_name,
-                    f"types of {cat_name}"
+                    type_category_name,
+                    f"possible types for {cat_name}",
+                    use_ai_for_entities
                 )
 
-                # Create parent category
-                parent_cat = AnnotationCategory(
-                    name=parent_name,
-                    description=f"Type/role of {cat_name}",
-                    category_type="entity",
+                # Create TYPE classification category
+                type_cat = AnnotationCategory(
+                    name=type_category_name,
+                    description=f"Classify the type/role of each {cat_name} extracted from the text",
+                    category_type="entity_type",  # Different category type
                     values=values,
                     value_definitions=value_defs,
-                    allows_multiple=False,
+                    allows_multiple=False,  # One type per entity
                     allows_null=True
                 )
-                categories.append(parent_cat)
+                categories.append(type_cat)
+            else:
+                # No sub-types - offer AI enhancement of the entity description
+                if use_ai_for_entities and self.llm_client:
+                    self.console.print(f"\n[dim]AI will enhance the description for '[cyan]{cat_name}[/cyan]'...[/dim]")
+
+                    # Generate enhanced description with LLM
+                    enhanced_desc = self._generate_entity_description_with_llm(cat_name, cat_desc)
+
+                    self.console.print(Panel(
+                        f"[bold]AI-Enhanced Description:[/bold]\n\n{enhanced_desc}",
+                        border_style="green",
+                        title=f"Enhanced Description for '{cat_name}'"
+                    ))
+
+                    # Ask if user wants to use it or modify
+                    if Confirm.ask("[cyan]Accept this enhanced description?[/cyan]", default=True):
+                        cat_desc = enhanced_desc
+                    else:
+                        # Allow manual edit or refinement
+                        self.console.print("\n[bold]What would you like to do?[/bold]")
+                        self.console.print("1. ✍️  Edit manually")
+                        self.console.print("2. 🔄 Regenerate with additional context")
+                        self.console.print("3. ❌ Keep original description")
+
+                        refine_choice = Prompt.ask(
+                            "\n[cyan]Your choice[/cyan]",
+                            choices=["1", "2", "3"],
+                            default="1"
+                        )
+
+                        if refine_choice == "1":  # Manual edit
+                            cat_desc = Prompt.ask(
+                                "[cyan]Enter your custom description[/cyan]",
+                                default=enhanced_desc
+                            )
+                        elif refine_choice == "2":  # Regenerate with context
+                            additional_context = Prompt.ask(
+                                "[cyan]Provide additional context to guide AI[/cyan]",
+                                default=""
+                            )
+                            enhanced_desc_v2 = f"{cat_desc}. {additional_context}" if additional_context else cat_desc
+                            cat_desc = self._generate_entity_description_with_llm(cat_name, enhanced_desc_v2)
+
+                            self.console.print(Panel(
+                                f"[bold]Regenerated Description:[/bold]\n\n{cat_desc}",
+                                border_style="green"
+                            ))
+
+                            if not Confirm.ask("[cyan]Accept this regenerated description?[/cyan]", default=True):
+                                cat_desc = Prompt.ask(
+                                    "[cyan]Enter your custom description[/cyan]",
+                                    default=cat_desc
+                                )
+                        # elif refine_choice == "3": keep original cat_desc
 
             # Create main entity category
             entity_cat = AnnotationCategory(
@@ -813,7 +914,7 @@ for your social science research project. You will:
                 value_definitions={},
                 allows_multiple=True,
                 allows_null=True,
-                parent_category=parent_name if has_subtypes else None
+                parent_category=type_category_name  # Will be None if has_subtypes=False
             )
 
             # Confirm keeping this entity category
@@ -842,37 +943,33 @@ for your social science research project. You will:
             border_style="green"
         ))
 
-        # Explanation panel for Category → Values system (always in English)
+        # Visual schema explanation for Category → Values system
         explanation_text = (
             "[bold cyan]📖 Understanding the Category → Values System[/bold cyan]\n\n"
-            "[bold]This system works in TWO LEVELS:[/bold]\n\n"
-            "[bold yellow]LEVEL 1: CATEGORY[/bold yellow] (the general question)\n"
-            "• This is the [bold]GLOBAL DIMENSION[/bold] you want to analyze\n"
-            "• Becomes the [bold]JSON KEY[/bold] in your final annotation\n"
-            "• Think: \"[cyan]What QUESTION am I asking about this text?[/cyan]\"\n\n"
-            "[dim]Category examples (questions):[/dim]\n"
-            "  • [cyan]theme[/cyan] → \"What is this text about?\"\n"
-            "  • [cyan]sentiment[/cyan] → \"What is the emotional tone?\"\n"
-            "  • [cyan]political_party[/cyan] → \"Which party is mentioned?\"\n\n"
-            "[bold yellow]LEVEL 2: VALUES[/bold yellow] (the possible answers)\n"
-            "• These are the [bold]SPECIFIC ANSWERS[/bold] possible to your question\n"
-            "• These will be the [bold]CONCRETE RESULTS[/bold] of annotation\n"
-            "• Think: \"[green]What are the POSSIBLE ANSWERS?[/green]\"\n\n"
-            "[dim]Value examples (answers) for 'theme':[/dim]\n"
-            "  • [green]environment[/green] (if text discusses ecology)\n"
-            "  • [green]health[/green] (if text discusses healthcare)\n"
-            "  • [green]economy[/green] (if text discusses economics)\n"
-            "  • [green]justice[/green] (if text discusses judicial system)\n\n"
-            "[bold green]✨ Complete Example:[/bold green]\n"
-            "  Question → Category: [cyan]theme[/cyan]\n"
-            "  Answers → Values: [green]environment, health, justice, economy[/green]\n\n"
-            "  Question → Category: [cyan]sentiment[/cyan]\n"
-            "  Answers → Values: [green]positive, negative, neutral[/green]\n\n"
-            "[bold]📝 Your final annotation will look like:[/bold]\n"
-            "[dim]{\n"
-            '  "theme": "environment",     ← the chosen VALUE\n'
-            '  "sentiment": "positive"      ← the chosen VALUE\n'
-            "}[/dim]"
+            "[bold]Visual Schema:[/bold]\n\n"
+            "┌────────────────────────────────────────────────────────────────────────────┐\n"
+            "│  [bold yellow]CATEGORY[/bold yellow] (the question)                        │\n"
+            "│  [dim]What dimension am I analyzing?[/dim]                                 │\n"
+            "│                                                                            │\n"
+            "│  Example: [cyan]theme[/cyan]  ← [dim]JSON key[/dim]                        │\n"
+            "│           │                                                                │\n"
+            "│           ├──→ [green]environment[/green]  ← [dim]Possible answer 1[/dim]  │\n"
+            "│           ├──→ [green]health[/green]        ← [dim]Possible answer 2[/dim] │\n"
+            "│           ├──→ [green]economy[/green]       ← [dim]Possible answer 3[/dim] │\n"
+            "│           └──→ [green]justice[/green]       ← [dim]Possible answer 4[/dim] │\n"
+            "│                                                                            │\n"
+            "│  [bold yellow]VALUES[/bold yellow] (the possible answers)                  │\n"
+            "└────────────────────────────────────────────────────────────────────────────┘\n\n"
+            "[bold green]📝 Result in JSON:[/bold green]\n"
+            "{\n"
+            '  "[cyan]theme[/cyan]": "[green]environment[/green]",      ← Category: chosen value\n'
+            '  "[cyan]sentiment[/cyan]": "[green]positive[/green]"       ← Category: chosen value\n'
+            "}\n\n"
+            "[bold]💡 The Process:[/bold]\n"
+            "1️⃣  Define CATEGORY name (e.g., 'theme') → the JSON key\n"
+            "2️⃣  Define CATEGORY description (what it classifies)\n"
+            "3️⃣  Define VALUES (e.g., 'environment', 'health') → possible answers\n"
+            "4️⃣  Define each VALUE's definition (when to use it)"
         )
 
         self.console.print(Panel(
@@ -882,14 +979,40 @@ for your social science research project. You will:
         ))
         self.console.print()
 
+        # Ask about AI assistance ONCE at the beginning
+        use_ai_for_categories = False
+        if self.llm_client:
+            use_ai_for_categories = Confirm.ask(
+                "[cyan]🤖 Do you want AI assistance to generate category and value definitions?[/cyan]",
+                default=True
+            )
+            if use_ai_for_categories:
+                self.console.print("[green]✓[/green] AI will help generate definitions for categories and values\n")
+            else:
+                self.console.print("[yellow]○[/yellow] You will write all definitions manually\n")
+
+        # Explain what comes next
+        self.console.print(Panel(
+            "[bold cyan]What you'll do next:[/bold cyan]\n\n"
+            "For each category, you will:\n"
+            "1️⃣  Provide a [bold]short category name[/bold] (e.g., 'theme', 'sentiment')\n"
+            "2️⃣  Provide a [bold]detailed description[/bold] of what it classifies\n"
+            "3️⃣  Define [bold]possible values[/bold] (e.g., 'environment', 'health')\n"
+            "4️⃣  For each value, provide a [bold]definition[/bold]" +
+            (" [dim](AI-assisted)[/dim]" if use_ai_for_categories else "") + "\n\n"
+            "[dim]You can add as many categories as needed for your research.[/dim]",
+            border_style="blue"
+        ))
+        self.console.print()
+
         categories = []
         category_count = 0
 
         while True:
             category_count += 1
-            self.console.print(f"\n[bold cyan]Category #{category_count}[/bold cyan]")
+            self.console.print(f"\n[bold cyan]━━━ Category #{category_count} ━━━[/bold cyan]")
 
-            # Show naming guidance panel
+            # Show naming guidance panel for first category
             if category_count == 1:
                 self.console.print(Panel(
                     "[bold yellow]⚠️  Important: Category Naming[/bold yellow]\n\n"
@@ -903,9 +1026,9 @@ for your social science research project. You will:
                     "• 'party'\n"
                     "• 'actor'\n\n"
                     "[bold red]❌ BAD examples:[/bold red]\n"
-                    "• 'politique éducative scolaire au québec' [dim](too long!)[/dim]\n"
-                    "• 'themes related to social justice' [dim](use just 'theme')[/dim]\n"
-                    "• 'positive or negative sentiment analysis' [dim](use just 'sentiment')[/dim]",
+                    "• 'main_topic_discussed_in_text' [dim](too long - use 'theme' or 'topic')[/dim]\n"
+                    "• 'positive or negative sentiment' [dim](description - use 'sentiment')[/dim]\n"
+                    "• 'political party mentioned' [dim](explanation - use 'party')[/dim]",
                     border_style="yellow"
                 ))
                 self.console.print()
@@ -935,8 +1058,94 @@ for your social science research project. You will:
                 default=f"Classification by {cat_name}"
             )
 
-            # Define possible values
-            values, value_defs = self._define_category_values(cat_name, cat_desc)
+            # Ask if this is an open-ended category or has specific values
+            self.console.print(Panel(
+                "[bold cyan]Category Type:[/bold cyan]\n\n"
+                "[bold]Two types of categories:[/bold]\n\n"
+                "1️⃣  [cyan]Closed set[/cyan] - Fixed list of possible values\n"
+                "   Example: sentiment → positive, negative, neutral\n"
+                "   → You define each possible answer\n\n"
+                "2️⃣  [cyan]Open-ended[/cyan] - Free-form extraction\n"
+                "   Example: themes → extract all themes mentioned (no fixed list)\n"
+                "   → LLM extracts based on your description only\n"
+                "   → More flexible, but less controlled",
+                border_style="cyan"
+            ))
+
+            has_fixed_values = Confirm.ask(
+                f"\n[cyan]Does '{cat_name}' have a fixed list of possible values?[/cyan]",
+                default=True
+            )
+
+            values = []
+            value_defs = {}
+
+            if has_fixed_values:
+                # Brief explanation of what comes next
+                self.console.print(
+                    f"\n[dim]Now you'll define the possible values (answers) for '[cyan]{cat_name}[/cyan]'[/dim]"
+                )
+
+                # Define possible values
+                values, value_defs = self._define_category_values(cat_name, cat_desc, use_ai_for_categories)
+            else:
+                # Open-ended category - offer AI enhancement of description
+                if use_ai_for_categories and self.llm_client:
+                    self.console.print(f"\n[dim]AI will enhance the description for open-ended category '[cyan]{cat_name}[/cyan]'...[/dim]")
+
+                    # Generate enhanced description with LLM
+                    enhanced_desc = self._generate_open_category_description_with_llm(cat_name, cat_desc)
+
+                    self.console.print(Panel(
+                        f"[bold]AI-Enhanced Description:[/bold]\n\n{enhanced_desc}",
+                        border_style="green",
+                        title=f"Enhanced Description for '{cat_name}'"
+                    ))
+
+                    # Ask if user wants to use it or modify
+                    if Confirm.ask("[cyan]Accept this enhanced description?[/cyan]", default=True):
+                        cat_desc = enhanced_desc
+                    else:
+                        # Allow manual edit or refinement
+                        self.console.print("\n[bold]What would you like to do?[/bold]")
+                        self.console.print("1. ✍️  Edit manually")
+                        self.console.print("2. 🔄 Regenerate with additional context")
+                        self.console.print("3. ❌ Keep original description")
+
+                        refine_choice = Prompt.ask(
+                            "\n[cyan]Your choice[/cyan]",
+                            choices=["1", "2", "3"],
+                            default="1"
+                        )
+
+                        if refine_choice == "1":  # Manual edit
+                            cat_desc = Prompt.ask(
+                                "[cyan]Enter your custom description[/cyan]",
+                                default=enhanced_desc
+                            )
+                        elif refine_choice == "2":  # Regenerate with context
+                            additional_context = Prompt.ask(
+                                "[cyan]Provide additional context to guide AI[/cyan]",
+                                default=""
+                            )
+                            enhanced_desc_v2 = f"{cat_desc}. {additional_context}" if additional_context else cat_desc
+                            cat_desc = self._generate_open_category_description_with_llm(cat_name, enhanced_desc_v2)
+
+                            self.console.print(Panel(
+                                f"[bold]Regenerated Description:[/bold]\n\n{cat_desc}",
+                                border_style="green"
+                            ))
+
+                            if not Confirm.ask("[cyan]Accept this regenerated description?[/cyan]", default=True):
+                                cat_desc = Prompt.ask(
+                                    "[cyan]Enter your custom description[/cyan]",
+                                    default=cat_desc
+                                )
+                        # elif refine_choice == "3": keep original cat_desc
+
+                # No fixed values - empty list
+                values = []
+                value_defs = {}
 
             # Ask about multiple values
             allows_multiple = Confirm.ask(
@@ -970,7 +1179,7 @@ for your social science research project. You will:
 
         return categories
 
-    def _define_category_values(self, cat_name: str, cat_desc: str) -> Tuple[List[str], Dict[str, str]]:
+    def _define_category_values(self, cat_name: str, cat_desc: str, use_ai: bool = False) -> Tuple[List[str], Dict[str, str]]:
         """Define values and their definitions for a category"""
         if not self.console:
             return [], {}
@@ -996,19 +1205,15 @@ for your social science research project. You will:
             "• 'liberal'\n"
             "• 'health_care'\n\n"
             "[bold red]❌ BAD value names:[/bold red]\n"
-            "• 'politique éducative scolaire au québec' [dim](too long - use 'education')[/dim]\n"
-            "• 'texts about environmental policy' [dim](use 'environment')[/dim]",
+            "• 'environmental_protection_and_climate_change' [dim](too long - use 'environment')[/dim]\n"
+            "• 'very positive with strong enthusiasm' [dim](description - use 'positive')[/dim]\n"
+            "• 'statements made by liberal party' [dim](explanation - use 'liberal')[/dim]",
             border_style="cyan"
         ))
         self.console.print()
 
-        # Ask if user wants LLM assistance
-        use_llm = False
-        if self.llm_client:
-            use_llm = Confirm.ask(
-                "[cyan]🤖 Do you want AI assistance to generate value definitions?[/cyan]",
-                default=True
-            )
+        # Use the AI setting passed from parent function
+        use_llm = use_ai and self.llm_client is not None
 
         while True:
             value_count += 1
@@ -1213,6 +1418,117 @@ Definition:"""
             self.console.print(f"[yellow]⚠️  LLM generation failed: {e}[/yellow]")
             return f"Text relates to {value_name} in the context of {cat_name}"
 
+    def _generate_open_category_description_with_llm(self, category_name: str, user_description: str) -> str:
+        """Use LLM to generate an enhanced description for an open-ended category"""
+        # Determine target language
+        lang = self.ui_language
+        lang_names = {
+            'en': 'English',
+            'fr': 'French',
+            'es': 'Spanish',
+            'de': 'German',
+            'it': 'Italian',
+            'pt': 'Portuguese'
+        }
+        language_name = lang_names.get(lang, 'English')
+
+        prompt = f"""You are an expert in social science research methodology and text annotation.
+
+Category: {category_name}
+User's Description: {user_description}
+
+This is an OPEN-ENDED category, meaning the LLM will extract values freely rather than choosing from a fixed list.
+
+Generate a precise, clear description for extracting "{category_name}" from texts without predefined values.
+
+The description should:
+- Be 1-2 sentences maximum
+- Be specific and actionable for annotators performing open-ended extraction
+- Clearly define what should be extracted for this category
+- Include concrete examples or indicators when possible
+- Explain how to identify relevant content
+- Be written for annotation guidelines
+- Be written ENTIRELY in {language_name}
+
+Output ONLY the enhanced description in {language_name}, without any prefix like "Description:" or "Definition:".
+
+Enhanced Description:"""
+
+        try:
+            # Call LLM
+            response = self.llm_client.generate(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=200
+            )
+
+            if response:
+                # Clean up response
+                description = response.strip()
+                # Remove any "Description:" or "Definition:" prefix if present
+                description = re.sub(r'^(Description|Definition|Définition):\s*', '', description, flags=re.IGNORECASE)
+                return description
+            else:
+                return user_description
+
+        except Exception as e:
+            self.console.print(f"[yellow]⚠️  LLM generation failed: {e}[/yellow]")
+            return user_description
+
+    def _generate_entity_description_with_llm(self, entity_name: str, user_description: str) -> str:
+        """Use LLM to generate an enhanced description for an entity category"""
+        # Determine target language
+        lang = self.ui_language
+        lang_names = {
+            'en': 'English',
+            'fr': 'French',
+            'es': 'Spanish',
+            'de': 'German',
+            'it': 'Italian',
+            'pt': 'Portuguese'
+        }
+        language_name = lang_names.get(lang, 'English')
+
+        prompt = f"""You are an expert in social science research methodology and named entity recognition (NER).
+
+Entity Category: {entity_name}
+User's Description: {user_description}
+
+Generate a precise, clear description for extracting entities of type "{entity_name}" from texts.
+
+The description should:
+- Be 1-2 sentences maximum
+- Be specific and actionable for annotators performing named entity extraction
+- Clearly define what constitutes an entity of this type
+- Include concrete examples or indicators when possible
+- Be written for annotation guidelines
+- Be written ENTIRELY in {language_name}
+
+Output ONLY the enhanced description in {language_name}, without any prefix like "Description:" or "Definition:".
+
+Enhanced Description:"""
+
+        try:
+            # Call LLM
+            response = self.llm_client.generate(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=200
+            )
+
+            if response:
+                # Clean up response
+                description = response.strip()
+                # Remove any "Description:" or "Definition:" prefix if present
+                description = re.sub(r'^(Description|Definition|Définition):\s*', '', description, flags=re.IGNORECASE)
+                return description
+            else:
+                return user_description
+
+        except Exception as e:
+            self.console.print(f"[yellow]⚠️  LLM generation failed: {e}[/yellow]")
+            return user_description
+
     def _generate_introduction_with_llm(self, lang: str, template: Dict[str, str]) -> Optional[str]:
         """Generate contextualized prompt introduction using LLM"""
 
@@ -1336,6 +1652,18 @@ Generate the introduction paragraph in {language_name}:"""
                 except ValueError:
                     self.console.print("[yellow]Please enter a valid number[/yellow]")
 
+        # Determine the language for examples (from spec, not UI language)
+        dataset_lang = self.spec.language if hasattr(self.spec, 'language') else 'en'
+        lang_names = {
+            'en': 'English',
+            'fr': 'French',
+            'es': 'Spanish',
+            'de': 'German',
+            'it': 'Italian',
+            'pt': 'Portuguese'
+        }
+        dataset_language_name = lang_names.get(dataset_lang, 'English')
+
         prompt = f"""You are an expert in social science research methodology and text annotation.
 
 Project Context: {self.spec.project_description}
@@ -1346,21 +1674,24 @@ Annotation Categories:
 
 Generate {num_examples} diverse, realistic example texts that would be annotated using these categories.
 
+CRITICAL: ALL example texts MUST be written in {dataset_language_name}, regardless of the language used in these instructions. This is the language of the actual dataset being annotated.
+
 Requirements:
 1. Each example should be realistic and match the data description
 2. Examples should cover DIFFERENT scenarios and edge cases
 3. Examples should demonstrate the full range of possible category values
 4. Keep examples concise (15-50 words)
 5. Make examples clear and unambiguous for annotation purposes
+6. **ALL example texts MUST be in {dataset_language_name}**
 
 For each example, provide:
-1. The example text
+1. The example text (in {dataset_language_name})
 2. The correct annotations for all categories
 
 Output format (JSON):
 [
   {{
-    "text": "example text here",
+    "text": "example text here in {dataset_language_name}",
     "annotations": {{
       "category1": "value1",
       "category2": "value2"
@@ -1369,7 +1700,7 @@ Output format (JSON):
   ...
 ]
 
-Generate exactly {num_examples} examples in valid JSON format:"""
+Generate exactly {num_examples} examples in valid JSON format (with all texts in {dataset_language_name}):"""
 
         try:
             # Call LLM
@@ -1614,18 +1945,63 @@ Generate exactly {num_examples} examples in valid JSON format:"""
 
         lines = [template['expected_keys']]
 
+        # Track which entity_type categories have been processed (to skip them later)
+        processed_type_cats = set()
+
         for cat in self.spec.categories:
+            # Skip entity_type categories - they're handled with their parent entity
+            if cat.category_type == "entity_type":
+                processed_type_cats.add(cat.name)
+                continue
+
             # Build value descriptions
             value_parts = []
             for value in cat.values:
                 definition = cat.value_definitions.get(value, f"relates to {value}")
                 value_parts.append(f'"{value}" {template["if_condition"]} {definition}')
 
-            values_str = ", ".join(value_parts)
-
             # Category line
             multiple_note = " (can be multiple values)" if cat.allows_multiple else ""
-            cat_line = f'- "{cat.name}"{multiple_note}: {values_str}.'
+
+            # Check if this entity has a type category
+            has_type_category = False
+            type_cat = None
+            if cat.category_type == "entity" and cat.parent_category:
+                # Find the type category
+                for potential_type_cat in self.spec.categories:
+                    if potential_type_cat.name == cat.parent_category:
+                        type_cat = potential_type_cat
+                        has_type_category = True
+                        break
+
+            if cat.category_type == "entity" and has_type_category and type_cat:
+                # Entity with sub-types - explain structured format
+                description = cat.description if hasattr(cat, 'description') and cat.description else f"Extract all {cat.name} mentioned in the text"
+
+                # Build type value descriptions
+                type_value_parts = []
+                for value in type_cat.values:
+                    if value == 'null':
+                        continue
+                    definition = type_cat.value_definitions.get(value, f"is a {value}")
+                    type_value_parts.append(f'"{value}" {template["if_condition"]} {definition}')
+
+                type_values_str = ", ".join(type_value_parts) if type_value_parts else "appropriate type"
+
+                cat_line = (f'- "{cat.name}"{multiple_note}: {description} '
+                           f'For each {cat.name} extracted, provide an object with "name" (the extracted text) and "type" (classification): {type_values_str}.')
+            elif cat.category_type == "entity":
+                # Regular entity extraction (NER) without sub-types
+                description = cat.description if hasattr(cat, 'description') and cat.description else f"Extract all {cat.name} mentioned in the text"
+                cat_line = f'- "{cat.name}"{multiple_note}: {description}.'
+            elif value_parts:
+                # Regular categorical annotation with fixed values
+                values_str = ", ".join(value_parts)
+                cat_line = f'- "{cat.name}"{multiple_note}: {values_str}.'
+            else:
+                # Open-ended category without predefined values
+                description = cat.description if hasattr(cat, 'description') and cat.description else f"Extract relevant {cat.name} from the text"
+                cat_line = f'- "{cat.name}"{multiple_note}: {description}.'
 
             lines.append(cat_line)
 
@@ -1688,15 +2064,35 @@ Generate exactly {num_examples} examples in valid JSON format:"""
         lines = [template_lang['expected_json_keys']]
 
         template = {}
+        # Track which entity_type categories to skip
         for cat in self.spec.categories:
+            # Skip entity_type categories - they're merged with their parent
+            if cat.category_type == "entity_type":
+                continue
+
+            # Check if this entity has a type category
+            has_type_category = False
+            type_cat = None
+            if cat.category_type == "entity" and cat.parent_category:
+                for potential_type_cat in self.spec.categories:
+                    if potential_type_cat.name == cat.parent_category:
+                        type_cat = potential_type_cat
+                        has_type_category = True
+                        break
+
             if cat.allows_multiple:
                 # Show list of possible values for multiple-value categories
-                if cat.values and cat.values != ['null']:
+                if cat.category_type == "entity" and has_type_category and type_cat:
+                    # Entity with sub-types: show structured object format
+                    type_values = [v for v in type_cat.values if v != 'null']
+                    template[cat.name] = [{"name": "", "type": type_values[0] if type_values else ""}]
+                elif cat.values and cat.values != ['null']:
                     # Remove 'null' from displayed values
                     values = [v for v in cat.values if v != 'null']
-                    template[cat.name] = values if values else [""]
+                    template[cat.name] = values if values else []
                 else:
-                    template[cat.name] = [""]
+                    # For entity extraction without sub-types or open-ended, show empty array
+                    template[cat.name] = []
             else:
                 # Show possible values as a comment-style hint
                 template[cat.name] = ""
@@ -1717,9 +2113,9 @@ Generate exactly {num_examples} examples in valid JSON format:"""
             border_style="green"
         ))
 
-        # Display prompt with syntax highlighting
-        syntax = Syntax(prompt_text, "markdown", theme="monokai", line_numbers=True)
-        self.console.print(Panel(syntax, title="Generated Prompt", border_style="cyan"))
+        # Display prompt with syntax highlighting - use full width
+        syntax = Syntax(prompt_text, "markdown", theme="monokai", line_numbers=True, word_wrap=True)
+        self.console.print(Panel(syntax, title="Generated Prompt", border_style="cyan", expand=True))
 
         # Options
         self.console.print("\n[bold]What would you like to do?[/bold]")
@@ -1727,10 +2123,11 @@ Generate exactly {num_examples} examples in valid JSON format:"""
         self.console.print("2. ✏️  Edit the prompt manually")
         self.console.print("3. 🔄 Regenerate with modifications")
         self.console.print("4. 💾 Save prompt to file")
+        self.console.print("5. 📄 View full prompt (scrollable)")
 
         choice = Prompt.ask(
             "\n[cyan]Your choice[/cyan]",
-            choices=["1", "2", "3", "4"],
+            choices=["1", "2", "3", "4", "5"],
             default="1"
         )
 
@@ -1748,6 +2145,13 @@ Generate exactly {num_examples} examples in valid JSON format:"""
         elif choice == "4":
             self._save_prompt_to_file(prompt_text)
             return prompt_text
+
+        elif choice == "5":
+            # View full prompt in pager
+            with self.console.pager():
+                self.console.print(Syntax(prompt_text, "markdown", theme="monokai", line_numbers=True))
+            # After viewing, ask again
+            return self._review_and_edit_prompt(prompt_text)
 
         return prompt_text
 
