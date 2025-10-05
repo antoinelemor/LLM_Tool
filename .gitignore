@@ -5,3 +5,4 @@ memory.md
 venv/
 paper/results/scripts/extract_results_from_csv.py
 .pytest_cache
+cache/
