@@ -51,6 +51,8 @@ from transformers import (
     LongformerForSequenceClassification,
     XLMRobertaTokenizer,
     XLMRobertaForSequenceClassification,
+    T5Tokenizer,
+    T5ForSequenceClassification,
 )
 
 from llm_tool.trainers.bert_base import BertBase
@@ -533,6 +535,40 @@ class XLMRobertaLongformer(BertBase):
             tokenizer=AutoTokenizer,
             device=device,
             model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class LongT5Base(BertBase):
+    """LongT5: Multilingual long-document model with local attention (4096+ tokens, 100+ languages).
+    Efficient for very long multilingual documents."""
+
+    def __init__(
+            self,
+            model_name='google/long-t5-local-base',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=T5Tokenizer,
+            device=device,
+            model_sequence_classifier=T5ForSequenceClassification
+        )
+
+
+class LongT5TGlobalBase(BertBase):
+    """LongT5 TGlobal: Multilingual long-document model with transient global attention (4096+ tokens).
+    Alternative to LongT5Local with different attention mechanism."""
+
+    def __init__(
+            self,
+            model_name='google/long-t5-tglobal-base',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=T5Tokenizer,
+            device=device,
+            model_sequence_classifier=T5ForSequenceClassification
         )
 
 

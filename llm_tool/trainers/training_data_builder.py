@@ -212,6 +212,11 @@ class TrainingDatasetBuilder:
         if request.label_column not in df.columns:
             raise ValueError(f"Label column '{request.label_column}' not present in {request.input_path}")
 
+        # Check if multi-label mode (one-vs-all) was requested
+        if request.mode == "multi-label":
+            # Convert to one-vs-all format: one binary file per category
+            return self._build_category_csv_one_vs_all(request, df, dataset_dir)
+
         # CRITICAL FIX: Include language column if it exists
         columns_to_copy = [request.text_column, request.label_column]
         rename_mapping = {request.text_column: "text", request.label_column: "label"}
@@ -235,6 +240,79 @@ class TrainingDatasetBuilder:
             strategy="single-label",
             text_column="text",
             label_column="label",
+            metadata=metadata,
+        )
+
+    def _build_category_csv_one_vs_all(self, request: TrainingDataRequest, df: pd.DataFrame, dataset_dir: Path) -> TrainingDataBundle:
+        """Convert category CSV to one-vs-all format (one binary file per category)"""
+        timestamp = _timestamp()
+        category_files: Dict[str, Path] = {}
+        positive_mapping: Dict[str, List[str]] = {}
+
+        # Get all unique categories
+        unique_categories = df[request.label_column].unique()
+
+        # Prepare columns for binary files
+        columns_to_include = [request.text_column]
+        if request.lang_column and request.lang_column in df.columns:
+            columns_to_include.append(request.lang_column)
+
+        # Create one binary file per category
+        for category in unique_categories:
+            # Create binary label: 1 if this category, 0 otherwise
+            binary_df = df[columns_to_include].copy()
+            binary_df['label'] = (df[request.label_column] == category).astype(int)
+
+            # Rename columns
+            rename_map = {request.text_column: "text"}
+            if request.lang_column and request.lang_column in df.columns:
+                rename_map[request.lang_column] = "language"
+            binary_df = binary_df.rename(columns=rename_map)
+
+            # Save binary file
+            category_slug = self._slugify(str(category))
+            output_path = dataset_dir / f"category_{category_slug}_{timestamp}.csv"
+            binary_df.to_csv(output_path, index=False)
+            category_files[str(category)] = output_path
+
+            # Track positive examples
+            positives = binary_df[binary_df["label"] == 1]["text"].tolist()
+            positive_mapping[str(category)] = positives
+
+        # Also create multilabel JSONL format for compatibility
+        multilabel_records = []
+        for _, row in df.iterrows():
+            record = {
+                "text": str(row[request.text_column]),
+                "labels": {str(cat): 1 if row[request.label_column] == cat else 0 for cat in unique_categories}
+            }
+            if request.id_column and request.id_column in df.columns:
+                record["id"] = str(row[request.id_column])
+            if request.lang_column and request.lang_column in df.columns:
+                record["lang"] = str(row[request.lang_column])
+            multilabel_records.append(record)
+
+        multilabel_path = dataset_dir / f"multilabel_one_vs_all_{timestamp}.jsonl"
+        with multilabel_path.open("w", encoding="utf-8") as fh:
+            for record in multilabel_records:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+        metadata = {
+            "num_categories": len(category_files),
+            "categories": list(category_files.keys()),
+            "positive_examples": {k: len(v) for k, v in positive_mapping.items()},
+            "num_records": len(multilabel_records),
+            "training_approach": "one-vs-all",
+        }
+
+        training_files = {**category_files, "multilabel": multilabel_path}
+
+        return TrainingDataBundle(
+            primary_file=multilabel_path,
+            training_files=training_files,
+            strategy="multi-label",  # Use multi-label strategy for distributed training
+            text_column="text",
+            label_column="label",  # Individual CSV files use "label" column
             metadata=metadata,
         )
 

@@ -344,7 +344,8 @@ class MultiLabelTrainer:
         for label_name, splits in split_datasets.items():
             for split_name, samples in splits.items():
                 if samples:
-                    all_languages.update([s.lang for s in samples if s.lang])
+                    # Filter out None, NaN, and non-string values
+                    all_languages.update([s.lang for s in samples if s.lang and isinstance(s.lang, str)])
 
         # Sort languages for consistent column ordering
         sorted_languages = sorted(all_languages)
@@ -368,7 +369,7 @@ class MultiLabelTrainer:
                     negatives = len(labels) - positives
 
                 # Count by language
-                lang_counts = Counter([s.lang for s in samples if s.lang])
+                lang_counts = Counter([s.lang for s in samples if s.lang and isinstance(s.lang, str)])
 
                 # Calculate metrics
                 row = {
@@ -601,7 +602,7 @@ class MultiLabelTrainer:
             return BertBase
 
         # analyze language distribution
-        languages = [s.lang for s in samples if s.lang]
+        languages = [s.lang for s in samples if s.lang and isinstance(s.lang, str)]
 
         if languages and len(set(languages)) > 1:
             # multilingual data
@@ -730,10 +731,10 @@ class MultiLabelTrainer:
 
             # Filter train samples
             train_samples_original = len(train_samples)
-            train_samples = [s for s in train_samples if hasattr(s, 'lang') and s.lang and s.lang.upper() in target_languages]
+            train_samples = [s for s in train_samples if hasattr(s, 'lang') and s.lang and isinstance(s.lang, str) and s.lang.upper() in target_languages]
 
             # Filter validation samples
-            val_samples = [s for s in val_samples if hasattr(s, 'lang') and s.lang and s.lang.upper() in target_languages]
+            val_samples = [s for s in val_samples if hasattr(s, 'lang') and s.lang and isinstance(s.lang, str) and s.lang.upper() in target_languages]
 
             if self.verbose:
                 self.logger.info(f"✓ Filtered: {train_samples_original} → {len(train_samples)} train samples")
@@ -770,7 +771,7 @@ class MultiLabelTrainer:
 
         # Extract language information from validation samples for per-language metrics
         # This enables automatic per-language metric tracking even without track_languages=True
-        val_language_info = [s.lang for s in val_samples] if val_samples else None
+        val_language_info = [s.lang if isinstance(s.lang, str) else None for s in val_samples] if val_samples else None
 
         # CRITICAL: Use standard "training_logs" base dir
         # bert_base.py will automatically create: training_logs/{label_value}/{model_type}/
@@ -1033,7 +1034,7 @@ class MultiLabelTrainer:
                 # create job for each language
                 for lang, lang_samples in lang_groups.items():
                     # get validation samples for this language
-                    lang_val = [s for s in datasets['val'] if s.lang == lang or not s.lang]
+                    lang_val = [s for s in datasets['val'] if (isinstance(s.lang, str) and s.lang == lang) or not s.lang]
 
                     training_jobs.append({
                         'label_name': label_name,
@@ -1045,7 +1046,7 @@ class MultiLabelTrainer:
                 # single model for all languages
                 # Detect if multilingual (check unique languages in samples)
                 all_samples = datasets['train'] + datasets['val']
-                unique_langs = set(s.lang for s in all_samples if s.lang)
+                unique_langs = set(s.lang for s in all_samples if s.lang and isinstance(s.lang, str))
 
                 # If multiple languages detected, mark as MULTI, otherwise use the single language
                 if len(unique_langs) > 1:

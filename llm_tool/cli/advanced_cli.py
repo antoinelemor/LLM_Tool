@@ -95,12 +95,33 @@ try:
 except ImportError:
     HAS_PANDAS = False
 
+# Try importing numpy for numerical operations
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
 # Try importing psutil for system monitoring
 try:
     import psutil
     HAS_PSUTIL = True
 except ImportError:
     HAS_PSUTIL = False
+
+# Try importing transformers for tokenizer
+try:
+    from transformers import AutoTokenizer
+    HAS_TRANSFORMERS = True
+except ImportError:
+    HAS_TRANSFORMERS = False
+
+# Try importing tqdm for progress bars
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
 
 # Import internal modules
 from ..config.settings import Settings
@@ -1063,6 +1084,230 @@ class AdvancedCLI:
             'operations_count': 0,
             'last_operation': None
         }
+
+        # Setup logging
+        self._setup_logging()
+
+    def analyze_text_lengths(
+        self,
+        data_path: Path = None,
+        df: Any = None,
+        text_column: str = None,
+        display_results: bool = True,
+        step_label: str = "Text Length Analysis"
+    ) -> Dict[str, Any]:
+        """
+        CRITICAL: Universal text length analysis method.
+
+        This method MUST be used by ALL training modes:
+        - Benchmark (single-label and multi-label)
+        - Custom training
+        - Model selector
+        - Training studio
+        - Quick training
+
+        Args:
+            data_path: Path to dataset file (CSV, JSON, JSONL, Excel, Parquet)
+            df: Pre-loaded DataFrame (if already loaded)
+            text_column: Name of text column to analyze
+            display_results: Whether to display rich tables with results
+            step_label: Label for display step (e.g., "Step 3b: Text Length Analysis")
+
+        Returns:
+            Dict with text length statistics and distribution
+        """
+        if display_results and self.console:
+            self.console.print(f"\n[bold cyan]{step_label}[/bold cyan]\n")
+
+        text_length_stats = {}
+        requires_long_document_model = False
+
+        try:
+            # Verify required libraries are available
+            if not HAS_PANDAS:
+                raise ImportError("pandas not available")
+            if not HAS_NUMPY:
+                raise ImportError("numpy not available")
+
+            # Import locally to avoid UnboundLocalError
+            import pandas as pd
+            import numpy as np
+
+            # Load dataset if not provided
+            if df is None and data_path is not None:
+                if data_path.suffix == '.csv':
+                    df = pd.read_csv(data_path)
+                elif data_path.suffix == '.json':
+                    df = pd.read_json(data_path)
+                elif data_path.suffix == '.jsonl':
+                    df = pd.read_json(data_path, lines=True)
+                elif data_path.suffix in ['.xlsx', '.xls']:
+                    df = pd.read_excel(data_path)
+                elif data_path.suffix == '.parquet':
+                    df = pd.read_parquet(data_path)
+
+            if df is not None and text_column and text_column in df.columns:
+                if display_results and self.console:
+                    self.console.print("[dim]Analyzing text lengths for all documents...[/dim]\n")
+
+                # Get all texts
+                all_texts = df[text_column].dropna().astype(str).tolist()
+
+                # Load tokenizer for accurate token counting
+                try:
+                    if not HAS_TRANSFORMERS:
+                        raise ImportError("transformers library not available")
+
+                    # Import tqdm locally to avoid UnboundLocalError
+                    if HAS_TQDM:
+                        from tqdm import tqdm
+
+                    # Try to load tokenizer with fallback
+                    tokenizer = None
+                    tokenizer_models = [
+                        "bert-base-multilingual-cased",  # Best for multilingual
+                        "bert-base-uncased",              # Fallback
+                        "distilbert-base-uncased"         # Lightweight fallback
+                    ]
+
+                    for model_name in tokenizer_models:
+                        try:
+                            tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=False)
+                            break
+                        except Exception as model_error:
+                            self.logger.debug(f"Could not load {model_name}: {model_error}")
+                            continue
+
+                    if tokenizer is None:
+                        raise RuntimeError("Could not load any tokenizer model")
+
+                    # Analyze lengths in both characters and tokens
+                    char_lengths = []
+                    token_lengths = []
+
+                    # Use tqdm only if available
+                    text_iterator = tqdm(all_texts, desc="Measuring text lengths", disable=not HAS_TQDM) if HAS_TQDM else all_texts
+                    for text in text_iterator:
+                        char_lengths.append(len(text))
+                        tokens = tokenizer.encode(text, truncation=False, add_special_tokens=True)
+                        token_lengths.append(len(tokens))
+
+                    char_lengths = np.array(char_lengths)
+                    token_lengths = np.array(token_lengths)
+
+                    # Calculate comprehensive statistics
+                    text_length_stats = {
+                        'char_min': int(np.min(char_lengths)),
+                        'char_max': int(np.max(char_lengths)),
+                        'char_mean': float(np.mean(char_lengths)),
+                        'char_median': float(np.median(char_lengths)),
+                        'char_std': float(np.std(char_lengths)),
+                        'char_p25': float(np.percentile(char_lengths, 25)),
+                        'char_p75': float(np.percentile(char_lengths, 75)),
+                        'char_p95': float(np.percentile(char_lengths, 95)),
+                        'token_min': int(np.min(token_lengths)),
+                        'token_max': int(np.max(token_lengths)),
+                        'token_mean': float(np.mean(token_lengths)),
+                        'token_median': float(np.median(token_lengths)),
+                        'token_std': float(np.std(token_lengths)),
+                        'token_p25': float(np.percentile(token_lengths, 25)),
+                        'token_p75': float(np.percentile(token_lengths, 75)),
+                        'token_p95': float(np.percentile(token_lengths, 95)),
+                        'avg_chars': float(np.mean(char_lengths)),  # For compatibility
+                    }
+
+                    # Classify documents by length
+                    short_docs = np.sum(token_lengths < 128)
+                    medium_docs = np.sum((token_lengths >= 128) & (token_lengths < 512))
+                    long_docs = np.sum((token_lengths >= 512) & (token_lengths < 1024))
+                    very_long_docs = np.sum(token_lengths >= 1024)
+                    total_docs = len(token_lengths)
+
+                    text_length_stats['distribution'] = {
+                        'short': {'count': int(short_docs), 'percentage': float(short_docs / total_docs * 100)},
+                        'medium': {'count': int(medium_docs), 'percentage': float(medium_docs / total_docs * 100)},
+                        'long': {'count': int(long_docs), 'percentage': float(long_docs / total_docs * 100)},
+                        'very_long': {'count': int(very_long_docs), 'percentage': float(very_long_docs / total_docs * 100)},
+                    }
+
+                    # Display results if requested
+                    if display_results and self.console:
+                        # Statistics table
+                        stats_table = Table(title="Text Length Statistics", border_style="cyan", show_header=True, header_style="bold")
+                        stats_table.add_column("Metric", style="cyan", width=20)
+                        stats_table.add_column("Characters", style="yellow", justify="right", width=15)
+                        stats_table.add_column("Tokens", style="green", justify="right", width=15)
+
+                        stats_table.add_row("Minimum", f"{text_length_stats['char_min']:,}", f"{text_length_stats['token_min']:,}")
+                        stats_table.add_row("25th Percentile", f"{text_length_stats['char_p25']:,.0f}", f"{text_length_stats['token_p25']:,.0f}")
+                        stats_table.add_row("Median", f"{text_length_stats['char_median']:,.0f}", f"{text_length_stats['token_median']:,.0f}")
+                        stats_table.add_row("Mean", f"{text_length_stats['char_mean']:,.0f}", f"{text_length_stats['token_mean']:,.0f}")
+                        stats_table.add_row("75th Percentile", f"{text_length_stats['char_p75']:,.0f}", f"{text_length_stats['token_p75']:,.0f}")
+                        stats_table.add_row("95th Percentile", f"{text_length_stats['char_p95']:,.0f}", f"{text_length_stats['token_p95']:,.0f}")
+                        stats_table.add_row("Maximum", f"{text_length_stats['char_max']:,}", f"{text_length_stats['token_max']:,}")
+                        stats_table.add_row("Std Deviation", f"{text_length_stats['char_std']:,.0f}", f"{text_length_stats['token_std']:,.0f}")
+
+                        self.console.print(stats_table)
+
+                        # Distribution table
+                        self.console.print("\n")
+                        dist_table = Table(title="Document Length Distribution", border_style="cyan", show_header=True, header_style="bold")
+                        dist_table.add_column("Category", style="cyan", width=20)
+                        dist_table.add_column("Token Range", style="white", width=20)
+                        dist_table.add_column("Count", style="yellow", justify="right", width=12)
+                        dist_table.add_column("Percentage", style="green", justify="right", width=12)
+
+                        dist_table.add_row("Short", "< 128 tokens", f"{short_docs:,}", f"{short_docs / total_docs * 100:.1f}%")
+                        dist_table.add_row("Medium", "128-511 tokens", f"{medium_docs:,}", f"{medium_docs / total_docs * 100:.1f}%")
+                        dist_table.add_row("Long", "512-1023 tokens", f"{long_docs:,}", f"{long_docs / total_docs * 100:.1f}%",
+                                         style="bold yellow" if long_docs > 0 else None)
+                        dist_table.add_row("Very Long", "≥ 1024 tokens", f"{very_long_docs:,}", f"{very_long_docs / total_docs * 100:.1f}%",
+                                         style="bold red" if very_long_docs > 0 else None)
+
+                        self.console.print(dist_table)
+
+                        # Long document warning
+                        long_document_percentage = (long_docs + very_long_docs) / total_docs * 100
+
+                        if long_document_percentage > 20:
+                            requires_long_document_model = True
+                            self.console.print(f"\n[bold yellow]⚠ Warning: {long_document_percentage:.1f}% of documents exceed 512 tokens[/bold yellow]")
+                            self.console.print("[dim]Standard BERT models truncate at 512 tokens, which may lose important information.[/dim]")
+                            self.console.print("[dim]Long-document models (Longformer, BigBird) can handle up to 4096 tokens.[/dim]\n")
+                        else:
+                            self.console.print(f"\n[green]✓ Most documents ({100 - long_document_percentage:.1f}%) fit within standard BERT limits (512 tokens)[/green]")
+
+                    text_length_stats['requires_long_model'] = requires_long_document_model
+
+                except Exception as tokenizer_error:
+                    self.logger.debug(f"Tokenizer-based analysis failed: {tokenizer_error}")
+                    if display_results and self.console:
+                        self.console.print(f"[yellow]Could not load tokenizer for precise token counting[/yellow]")
+                        self.console.print(f"[dim]Error: {str(tokenizer_error)}[/dim]")
+
+                    # Fallback: character-based analysis only
+                    char_lengths = [len(str(text)) for text in all_texts]
+                    char_lengths = np.array(char_lengths)
+
+                    text_length_stats = {
+                        'char_min': int(np.min(char_lengths)),
+                        'char_max': int(np.max(char_lengths)),
+                        'char_mean': float(np.mean(char_lengths)),
+                        'char_median': float(np.median(char_lengths)),
+                        'char_p95': float(np.percentile(char_lengths, 95)),
+                        'avg_chars': float(np.mean(char_lengths)),
+                    }
+
+                    if display_results and self.console:
+                        self.console.print(f"[dim]Average text length: {text_length_stats['char_mean']:.0f} characters[/dim]")
+
+        except Exception as e:
+            self.logger.debug(f"Text length analysis failed: {e}")
+            if display_results and self.console:
+                self.console.print("[yellow]Could not perform text length analysis[/yellow]")
+                self.console.print(f"[dim]Error: {str(e)}[/dim]")
+
+        return text_length_stats
 
         # Setup logging
         self._setup_logging()
@@ -4054,11 +4299,12 @@ class AdvancedCLI:
                 recommended_models = []
 
                 if text_length_stats.get('user_prefers_long_models'):
-                    self.console.print("[yellow]Long-document models:[/yellow]")
+                    self.console.print("[yellow]Long-document models (4096+ tokens):[/yellow]")
                     recommended_models = [
-                        "allenai/longformer-base-4096",
-                        "google/bigbird-roberta-base",
-                        "facebook/xlm-roberta-longformer-base-4096"
+                        "facebook/xlm-roberta-longformer-base-4096",  # Multilingual FIRST
+                        "google/long-t5-local-base",  # Multilingual
+                        "allenai/longformer-base-4096",  # English only
+                        "google/bigbird-roberta-base"  # English only
                     ]
                 else:
                     if confirmed_languages:
@@ -4221,12 +4467,51 @@ class AdvancedCLI:
 
                     # Load and split data
                     from sklearn.model_selection import train_test_split
+                    from collections import Counter
+
+                    # Check if we have at least 2 instances per class for stratification
+                    stratify_col = None
+                    if not is_multi_label:
+                        label_counts = Counter(train_df['label'])
+                        min_count = min(label_counts.values())
+
+                        if min_count < 2:
+                            # Find which classes have insufficient instances
+                            insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
+                            self.console.print(f"[yellow]⚠️  Dataset has class(es) with only 1 instance: {insufficient_classes}[/yellow]")
+
+                            # Ask user if they want to remove these classes or proceed
+                            remove_classes = Prompt.ask(
+                                f"Remove class(es) with insufficient instances?",
+                                choices=["y", "n"],
+                                default="y"
+                            )
+
+                            if remove_classes.lower() == 'y':
+                                # Filter out samples with insufficient classes
+                                original_count = len(train_df)
+                                train_df = train_df[~train_df['label'].isin(insufficient_classes)]
+                                self.console.print(f"[dim]Removed {original_count - len(train_df)} samples from classes: {insufficient_classes}[/dim]")
+
+                                # Recompute label counts
+                                label_counts = Counter(train_df['label'])
+                                min_count = min(label_counts.values()) if label_counts else 0
+
+                                if min_count < 2:
+                                    self.console.print("[red]Still insufficient samples after removal. Cannot proceed with training.[/red]")
+                                    return
+
+                                stratify_col = train_df['label']
+                            else:
+                                self.console.print(f"[yellow]Proceeding without stratification (may reduce quality)[/yellow]")
+                        else:
+                            stratify_col = train_df['label']
 
                     train_data, val_data = train_test_split(
                         train_df,
                         test_size=0.2,
                         random_state=42,
-                        stratify=train_df['label'] if not is_multi_label else None
+                        stratify=stratify_col
                     )
 
                     # Train model
@@ -5983,10 +6268,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print(modes_table)
         self.console.print()
 
+        # If one-vs-all approach, suggest distributed mode
+        default_mode = "quick"
+        if bundle.metadata.get('training_approach') == 'one-vs-all':
+            self.console.print("[bold yellow]💡 Recommended Mode:[/bold yellow] [cyan]distributed[/cyan]")
+            self.console.print(f"[dim]   Since you selected 'one-vs-all' training, distributed mode will train {bundle.metadata.get('num_categories', '?')} models in parallel[/dim]\n")
+            default_mode = "distributed"
+
         mode = Prompt.ask(
             "[bold yellow]Select training mode[/bold yellow]",
             choices=["quick", "benchmark", "custom", "distributed", "back"],
-            default="quick",
+            default=default_mode,
         )
 
         if mode == "back":
@@ -6075,7 +6367,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print()
 
         # NEW: Ask to save metadata (unless resuming)
-        save_metadata = False
+        save_metadata = True  # Default to True for reproducibility
         metadata_path = None
 
         if not is_resume:
@@ -6108,18 +6400,47 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("[yellow]Training cancelled by user.[/yellow]")
             return
 
-        # Prepare model configuration for metadata
+        # Prepare COMPLETE model configuration for metadata (ALL MODES)
+        # This ensures FULL reproducibility for quick, benchmark, and custom modes
         model_config = {
+            # Core training mode
             'training_mode': mode,
+
+            # Common hyperparameters
             'selected_model': preloaded_config.get('selected_model') if preloaded_config else None,
             'epochs': preloaded_config.get('epochs') if preloaded_config else None,
             'batch_size': preloaded_config.get('batch_size') if preloaded_config else 16,
             'learning_rate': preloaded_config.get('learning_rate') if preloaded_config else 2e-5,
             'early_stopping': True,
-            'recommended_model': bundle.recommended_model if hasattr(bundle, 'recommended_model') else None
+            'recommended_model': bundle.recommended_model if hasattr(bundle, 'recommended_model') else None,
+
+            # Advanced training options (will be filled by each mode)
+            'use_reinforcement': preloaded_config.get('use_reinforcement') if preloaded_config else True,
+            'reinforced_epochs': preloaded_config.get('reinforced_epochs') if preloaded_config else 10,
+            'validation_split': preloaded_config.get('validation_split') if preloaded_config else 0.2,
+            'test_split': preloaded_config.get('test_split') if preloaded_config else 0.1,
+            'stratified_split': preloaded_config.get('stratified_split') if preloaded_config else True,
+
+            # Benchmark-specific parameters (filled if mode=='benchmark')
+            'selected_models': None,  # Will be filled by benchmark mode
+            'selected_labels': None,  # Will be filled by benchmark mode
+            'benchmark_category': None,  # Will be filled if multi-class → binary
+
+            # Quick-specific parameters (filled if mode=='quick')
+            'quick_model_name': None,  # Will be filled by quick mode
+            'quick_epochs': None,  # Will be filled by quick mode
+
+            # Custom-specific parameters (filled if mode=='custom')
+            'custom_config': None,  # Will be filled by custom mode
+
+            # Runtime parameters (to be filled during execution)
+            'actual_models_trained': [],  # Will be updated post-training
+            'training_start_time': None,
+            'training_end_time': None
         }
 
         # Save PRE-TRAINING metadata
+        metadata_path = None  # Initialize before conditional block
         if save_metadata:
             try:
                 metadata_path = self._save_training_metadata(
@@ -6146,19 +6467,27 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("\n[green]✓ Starting training...[/green]\n")
 
         training_result = None
+        runtime_params = {}  # Will store actual parameters used during training
         try:
             if mode == "distributed":
-                training_result = self._training_studio_run_distributed(bundle)
+                training_result = self._training_studio_run_distributed(bundle, model_config)
+                runtime_params = training_result.get('runtime_params', {}) if training_result else {}
             elif mode == "quick":
-                training_result = self._training_studio_run_quick(bundle)
+                training_result = self._training_studio_run_quick(bundle, model_config)
+                runtime_params = training_result.get('runtime_params', {}) if training_result else {}
             elif mode == "benchmark":
-                training_result = self._training_studio_run_benchmark(bundle)
+                training_result = self._training_studio_run_benchmark(bundle, model_config)
+                runtime_params = training_result.get('runtime_params', {}) if training_result else {}
             else:
-                training_result = self._training_studio_run_custom(bundle)
+                training_result = self._training_studio_run_custom(bundle, model_config)
+                runtime_params = training_result.get('runtime_params', {}) if training_result else {}
 
-            # Update POST-TRAINING metadata
+            # Update POST-TRAINING metadata with COMPLETE information
             if save_metadata and metadata_path:
                 try:
+                    # Merge runtime params into model_config for complete save
+                    final_model_config = {**model_config, **runtime_params}
+
                     execution_status = {
                         'status': 'completed',
                         'completed_at': datetime.now().isoformat(),
@@ -6166,8 +6495,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'best_model': training_result.get('best_model') if training_result else None,
                         'best_f1': training_result.get('best_f1') if training_result else None
                     }
-                    self._update_training_metadata(metadata_path, execution_status=execution_status)
-                    self.console.print(f"\n[green]✅ Training metadata updated with results[/green]\n")
+
+                    # Update both execution_status AND model_config with runtime params
+                    self._update_training_metadata(
+                        metadata_path,
+                        execution_status=execution_status,
+                        model_config=final_model_config
+                    )
+                    self.console.print(f"\n[green]✅ Training metadata updated with complete parameters[/green]\n")
                 except Exception as e:
                     self.logger.error(f"Failed to update metadata: {e}")
 
@@ -6343,6 +6678,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         languages_found_in_column = set(analysis.get('languages_detected', {}).keys())
         confirmed_languages = set()
         lang_column = None
+        text_length_stats = {}  # Initialize - will be populated after text column selection
         languages_from_content = {}
 
         # Check if we have a language column with detected languages
@@ -6788,191 +7124,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 if manual_langs.strip():
                     confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
 
-        # Step 3b: Sophisticated Text Length Analysis for Long-Document Model Recommendation
-        self.console.print("\n[bold cyan]Step 3b: Text Length Analysis[/bold cyan]\n")
-
-        text_length_stats = {}
-        requires_long_document_model = False
-
-        try:
-            import pandas as pd
-            import numpy as np
-            from transformers import AutoTokenizer
-
-            # Load dataset to analyze text lengths
-            df = None
-            if data_path.suffix == '.csv':
-                df = pd.read_csv(data_path)
-            elif data_path.suffix == '.json':
-                df = pd.read_json(data_path)
-            elif data_path.suffix == '.jsonl':
-                df = pd.read_json(data_path, lines=True)
-            elif data_path.suffix in ['.xlsx', '.xls']:
-                df = pd.read_excel(data_path)
-            elif data_path.suffix == '.parquet':
-                df = pd.read_parquet(data_path)
-
-            if df is not None and temp_text_column and temp_text_column in df.columns:
-                self.console.print("[dim]Analyzing text lengths for all documents...[/dim]\n")
-
-                # Get all texts
-                all_texts = df[temp_text_column].dropna().astype(str).tolist()
-
-                # Load a tokenizer for accurate token counting (use multilingual BERT as baseline)
-                try:
-                    tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
-
-                    # Analyze lengths in both characters and tokens
-                    char_lengths = []
-                    token_lengths = []
-
-                    for text in tqdm(all_texts, desc="Measuring text lengths", disable=not HAS_RICH):
-                        char_lengths.append(len(text))
-                        # Count tokens
-                        tokens = tokenizer.encode(text, truncation=False, add_special_tokens=True)
-                        token_lengths.append(len(tokens))
-
-                    char_lengths = np.array(char_lengths)
-                    token_lengths = np.array(token_lengths)
-
-                    # Calculate comprehensive statistics
-                    text_length_stats = {
-                        'char_min': int(np.min(char_lengths)),
-                        'char_max': int(np.max(char_lengths)),
-                        'char_mean': float(np.mean(char_lengths)),
-                        'char_median': float(np.median(char_lengths)),
-                        'char_std': float(np.std(char_lengths)),
-                        'char_p25': float(np.percentile(char_lengths, 25)),
-                        'char_p75': float(np.percentile(char_lengths, 75)),
-                        'char_p95': float(np.percentile(char_lengths, 95)),
-                        'token_min': int(np.min(token_lengths)),
-                        'token_max': int(np.max(token_lengths)),
-                        'token_mean': float(np.mean(token_lengths)),
-                        'token_median': float(np.median(token_lengths)),
-                        'token_std': float(np.std(token_lengths)),
-                        'token_p25': float(np.percentile(token_lengths, 25)),
-                        'token_p75': float(np.percentile(token_lengths, 75)),
-                        'token_p95': float(np.percentile(token_lengths, 95)),
-                        'avg_chars': float(np.mean(char_lengths)),  # For compatibility with model selection
-                    }
-
-                    # Classify documents by length
-                    short_docs = np.sum(token_lengths < 128)  # Very short
-                    medium_docs = np.sum((token_lengths >= 128) & (token_lengths < 512))  # Standard BERT range
-                    long_docs = np.sum((token_lengths >= 512) & (token_lengths < 1024))  # Long
-                    very_long_docs = np.sum(token_lengths >= 1024)  # Very long
-
-                    total_docs = len(token_lengths)
-
-                    text_length_stats['distribution'] = {
-                        'short': {'count': int(short_docs), 'percentage': float(short_docs / total_docs * 100)},
-                        'medium': {'count': int(medium_docs), 'percentage': float(medium_docs / total_docs * 100)},
-                        'long': {'count': int(long_docs), 'percentage': float(long_docs / total_docs * 100)},
-                        'very_long': {'count': int(very_long_docs), 'percentage': float(very_long_docs / total_docs * 100)},
-                    }
-
-                    # Display sophisticated statistics table
-                    stats_table = Table(title="Text Length Statistics", border_style="cyan", show_header=True, header_style="bold")
-                    stats_table.add_column("Metric", style="cyan", width=20)
-                    stats_table.add_column("Characters", style="yellow", justify="right", width=15)
-                    stats_table.add_column("Tokens", style="green", justify="right", width=15)
-
-                    stats_table.add_row("Minimum", f"{text_length_stats['char_min']:,}", f"{text_length_stats['token_min']:,}")
-                    stats_table.add_row("25th Percentile", f"{text_length_stats['char_p25']:,.0f}", f"{text_length_stats['token_p25']:,.0f}")
-                    stats_table.add_row("Median", f"{text_length_stats['char_median']:,.0f}", f"{text_length_stats['token_median']:,.0f}")
-                    stats_table.add_row("Mean", f"{text_length_stats['char_mean']:,.0f}", f"{text_length_stats['token_mean']:,.0f}")
-                    stats_table.add_row("75th Percentile", f"{text_length_stats['char_p75']:,.0f}", f"{text_length_stats['token_p75']:,.0f}")
-                    stats_table.add_row("95th Percentile", f"{text_length_stats['char_p95']:,.0f}", f"{text_length_stats['token_p95']:,.0f}")
-                    stats_table.add_row("Maximum", f"{text_length_stats['char_max']:,}", f"{text_length_stats['token_max']:,}")
-                    stats_table.add_row("Std Deviation", f"{text_length_stats['char_std']:,.0f}", f"{text_length_stats['token_std']:,.0f}")
-
-                    self.console.print(stats_table)
-
-                    # Display distribution table
-                    self.console.print("\n")
-                    dist_table = Table(title="Document Length Distribution", border_style="cyan", show_header=True, header_style="bold")
-                    dist_table.add_column("Category", style="cyan", width=20)
-                    dist_table.add_column("Token Range", style="white", width=20)
-                    dist_table.add_column("Count", style="yellow", justify="right", width=12)
-                    dist_table.add_column("Percentage", style="green", justify="right", width=12)
-
-                    dist_table.add_row(
-                        "Short",
-                        "< 128 tokens",
-                        f"{short_docs:,}",
-                        f"{short_docs / total_docs * 100:.1f}%"
-                    )
-                    dist_table.add_row(
-                        "Medium",
-                        "128-511 tokens",
-                        f"{medium_docs:,}",
-                        f"{medium_docs / total_docs * 100:.1f}%"
-                    )
-                    dist_table.add_row(
-                        "Long",
-                        "512-1023 tokens",
-                        f"{long_docs:,}",
-                        f"{long_docs / total_docs * 100:.1f}%",
-                        style="bold yellow" if long_docs > 0 else None
-                    )
-                    dist_table.add_row(
-                        "Very Long",
-                        "≥ 1024 tokens",
-                        f"{very_long_docs:,}",
-                        f"{very_long_docs / total_docs * 100:.1f}%",
-                        style="bold red" if very_long_docs > 0 else None
-                    )
-
-                    self.console.print(dist_table)
-
-                    # Determine if long-document models are recommended
-                    long_document_percentage = (long_docs + very_long_docs) / total_docs * 100
-
-                    if long_document_percentage > 20:  # More than 20% are long documents
-                        requires_long_document_model = True
-                        self.console.print(f"\n[bold yellow]⚠ Warning: {long_document_percentage:.1f}% of documents exceed 512 tokens[/bold yellow]")
-                        self.console.print("[dim]Standard BERT models truncate at 512 tokens, which may lose important information.[/dim]")
-                        self.console.print("[dim]Long-document models (Longformer, BigBird) can handle up to 4096 tokens.[/dim]\n")
-
-                        # Ask user if they want to use long-document models
-                        use_long_model = Confirm.ask(
-                            "[bold cyan]Would you like to see long-document model recommendations?[/bold cyan]",
-                            default=True
-                        )
-
-                        if use_long_model:
-                            # Store this preference for later model recommendation
-                            text_length_stats['user_prefers_long_models'] = True
-                            self.console.print("[green]✓ Long-document models will be prioritized in recommendations[/green]")
-                        else:
-                            text_length_stats['user_prefers_long_models'] = False
-                            self.console.print("[yellow]Standard models will be used (texts will be truncated to 512 tokens)[/yellow]")
-                    else:
-                        self.console.print(f"\n[green]✓ Most documents ({100 - long_document_percentage:.1f}%) fit within standard BERT limits (512 tokens)[/green]")
-                        text_length_stats['user_prefers_long_models'] = False
-
-                except Exception as tokenizer_error:
-                    self.logger.debug(f"Tokenizer-based analysis failed: {tokenizer_error}")
-                    self.console.print("[yellow]Could not load tokenizer for precise token counting[/yellow]")
-
-                    # Fallback: use character-based analysis only
-                    char_lengths = [len(str(text)) for text in all_texts]
-                    char_lengths = np.array(char_lengths)
-
-                    text_length_stats = {
-                        'char_min': int(np.min(char_lengths)),
-                        'char_max': int(np.max(char_lengths)),
-                        'char_mean': float(np.mean(char_lengths)),
-                        'char_median': float(np.median(char_lengths)),
-                        'char_p95': float(np.percentile(char_lengths, 95)),
-                        'avg_chars': float(np.mean(char_lengths)),  # For compatibility with model selection
-                    }
-
-                    self.console.print(f"[dim]Average text length: {text_length_stats['char_mean']:.0f} characters[/dim]")
-
-        except Exception as e:
-            self.logger.debug(f"Text length analysis failed: {e}")
-            self.console.print("[yellow]Could not perform text length analysis[/yellow]")
+                self.console.print("[yellow]Standard models will be used (texts will be truncated to 512 tokens)[/yellow]")
+        else:
+            text_length_stats['user_prefers_long_models'] = False
 
         # Step 4: Text Column Selection with Sophisticated Table
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -7030,6 +7184,32 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 break
             self.console.print(f"[red]✗ Column '{text_column}' not found in dataset![/red]")
             self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
+
+        # Step 4b: CRITICAL - Text Length Analysis (MUST be done AFTER text column selection)
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        text_length_stats = self.analyze_text_lengths(
+            data_path=data_path,
+            text_column=text_column,  # Use the ACTUAL selected column
+            display_results=True,
+            step_label="STEP 4b: Text Length Analysis"
+        )
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+
+        # Check if long-document models are needed
+        requires_long_document_model = text_length_stats.get('requires_long_model', False)
+        if requires_long_document_model:
+            use_long_model = Confirm.ask(
+                "[bold cyan]Would you like to see long-document model recommendations?[/bold cyan]",
+                default=True
+            )
+            if use_long_model:
+                text_length_stats['user_prefers_long_models'] = True
+                self.console.print("[green]✓ Long-document models will be prioritized in recommendations[/green]")
+            else:
+                text_length_stats['user_prefers_long_models'] = False
+                self.console.print("[yellow]Standard models will be used (texts will be truncated to 512 tokens)[/yellow]")
+        else:
+            text_length_stats['user_prefers_long_models'] = False
 
         # Step 5: Label/Category Column Selection with Category Analysis
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -7652,11 +7832,37 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print(f"  [cyan]Text:[/cyan] '{text_column}' → Model will learn from this text")
             self.console.print(f"  [cyan]Annotations:[/cyan] '{annotation_column}' → Model will learn these labels")
 
+            # Step 3b: CRITICAL - Text Length Analysis (MUST be done AFTER text column selection)
+            self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            text_length_stats = self.analyze_text_lengths(
+                data_path=csv_path,
+                text_column=text_column,  # Use the ACTUAL selected column, not temp
+                display_results=True,
+                step_label="STEP 3b: Text Length Analysis"
+            )
+            self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+
+            # Check if long-document models are needed
+            requires_long_document_model = text_length_stats.get('requires_long_model', False)
+            if requires_long_document_model:
+                use_long_model = Confirm.ask(
+                    "[bold cyan]Would you like to see long-document model recommendations?[/bold cyan]",
+                    default=True
+                )
+                if use_long_model:
+                    text_length_stats['user_prefers_long_models'] = True
+                    self.console.print("[green]✓ Long-document models will be prioritized in recommendations[/green]")
+                else:
+                    text_length_stats['user_prefers_long_models'] = False
+                    self.console.print("[yellow]Standard models will be used (texts will be truncated to 512 tokens)[/yellow]")
+            else:
+                text_length_stats['user_prefers_long_models'] = False
+
             # Step 4: Language Detection and Text Analysis (using sophisticated universal system)
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Language Detection & Text Analysis[/bold white]")
+            self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Language Detection[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[dim]Analyzing languages and text characteristics to recommend the best model.[/dim]\n")
+            self.console.print("[dim]Analyzing languages to recommend the best model.[/dim]\n")
 
             # Read CSV for analysis
             import pandas as pd
@@ -8267,6 +8473,49 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 keys_input = Prompt.ask("\nAnnotation keys (comma-separated, or BLANK for ALL)", default="")
                 annotation_keys = [key.strip() for key in keys_input.split(",") if key.strip()] or None
+
+                # Check if we need to ask about training approach for multi-label with single key
+                training_approach = "multi-label"  # Default
+                if annotation_keys and len(annotation_keys) == 1:
+                    # Single key selected - check if it has multiple values
+                    selected_key = annotation_keys[0]
+                    if selected_key in all_keys_values:
+                        num_unique_values = len(all_keys_values[selected_key])
+
+                        if num_unique_values > 2:
+                            self.console.print(f"\n[bold cyan]🎯 Training Approach for '{selected_key}' ({num_unique_values} values)[/bold cyan]\n")
+                            self.console.print("[dim]Since this key has multiple values, choose how to train:[/dim]\n")
+
+                            approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                            approach_table.add_column("Approach", style="cyan bold", width=18)
+                            approach_table.add_column("Description", style="white", width=60)
+
+                            approach_table.add_row(
+                                "multi-label",
+                                f"🏷️  ONE model detecting all {num_unique_values} values\n"
+                                "✓ Faster training (1 model only)\n"
+                                "✓ Can predict multiple values simultaneously\n"
+                                "✓ Best for: when samples can have multiple values"
+                            )
+                            approach_table.add_row(
+                                "one-vs-all",
+                                f"⚡ {num_unique_values} binary models (one per value)\n"
+                                "✓ Each model: 'Value X' vs 'NOT Value X'\n"
+                                "✓ Better for: mutually exclusive values or value-specific tuning\n"
+                                "✓ Longer training but more flexible"
+                            )
+
+                            self.console.print(approach_table)
+                            self.console.print()
+
+                            training_approach = Prompt.ask(
+                                "[bold yellow]Training approach[/bold yellow]",
+                                choices=["multi-label", "one-vs-all", "back"],
+                                default="multi-label"
+                            )
+
+                            if training_approach == "back":
+                                return None
             else:
                 # For single-label mode - use comprehensive data
                 if all_keys_values:
@@ -8294,6 +8543,49 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 keys_input = Prompt.ask("\nAnnotation keys to include (comma separated, leave blank for all)", default="")
                 annotation_keys = [key.strip() for key in keys_input.split(",") if key.strip()] or None
+
+                # Check if we need to ask about training approach (multi-class vs one-vs-all)
+                training_approach = "multi-class"  # Default
+                if annotation_keys and len(annotation_keys) == 1:
+                    # Single key selected - check if it has multiple values
+                    selected_key = annotation_keys[0]
+                    if selected_key in all_keys_values:
+                        num_unique_values = len(all_keys_values[selected_key])
+
+                        if num_unique_values > 2:
+                            self.console.print(f"\n[bold cyan]🎯 Training Approach for '{selected_key}' ({num_unique_values} values)[/bold cyan]\n")
+                            self.console.print("[dim]Since this key has multiple values, choose how to train:[/dim]\n")
+
+                            approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                            approach_table.add_column("Approach", style="cyan bold", width=18)
+                            approach_table.add_column("Description", style="white", width=60)
+
+                            approach_table.add_row(
+                                "multi-class",
+                                f"🎯 ONE model predicting among {num_unique_values} values\n"
+                                "✓ Faster training (1 model only)\n"
+                                "✓ Model learns relationships between values\n"
+                                "✓ Best for: general classification with balanced data"
+                            )
+                            approach_table.add_row(
+                                "one-vs-all",
+                                f"⚡ {num_unique_values} binary models (one per value)\n"
+                                "✓ Each model: 'Value X' vs 'NOT Value X'\n"
+                                "✓ Better for: imbalanced data or value-specific tuning\n"
+                                "✓ Longer training but more flexible"
+                            )
+
+                            self.console.print(approach_table)
+                            self.console.print()
+
+                            training_approach = Prompt.ask(
+                                "[bold yellow]Training approach[/bold yellow]",
+                                choices=["multi-class", "one-vs-all", "back"],
+                                default="multi-class"
+                            )
+
+                            if training_approach == "back":
+                                return None
 
             # Step 7: Additional Columns (ID, Language)
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -8355,18 +8647,40 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print(f"[red]✗ Column '{override_lang}' not found in dataset![/red]")
                     self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
-            request = TrainingDataRequest(
-                input_path=csv_path,
-                format="llm_json",
-                text_column=text_column,
-                annotation_column=annotation_column,
-                annotation_keys=annotation_keys,
-                label_strategy=label_strategy,
-                mode=mode,
-                id_column=id_column or None,
-                lang_column=lang_column or None,
-            )
-            bundle = builder.build(request)
+            # Handle one-vs-all training approach (both single-label and multi-label modes)
+            if 'training_approach' in locals() and training_approach == "one-vs-all":
+                # Convert to multi-label format for one-vs-all training
+                request = TrainingDataRequest(
+                    input_path=csv_path,
+                    format="llm_json",
+                    text_column=text_column,
+                    annotation_column=annotation_column,
+                    annotation_keys=annotation_keys,
+                    label_strategy=label_strategy,
+                    mode="multi-label",  # Use multi-label to trigger one-vs-all training
+                    id_column=id_column or None,
+                    lang_column=lang_column or None,
+                )
+                bundle = builder.build(request)
+
+                # Mark this as one-vs-all for distributed training
+                if bundle:
+                    bundle.metadata['training_approach'] = 'one-vs-all'
+                    bundle.metadata['original_strategy'] = 'single-label'
+            else:
+                # Standard mode
+                request = TrainingDataRequest(
+                    input_path=csv_path,
+                    format="llm_json",
+                    text_column=text_column,
+                    annotation_column=annotation_column,
+                    annotation_keys=annotation_keys,
+                    label_strategy=label_strategy,
+                    mode=mode,
+                    id_column=id_column or None,
+                    lang_column=lang_column or None,
+                )
+                bundle = builder.build(request)
 
             # Store language metadata in bundle for later use (model selection will happen in training mode)
             if bundle:
@@ -8375,13 +8689,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 if language_distribution:
                     bundle.metadata['language_distribution'] = language_distribution
                 # Text length stats for intelligent model selection later
-                if text_column in df.columns:
-                    text_lengths = df[text_column].dropna().astype(str).apply(len)
-                    bundle.metadata['text_length_stats'] = {
-                        'avg_chars': int(text_lengths.mean()) if len(text_lengths) > 0 else 0,
-                        'max_chars': int(text_lengths.max()) if len(text_lengths) > 0 else 0,
-                        'min_chars': int(text_lengths.min()) if len(text_lengths) > 0 else 0,
-                    }
+                # ONLY calculate if not already done (avoid duplicate analysis)
+                if 'text_length_stats' in locals() and text_length_stats:
+                    # Already calculated with user interaction - reuse it
+                    bundle.metadata['text_length_stats'] = text_length_stats
+                elif text_column in df.columns:
+                    # Not calculated yet - do it now without UI
+                    text_length_stats = self.analyze_text_lengths(
+                        df=df,
+                        text_column=text_column,
+                        display_results=False  # Silent calculation
+                    )
+                    bundle.metadata['text_length_stats'] = text_length_stats
 
             return bundle
 
@@ -8424,16 +8743,81 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             if mode == "back":
                 return None
 
-            request = TrainingDataRequest(
-                input_path=selection['data_path'],
-                format="category_csv",
-                text_column=selection['text_column'],
-                label_column=selection['label_column'],
-                id_column=selection.get('id_column'),
-                lang_column=selection.get('lang_column'),
-                mode=mode,
-            )
-            bundle = builder.build(request)
+            # If single-label with multiple categories, ask about training approach
+            training_approach = "multi-class"  # Default
+            if mode == "single-label":
+                # Count unique labels
+                import pandas as pd
+                df = pd.read_csv(selection['data_path'])
+                label_column = selection['label_column']
+                num_unique_labels = df[label_column].nunique()
+
+                if num_unique_labels > 2:
+                    self.console.print(f"\n[bold cyan]🎯 Training Approach for {num_unique_labels} Categories[/bold cyan]\n")
+                    self.console.print("[dim]Since you have multiple categories, choose how to train:[/dim]\n")
+
+                    approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                    approach_table.add_column("Approach", style="cyan bold", width=18)
+                    approach_table.add_column("Description", style="white", width=60)
+
+                    approach_table.add_row(
+                        "multi-class",
+                        f"🎯 ONE model predicting among {num_unique_labels} categories\n"
+                        "✓ Faster training (1 model only)\n"
+                        "✓ Model learns relationships between categories\n"
+                        "✓ Best for: general classification with balanced data"
+                    )
+                    approach_table.add_row(
+                        "one-vs-all",
+                        f"⚡ {num_unique_labels} binary models (one per category)\n"
+                        "✓ Each model: 'Category X' vs 'NOT Category X'\n"
+                        "✓ Better for: imbalanced data or category-specific tuning\n"
+                        "✓ Longer training but more flexible"
+                    )
+
+                    self.console.print(approach_table)
+                    self.console.print()
+
+                    training_approach = Prompt.ask(
+                        "[bold yellow]Training approach[/bold yellow]",
+                        choices=["multi-class", "one-vs-all", "back"],
+                        default="multi-class"
+                    )
+
+                    if training_approach == "back":
+                        return None
+
+            # If one-vs-all, convert to multi-label format (one binary file per category)
+            if training_approach == "one-vs-all":
+                # Convert single-label multi-class to multi-label one-vs-all format
+                # This will create one binary file per category
+                request = TrainingDataRequest(
+                    input_path=selection['data_path'],
+                    format="category_csv",
+                    text_column=selection['text_column'],
+                    label_column=selection['label_column'],
+                    id_column=selection.get('id_column'),
+                    lang_column=selection.get('lang_column'),
+                    mode="multi-label",  # Use multi-label to trigger one-vs-all training
+                )
+                bundle = builder.build(request)
+
+                # Mark this as one-vs-all for distributed training
+                if bundle:
+                    bundle.metadata['training_approach'] = 'one-vs-all'
+                    bundle.metadata['original_strategy'] = 'single-label-multiclass'
+            else:
+                # Standard multi-class: one model for all categories
+                request = TrainingDataRequest(
+                    input_path=selection['data_path'],
+                    format="category_csv",
+                    text_column=selection['text_column'],
+                    label_column=selection['label_column'],
+                    id_column=selection.get('id_column'),
+                    lang_column=selection.get('lang_column'),
+                    mode=mode,
+                )
+                bundle = builder.build(request)
 
             # Store recommended model and metadata in bundle for later use
             if bundle:
@@ -8562,31 +8946,125 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self.console.print(table)
 
-    def _training_studio_run_quick(self, bundle: TrainingDataBundle) -> None:
+    def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Quick training mode - simple and fast with sensible defaults.
+
+        Args:
+            bundle: Training data bundle
+            model_config: Model configuration dict (will be updated with runtime params)
+
+        Returns:
+            dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
+        """
         self.console.print("\n[bold]Quick training[/bold] - using sensible defaults.")
 
-        # Use recommended model if available, otherwise use default
-        if hasattr(bundle, 'recommended_model') and bundle.recommended_model:
-            default_model = bundle.recommended_model
-            self.console.print(f"[green]Using recommended model: {default_model}[/green]")
-        else:
-            # Select appropriate model based on language
-            if hasattr(bundle, 'languages') and bundle.languages:
-                langs = list(bundle.languages)
-                if 'FR' in langs or 'fr' in langs:
-                    default_model = 'camembert-base'
-                elif 'EN' in langs or 'en' in langs:
-                    default_model = 'bert-base-uncased'
-                else:
-                    default_model = 'xlm-roberta-base'  # Multilingual fallback
-            else:
-                default_model = self._training_studio_default_model()
+        # Intelligent model selection like in benchmark mode
+        # Get languages from metadata (confirmed_languages has priority)
+        languages = set()
+        if hasattr(bundle, 'metadata') and bundle.metadata:
+            languages = bundle.metadata.get('confirmed_languages', bundle.metadata.get('languages', set()))
+        if not languages and hasattr(bundle, 'languages') and bundle.languages:
+            languages = set([lang.upper() for lang in bundle.languages])
 
+        # Convert to uppercase set
+        if languages:
+            languages = set([str(lang).upper() for lang in languages])
+
+        # CRITICAL: Get text_length_stats from bundle metadata
+        text_length_stats = bundle.metadata.get('text_length_stats', {}) if hasattr(bundle, 'metadata') else {}
+
+        # DEBUG: Print what we got
+        self.logger.debug(f"[QUICK MODE DEBUG] text_length_stats keys: {list(text_length_stats.keys())}")
+        self.logger.debug(f"[QUICK MODE DEBUG] token_mean: {text_length_stats.get('token_mean')}")
+        self.logger.debug(f"[QUICK MODE DEBUG] user_prefers_long_models: {text_length_stats.get('user_prefers_long_models')}")
+
+        # Use REAL text length stats - prefer token-based, fallback to chars
+        if text_length_stats.get('token_mean'):
+            text_length_avg = text_length_stats['token_mean']
+            self.logger.debug(f"[QUICK MODE DEBUG] Using token_mean: {text_length_avg}")
+        elif text_length_stats.get('char_mean'):
+            text_length_avg = text_length_stats['char_mean']
+            self.logger.debug(f"[QUICK MODE DEBUG] Using char_mean: {text_length_avg}")
+        else:
+            text_length_avg = getattr(bundle, 'text_length_avg', 158)  # Last resort default
+            self.logger.debug(f"[QUICK MODE DEBUG] Using fallback: {text_length_avg}")
+
+        prefers_long_models = text_length_stats.get('user_prefers_long_models', False)
+        requires_long_model = text_length_stats.get('requires_long_model', False)
+
+        # Determine model strategy
+        if len(languages) > 1:
+            model_strategy = "multilingual"
+        elif 'FR' in languages:
+            model_strategy = "fr"
+        elif 'EN' in languages:
+            model_strategy = "en"
+        else:
+            model_strategy = "multilingual"
+
+        # Get recommended model from bundle if available
+        recommended_model = getattr(bundle, 'recommended_model', None)
+
+        # Get intelligent model recommendations using the same function as benchmark mode
+        self.console.print("\n[bold cyan]🎯 Recommended Models for Your Data:[/bold cyan]")
+
+        # Display context including long-document needs
+        context_parts = []
+        if languages:
+            context_parts.append(f"{', '.join(languages)} dataset")
+        else:
+            context_parts.append("multilingual dataset")
+
+        if text_length_stats.get('token_mean'):
+            context_parts.append(f"avg {text_length_stats['token_mean']:.0f} tokens")
+        else:
+            context_parts.append(f"avg {text_length_avg:.0f} characters")
+
+        if requires_long_model:
+            context_parts.append("⚠ LONG DOCUMENTS (>512 tokens)")
+
+        self.console.print(f"[dim]Based on: {', '.join(context_parts)}[/dim]\n")
+
+        # Get intelligent model recommendations using the same function as benchmark mode
+        # Pass user_prefers_long_models flag to boost long-document models when needed
+        if prefers_long_models or requires_long_model:
+            self.console.print("[yellow]📏 Prioritizing long-document models (handle up to 4096 tokens):[/yellow]")
+
+        selected_models, model_lang_map = self._get_intelligent_benchmark_models(
+            languages, text_length_avg, model_strategy, recommended_model, None,
+            user_prefers_long_models=(prefers_long_models or requires_long_model)
+        )
+
+        if selected_models:
+            self.console.print("[bold]Top 5 recommended models:[/bold]")
+            for idx, model in enumerate(selected_models[:5], 1):
+                lang_info = f" (for {model_lang_map[model].upper()} texts)" if model_lang_map.get(model) else " (multilingual)"
+                self.console.print(f"  {idx}. [cyan]{model}[/cyan]{lang_info}")
+
+            default_model = selected_models[0]
+        else:
+            # Fallback to simple selection
+            if 'FR' in languages:
+                default_model = 'camembert-base'
+            elif 'EN' in languages:
+                default_model = 'bert-base-uncased'
+            else:
+                default_model = 'xlm-roberta-base'
+
+        self.console.print(f"\n[dim]You can also enter any HuggingFace model ID[/dim]")
         model_name = Prompt.ask("Model to train", default=default_model)
 
         # Ask for number of epochs
         from rich.prompt import IntPrompt
         epochs = IntPrompt.ask("Number of epochs", default=10)
+
+        # Capture runtime parameters for full reproducibility
+        runtime_params = {
+            'quick_model_name': model_name,
+            'quick_epochs': epochs,
+            'actual_models_trained': [model_name]
+        }
 
         output_dir = self._training_studio_make_output_dir("training_studio_quick")
 
@@ -8595,12 +9073,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Load data to check structure
             from llm_tool.trainers.multi_label_trainer import MultiLabelTrainer, TrainingConfig as MultiLabelTrainingConfig
             ml_trainer = MultiLabelTrainer(config=MultiLabelTrainingConfig(), verbose=False)
+
+            # Use primary_file for one-vs-all, dataset_path otherwise
+            data_path = str(bundle.primary_file) if hasattr(bundle, 'primary_file') else str(bundle.dataset_path)
+
             samples = ml_trainer.load_multi_label_data(
-                str(bundle.dataset_path),
-                text_column=bundle.text_column,
-                label_column=bundle.label_column,
-                id_column=bundle.id_column if hasattr(bundle, 'id_column') else None,
-                lang_column=bundle.lang_column if hasattr(bundle, 'lang_column') else None
+                data_path,
+                text_field=bundle.text_column,
+                label_fields=None,  # Will auto-detect
+                id_field=bundle.id_column if hasattr(bundle, 'id_column') else None,
+                lang_field=bundle.lang_column if hasattr(bundle, 'lang_column') else None,
+                labels_dict_field=bundle.label_column if hasattr(bundle, 'label_column') else 'labels'
             )
 
             # Detect multi-class groups
@@ -8617,26 +9100,69 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print("\n[dim]Note: Training separate binary classifiers for each value.[/dim]")
                 self.console.print("[dim]For true multi-class, use benchmark mode instead.[/dim]\n")
 
-        trainer = ModelTrainer()
-        config = bundle.to_trainer_config(output_dir, {"model_name": model_name, "max_epochs": epochs})
+        # Create TrainingConfig with user's chosen model
+        from llm_tool.trainers.model_trainer import TrainingConfig
+        training_config = TrainingConfig()
+        training_config.model_name = model_name
+        training_config.num_epochs = epochs
+
+        # Determine if we need to train by language (monolingual model + multiple languages)
+        is_multilingual = self._is_model_multilingual(model_name)
+        needs_language_training = not is_multilingual and len(languages) > 1
+
+        if needs_language_training:
+            self.console.print(f"\n[yellow]🌍 Multi-language training enabled:[/yellow]")
+            self.console.print(f"[dim]The model '{model_name}' is language-specific, so separate models will be trained for each language:[/dim]")
+            for lang in sorted(languages):
+                self.console.print(f"  • {lang.upper()}")
+
+        trainer = ModelTrainer(config=training_config)
+        config = bundle.to_trainer_config(output_dir, {
+            "model_name": model_name,
+            "num_epochs": epochs,
+            "train_by_language": needs_language_training
+        })
 
         try:
             result = trainer.train(config)
         except Exception as exc:  # pylint: disable=broad-except
             self.console.print(f"[red]Training failed:[/red] {exc}")
             self.logger.exception("Quick training failed", exc_info=exc)
-            return
+            return {
+                'runtime_params': runtime_params,
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None,
+                'error': str(exc)
+            }
 
         self._training_studio_show_training_result(result, bundle, title="Quick training results")
 
-    def _training_studio_run_benchmark(self, bundle: TrainingDataBundle) -> None:
+        # Return complete training info for metadata save
+        return {
+            'runtime_params': runtime_params,
+            'models_trained': [model_name],
+            'best_model': result.get('best_model'),
+            'best_f1': result.get('best_f1') or result.get('f1_macro')
+        }
+
+    def _training_studio_run_benchmark(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Benchmark training mode - test multiple models on same dataset.
+
+        Args:
+            bundle: Training data bundle
+            model_config: Model configuration dict (will be updated with runtime params)
+
+        Returns:
+            dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
+        """
         from rich.table import Table
         from rich import box
 
         # Handle multi-label benchmarking separately
         if bundle.strategy == "multi-label":
-            self._training_studio_run_benchmark_multilabel(bundle)
-            return
+            return self._training_studio_run_benchmark_multilabel(bundle, model_config)
 
         try:
             dataset_path, text_column, label_column = self._training_studio_resolve_benchmark_dataset(bundle)
@@ -8647,7 +9173,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Get dataset metadata
         languages = bundle.metadata.get('confirmed_languages', bundle.metadata.get('languages', set()))
         language_distribution = bundle.metadata.get('language_distribution', {})
-        text_length_avg = bundle.metadata.get('text_length_stats', {}).get('avg_chars', 0)
+        text_length_stats = bundle.metadata.get('text_length_stats', {})
+
+        # Use REAL text length stats - prefer token-based, fallback to chars
+        if text_length_stats.get('token_mean'):
+            text_length_avg = text_length_stats['token_mean']
+        elif text_length_stats.get('char_mean'):
+            text_length_avg = text_length_stats['char_mean']
+        else:
+            text_length_avg = text_length_stats.get('avg_chars', 0)
+
+        user_prefers_long_models = text_length_stats.get('user_prefers_long_models', False)
         model_strategy = bundle.metadata.get('model_strategy', 'multilingual')
 
         # If we have a recommended model from language detection, use it as hint
@@ -8767,7 +9303,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if selection_mode == "intelligent":
             selected_models, model_lang_map = self._get_intelligent_benchmark_models(
-                languages, text_length_avg, model_strategy, recommended_model, language_distribution
+                languages, text_length_avg, model_strategy, recommended_model, language_distribution,
+                user_prefers_long_models
             )
 
             self.console.print(f"\n[green]✓ Intelligently selected {len(selected_models)} models:[/green]")
@@ -8847,9 +9384,63 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 metadata={}
             ))
 
-        # Split into train/test
+        # Check if we have at least 2 instances per class for stratification
+        from collections import Counter
         from sklearn.model_selection import train_test_split
-        train_samples, test_samples = train_test_split(samples, test_size=0.2, random_state=42)
+
+        label_counts = Counter([s.label for s in samples])
+        min_count = min(label_counts.values())
+
+        if min_count < 2:
+            # Find which classes have insufficient instances
+            insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
+            self.console.print(f"[yellow]⚠️  Dataset has class(es) with only 1 instance: {insufficient_classes}[/yellow]")
+
+            # Ask user if they want to remove these classes or proceed
+            remove_classes = Prompt.ask(
+                f"Remove class(es) with insufficient instances?",
+                choices=["y", "n"],
+                default="y"
+            )
+
+            if remove_classes.lower() == 'y':
+                # Filter out samples with insufficient classes
+                original_count = len(samples)
+                samples = [s for s in samples if s.label not in insufficient_classes]
+                self.console.print(f"[dim]Removed {original_count - len(samples)} samples from classes: {insufficient_classes}[/dim]")
+
+                # Recompute label counts
+                label_counts = Counter([s.label for s in samples])
+                min_count = min(label_counts.values()) if label_counts else 0
+
+                if min_count < 2:
+                    self.console.print("[red]Still insufficient samples after removal. Cannot proceed.[/red]")
+                    return {
+                        'runtime_params': {
+                            'selected_models': selected_models if 'selected_models' in locals() else [],
+                            'benchmark_category': selected_category if 'selected_category' in locals() else None,
+                            'actual_models_trained': [],
+                            'error': 'Insufficient samples after removal'
+                        },
+                        'models_trained': [],
+                        'best_model': None,
+                        'best_f1': None
+                    }
+
+                stratify_labels = [s.label for s in samples]
+            else:
+                self.console.print(f"[yellow]Proceeding without stratification (may reduce quality)[/yellow]")
+                stratify_labels = None
+        else:
+            stratify_labels = [s.label for s in samples]
+
+        # Split into train/test
+        train_samples, test_samples = train_test_split(
+            samples,
+            test_size=0.2,
+            random_state=42,
+            stratify=stratify_labels
+        )
 
         self.console.print(f"\n[bold cyan]🚀 Starting Benchmark Training[/bold cyan]")
         self.console.print(f"[dim]Training {len(selected_models)} model(s) on {len(train_samples)} samples ({len(test_samples)} test)[/dim]\n")
@@ -9004,10 +9595,32 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             best_model = results_df.iloc[0]
             self.console.print(f"\n[bold green]🏆 Best Model: {best_model['model']}[/bold green]")
             self.console.print(f"[dim]F1 Macro: {best_model['f1_macro']:.4f}[/dim]\n")
+
+            # Return complete training info for metadata save
+            return {
+                'runtime_params': {
+                    'selected_models': selected_models,
+                    'benchmark_category': selected_category if 'selected_category' in locals() else None,
+                    'actual_models_trained': [row.model for row in results_df.itertuples()]
+                },
+                'models_trained': [row.model for row in results_df.itertuples()],
+                'best_model': best_model['model'],
+                'best_f1': best_model['f1_macro']
+            }
         else:
             self.console.print("[yellow]No results to display[/yellow]")
+            return {
+                'runtime_params': {
+                    'selected_models': selected_models if 'selected_models' in locals() else [],
+                    'benchmark_category': selected_category if 'selected_category' in locals() else None,
+                    'actual_models_trained': []
+                },
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None
+            }
 
-    def _training_studio_run_benchmark_multilabel(self, bundle: TrainingDataBundle) -> None:
+    def _training_studio_run_benchmark_multilabel(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
         """Benchmark multiple models on a multi-label dataset"""
         from rich.table import Table
         from rich import box
@@ -9022,14 +9635,29 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 "[red]This dataset does not expose a multi-label view."
                 " Please select a format that produces a consolidated JSONL and try again.[/red]"
             )
-            return
+            return {
+                'runtime_params': {'error': 'No multi-label dataset'},
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None
+            }
 
         dataset_path, label_fields = resolved
 
         # Get dataset metadata
         languages = bundle.metadata.get('confirmed_languages', bundle.metadata.get('languages', set()))
         language_distribution = bundle.metadata.get('language_distribution', {})
-        text_length_avg = bundle.metadata.get('text_length_stats', {}).get('avg_chars', 0)
+        text_length_stats = bundle.metadata.get('text_length_stats', {})
+
+        # Use REAL text length stats - prefer token-based, fallback to chars
+        if text_length_stats.get('token_mean'):
+            text_length_avg = text_length_stats['token_mean']
+        elif text_length_stats.get('char_mean'):
+            text_length_avg = text_length_stats['char_mean']
+        else:
+            text_length_avg = text_length_stats.get('avg_chars', 0)
+
+        user_prefers_long_models = text_length_stats.get('user_prefers_long_models', False)
         model_strategy = bundle.metadata.get('model_strategy', 'multilingual')
         recommended_model = bundle.recommended_model if hasattr(bundle, 'recommended_model') else None
 
@@ -9080,7 +9708,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if selection_mode == "intelligent":
             selected_models, model_lang_map = self._get_intelligent_benchmark_models(
-                languages, text_length_avg, model_strategy, recommended_model, language_distribution
+                languages, text_length_avg, model_strategy, recommended_model, language_distribution,
+                user_prefers_long_models
             )
 
             self.console.print(f"\n[green]✓ Intelligently selected {len(selected_models)} models:[/green]")
@@ -9140,11 +9769,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         except Exception as exc:
             self.console.print(f"[red]Failed to load dataset:[/red] {exc}")
             self.logger.exception("Multi-label benchmark dataset loading failed", exc_info=exc)
-            return
+            return {
+                'runtime_params': {'error': f'Failed to load dataset: {exc}'},
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None
+            }
 
         if not samples:
             self.console.print("[red]No samples found in dataset[/red]")
-            return
+            return {
+                'runtime_params': {'error': 'No samples found'},
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None
+            }
 
         # Get all unique labels
         all_labels = set()
@@ -9285,7 +9924,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if not selected_labels:
             self.console.print("[red]No labels selected[/red]")
-            return
+            return {
+                'runtime_params': {'error': 'No labels selected'},
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None
+            }
 
         # Run benchmark for each label with each model
         from rich.table import Table
@@ -9331,6 +9975,57 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             metadata={**(sample.metadata or {}), 'original_label': label_name, 'label_value': active_label_value}
                         ))
 
+                # Check if any class has only 1 instance
+                from collections import Counter
+                label_counts = Counter([s.label for s in multiclass_samples])
+                min_count = min(label_counts.values()) if label_counts else 0
+
+                if min_count < 2:
+                    # Find which classes (indices) have insufficient instances
+                    insufficient_indices = [cls for cls, count in label_counts.items() if count < 2]
+                    insufficient_values = [group_labels[idx] for idx in insufficient_indices]
+                    insufficient_value_names = [value_names[idx] for idx in insufficient_indices]
+
+                    self.console.print(f"[yellow]⚠️  Label '{label_name}' has value(s) with only 1 instance: {', '.join(insufficient_value_names)}[/yellow]")
+
+                    # Ask user if they want to remove these values
+                    remove_values = Prompt.ask(
+                        f"Remove value(s) '{', '.join(insufficient_value_names)}' and continue with remaining values?",
+                        choices=["y", "n"],
+                        default="y"
+                    )
+
+                    if remove_values.lower() == 'y':
+                        # Remove samples with insufficient values
+                        original_count = len(multiclass_samples)
+                        multiclass_samples = [s for s in multiclass_samples if s.label not in insufficient_indices]
+                        self.console.print(f"[dim]Removed {original_count - len(multiclass_samples)} samples from values: {', '.join(insufficient_value_names)}[/dim]")
+
+                        # Update group_labels and value_names
+                        group_labels = [lbl for idx, lbl in enumerate(group_labels) if idx not in insufficient_indices]
+                        value_names = [name for idx, name in enumerate(value_names) if idx not in insufficient_indices]
+
+                        # Re-index the labels in remaining samples
+                        label_mapping = {}
+                        new_idx = 0
+                        for old_idx in range(len(group_labels) + len(insufficient_indices)):
+                            if old_idx not in insufficient_indices:
+                                label_mapping[old_idx] = new_idx
+                                new_idx += 1
+
+                        for sample in multiclass_samples:
+                            sample.label = label_mapping[sample.label]
+
+                        self.console.print(f"[green]✓ Continuing with {len(group_labels)} values: {', '.join(value_names)}[/green]")
+
+                        # Check if we still have at least 2 classes
+                        if len(group_labels) < 2:
+                            self.console.print(f"[yellow]⚠️  Only {len(group_labels)} value(s) remaining. Skipping {label_name}[/yellow]")
+                            continue
+                    else:
+                        self.console.print(f"[dim]Skipping {label_name}[/dim]")
+                        continue
+
                 binary_samples = multiclass_samples
                 num_classes = len(group_labels)
             else:
@@ -9354,13 +10049,44 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(f"[yellow]⚠️  Skipping {label_name}: insufficient samples ({len(binary_samples)})[/yellow]")
                 continue
 
+            # Check if we have at least 2 instances per class for stratification
+            # (only for binary labels - multi-class was already checked above)
+            if label_name not in multiclass_groups:
+                from collections import Counter
+                label_counts = Counter([s.label for s in binary_samples])
+                min_count = min(label_counts.values())
+
+                if min_count < 2:
+                    # Find which classes have insufficient instances
+                    insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
+                    self.console.print(f"[yellow]⚠️  Label '{label_name}' has class(es) with only 1 instance: {insufficient_classes}[/yellow]")
+
+                    # Ask user if they want to remove this label
+                    remove_label = Prompt.ask(
+                        f"Remove label '{label_name}' from training?",
+                        choices=["y", "n"],
+                        default="y"
+                    )
+
+                    if remove_label.lower() == 'y':
+                        self.console.print(f"[dim]Skipping {label_name}[/dim]")
+                        continue
+                    else:
+                        self.console.print(f"[yellow]Attempting to proceed without stratification (may reduce quality)[/yellow]")
+                        stratify_labels = None
+                else:
+                    stratify_labels = [s.label for s in binary_samples]
+            else:
+                # Multi-class: already checked and cleaned above
+                stratify_labels = [s.label for s in binary_samples]
+
             # Split into train/test
             from sklearn.model_selection import train_test_split
             train_samples, test_samples = train_test_split(
                 binary_samples,
                 test_size=0.2,
                 random_state=42,
-                stratify=[s.label for s in binary_samples]  # DataSample uses .label not .labels
+                stratify=stratify_labels  # None if insufficient samples per class
             )
 
             self.console.print(f"[dim]Train: {len(train_samples)}, Test: {len(test_samples)}[/dim]\n")
@@ -9484,6 +10210,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                 'label': label_name,
                                 'model': model_name,
                                 'f1_macro': macro_f1,
+                                'num_classes': num_classes,
+                                'class_names': ','.join(value_names),  # CRITICAL: Store class names for CSV header
                             }
                             # Add per-class metrics
                             for i in range(num_classes):
@@ -9577,12 +10305,32 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Replace None/NaN with 0.0 for numeric columns to avoid NA values
             for col in results_df.columns:
-                if col not in ['label', 'model']:
+                if col not in ['label', 'model', 'class_names']:
                     results_df[col] = results_df[col].fillna(0.0)
 
-            # Save overall results
+            # Save overall results with class name metadata
             results_csv = output_dir / "multilabel_benchmark_results.csv"
-            results_df.to_csv(results_csv, index=False, na_rep='0.0')
+
+            # CRITICAL: Add metadata header with class name mappings
+            with open(results_csv, 'w', encoding='utf-8') as f:
+                # Write metadata header for each unique label that has class names
+                label_class_mappings = {}
+                for result in all_results:
+                    if 'class_names' in result and result['class_names']:
+                        label_class_mappings[result['label']] = result['class_names']
+
+                if label_class_mappings:
+                    f.write("# CLASS NAME MAPPINGS (Multi-label/Multi-class)\n")
+                    for label, class_names in label_class_mappings.items():
+                        class_list = class_names.split(',')
+                        mapping_str = ', '.join([f"C{i}={name}" for i, name in enumerate(class_list)])
+                        f.write(f"# {label}: {mapping_str}\n")
+                    f.write("#\n")
+
+            # Append the DataFrame (without class_names column in output)
+            output_df = results_df.drop(columns=['class_names', 'num_classes'], errors='ignore')
+            output_df.to_csv(results_csv, index=False, na_rep='0.0', mode='a')
+
             self.console.print(f"\n[green]✓ Results saved to:[/green] {results_csv}")
 
             # Create per-label summary CSVs in training_logs/{label_name}/
@@ -9618,15 +10366,50 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Show best model per label
             self.console.print("\n[bold]Best model per label:[/bold]")
+            best_models_per_label = {}
             for label_name in selected_labels:
                 label_results = [r for r in all_results if r['label'] == label_name]
                 if label_results:
                     best = max(label_results, key=lambda x: x['f1_macro'])
+                    best_models_per_label[label_name] = {'model': best['model'], 'f1': best['f1_macro']}
                     self.console.print(f"  • [cyan]{label_name}:[/cyan] {best['model']} (F1 {best['f1_macro']:.4f})")
+
+            # Return complete training info for metadata save
+            return {
+                'runtime_params': {
+                    'selected_models': selected_models,
+                    'selected_labels': selected_labels,
+                    'actual_models_trained': list(set(r['model'] for r in all_results)),
+                    'best_models_per_label': best_models_per_label
+                },
+                'models_trained': list(set(r['model'] for r in all_results)),
+                'best_model': best_models_per_label,
+                'best_f1': sum(m['f1'] for m in best_models_per_label.values()) / len(best_models_per_label) if best_models_per_label else None
+            }
         else:
             self.console.print("[yellow]No benchmark results to display[/yellow]")
+            return {
+                'runtime_params': {
+                    'selected_models': selected_models if 'selected_models' in locals() else [],
+                    'selected_labels': selected_labels if 'selected_labels' in locals() else [],
+                    'actual_models_trained': []
+                },
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None
+            }
 
-    def _training_studio_run_custom(self, bundle: TrainingDataBundle) -> None:
+    def _training_studio_run_custom(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Custom training mode - full control over hyperparameters.
+
+        Args:
+            bundle: Training data bundle
+            model_config: Model configuration dict (will be updated with runtime params)
+
+        Returns:
+            dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
+        """
         self.console.print("\n[bold]Custom training configuration[/bold]")
 
         model_name = Prompt.ask("Model name", default=self._training_studio_default_model())
@@ -9638,7 +10421,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             learning_rate = float(lr_input)
         except ValueError:
             self.console.print(f"[red]Invalid learning rate: {lr_input}[/red]")
-            return
+            return {
+                'runtime_params': {
+                    'custom_config': {'error': 'Invalid learning rate'}
+                },
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None,
+                'error': 'Invalid learning rate'
+            }
+
+        # Capture runtime parameters for full reproducibility
+        runtime_params = {
+            'custom_config': {
+                'model_name': model_name,
+                'epochs': epochs,
+                'batch_size': batch_size,
+                'learning_rate': learning_rate
+            },
+            'actual_models_trained': [model_name]
+        }
 
         output_dir = self._training_studio_make_output_dir("training_studio_custom")
         trainer = ModelTrainer()
@@ -9657,11 +10459,35 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         except Exception as exc:  # pylint: disable=broad-except
             self.console.print(f"[red]Training failed:[/red] {exc}")
             self.logger.exception("Custom training failed", exc_info=exc)
-            return
+            return {
+                'runtime_params': runtime_params,
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None,
+                'error': str(exc)
+            }
 
         self._training_studio_show_training_result(result, bundle, title="Custom training results")
 
-    def _training_studio_run_distributed(self, bundle: TrainingDataBundle) -> None:
+        # Return complete training info for metadata save
+        return {
+            'runtime_params': runtime_params,
+            'models_trained': [model_name],
+            'best_model': result.get('best_model'),
+            'best_f1': result.get('best_f1') or result.get('f1_macro')
+        }
+
+    def _training_studio_run_distributed(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Distributed training mode - parallel multi-label training.
+
+        Args:
+            bundle: Training data bundle
+            model_config: Model configuration dict (will be updated with runtime params)
+
+        Returns:
+            dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
+        """
         self.console.print("\n[bold]Distributed multi-label training[/bold]")
 
         resolved = self._training_studio_resolve_multilabel_dataset(bundle)
@@ -9670,7 +10496,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 "[red]This dataset does not expose a multi-label view."
                 " Please select a format that produces a consolidated JSONL (e.g. LLM annotations, binary long, JSONL multi-label) and try again.[/red]"
             )
-            return
+            return {
+                'runtime_params': {
+                    'distributed_config': {'error': 'No multi-label dataset available'}
+                },
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None,
+                'error': 'No multi-label dataset'
+            }
 
         dataset_path, label_fields = resolved
 
@@ -9713,6 +10547,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         multilingual_model = strategy_choice == "multilingual"
 
         auto_select_model = Confirm.ask("Auto-select the best backbone for each label?", default=True)
+
+        # Capture runtime parameters for full reproducibility
+        runtime_params = {
+            'distributed_config': {
+                'epochs': epochs,
+                'batch_size': batch_size,
+                'learning_rate': learning_rate,
+                'train_ratio': train_ratio,
+                'val_ratio': val_ratio,
+                'reinforced': reinforced,
+                'reinforced_epochs': reinforced_epochs,
+                'parallel_training': parallel_training,
+                'max_workers': max_workers,
+                'strategy_choice': strategy_choice,
+                'train_by_language': train_by_language,
+                'multilingual_model': multilingual_model,
+                'auto_select_model': auto_select_model
+            }
+        }
 
         # Get the model name from the bundle if available
         model_name_to_use = None
@@ -9812,9 +10665,37 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 else:
                     print(message)
                 self.logger.exception("Distributed training failed", exc_info=exc)
-                return
+                return {
+                    'runtime_params': runtime_params,
+                    'models_trained': [],
+                    'best_model': None,
+                    'best_f1': None,
+                    'error': str(exc)
+                }
 
         self._training_studio_show_distributed_results(trainer, models, output_dir)
+
+        # Extract trained model names and performance
+        trained_model_names = list(models.keys()) if models else []
+        # Compute average F1 across all labels if available
+        avg_f1 = None
+        if models and hasattr(trainer, 'trained_models'):
+            f1_scores = []
+            for label, model_info in trainer.trained_models.items():
+                if isinstance(model_info, dict) and 'performance_metrics' in model_info:
+                    metrics = model_info['performance_metrics']
+                    if 'f1_macro' in metrics:
+                        f1_scores.append(metrics['f1_macro'])
+            if f1_scores:
+                avg_f1 = sum(f1_scores) / len(f1_scores)
+
+        # Return complete training info for metadata save
+        return {
+            'runtime_params': runtime_params,
+            'models_trained': trained_model_names,
+            'best_model': trained_model_names,  # All models trained
+            'best_f1': avg_f1
+        }
 
     def _training_studio_resolve_multilabel_dataset(self, bundle: TrainingDataBundle) -> Optional[Tuple[Path, Optional[List[str]]]]:
         """Return the consolidated multi-label dataset path if available."""
@@ -10021,13 +10902,49 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         return None
 
-    def _get_intelligent_benchmark_models(self, languages: set, text_length_avg: float, model_strategy: str, recommended_model: str = None, language_distribution: dict = None) -> Tuple[List[str], Dict[str, Optional[str]]]:
+    def _is_model_multilingual(self, model_name: str) -> bool:
+        """
+        Determine if a model is multilingual or language-specific.
+
+        Args:
+            model_name: HuggingFace model ID
+
+        Returns:
+            True if multilingual, False if language-specific
+        """
+        # Model-to-language mapping (same as in _get_intelligent_benchmark_models)
+        MULTILINGUAL_KEYWORDS = ['xlm', 'multilingual', 'mdeberta', 'long-t5']
+        MONOLINGUAL_PATTERNS = {
+            'camembert': 'fr',
+            'flaubert': 'fr',
+            'bert-base-german': 'de',
+            'distilbert-base-german': 'de',
+            'roberta': 'en',  # RoBERTa is English-only unless specified
+            'bert-base-uncased': 'en',
+            'bert-base-cased': 'en',
+            'distilbert-base-uncased': 'en',
+        }
+
+        model_lower = model_name.lower()
+
+        # Check for multilingual keywords
+        if any(keyword in model_lower for keyword in MULTILINGUAL_KEYWORDS):
+            return True
+
+        # Check for monolingual patterns
+        if any(pattern in model_lower for pattern in MONOLINGUAL_PATTERNS.keys()):
+            return False
+
+        # Default: assume multilingual for safety (won't create extra models)
+        return True
+
+    def _get_intelligent_benchmark_models(self, languages: set, text_length_avg: float, model_strategy: str, recommended_model: str = None, language_distribution: dict = None, user_prefers_long_models: bool = False) -> Tuple[List[str], Dict[str, Optional[str]]]:
         """
         HIGHLY INTELLIGENT model selection using ALL available models in the package.
 
         Selection criteria (scored):
         1. Language match (primary, 100 points)
-        2. Text length compatibility (50 points)
+        2. Text length compatibility (50 points) - BOOSTED if user_prefers_long_models=True
         3. Model size/efficiency (30 points)
         4. Model popularity/reliability (20 points)
         5. Multilingual capability (bonus for mixed languages)
@@ -10047,6 +10964,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'bert-base-multilingual-uncased': None,
             'distilbert-base-multilingual-cased': None,
             'microsoft/mdeberta-v3-base': None,
+
+            # ============ MULTILINGUAL LONG-DOCUMENT MODELS ============
+            'facebook/xlm-roberta-longformer-base-4096': None,  # Multilingual Longformer, 4096 tokens, 100+ languages
+            'google/long-t5-local-base': None,  # Multilingual T5 with local attention, 4096+ tokens
+            'google/long-t5-tglobal-base': None,  # Multilingual T5 with transient global attention, 4096+ tokens
 
             # ============ ENGLISH MODELS ============
             'bert-base-uncased': 'en',
@@ -10276,21 +11198,39 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 else:
                     score += 0  # No language match
 
-            # CRITERION 2: Text Length Compatibility (50 points max)
-            if 'longformer' in model_name.lower() or 'bigbird' in model_name.lower():
-                if text_length_avg > 400:
-                    score += 50  # Perfect for long texts
-                elif text_length_avg > 200:
-                    score += 30  # Okay for medium texts
+            # CRITERION 2: Text Length Compatibility (50 points max, BOOSTED to 150 if user wants long models)
+            is_long_model = ('longformer' in model_name.lower() or
+                           'bigbird' in model_name.lower() or
+                           'long-t5' in model_name.lower() or
+                           '4096' in model_name or
+                           '16384' in model_name)
+
+            if user_prefers_long_models:
+                # User explicitly wants long-document models - BOOST them heavily
+                if is_long_model:
+                    score += 150  # MASSIVE boost for long models when user wants them
                 else:
-                    score += 10  # Overkill for short texts
+                    # Standard models get penalty when long models are preferred
+                    if text_length_avg > 500:
+                        score += 10  # Not ideal - will truncate
+                    else:
+                        score += 20  # Acceptable but not preferred
             else:
-                if text_length_avg <= 300:
-                    score += 40  # Good for short/medium texts
-                elif text_length_avg <= 500:
-                    score += 30  # Okay for longer texts
+                # Normal scoring when user hasn't expressed preference
+                if is_long_model:
+                    if text_length_avg > 400:
+                        score += 50  # Perfect for long texts
+                    elif text_length_avg > 200:
+                        score += 30  # Okay for medium texts
+                    else:
+                        score += 10  # Overkill for short texts
                 else:
-                    score += 15  # Not ideal but works
+                    if text_length_avg <= 300:
+                        score += 40  # Good for short/medium texts
+                    elif text_length_avg <= 500:
+                        score += 30  # Okay for longer texts
+                    else:
+                        score += 15  # Not ideal but works
 
             # CRITERION 3: Model Size/Efficiency (30 points max)
             if 'distil' in model_name.lower() or 'tiny' in model_name.lower() or 'small' in model_name.lower():
@@ -10315,6 +11255,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'bert-base-german-cased': 18,
                 'microsoft/deberta-v3-base': 20,
                 'microsoft/mdeberta-v3-base': 19,
+                'facebook/xlm-roberta-longformer-base-4096': 20,  # Excellent multilingual long-document (100+ languages)
+                'google/long-t5-local-base': 18,  # High-quality multilingual T5 long-document
+                'google/long-t5-tglobal-base': 18,  # High-quality multilingual T5 long-document
+                'allenai/longformer-base-4096': 17,  # Popular long-document (EN only)
+                'google/bigbird-roberta-base': 17,  # Popular long-document (EN only)
             }
             score += high_quality_models.get(model_name, 15)  # Default 15 for others
 
@@ -10545,9 +11490,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # ============ SPECIAL CATEGORIES ============
         if text_length_avg > 400:
-            categories['Long Documents (>400 chars)'] = [
-                'allenai/longformer-base-4096',
-                'google/bigbird-roberta-base'
+            categories['Long Documents (>400 chars, 4096 tokens)'] = [
+                'facebook/xlm-roberta-longformer-base-4096',  # Multilingual FIRST
+                'google/long-t5-local-base',  # Multilingual
+                'allenai/longformer-base-4096',  # English only
+                'google/bigbird-roberta-base'  # English only
             ]
 
         categories['Efficient/Fast'] = [
@@ -10840,9 +11787,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Detect metadata files
         metadata_dir = self.settings.paths.logs_dir / "training_sessions"
+        self.console.print(f"[dim]Searching in: {metadata_dir}[/dim]\n")
 
         if not metadata_dir.exists():
-            self.console.print("[yellow]No training sessions found.[/yellow]")
+            self.console.print("[yellow]⚠️  Training sessions directory not found.[/yellow]")
+            self.console.print(f"[dim]Expected location: {metadata_dir}[/dim]")
             self.console.print("[dim]Complete a training first to create session history.[/dim]")
             self.console.print("\n[dim]Press Enter to continue...[/dim]")
             input()
@@ -10852,7 +11801,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         metadata_files = list(metadata_dir.glob("training_metadata_*.json"))
 
         if not metadata_files:
-            self.console.print("[yellow]No saved training sessions found.[/yellow]")
+            self.console.print("[yellow]⚠️  No saved training sessions found.[/yellow]")
+            self.console.print(f"[dim]Searched in: {metadata_dir}[/dim]")
+            self.console.print(f"[dim]Found {len(list(metadata_dir.iterdir()))} files total in directory[/dim]")
             self.console.print("[dim]Complete a training and save parameters to use this feature.[/dim]")
             self.console.print("\n[dim]Press Enter to continue...[/dim]")
             input()
@@ -10879,6 +11830,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Load and display sessions
         valid_sessions = []
+        parsing_errors = []  # Track errors for debugging
+
         for i, mf in enumerate(metadata_files[:20], 1):  # Show max 20 most recent
             try:
                 with open(mf, 'r', encoding='utf-8') as f:
@@ -10930,10 +11883,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             except Exception as e:
                 self.logger.debug(f"Skipping invalid metadata file {mf}: {e}")
+                parsing_errors.append((mf.name, str(e)))
                 continue
 
         if not valid_sessions:
             self.console.print("[yellow]No valid training sessions found.[/yellow]")
+
+            # Show parsing errors if any for debugging
+            if parsing_errors:
+                self.console.print(f"\n[dim]Parsing errors for {len(parsing_errors)} files:[/dim]")
+                for fname, err in parsing_errors[:5]:  # Show first 5
+                    self.console.print(f"[dim]  • {fname}: {err[:80]}[/dim]")
+
             self.console.print("\n[dim]Press Enter to continue...[/dim]")
             input()
             return
@@ -11259,16 +12220,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Fallback: hardcoded comprehensive list if catalog unavailable
         LANG_LONG_MODELS = {
             'en': [
-                {'model': 'allenai/longformer-base-4096', 'reason': 'English Longformer (4096 tokens, best for English)'},
+                {'model': 'allenai/longformer-base-4096', 'reason': 'English Longformer (4096 tokens, optimized for English)'},
                 {'model': 'google/bigbird-roberta-base', 'reason': 'English BigBird sparse-attention (4096 tokens)'},
-                {'model': 'allenai/led-base-16384', 'reason': 'English LED (16384 tokens, very long documents)'},
+                {'model': 'google/long-t5-local-base', 'reason': 'Multilingual T5 for long documents (4096+ tokens)'},
                 {'model': 'roberta-base', 'reason': 'English RoBERTa baseline (512 tokens, fallback)'},
             ],
             'fr': [
-                {'model': 'cmarkea/distilcamembert-base-nli', 'reason': 'French DistilCamemBERT optimized (512 tokens)'},
                 {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting French (4096 tokens)'},
+                {'model': 'google/long-t5-local-base', 'reason': 'Multilingual T5 for long documents (4096+ tokens)'},
+                {'model': 'cmarkea/distilcamembert-base-nli', 'reason': 'French DistilCamemBERT optimized (512 tokens)'},
                 {'model': 'camembert-base', 'reason': 'French CamemBERT baseline (512 tokens)'},
-                {'model': 'almanach/camembert-large', 'reason': 'French CamemBERT large (512 tokens, high performance)'},
             ],
             'es': [
                 {'model': 'PlanTL-GOB-ES/roberta-base-bne', 'reason': 'Spanish RoBERTa optimized (512 tokens)'},
@@ -11540,11 +12501,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             if analysis_results.get('user_prefers_long_models'):
                 self.console.print("\n[bold]🤖 Recommended Long-Document Models:[/bold]")
 
-                # Get multilingual long-doc models
+                # Get multilingual long-doc models - MULTILINGUAL FIRST
                 long_doc_recs = [
-                    {"model": "allenai/longformer-base-4096", "reason": "Efficient for documents up to 4096 tokens"},
-                    {"model": "google/bigbird-roberta-base", "reason": "Sparse attention for very long documents"},
-                    {"model": "facebook/xlm-roberta-longformer-base-4096", "reason": "Multilingual long-document support"}
+                    {"model": "facebook/xlm-roberta-longformer-base-4096", "reason": "Multilingual long-document support (100+ languages, 4096 tokens)"},
+                    {"model": "google/long-t5-local-base", "reason": "Multilingual T5 for long documents (4096+ tokens)"},
+                    {"model": "allenai/longformer-base-4096", "reason": "English-only, efficient for documents up to 4096 tokens"},
+                    {"model": "google/bigbird-roberta-base", "reason": "English-only, sparse attention for very long documents"}
                 ]
 
                 for i, rec in enumerate(long_doc_recs, 1):
@@ -11553,7 +12515,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 use_long = Confirm.ask("\n[bold]Use long-document model?[/bold]", default=True)
 
                 if use_long:
-                    choice = IntPrompt.ask("Select model (1-3)", default=1)
+                    choice = IntPrompt.ask("Select model (1-4)", default=1)
                     if 1 <= choice <= len(long_doc_recs):
                         model_to_use = long_doc_recs[choice - 1]['model']
                         self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")

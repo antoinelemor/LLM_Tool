@@ -75,7 +75,8 @@ from .models import (
 from .sota_models import (
     DeBERTaV3Base, DeBERTaV3Large, RoBERTaBase, RoBERTaLarge,
     ELECTRABase, ELECTRALarge, ALBERTBase, ALBERTLarge,
-    BigBirdBase, LongformerBase, MDeBERTaV3Base, XLMRobertaBase
+    BigBirdBase, LongformerBase, MDeBERTaV3Base, XLMRobertaBase,
+    LongT5Base, LongT5TGlobalBase
 )
 from .multilingual_selector import MultilingualModelSelector
 
@@ -346,6 +347,10 @@ class ModelTrainer:
             # Long document models
             "bigbird-base": BigBirdBase,
             "longformer-base": LongformerBase,
+
+            # Multilingual long document models (T5-based)
+            "google/long-t5-local-base": LongT5Base,
+            "google/long-t5-tglobal-base": LongT5TGlobalBase,
         }
 
     def load_data(self, data_path: str, text_column: str = "text",
@@ -371,6 +376,12 @@ class ModelTrainer:
         if label_column not in df.columns:
             raise ValueError(f"Label column '{label_column}' not found in data")
 
+        # CRITICAL: Handle case where labels are in list format (from multi-label builder)
+        # If labels are lists, extract the first value (single-label should have one value per row)
+        if df[label_column].dtype == 'object' and isinstance(df[label_column].iloc[0], list):
+            self.logger.warning(f"Label column '{label_column}' contains lists. Extracting first value for single-label training.")
+            df[label_column] = df[label_column].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else x)
+
         # Encode labels with custom ordering: NOT_* labels first (class 0), others later
         # CRITICAL FIX: LabelEncoder always re-sorts internally, so we need manual mapping
         unique_labels = df[label_column].unique()
@@ -389,6 +400,25 @@ class ModelTrainer:
         # Split data
         X = df[text_column].values
         y = df['encoded_label'].values
+
+        # Check if we have at least 2 instances per class for stratification
+        from collections import Counter
+        label_counts = Counter(y)
+        min_count = min(label_counts.values())
+
+        if min_count < 2:
+            # Find which classes have insufficient instances
+            insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
+            # Map back to original labels
+            insufficient_labels = [sorted_labels[cls] for cls in insufficient_classes]
+
+            error_msg = (
+                f"Dataset has class(es) with only 1 instance: {insufficient_labels}\n"
+                f"Each class must have at least 2 instances for train/test split.\n"
+                f"Please remove these labels or add more samples."
+            )
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
 
         # Check if we have enough samples for stratification
         n_samples = len(y)
@@ -439,7 +469,8 @@ class ModelTrainer:
                           num_labels: Optional[int] = None,
                           output_dir: Optional[str] = None,
                           label_column: str = 'label',
-                          training_strategy: str = 'single-label') -> TrainingResult:
+                          training_strategy: str = 'single-label',
+                          category_name: Optional[str] = None) -> TrainingResult:
         """Train a single model"""
         from tqdm import tqdm
         print(f"\n🏋️  Training model: {model_name}")
@@ -541,10 +572,16 @@ class ModelTrainer:
             )
 
             # Parse label name to extract key and value for display (if applicable)
-            # Check if label_column contains structured names like 'themes_long_transportation'
+            # Priority 1: Check if category_name was passed (from one-vs-all training)
+            # Priority 2: Parse label_column for structured names like 'themes_long_transportation'
             label_key = None
             label_value = None
-            if label_column and '_long_' in label_column:
+
+            # First check if we have an explicit category_name (one-vs-all workflow)
+            if category_name:
+                label_value = category_name
+            # Otherwise try to parse from label_column name
+            elif label_column and '_long_' in label_column:
                 parts = label_column.split('_long_')
                 if len(parts) == 2:
                     label_key = parts[0]
@@ -719,15 +756,33 @@ class ModelTrainer:
 
         Handles both single-label and multi-label training scenarios.
         """
-        # Check for multi-label training first
-        if 'training_files' in config and config['training_files']:
-            return self._train_multi_label(config)
+        # CRITICAL: Check training_strategy FIRST before checking training_files
+        # This ensures single-label is correctly routed even if training_files exists
+        training_strategy = config.get('training_strategy', 'single-label')
 
-        # Single-label training
-        if 'input_file' in config:
+        # Route based on explicit strategy first
+        if training_strategy == 'multi-label':
+            # Check if we have multi-label data files
+            if 'training_files' in config and config['training_files']:
+                return self._train_multi_label(config)
+            elif 'input_file' in config:
+                # Multi-label with single file (e.g., JSONL format)
+                data_path = config['input_file']
+            else:
+                raise ValueError("No input_file or training_files specified for multi-label training")
+        elif training_strategy == 'single-label':
+            # Single-label training - use input_file
+            if 'input_file' not in config:
+                raise ValueError("No input_file specified for single-label training")
             data_path = config['input_file']
         else:
-            raise ValueError("No input_file or training_files specified in config")
+            # Fallback to old behavior for backward compatibility
+            if 'training_files' in config and config['training_files']:
+                return self._train_multi_label(config)
+            elif 'input_file' in config:
+                data_path = config['input_file']
+            else:
+                raise ValueError("No input_file or training_files specified in config")
 
         # Update training config from dict
         for key, value in config.items():
@@ -737,7 +792,6 @@ class ModelTrainer:
         # Get column names
         text_column = config.get('text_column', 'text')
         label_column = config.get('label_column', 'label')
-        training_strategy = config.get('training_strategy', 'single-label')
 
         # Get model name from config
         model_name = config.get('model_name', self.config.model_name)
@@ -845,18 +899,30 @@ class ModelTrainer:
             ml_config.train_by_language = config.get('train_by_language', False)
             ml_config.auto_select_model = False  # Disable auto-selection
             ml_config.model_class = BertBase  # Force BertBase to ensure run_training_enhanced is used
+            # Use the model specified by the user
+            ml_config.model_name = config.get('model_name', self.config.model_name)
 
             ml_trainer = MultiLabelTrainer(config=ml_config, verbose=True)
 
             # Detect multi-class groups
             from llm_tool.trainers.multi_label_trainer import MultiLabelSample
-            ml_samples = [MultiLabelSample(
-                text=s['text'],
-                labels=s.get('labels', {}),
-                id=s.get('id'),
-                lang=s.get('lang'),
-                metadata=s.get('metadata')
-            ) for s in train_samples + val_samples]
+            ml_samples = []
+            for s in train_samples + val_samples:
+                # Handle both dict and list formats for labels
+                labels_raw = s.get('labels', {})
+                if isinstance(labels_raw, list):
+                    # Convert list to dict: ['label1', 'label2'] -> {'label1': 1, 'label2': 1}
+                    labels = {label: 1 for label in labels_raw if label}
+                else:
+                    labels = labels_raw
+
+                ml_samples.append(MultiLabelSample(
+                    text=s['text'],
+                    labels=labels,
+                    id=s.get('id'),
+                    lang=s.get('lang'),
+                    metadata=s.get('metadata')
+                ))
 
             multiclass_groups = ml_trainer.detect_multiclass_groups(ml_samples)
 
@@ -920,7 +986,8 @@ class ModelTrainer:
                 num_labels=num_labels,
                 output_dir=config.get('output_dir', 'models/best_model'),
                 label_column=label_column,
-                training_strategy=training_strategy
+                training_strategy=training_strategy,
+                category_name=config.get('category_name')  # Pass category name for display
             )
 
         return {
@@ -1196,8 +1263,15 @@ class ModelTrainer:
             label_config['output_dir'] = str(Path(config.get('output_dir', 'models')) / f'model_{label_key}')
 
             try:
-                # Train model for this label
-                result = self.train({**label_config, 'training_files': None})  # Remove training_files to avoid recursion
+                # Train model for this label - CRITICAL: Change strategy to 'single-label'
+                # Each category CSV file is a binary classification problem (label 0 or 1)
+                # Pass category name for proper label display (e.g., "Health IS" vs "Health IS NOT")
+                result = self.train({
+                    **label_config,
+                    'training_files': None,
+                    'training_strategy': 'single-label',
+                    'category_name': label_key  # Pass category name for display
+                })
                 results[label_key] = result
                 overall_metrics['per_label_results'][label_key] = {
                     'accuracy': result['accuracy'],

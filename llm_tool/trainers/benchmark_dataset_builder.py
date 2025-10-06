@@ -326,6 +326,20 @@ class BenchmarkDatasetBuilder:
 
         # Check minimum samples
         label_counts = Counter(labels)
+
+        # Check if we have at least 2 instances per class for stratification
+        min_count = min(label_counts.values()) if label_counts else 0
+        if min_count < 2:
+            # Find which classes have insufficient instances
+            insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
+            error_msg = (
+                f"Dataset has class(es) with only 1 instance: {insufficient_classes}\n"
+                f"Each class must have at least 2 instances for train/test split.\n"
+                f"Please remove these labels or add more samples."
+            )
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+
         for label, count in label_counts.items():
             if count < self.min_samples_per_class:
                 self.logger.warning(

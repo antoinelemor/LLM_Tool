@@ -284,20 +284,23 @@ class TrainingDisplay:
                     if lang in self.language_metrics:
                         lang_metrics = self.language_metrics[lang]
 
-                        # Add language name row
-                        lang_name_row = [f"[{lang}]"] + [""] * (self.num_labels + 1)
-                        table.add_row(*lang_name_row, style="bold white")
+                        # CRITICAL: Include language name in each metric row for clarity
+                        lang_upper = lang.upper()
 
-                        # Add accuracy
-                        lang_acc_row = [f"  Accuracy"] + [""] * self.num_labels + [f"{lang_metrics.get('accuracy', 0):.3f}"]
+                        # Add separator before each language
+                        separator_row = [""] * (self.num_labels + 2)
+                        table.add_row(*separator_row)
+
+                        # Add accuracy with language name
+                        lang_acc_row = [f"  [{lang_upper}] Accuracy"] + [""] * self.num_labels + [f"{lang_metrics.get('accuracy', 0):.3f}"]
                         table.add_row(*lang_acc_row)
 
-                        # Add F1 scores per class
-                        lang_f1_row = [f"  F1-Score"] + [f"{lang_metrics.get(f'f1_{i}', 0):.3f}" for i in range(self.num_labels)] + [f"{lang_metrics.get('macro_f1', 0):.3f}"]
+                        # Add F1 scores per class with language name
+                        lang_f1_row = [f"  [{lang_upper}] F1-Score"] + [f"{lang_metrics.get(f'f1_{i}', 0):.3f}" for i in range(self.num_labels)] + [f"{lang_metrics.get('macro_f1', 0):.3f}"]
                         table.add_row(*lang_f1_row)
 
-                        # Add support
-                        lang_support_row = [f"  Support"] + [str(int(lang_metrics.get(f'support_{i}', 0))) for i in range(self.num_labels)] + [str(lang_metrics.get('samples', 0))]
+                        # Add support with language name
+                        lang_support_row = [f"  [{lang_upper}] Support"] + [str(int(lang_metrics.get(f'support_{i}', 0))) for i in range(self.num_labels)] + [str(lang_metrics.get('samples', 0))]
                         table.add_row(*lang_support_row)
             else:
                 # No metrics yet - show waiting message
@@ -940,12 +943,14 @@ class BertBase(BertABC):
         ]
 
         # Add per-class metric headers dynamically based on num_labels
+        # CRITICAL: Include class names in headers for multi-label/multi-class clarity
         for i in range(num_labels):
+            class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
             csv_headers.extend([
-                f"precision_{i}",
-                f"recall_{i}",
-                f"f1_{i}",
-                f"support_{i}"
+                f"precision{class_suffix}",
+                f"recall{class_suffix}",
+                f"f1{class_suffix}",
+                f"support{class_suffix}"
             ])
 
         csv_headers.append("macro_f1")
@@ -957,11 +962,12 @@ class BertBase(BertABC):
             for lang in unique_langs:
                 csv_headers.append(f"{lang}_accuracy")
                 for i in range(num_labels):
+                    class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
                     csv_headers.extend([
-                        f"{lang}_precision_{i}",
-                        f"{lang}_recall_{i}",
-                        f"{lang}_f1_{i}",
-                        f"{lang}_support_{i}"
+                        f"{lang}_precision{class_suffix}",
+                        f"{lang}_recall{class_suffix}",
+                        f"{lang}_f1{class_suffix}",
+                        f"{lang}_support{class_suffix}"
                     ])
                 csv_headers.append(f"{lang}_macro_f1")
 
@@ -1006,12 +1012,14 @@ class BertBase(BertABC):
         ]
 
         # Add per-class metric headers dynamically based on num_labels
+        # CRITICAL: Include class names in headers for multi-label/multi-class clarity
         for i in range(num_labels):
+            class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
             best_models_headers.extend([
-                f"precision_{i}",
-                f"recall_{i}",
-                f"f1_{i}",
-                f"support_{i}"
+                f"precision{class_suffix}",
+                f"recall{class_suffix}",
+                f"f1{class_suffix}",
+                f"support{class_suffix}"
             ])
 
         best_models_headers.append("macro_f1")
@@ -1022,11 +1030,12 @@ class BertBase(BertABC):
         for lang in standard_languages:
             best_models_headers.append(f"{lang}_accuracy")
             for i in range(num_labels):
+                class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
                 best_models_headers.extend([
-                    f"{lang}_precision_{i}",
-                    f"{lang}_recall_{i}",
-                    f"{lang}_f1_{i}",
-                    f"{lang}_support_{i}"
+                    f"{lang}_precision{class_suffix}",
+                    f"{lang}_recall{class_suffix}",
+                    f"{lang}_f1{class_suffix}",
+                    f"{lang}_support{class_suffix}"
                 ])
             best_models_headers.append(f"{lang}_macro_f1")
 
@@ -1813,9 +1822,11 @@ class BertBase(BertABC):
                     ]
 
                     # Add per-class metric headers
+                    # CRITICAL: Include class names in headers for multi-label/multi-class clarity
                     for i in range(num_labels):
+                        class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
                         reinforced_headers.extend([
-                            f"precision_{i}", f"recall_{i}", f"f1_{i}", f"support_{i}"
+                            f"precision{class_suffix}", f"recall{class_suffix}", f"f1{class_suffix}", f"support{class_suffix}"
                         ])
 
                     reinforced_headers.append("macro_f1")
@@ -1826,9 +1837,10 @@ class BertBase(BertABC):
                         for lang in unique_langs:
                             reinforced_headers.append(f"{lang}_accuracy")
                             for i in range(num_labels):
+                                class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
                                 reinforced_headers.extend([
-                                    f"{lang}_precision_{i}", f"{lang}_recall_{i}",
-                                    f"{lang}_f1_{i}", f"{lang}_support_{i}"
+                                    f"{lang}_precision{class_suffix}", f"{lang}_recall{class_suffix}",
+                                    f"{lang}_f1{class_suffix}", f"{lang}_support{class_suffix}"
                                 ])
                             reinforced_headers.append(f"{lang}_macro_f1")
 
