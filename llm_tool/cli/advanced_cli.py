@@ -6240,9 +6240,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             "Varies"
         )
         modes_table.add_row(
-            "distributed",
-            "Multi-label parallel training (one model per label)\n✓ For datasets with multiple labels/categories",
-            "~30-60 minutes"
+            "[dim]distributed[/dim]",
+            "[dim]Multi-label parallel training (one model per label)\n✓ For datasets with multiple labels/categories[/dim]\n[bold red]⚠️  NOT RECOMMENDED - Untested[/bold red]",
+            "[dim]~30-60 minutes[/dim]"
         )
 
         # First, configure the dataset
@@ -6271,9 +6271,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # If one-vs-all approach, suggest distributed mode
         default_mode = "quick"
         if bundle.metadata.get('training_approach') == 'one-vs-all':
-            self.console.print("[bold yellow]💡 Recommended Mode:[/bold yellow] [cyan]distributed[/cyan]")
-            self.console.print(f"[dim]   Since you selected 'one-vs-all' training, distributed mode will train {bundle.metadata.get('num_categories', '?')} models in parallel[/dim]\n")
-            default_mode = "distributed"
+            self.console.print("[bold yellow]💡 Recommended Mode:[/bold yellow] [dim strikethrough]distributed[/dim strikethrough] → [green]quick[/green]")
+            self.console.print(f"[dim]   Since you selected 'one-vs-all' training, distributed mode will train {bundle.metadata.get('num_categories', '?')} models in parallel[/dim]")
+            self.console.print("[bold red]   ⚠️  WARNING: distributed mode is NOT RECOMMENDED (untested). Use 'quick' instead.[/bold red]\n")
+            default_mode = "quick"  # Changed from "distributed" to "quick"
 
         mode = Prompt.ask(
             "[bold yellow]Select training mode[/bold yellow]",
@@ -6283,6 +6284,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if mode == "back":
             return
+
+        # Warn if distributed mode was selected
+        if mode == "distributed":
+            self.console.print("\n[bold red]⚠️  WARNING: Distributed mode is NOT RECOMMENDED[/bold red]")
+            self.console.print("[yellow]This mode has not been thoroughly tested and may contain bugs.[/yellow]")
+            self.console.print("[dim]Consider using 'quick' or 'benchmark' mode instead for more reliable results.[/dim]\n")
+
+            confirm = Confirm.ask("[bold]Do you still want to proceed with distributed mode?[/bold]", default=False)
+            if not confirm:
+                self.console.print("[yellow]Training cancelled. Please select another mode.[/yellow]")
+                return
 
         # Show training mode confirmation and parameters
         self._training_studio_confirm_and_execute(bundle, mode)
@@ -6342,7 +6354,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             "quick": "⚡ Quick Start - Fast training with defaults",
             "benchmark": "📊 Benchmark - Test multiple models",
             "custom": "⚙️  Custom - Full parameter control",
-            "distributed": "🔄 Distributed - Parallel multi-label"
+            "distributed": "🔄 Distributed - Parallel multi-label ⚠️  (NOT RECOMMENDED - Untested)"
         }
         config_table.add_row("🎯 Training Mode", mode_descriptions.get(mode, mode))
 
@@ -7592,12 +7604,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print()
 
         # Add development notice for experimental formats
-        self.console.print("[yellow]⚠️  Note:[/yellow] [dim]binary-long, jsonl-single, and jsonl-multi are in development and may contain errors.[/dim]")
+        self.console.print("[yellow]⚠️  Note:[/yellow] [bold red]binary-long, jsonl-single, and jsonl-multi are currently under development and NOT accessible.[/bold red]")
+        self.console.print("[dim]      These formats will be enabled in a future release after thorough testing.[/dim]")
         self.console.print()
 
         format_choice = Prompt.ask(
             "[bold yellow]Select dataset format[/bold yellow]",
-            choices=["llm-json", "category-csv", "binary-long", "jsonl-single", "jsonl-multi", "cancel", "back"],
+            choices=["llm-json", "category-csv", "cancel", "back"],
             default="llm-json",
         )
 
@@ -8692,6 +8705,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     bundle.metadata['confirmed_languages'] = confirmed_languages
                 if language_distribution:
                     bundle.metadata['language_distribution'] = language_distribution
+                # Save training approach if user made a choice (multi-label/one-vs-all)
+                if 'training_approach' in locals() and training_approach:
+                    bundle.metadata['training_approach'] = training_approach
                 # Text length stats for intelligent model selection later
                 # ONLY calculate if not already done (avoid duplicate analysis)
                 if 'text_length_stats' in locals() and text_length_stats:
@@ -8837,6 +8853,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return bundle
 
         if format_choice == "binary-long":
+            # DEVELOPMENT MODE: This format is not yet available
+            self.console.print("\n[bold red]❌ Error: binary-long format is currently under development[/bold red]")
+            self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
+            self.console.print("[dim]Please use 'llm-json' or 'category-csv' formats instead.[/dim]\n")
+            return None
+
             # Use sophisticated universal selector
             selection = self._training_studio_intelligent_dataset_selector(format_type="binary-long")
             if not selection:
@@ -8872,6 +8894,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return bundle
 
         if format_choice == "jsonl-single":
+            # DEVELOPMENT MODE: This format is not yet available
+            self.console.print("\n[bold red]❌ Error: jsonl-single format is currently under development[/bold red]")
+            self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
+            self.console.print("[dim]Please use 'llm-json' or 'category-csv' formats instead.[/dim]\n")
+            return None
+
             # Use sophisticated universal selector
             selection = self._training_studio_intelligent_dataset_selector(format_type="jsonl-single")
             if not selection:
@@ -8899,34 +8927,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             return bundle
 
-        # jsonl-multi (default)
-        selection = self._training_studio_intelligent_dataset_selector(format_type="jsonl-multi")
-        if not selection:
+        # jsonl-multi (should not be reached - format is not in choices list)
+        if format_choice == "jsonl-multi":
+            # DEVELOPMENT MODE: This format is not yet available
+            self.console.print("\n[bold red]❌ Error: jsonl-multi format is currently under development[/bold red]")
+            self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
+            self.console.print("[dim]Please use 'llm-json' or 'category-csv' formats instead.[/dim]\n")
             return None
 
-        request = TrainingDataRequest(
-            input_path=selection['data_path'],
-            format="jsonl_multi",
-            text_column=selection['text_column'],
-            label_column=selection['label_column'],
-            id_column=selection.get('id_column'),
-            lang_column=selection.get('lang_column'),
-            mode="multi-label",
-        )
-        bundle = builder.build(request)
-
-        # Store recommended model and metadata in bundle for later use
-        if bundle:
-            if selection.get('recommended_model'):
-                bundle.recommended_model = selection['recommended_model']
-            if selection.get('confirmed_languages'):
-                bundle.metadata['confirmed_languages'] = selection['confirmed_languages']
-            if selection.get('language_distribution'):
-                bundle.metadata['language_distribution'] = selection['language_distribution']
-            if selection.get('text_length_stats'):
-                bundle.metadata['text_length_stats'] = selection['text_length_stats']
-
-        return bundle
+        # Fallback: unrecognized format
+        self.console.print(f"\n[bold red]❌ Error: Unknown format '{format_choice}'[/bold red]")
+        self.console.print("[dim]Supported formats: llm-json, category-csv[/dim]\n")
+        return None
 
     def _training_studio_render_bundle_summary(self, bundle: TrainingDataBundle) -> None:
         table = Table(title="Dataset Summary", border_style="green")
@@ -9057,7 +9069,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 default_model = 'xlm-roberta-base'
 
         self.console.print(f"\n[dim]You can also enter any HuggingFace model ID[/dim]")
-        model_name = Prompt.ask("Model to train", default=default_model)
+        model_input = Prompt.ask("Model to train", default=default_model)
+
+        # Check if user entered a number (selecting from list)
+        if model_input.isdigit():
+            idx = int(model_input) - 1  # Convert to 0-based index
+            if 0 <= idx < len(selected_models):
+                model_name = selected_models[idx]
+                self.console.print(f"[green]✓ Selected: {model_name}[/green]")
+            else:
+                self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
+                model_name = default_model
+        else:
+            model_name = model_input
 
         # Ask for number of epochs
         from rich.prompt import IntPrompt
@@ -9071,6 +9095,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         }
 
         output_dir = self._training_studio_make_output_dir("training_studio_quick")
+
+        # Initialize multiclass_groups (will be set if detected)
+        multiclass_groups = None
+
+        # CRITICAL: Extract training_approach BEFORE the multi-label block so it's accessible later
+        training_approach_from_metadata = bundle.metadata.get('training_approach') if hasattr(bundle, 'metadata') else None
 
         # For multi-label, check if it's actually multi-class
         if bundle.strategy == "multi-label":
@@ -9093,16 +9123,41 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Detect multi-class groups
             multiclass_groups = ml_trainer.detect_multiclass_groups(samples)
 
-            if multiclass_groups:
-                # Has multi-class groups - should handle differently
-                self.console.print("\n[yellow]ℹ️  Detected multi-class classification:[/yellow]")
-                for group_name, labels in multiclass_groups.items():
-                    value_names = [lbl[len(group_name)+1:] if lbl.startswith(group_name+'_') else lbl for lbl in labels]
-                    self.console.print(f"  • {group_name}: {', '.join(value_names)}")
+            # Check if user already answered this question during dataset building
+            use_multiclass_training = False
 
-                # For now, still use multi-label but warn user
-                self.console.print("\n[dim]Note: Training separate binary classifiers for each value.[/dim]")
-                self.console.print("[dim]For true multi-class, use benchmark mode instead.[/dim]\n")
+            if multiclass_groups:
+                if training_approach_from_metadata == 'multi-label':
+                    # User already chose multi-class during dataset building
+                    use_multiclass_training = True
+                    self.console.print("\n[green]✓ Using multi-class training (from dataset configuration)[/green]\n")
+                elif training_approach_from_metadata == 'one-vs-all':
+                    # User already chose one-vs-all during dataset building
+                    use_multiclass_training = False
+                    multiclass_groups = None
+                    self.console.print("\n[yellow]✓ Using one-vs-all training (from dataset configuration)[/yellow]\n")
+                else:
+                    # No previous choice - ask user
+                    self.console.print("\n[yellow]ℹ️  Detected multi-class classification:[/yellow]")
+                    for group_name, labels in multiclass_groups.items():
+                        value_names = [lbl[len(group_name)+1:] if lbl.startswith(group_name+'_') else lbl for lbl in labels]
+                        self.console.print(f"  • {group_name}: {', '.join(value_names)}")
+
+                    # Ask user if they want true multi-class (1 model) or one-vs-all (N models)
+                    self.console.print("\n[bold]Training approach:[/bold]")
+                    self.console.print("  • [green]Multi-class[/green]: Train 1 model per group to predict among all classes")
+                    self.console.print("  • [yellow]One-vs-all[/yellow]: Train N separate binary models (1 per class)")
+
+                    use_multiclass_training = Confirm.ask(
+                        "\n[bold]Use multi-class training? (recommended)[/bold]",
+                        default=True
+                    )
+
+                    if use_multiclass_training:
+                        self.console.print("[green]✓ Will use multi-class training[/green]\n")
+                    else:
+                        self.console.print("[yellow]✓ Will train separate binary classifiers[/yellow]\n")
+                        multiclass_groups = None  # Don't pass to trainer
 
         # Create TrainingConfig with user's chosen model
         from llm_tool.trainers.model_trainer import TrainingConfig
@@ -9121,24 +9176,216 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(f"  • {lang.upper()}")
 
         trainer = ModelTrainer(config=training_config)
-        config = bundle.to_trainer_config(output_dir, {
+
+        # Build trainer config with multiclass_groups if detected
+        extra_config = {
             "model_name": model_name,
             "num_epochs": epochs,
-            "train_by_language": needs_language_training
-        })
+            "train_by_language": needs_language_training,
+            "confirmed_languages": list(languages) if languages else None  # Pass all detected languages
+        }
 
-        try:
-            result = trainer.train(config)
-        except Exception as exc:  # pylint: disable=broad-except
-            self.console.print(f"[red]Training failed:[/red] {exc}")
-            self.logger.exception("Quick training failed", exc_info=exc)
-            return {
-                'runtime_params': runtime_params,
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None,
-                'error': str(exc)
-            }
+        # Add multiclass_groups if user opted for multi-class training
+        if bundle.strategy == "multi-label" and multiclass_groups:
+            extra_config["multiclass_groups"] = multiclass_groups
+
+        # CRITICAL FIX: Handle one-vs-all training properly
+        # For one-vs-all, we need to train separate binary models for each label
+
+        # DEBUG logging
+        self.logger.debug(f"[ONE-VS-ALL DEBUG] training_approach_from_metadata = {training_approach_from_metadata}")
+        self.logger.debug(f"[ONE-VS-ALL DEBUG] hasattr(bundle, 'training_files') = {hasattr(bundle, 'training_files')}")
+        if hasattr(bundle, 'training_files'):
+            self.logger.debug(f"[ONE-VS-ALL DEBUG] bundle.training_files.keys() = {list(bundle.training_files.keys()) if bundle.training_files else None}")
+
+        if training_approach_from_metadata == 'one-vs-all':
+            # One-vs-all training: create separate binary models for each label
+
+            # First, try to use pre-generated category CSV files if they exist
+            category_files = {}
+            if hasattr(bundle, 'training_files') and bundle.training_files:
+                # Extract the category files (exclude 'multilabel' key)
+                category_files = {k: v for k, v in bundle.training_files.items() if k != 'multilabel'}
+
+            # If no category files exist, create them from the JSONL file
+            if not category_files:
+                self.console.print("\n[yellow]⚡ Creating binary datasets for one-vs-all training...[/yellow]")
+
+                # Load the JSONL file to extract labels
+                import json
+                data_path = str(bundle.primary_file) if hasattr(bundle, 'primary_file') else str(bundle.dataset_path)
+
+                # Read the JSONL and collect unique labels
+                all_labels_set = set()
+                records = []
+                with open(data_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        record = json.loads(line)
+                        records.append(record)
+                        if 'labels' in record:
+                            # Handle both list and dict formats
+                            if isinstance(record['labels'], dict):
+                                all_labels_set.update(record['labels'].keys())
+                            elif isinstance(record['labels'], list):
+                                all_labels_set.update(record['labels'])
+
+                self.logger.debug(f"[ONE-VS-ALL] Found {len(records)} records")
+                self.logger.debug(f"[ONE-VS-ALL] Found {len(all_labels_set)} unique labels: {sorted(all_labels_set)}")
+
+                if not all_labels_set:
+                    # Debug: print first record to see the structure
+                    if records:
+                        self.logger.error(f"[ONE-VS-ALL] No labels found! First record structure: {records[0]}")
+                        self.console.print(f"\n[red]✗ Could not find labels in JSONL file[/red]")
+                        self.console.print(f"[dim]First record structure: {json.dumps(records[0], indent=2)}[/dim]")
+                    return {
+                        'runtime_params': runtime_params,
+                        'models_trained': [],
+                        'best_model': None,
+                        'best_f1': None,
+                        'error': 'No labels found in JSONL'
+                    }
+
+                # Create temporary CSV files for each label
+                import tempfile
+                import csv
+                temp_dir = Path(tempfile.mkdtemp(prefix="onevsall_"))
+
+                for label_name in sorted(all_labels_set):
+                    # Create binary CSV: text + label (0 or 1)
+                    csv_path = temp_dir / f"binary_{label_name}.csv"
+
+                    with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.DictWriter(csvfile, fieldnames=['text', 'label', 'language'])
+                        writer.writeheader()
+
+                        for record in records:
+                            # Binary label: 1 if this label is present/True, 0 otherwise
+                            labels_data = record.get('labels', {})
+
+                            # Handle both dict and list formats
+                            if isinstance(labels_data, dict):
+                                label_raw = labels_data.get(label_name, 0)
+                                # Handle bool, int, or string values
+                                if isinstance(label_raw, bool):
+                                    label_value = 1 if label_raw else 0
+                                elif isinstance(label_raw, (int, float)):
+                                    label_value = 1 if label_raw > 0 else 0
+                                else:
+                                    label_value = 1 if str(label_raw).lower() in ['1', 'true', 'yes'] else 0
+                            elif isinstance(labels_data, list):
+                                # For list format, check if label is in the list
+                                label_value = 1 if label_name in labels_data else 0
+                            else:
+                                label_value = 0
+
+                            # CRITICAL: Ensure text is a valid non-empty string
+                            text_raw = record.get('text', '')
+                            if not isinstance(text_raw, str):
+                                text_raw = str(text_raw) if text_raw else ''
+                            # Skip empty texts
+                            if not text_raw.strip():
+                                continue
+
+                            # Ensure language is a string
+                            lang_raw = record.get('lang', record.get('language', ''))
+                            if not isinstance(lang_raw, str):
+                                lang_raw = str(lang_raw) if lang_raw else ''
+
+                            row = {
+                                'text': text_raw.strip(),
+                                'label': label_value,
+                                'language': lang_raw
+                            }
+                            writer.writerow(row)
+
+                    category_files[label_name] = csv_path
+                    self.console.print(f"[dim]  Created binary dataset for: {label_name}[/dim]")
+
+                self.console.print(f"[green]✓ Created {len(category_files)} binary datasets[/green]\n")
+
+            if category_files:
+                self.console.print(f"\n[yellow]⚠️  One-vs-all requires training {len(category_files)} separate binary models.[/yellow]")
+                self.console.print("[dim]   Note: 'distributed' training mode exists but is NOT RECOMMENDED (untested).[/dim]")
+                self.console.print("[yellow]   Quick mode will train them sequentially...[/yellow]\n")
+
+                # Train each binary model sequentially
+                results_per_category = {}
+                for category_name, category_file in category_files.items():
+                    self.console.print(f"\n[cyan]Training binary model for: {category_name}[/cyan]")
+
+                    # Create config for this specific category
+                    category_config = {
+                        'input_file': str(category_file),
+                        'text_column': 'text',
+                        'label_column': 'label',
+                        'model_name': model_name,
+                        'num_epochs': epochs,
+                        'output_dir': str(Path(output_dir) / f'model_{category_name}'),
+                        'training_strategy': 'single-label',  # Binary classification
+                        'category_name': category_name,  # For display in metrics
+                        'confirmed_languages': list(languages) if languages else None
+                    }
+
+                    try:
+                        category_result = trainer.train(category_config)
+                        results_per_category[category_name] = category_result
+                        self.console.print(f"[green]✓ Completed {category_name}: Accuracy={category_result.get('accuracy', 0):.4f}, F1={category_result.get('best_f1_macro', 0):.4f}[/green]")
+                    except Exception as exc:
+                        self.console.print(f"[red]✗ Failed to train {category_name}: {exc}[/red]")
+                        self.logger.exception(f"Training failed for {category_name}", exc_info=exc)
+                        results_per_category[category_name] = {'error': str(exc)}
+
+                # Aggregate results
+                successful_results = [r for r in results_per_category.values() if 'error' not in r]
+                if successful_results:
+                    avg_accuracy = sum(r.get('accuracy', 0) for r in successful_results) / len(successful_results)
+                    avg_f1 = sum(r.get('best_f1_macro', 0) for r in successful_results) / len(successful_results)
+
+                    result = {
+                        'best_model': model_name,
+                        'accuracy': avg_accuracy,
+                        'best_f1_macro': avg_f1,
+                        'model_path': str(output_dir),
+                        'training_time': sum(r.get('training_time', 0) for r in successful_results),
+                        'models_trained': len(successful_results),
+                        'total_models': len(category_files),
+                        'per_category_results': results_per_category
+                    }
+                else:
+                    self.console.print("[red]All category trainings failed[/red]")
+                    return {
+                        'runtime_params': runtime_params,
+                        'models_trained': [],
+                        'best_model': None,
+                        'best_f1': None,
+                        'error': 'All category trainings failed'
+                    }
+            else:
+                self.console.print("[red]No category files found for one-vs-all training[/red]")
+                return {
+                    'runtime_params': runtime_params,
+                    'models_trained': [],
+                    'best_model': None,
+                    'best_f1': None,
+                    'error': 'No category files'
+                }
+        else:
+            # Standard training (multi-class or multi-label)
+            config = bundle.to_trainer_config(output_dir, extra_config)
+
+            try:
+                result = trainer.train(config)
+            except Exception as exc:  # pylint: disable=broad-except
+                self.console.print(f"[red]Training failed:[/red] {exc}")
+                self.logger.exception("Quick training failed", exc_info=exc)
+                return {
+                    'runtime_params': runtime_params,
+                    'models_trained': [],
+                    'best_model': None,
+                    'best_f1': None,
+                    'error': str(exc)
+                }
 
         self._training_studio_show_training_result(result, bundle, title="Quick training results")
 
@@ -9524,6 +9771,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 else:
                     train_language = None
 
+                # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
+                if has_languages:
+                    from llm_tool.trainers.model_trainer import set_detected_languages_on_model
+                    train_languages = [s.lang for s in train_samples]
+                    set_detected_languages_on_model(
+                        model=model,
+                        train_languages=train_languages,
+                        val_languages=test_languages,
+                        logger=self.logger
+                    )
+
                 result = model.run_training(
                     train_dataloader=train_loader,
                     test_dataloader=test_loader,
@@ -9758,7 +10016,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         n_epochs = IntPrompt.ask("Number of epochs per model", default=10)
 
         # Load the multi-label dataset
-        from llm_tool.trainers.multi_label_trainer import MultiLabelTrainer, TrainingConfig as MultiLabelTrainingConfig
+        from llm_tool.trainers.multi_label_trainer import (
+            MultiLabelTrainer,
+            TrainingConfig as MultiLabelTrainingConfig,
+            convert_multiclass_samples,  # UNIFIED multi-class conversion
+            setup_multiclass_model  # UNIFIED multi-class model setup
+        )
 
         output_dir = self._training_studio_make_output_dir("training_studio_benchmark_multilabel")
 
@@ -9789,108 +10052,46 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'best_f1': None
             }
 
-        # Get all unique labels
+        # UNIFIED: Use trainer's multi-class detection (same code everywhere)
+        multiclass_groups = trainer.detect_multiclass_groups(samples)
+
+        # Build true_label_keys based on detected groups
         all_labels = set()
         for sample in samples:
             all_labels.update(sample.labels.keys())
 
-        # Detect if labels have common prefixes (key_value format like "theme_politics", "theme_sports")
-        # Group labels by prefix to detect multi-class encoded as multi-label
-        # Strategy: Find the longest common prefix among all labels
-        label_groups = {}
-
-        # Sort labels to process them in order
-        sorted_labels = sorted(all_labels)
-
-        # Group by all possible prefixes (trying from shortest to longest)
-        potential_groups = {}
-
-        for label in sorted_labels:
-            if '_' not in label:
-                label_groups[label] = [label]
-                continue
-
-            # For each label, try all possible prefix lengths
-            parts = label.split('_')
-
-            # Start with the shortest meaningful prefix (first part only)
-            # and go up to the second-to-last part
-            for prefix_len in range(1, len(parts)):
-                prefix = '_'.join(parts[:prefix_len])
-
-                # Add this label to this prefix group
-                if prefix not in potential_groups:
-                    potential_groups[prefix] = []
-                potential_groups[prefix].append(label)
-
-        # Now find the best grouping: prefer longer prefixes that group multiple labels
-        # and don't have overlapping members
+        true_label_keys = []
         used_labels = set()
 
-        # Sort prefixes by length (longest first) to prefer more specific groupings
-        for prefix in sorted(potential_groups.keys(), key=len, reverse=True):
-            members = potential_groups[prefix]
+        # Display detected groups and ask user
+        for prefix, group_labels in multiclass_groups.items():
+            value_names = [lbl[len(prefix)+1:] if lbl.startswith(prefix+'_') else lbl for lbl in group_labels]
+            self.console.print(f"[yellow]ℹ️  Detected mutually exclusive labels '{prefix}' with {len(group_labels)} values: {', '.join(value_names)}[/yellow]")
 
-            # Skip if this group's members are already used in another group
-            if any(m in used_labels for m in members):
-                continue
+            # Ask user to confirm if this should be treated as multi-class or separate binary labels
+            treat_as_multiclass = Confirm.ask(
+                f"[bold]Treat '{prefix}' as a single multi-class label (recommended)?[/bold]\n"
+                f"  • Yes: Train one model to predict among {len(group_labels)} classes\n"
+                f"  • No: Train {len(group_labels)} separate binary models (one per value)",
+                default=True
+            )
 
-            # Only keep groups with 2+ members
-            if len(members) >= 2:
-                # Verify all members start with this exact prefix + underscore
-                if all(m.startswith(prefix + '_') for m in members):
-                    # Make sure none of the members have been grouped already
-                    label_groups[prefix] = members
-                    used_labels.update(members)
-
-        # Add remaining ungrouped labels as individual labels
-        for label in sorted_labels:
-            if label not in used_labels:
-                label_groups[label] = [label]
-
-        # Identify true multi-label vs multi-class encoded as multi-label
-        # If a prefix has multiple values and they're mutually exclusive, it's multi-class
-        true_label_keys = []
-        multiclass_groups = {}  # Track which labels are multi-class groups
-
-        for prefix, group_labels in label_groups.items():
-            if len(group_labels) > 1:
-                # Check if mutually exclusive (each sample has max 1 label from this group)
-                is_mutually_exclusive = True
-                for sample in samples:
-                    active_in_group = sum(1 for lbl in group_labels if sample.labels.get(lbl, 0))
-                    if active_in_group > 1:
-                        is_mutually_exclusive = False
-                        break
-
-                if is_mutually_exclusive:
-                    # This is multi-class encoded as multi-label - treat as single label
-                    # Extract value name = everything after the prefix
-                    value_names = [lbl[len(prefix)+1:] if lbl.startswith(prefix+'_') else lbl for lbl in group_labels]
-                    self.console.print(f"[yellow]ℹ️  Detected mutually exclusive labels '{prefix}' with {len(group_labels)} values: {', '.join(value_names)}[/yellow]")
-
-                    # Ask user to confirm if this should be treated as multi-class or separate binary labels
-                    treat_as_multiclass = Confirm.ask(
-                        f"[bold]Treat '{prefix}' as a single multi-class label (recommended)?[/bold]\n"
-                        f"  • Yes: Train one model to predict among {len(group_labels)} classes\n"
-                        f"  • No: Train {len(group_labels)} separate binary models (one per value)",
-                        default=True
-                    )
-
-                    if treat_as_multiclass:
-                        true_label_keys.append(prefix)
-                        multiclass_groups[prefix] = group_labels
-                        self.console.print(f"[green]✓ Will train as multi-class: {prefix}[/green]\n")
-                    else:
-                        # Treat each value as independent binary label
-                        true_label_keys.extend(group_labels)
-                        self.console.print(f"[green]✓ Will train {len(group_labels)} separate binary models[/green]\n")
-                else:
-                    # True multi-label - each label is independent
-                    true_label_keys.extend(group_labels)
+            if treat_as_multiclass:
+                true_label_keys.append(prefix)
+                used_labels.update(group_labels)
+                self.console.print(f"[green]✓ Will train as multi-class: {prefix}[/green]\n")
             else:
-                # Single label (either standalone or ungrouped)
+                # Treat each value as independent binary label
                 true_label_keys.extend(group_labels)
+                used_labels.update(group_labels)
+                # Remove from multiclass_groups since user chose one-vs-all
+                del multiclass_groups[prefix]
+                self.console.print(f"[green]✓ Will train {len(group_labels)} separate binary models[/green]\n")
+
+        # Add remaining ungrouped labels
+        for label in sorted(all_labels):
+            if label not in used_labels:
+                true_label_keys.append(label)
 
         self.console.print(f"\n[green]✓ Loaded {len(samples)} samples with {len(true_label_keys)} label type(s)[/green]")
         self.console.print(f"[dim]Labels: {', '.join(sorted(true_label_keys))}[/dim]\n")
@@ -9951,33 +10152,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Determine if this is a grouped label or a direct label
             if label_name in multiclass_groups:
-                # Multi-class encoded as multi-label - convert to multi-class classification
+                # UNIFIED: Use trainer's conversion function (same code everywhere)
                 group_labels = multiclass_groups[label_name]
-                # Extract value names = everything after the prefix
-                value_names = [lbl[len(label_name)+1:] if lbl.startswith(label_name+'_') else lbl for lbl in group_labels]
+                multiclass_samples, value_names = convert_multiclass_samples(samples, label_name, group_labels)
                 self.console.print(f"[dim]Multi-class label with {len(group_labels)} values: {', '.join(value_names)}[/dim]\n")
-
-                # Convert to multi-class samples (label = value index, not binary)
-                from llm_tool.trainers.data_utils import DataSample
-                multiclass_samples = []
-                for sample in samples:
-                    # Find which value from the group is active (should be exactly 1)
-                    active_label_value = None
-                    for group_label in group_labels:
-                        if sample.labels.get(group_label, 0):
-                            active_label_value = group_label
-                            break
-
-                    if active_label_value:
-                        # Get the index of this value in the group
-                        label_idx = group_labels.index(active_label_value)
-                        multiclass_samples.append(DataSample(
-                            text=sample.text,
-                            label=label_idx,
-                            id=sample.id,
-                            lang=sample.lang,
-                            metadata={**(sample.metadata or {}), 'original_label': label_name, 'label_value': active_label_value}
-                        ))
 
                 # Check if any class has only 1 instance
                 from collections import Counter
@@ -9985,16 +10163,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 min_count = min(label_counts.values()) if label_counts else 0
 
                 if min_count < 2:
-                    # Find which classes (indices) have insufficient instances
-                    insufficient_indices = [cls for cls, count in label_counts.items() if count < 2]
-                    insufficient_values = [group_labels[idx] for idx in insufficient_indices]
-                    insufficient_value_names = [value_names[idx] for idx in insufficient_indices]
+                    # Find which classes (string labels) have insufficient instances
+                    insufficient_class_names = [cls for cls, count in label_counts.items() if count < 2]
 
-                    self.console.print(f"[yellow]⚠️  Label '{label_name}' has value(s) with only 1 instance: {', '.join(insufficient_value_names)}[/yellow]")
+                    self.console.print(f"[yellow]⚠️  Label '{label_name}' has value(s) with only 1 instance: {', '.join(insufficient_class_names)}[/yellow]")
 
                     # Ask user if they want to remove these values
                     remove_values = Prompt.ask(
-                        f"Remove value(s) '{', '.join(insufficient_value_names)}' and continue with remaining values?",
+                        f"Remove value(s) '{', '.join(insufficient_class_names)}' and continue with remaining values?",
                         choices=["y", "n"],
                         default="y"
                     )
@@ -10002,36 +10178,24 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     if remove_values.lower() == 'y':
                         # Remove samples with insufficient values
                         original_count = len(multiclass_samples)
-                        multiclass_samples = [s for s in multiclass_samples if s.label not in insufficient_indices]
-                        self.console.print(f"[dim]Removed {original_count - len(multiclass_samples)} samples from values: {', '.join(insufficient_value_names)}[/dim]")
+                        multiclass_samples = [s for s in multiclass_samples if s.label not in insufficient_class_names]
+                        self.console.print(f"[dim]Removed {original_count - len(multiclass_samples)} samples from values: {', '.join(insufficient_class_names)}[/dim]")
 
-                        # Update group_labels and value_names
-                        group_labels = [lbl for idx, lbl in enumerate(group_labels) if idx not in insufficient_indices]
-                        value_names = [name for idx, name in enumerate(value_names) if idx not in insufficient_indices]
+                        # Update value_names to remove insufficient classes
+                        value_names = [name for name in value_names if name not in insufficient_class_names]
 
-                        # Re-index the labels in remaining samples
-                        label_mapping = {}
-                        new_idx = 0
-                        for old_idx in range(len(group_labels) + len(insufficient_indices)):
-                            if old_idx not in insufficient_indices:
-                                label_mapping[old_idx] = new_idx
-                                new_idx += 1
-
-                        for sample in multiclass_samples:
-                            sample.label = label_mapping[sample.label]
-
-                        self.console.print(f"[green]✓ Continuing with {len(group_labels)} values: {', '.join(value_names)}[/green]")
+                        self.console.print(f"[green]✓ Continuing with {len(value_names)} values: {', '.join(value_names)}[/green]")
 
                         # Check if we still have at least 2 classes
-                        if len(group_labels) < 2:
-                            self.console.print(f"[yellow]⚠️  Only {len(group_labels)} value(s) remaining. Skipping {label_name}[/yellow]")
+                        if len(value_names) < 2:
+                            self.console.print(f"[yellow]⚠️  Only {len(value_names)} value(s) remaining. Skipping {label_name}[/yellow]")
                             continue
                     else:
                         self.console.print(f"[dim]Skipping {label_name}[/dim]")
                         continue
 
                 binary_samples = multiclass_samples
-                num_classes = len(group_labels)
+                num_classes = len(value_names)  # Use value_names length (may have been reduced)
             else:
                 # True binary label or ungrouped label
                 # CRITICAL FIX: Use string labels NOT_label/label instead of 0/1
@@ -10148,6 +10312,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                         model = CustomModel()
 
+                    # CRITICAL: Configure model for multi-class using unified function
+                    if num_classes > 2:
+                        setup_multiclass_model(model, num_classes, value_names)
+
                     # Encode data
                     train_texts = [s.text for s in train_samples]
                     train_labels = [s.label for s in train_samples]  # DataSample uses .label not .labels
@@ -10176,6 +10344,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         train_language = "MULTI"
                     else:
                         train_language = None
+
+                    # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
+                    if has_languages:
+                        from llm_tool.trainers.model_trainer import set_detected_languages_on_model
+                        train_languages = [s.lang for s in train_samples]
+                        set_detected_languages_on_model(
+                            model=model,
+                            train_languages=train_languages,
+                            val_languages=test_languages,
+                            logger=self.logger
+                        )
 
                     result = model.run_training(
                         train_dataloader=train_loader,
@@ -10492,6 +10671,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         Returns:
             dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
         """
+        # CRITICAL WARNING: This mode is untested
+        self.console.print("\n[bold red]⚠️  WARNING: Distributed mode is NOT RECOMMENDED (untested)[/bold red]")
+        self.console.print("[yellow]This training mode has not been thoroughly tested and may produce incorrect results.[/yellow]")
+        self.console.print("[dim]Proceeding at your own risk...[/dim]\n")
+
         self.console.print("\n[bold]Distributed multi-label training[/bold]")
 
         resolved = self._training_studio_resolve_multilabel_dataset(bundle)
@@ -10653,6 +10837,53 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 lang_summary = ", ".join(f"{k}: {v}" for k, v in lang_counter.most_common(5))
                 stats_table.add_row("Language distribution", lang_summary)
             self.console.print(stats_table)
+
+        # Detect multi-class groups and ask user if they want multi-class training
+        multiclass_groups = trainer.detect_multiclass_groups(samples)
+
+        if multiclass_groups and HAS_RICH and self.console:
+            self.console.print(f"\n[bold cyan]🎯 Multi-Class Groups Detected:[/bold cyan]\n")
+
+            for group_name, group_labels in multiclass_groups.items():
+                self.console.print(f"  • [cyan]{group_name}[/cyan]: {len(group_labels)} classes")
+                self.console.print(f"    {', '.join(sorted(group_labels)[:5])}{' ...' if len(group_labels) > 5 else ''}\n")
+
+            self.console.print("[dim]Choose training approach:[/dim]\n")
+
+            approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan")
+            approach_table.add_column("Approach", style="cyan bold", width=18)
+            approach_table.add_column("Description", style="white", width=60)
+
+            approach_table.add_row(
+                "multi-class",
+                f"🎯 ONE model per group (e.g., 1 model for all {list(multiclass_groups.keys())[0]} values)\n"
+                "✓ Faster training (fewer models)\n"
+                "✓ Model learns relationships between classes\n"
+                "✓ Consistent predictions (only one class predicted)"
+            )
+            approach_table.add_row(
+                "one-vs-all",
+                f"⚡ Multiple binary models (one per label)\n"
+                "✓ Each model: 'Label X' vs 'NOT Label X'\n"
+                "✓ Better for: imbalanced data or label-specific tuning\n"
+                "✓ More flexible but slower training"
+            )
+
+            self.console.print(approach_table)
+            self.console.print()
+
+            training_approach = Prompt.ask(
+                "[bold yellow]Training approach[/bold yellow]",
+                choices=["multi-class", "one-vs-all"],
+                default="multi-class"
+            )
+
+            if training_approach == "multi-class":
+                trainer_config.multiclass_mode = True
+                trainer_config.multiclass_groups = multiclass_groups
+                # Recreate trainer with updated config
+                trainer = MultiLabelTrainer(config=trainer_config, verbose=False)
+                self.console.print(f"[green]✓ Multi-class mode enabled for {len(multiclass_groups)} group(s)[/green]\n")
 
         if HAS_RICH and self.console:
             status_ctx = self.console.status("[bold green]Training label models...[/bold green]", spinner="dots")

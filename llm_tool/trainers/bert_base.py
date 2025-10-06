@@ -191,15 +191,17 @@ class TrainingDisplay:
             table.add_row("Label Key:", self.label_key)
             table.add_row("Label Value:", self.label_value)
 
-        # Display languages - always show detected languages if available
-        if self.detected_languages:
+        # Display languages - ALWAYS show if we have any language info
+        if self.detected_languages and len(self.detected_languages) > 0:
             # Show all detected languages
             lang_display = ", ".join(self.detected_languages)
             table.add_row("Languages:", lang_display)
         elif self.language:
-            # Fallback to single language code
-            lang_display = self.language if self.language != "MULTI" else "MULTI (multilingual)"
-            table.add_row("Language:", lang_display)
+            # Fallback to single language code or MULTI
+            if self.language == "MULTI":
+                table.add_row("Languages:", "Multilingual")
+            else:
+                table.add_row("Language:", self.language)
 
         return table
 
@@ -268,8 +270,16 @@ class TrainingDisplay:
         support_row = ["Support"] + [str(int(self.support[i])) for i in range(self.num_labels)] + [str(int(sum(self.support)))]
         table.add_row(*support_row)
 
-        # ALWAYS add per-language metrics section if multilingual - even if not yet computed
-        if self.detected_languages and len(self.detected_languages) > 1:
+        # ALWAYS add per-language metrics section if we have language info
+        # Show if:
+        # 1. detected_languages has ANY language (1+)
+        # 2. OR language is set (including "MULTI")
+        should_show_language_metrics = (
+            (self.detected_languages and len(self.detected_languages) >= 1) or
+            (self.language and self.language != "")
+        )
+
+        if should_show_language_metrics:
             # Add separator
             separator_row = [""] * (self.num_labels + 2)
             table.add_row(*separator_row)
@@ -497,6 +507,11 @@ class BertBase(BertABC):
         self.last_saved_model_path: Optional[str] = None
         self.logger = get_logger(f"AugmentedSocialScientistFork.{self.__class__.__name__}")
 
+        # Multi-class support: will be set dynamically if needed
+        self.num_labels: int = 2  # Default to binary classification
+        self.class_names: Optional[List[str]] = None
+        self.detected_languages: Optional[List[str]] = None
+
         # Set or detect device
         self.device = device
         if self.device is None:
@@ -542,7 +557,14 @@ class BertBase(BertABC):
 
         iterator = tqdm(sequences, desc="Tokenizing") if progress_bar else sequences
         input_ids: List[List[int]] = []
-        for sent in iterator:
+        for idx, sent in enumerate(iterator):
+            # CRITICAL: Validate input is a string
+            if not isinstance(sent, str):
+                self.logger.error(f"Invalid text at index {idx}: type={type(sent)}, value={sent}")
+                raise TypeError(f"Text at index {idx} must be a string, got {type(sent)}. Value: {sent}")
+            if not sent.strip():
+                self.logger.error(f"Empty text at index {idx}")
+                raise ValueError(f"Text at index {idx} is empty. All texts must be non-empty strings.")
             encoded_sent = self.tokenizer.encode(sent, add_special_tokens=add_special_tokens)
             input_ids.append(encoded_sent)
 
@@ -919,12 +941,25 @@ class BertBase(BertABC):
         test_labels = []
         for batch in test_dataloader:
             test_labels += batch[2].numpy().tolist()
-        num_labels = np.unique(test_labels).size
 
-        # Ensure we have at least 2 labels for binary classification
-        # This fixes the issue when all samples in test have the same label
-        if num_labels < 2:
-            num_labels = 2
+        # CRITICAL: Determine num_labels for metrics and CSV headers
+        # Priority: use self.num_labels if set (multi-class), otherwise infer from data
+        if hasattr(self, 'num_labels') and self.num_labels > 2:
+            # Multi-class mode: use the num_labels set on the model
+            num_labels = self.num_labels
+        else:
+            # Binary mode or not set: infer from data (backward compatibility)
+            num_labels_from_data = np.unique(test_labels).size
+            # Ensure we have at least 2 labels for binary classification
+            # This fixes the issue when all samples in test have the same label
+            if num_labels_from_data < 2:
+                num_labels = 2
+            else:
+                num_labels = num_labels_from_data
+
+        # Use class_names from parameter if provided, otherwise use self.class_names
+        if class_names is None and hasattr(self, 'class_names') and self.class_names:
+            class_names = self.class_names
 
         # Note: Reinforcement learning now supports multi-class classification
 
@@ -957,8 +992,8 @@ class BertBase(BertABC):
 
         # Add comprehensive language-specific headers if tracking languages
         if track_languages and language_info is not None:
-            # CRITICAL FIX: Filter out NaN/None/float values before sorting
-            unique_langs = sorted(list(set([lang for lang in language_info if isinstance(lang, str) and lang])))
+            # CRITICAL FIX: Filter out NaN/None/float values and normalize to uppercase
+            unique_langs = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
             for lang in unique_langs:
                 csv_headers.append(f"{lang}_accuracy")
                 for i in range(num_labels):
@@ -1125,10 +1160,24 @@ class BertBase(BertABC):
         training_metrics = []
 
         # Extract detected languages from language_info if available
+        # Priority 1: Use model's detected_languages if set (most complete - from all train+val data)
+        # Priority 2: Extract from language_info (validation set only)
         detected_languages = []
-        if track_languages and language_info is not None:
+        if hasattr(self, 'detected_languages') and self.detected_languages and len(self.detected_languages) > 0:
+            # Use model's detected_languages (set from all samples in multi_label_trainer)
+            detected_languages = self.detected_languages
+            self.logger.info(f"✓ Using model.detected_languages: {detected_languages}")
+        elif track_languages and language_info is not None and len(language_info) > 0:
             # CRITICAL FIX: Filter out NaN/None/float values before sorting
-            detected_languages = sorted(list(set([lang for lang in language_info if isinstance(lang, str) and lang])))
+            # Also normalize to uppercase for consistency
+            filtered_langs = [lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang]
+            if filtered_langs:
+                detected_languages = sorted(list(set(filtered_langs)))
+                self.logger.info(f"✓ Extracted languages from language_info: {detected_languages}")
+            else:
+                self.logger.warning(f"⚠️ language_info has {len(language_info)} items but no valid languages after filtering")
+        else:
+            self.logger.warning(f"⚠️ No languages detected: track_languages={track_languages}, language_info={f'{len(language_info)} items' if language_info else 'None'}, self.detected_languages={self.detected_languages if hasattr(self, 'detected_languages') else 'N/A'}")
 
         # Initialize Rich Live Display
         display = TrainingDisplay(
@@ -1345,12 +1394,29 @@ class BertBase(BertABC):
 
                 # Calculate and display per-language metrics if requested
                 if track_languages and language_info is not None:
-                    # CRITICAL FIX: Filter out NaN/None/float values
-                    unique_languages = list(set([lang for lang in language_info if isinstance(lang, str) and lang]))
+                    # CRITICAL FIX: Filter out NaN/None/float values and normalize to uppercase
+                    unique_languages = list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang]))
 
-                    for lang in sorted(unique_languages):
-                        # Get indices for this language
-                        lang_indices = [i for i, l in enumerate(language_info) if l == lang]
+                    # CRITICAL: Initialize language_metrics for ALL detected_languages (not just those in validation data)
+                    # This ensures all languages appear in the display even if not present in current split
+                    if hasattr(self, 'detected_languages') and self.detected_languages:
+                        for lang in self.detected_languages:
+                            if lang not in language_metrics:
+                                # Initialize with zero metrics - will be updated if language has data
+                                language_metrics[lang] = {
+                                    'samples': 0,
+                                    'accuracy': 0.0,
+                                    'macro_f1': 0.0
+                                }
+                                for i in range(num_labels):
+                                    language_metrics[lang][f'precision_{i}'] = 0.0
+                                    language_metrics[lang][f'recall_{i}'] = 0.0
+                                    language_metrics[lang][f'f1_{i}'] = 0.0
+                                    language_metrics[lang][f'support_{i}'] = 0
+
+                    for lang_upper in sorted(unique_languages):
+                        # Get indices for this language (compare with both upper and lower case)
+                        lang_indices = [i for i, l in enumerate(language_info) if isinstance(l, str) and l.upper() == lang_upper]
                         if not lang_indices:
                             continue
 
@@ -1395,7 +1461,7 @@ class BertBase(BertABC):
 
                         lang_metrics_dict['macro_f1'] = lang_macro_f1
 
-                        language_metrics[lang] = lang_metrics_dict
+                        language_metrics[lang_upper] = lang_metrics_dict
 
                     # Update display with language metrics
                     display.language_metrics = language_metrics
@@ -1457,8 +1523,8 @@ class BertBase(BertABC):
 
                     # Add language metrics if available
                     if track_languages and language_info is not None:
-                        # CRITICAL FIX: Filter out NaN/None/float values
-                        unique_languages = list(set([lang for lang in language_info if isinstance(lang, str) and lang]))
+                        # CRITICAL FIX: Filter out NaN/None/float values and normalize to uppercase
+                        unique_languages = list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang]))
                         for lang in sorted(unique_languages):
                             if language_metrics and lang in language_metrics:
                                 row.append(language_metrics[lang]['accuracy'])
@@ -1832,8 +1898,8 @@ class BertBase(BertABC):
                     reinforced_headers.append("macro_f1")
 
                     if track_languages and language_info is not None:
-                        # CRITICAL FIX: Filter out NaN/None/float values before sorting
-                        unique_langs = sorted(list(set([lang for lang in language_info if isinstance(lang, str) and lang])))
+                        # CRITICAL FIX: Filter out NaN/None/float values and normalize to uppercase
+                        unique_langs = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
                         for lang in unique_langs:
                             reinforced_headers.append(f"{lang}_accuracy")
                             for i in range(num_labels):
@@ -2071,10 +2137,10 @@ class BertBase(BertABC):
                         # Calculate language-specific metrics if tracking
                         language_metrics = {}
                         if track_languages and language_info is not None:
-                            # CRITICAL FIX: Filter out NaN/None/float values
-                            unique_languages = list(set([lang for lang in language_info if isinstance(lang, str) and lang]))
-                            for lang in sorted(unique_languages):
-                                lang_indices = [i for i, l in enumerate(language_info) if l == lang]
+                            # CRITICAL FIX: Filter out NaN/None/float values and normalize to uppercase
+                            unique_languages = list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang]))
+                            for lang_upper in sorted(unique_languages):
+                                lang_indices = [i for i, l in enumerate(language_info) if isinstance(l, str) and l.upper() == lang_upper]
                                 if not lang_indices:
                                     continue
 
@@ -2116,7 +2182,7 @@ class BertBase(BertABC):
 
                                 lang_metrics_dict['macro_f1'] = lang_macro_f1
 
-                                language_metrics[lang] = lang_metrics_dict
+                                language_metrics[lang_upper] = lang_metrics_dict
 
                             # Update display with language metrics
                             display.language_metrics = language_metrics
@@ -2145,7 +2211,7 @@ class BertBase(BertABC):
                         reinforced_row.append(macro_f1)
 
                         if track_languages and language_info is not None:
-                            for lang in sorted(unique_langs):
+                            for lang in sorted(unique_languages):
                                 if lang in language_metrics:
                                     lm = language_metrics[lang]
                                     reinforced_row.append(lm['accuracy'])

@@ -89,6 +89,7 @@ __all__ = [
     'MODEL_TARGET_LANGUAGES',
     'get_model_target_languages',
     'filter_data_by_language',
+    'set_detected_languages_on_model',
 ]
 
 
@@ -173,6 +174,82 @@ MODEL_TARGET_LANGUAGES = {
     "microsoft/Multilingual-MiniLM-L12-H384": None,
     "distilbert-base-multilingual-cased": None,
 }
+
+
+def set_detected_languages_on_model(model, train_samples=None, val_samples=None,
+                                     train_languages=None, val_languages=None,
+                                     confirmed_languages=None, logger=None):
+    """
+    UNIFIED function to extract and set detected languages on a model instance.
+
+    This function ensures CONSISTENT language detection across ALL training modes:
+    - category-csv (single-label and multi-label)
+    - jsonl modes
+    - benchmark mode
+    - quick mode
+
+    Args:
+        model: Model instance (BertBase or subclass)
+        train_samples: Training samples with .lang attribute (optional)
+        val_samples: Validation samples with .lang attribute (optional)
+        train_languages: List of language codes from training data (optional)
+        val_languages: List of language codes from validation data (optional)
+        confirmed_languages: Pre-confirmed languages from user/config (optional, takes priority)
+        logger: Logger instance for debug messages (optional)
+
+    Returns:
+        List of detected languages (uppercase, sorted)
+    """
+    detected_languages = []
+
+    # Priority 1: Use confirmed_languages if provided (from user selection or config)
+    if confirmed_languages:
+        detected_languages = sorted(set(
+            lang.upper() for lang in confirmed_languages
+            if isinstance(lang, str) and lang
+        ))
+        if logger:
+            logger.info(f"🌍 Using confirmed languages: {', '.join(detected_languages)}")
+
+    # Priority 2: Extract from samples
+    elif train_samples or val_samples:
+        all_samples = []
+        if train_samples:
+            all_samples.extend(train_samples)
+        if val_samples:
+            all_samples.extend(val_samples)
+
+        detected_languages = sorted(set(
+            s.lang.upper() for s in all_samples
+            if hasattr(s, 'lang') and s.lang and isinstance(s.lang, str)
+        ))
+        if logger:
+            logger.info(f"🌍 Detected languages from samples: {', '.join(detected_languages)}")
+
+    # Priority 3: Extract from language lists
+    elif train_languages or val_languages:
+        all_languages = []
+        if train_languages:
+            all_languages.extend(train_languages)
+        if val_languages:
+            all_languages.extend(val_languages)
+
+        detected_languages = sorted(set(
+            lang.upper() for lang in all_languages
+            if isinstance(lang, str) and lang
+        ))
+        if logger:
+            logger.info(f"🌍 Detected languages from language lists: {', '.join(detected_languages)}")
+
+    # Set on model if we detected any languages
+    if detected_languages:
+        model.detected_languages = detected_languages
+        if logger:
+            logger.info(f"✓ Set model.detected_languages = {detected_languages}")
+    elif logger:
+        logger.warning("⚠️  No languages detected in data")
+
+    return detected_languages
 
 
 @dataclass
@@ -401,6 +478,16 @@ class ModelTrainer:
         X = df[text_column].values
         y = df['encoded_label'].values
 
+        # CRITICAL: Preserve language column if it exists
+        lang_col = None
+        lang_col_name = None
+        if 'lang' in df.columns:
+            lang_col = df['lang'].values
+            lang_col_name = 'lang'
+        elif 'language' in df.columns:
+            lang_col = df['language'].values
+            lang_col_name = 'language'
+
         # Check if we have at least 2 instances per class for stratification
         from collections import Counter
         label_counts = Counter(y)
@@ -441,23 +528,42 @@ class ModelTrainer:
 
         # First split: train+val and test
         stratify_test = y if can_stratify_test else None
-        X_temp, X_test, y_temp, y_test = train_test_split(
-            X, y, test_size=self.config.test_split,
-            random_state=self.config.seed, stratify=stratify_test
-        )
+        if lang_col is not None:
+            X_temp, X_test, y_temp, y_test, lang_temp, lang_test = train_test_split(
+                X, y, lang_col, test_size=self.config.test_split,
+                random_state=self.config.seed, stratify=stratify_test
+            )
+        else:
+            X_temp, X_test, y_temp, y_test = train_test_split(
+                X, y, test_size=self.config.test_split,
+                random_state=self.config.seed, stratify=stratify_test
+            )
+            lang_temp, lang_test = None, None
 
         # Second split: train and validation
         val_size = self.config.validation_split / (1 - self.config.test_split)
         stratify_val = y_temp if can_stratify_val else None
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_temp, y_temp, test_size=val_size,
-            random_state=self.config.seed, stratify=stratify_val
-        )
+        if lang_temp is not None:
+            X_train, X_val, y_train, y_val, lang_train, lang_val = train_test_split(
+                X_temp, y_temp, lang_temp, test_size=val_size,
+                random_state=self.config.seed, stratify=stratify_val
+            )
+        else:
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_temp, y_temp, test_size=val_size,
+                random_state=self.config.seed, stratify=stratify_val
+            )
+            lang_train, lang_val = None, None
 
-        # Create DataFrames
-        train_df = pd.DataFrame({'text': X_train, 'label': y_train})
-        val_df = pd.DataFrame({'text': X_val, 'label': y_val})
-        test_df = pd.DataFrame({'text': X_test, 'label': y_test})
+        # Create DataFrames - preserve language column if it exists
+        if lang_train is not None:
+            train_df = pd.DataFrame({'text': X_train, 'label': y_train, lang_col_name: lang_train})
+            val_df = pd.DataFrame({'text': X_val, 'label': y_val, lang_col_name: lang_val})
+            test_df = pd.DataFrame({'text': X_test, 'label': y_test, lang_col_name: lang_test})
+        else:
+            train_df = pd.DataFrame({'text': X_train, 'label': y_train})
+            val_df = pd.DataFrame({'text': X_val, 'label': y_val})
+            test_df = pd.DataFrame({'text': X_test, 'label': y_test})
 
         self.logger.info(f"Data split - Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
         self.logger.info(f"Number of classes: {len(self.label_encoder.classes_)}")
@@ -516,12 +622,32 @@ class ModelTrainer:
             self.logger.info(f"🌍 Model '{model_name}' is multilingual. Using all language data.")
 
         # Prepare data - use the correct label column
-        train_texts = train_df['text'].tolist()
+        # CRITICAL: Filter out empty/invalid texts BEFORE processing
+        # Clean dataframes to remove rows with empty/NaN texts
+        initial_train_size = len(train_df)
+        train_df = train_df[train_df['text'].notna() & (train_df['text'].astype(str).str.strip() != '')]
+        if len(train_df) < initial_train_size:
+            self.logger.warning(f"Filtered out {initial_train_size - len(train_df)} empty texts from training set")
+
+        initial_val_size = len(val_df)
+        val_df = val_df[val_df['text'].notna() & (val_df['text'].astype(str).str.strip() != '')]
+        if len(val_df) < initial_val_size:
+            self.logger.warning(f"Filtered out {initial_val_size - len(val_df)} empty texts from validation set")
+
+        initial_test_size = len(test_df)
+        test_df = test_df[test_df['text'].notna() & (test_df['text'].astype(str).str.strip() != '')]
+        if len(test_df) < initial_test_size:
+            self.logger.warning(f"Filtered out {initial_test_size - len(test_df)} empty texts from test set")
+
+        # Now extract texts as strings
+        train_texts = train_df['text'].astype(str).str.strip().tolist()
         train_labels = train_df[label_column].tolist()
-        val_texts = val_df['text'].tolist()
+        val_texts = val_df['text'].astype(str).str.strip().tolist()
         val_labels = val_df[label_column].tolist()
-        test_texts = test_df['text'].tolist()
+        test_texts = test_df['text'].astype(str).str.strip().tolist()
         test_labels = test_df[label_column].tolist()
+
+        self.logger.info(f"Final dataset sizes - Train: {len(train_texts)}, Val: {len(val_texts)}, Test: {len(test_texts)}")
 
         # CRITICAL FIX: Extract language information for language-specific metrics
         train_languages = None
@@ -542,6 +668,15 @@ class ModelTrainer:
             test_languages = test_df['lang'].tolist()
             track_languages = True
             self.logger.info(f"✓ Found 'lang' column. Will track per-language metrics.")
+
+        # UNIFIED: Use centralized function to set detected languages on model
+        if track_languages:
+            set_detected_languages_on_model(
+                model=model_instance,
+                train_languages=train_languages,
+                val_languages=val_languages,
+                logger=self.logger
+            )
 
         # Create output directory
         if output_dir:
@@ -924,15 +1059,16 @@ class ModelTrainer:
                     metadata=s.get('metadata')
                 ))
 
-            multiclass_groups = ml_trainer.detect_multiclass_groups(ml_samples)
-
-            if multiclass_groups:
-                self.logger.info(f"Detected {len(multiclass_groups)} multi-class group(s):")
-                for group_name, labels in multiclass_groups.items():
-                    value_names = [lbl[len(group_name)+1:] if lbl.startswith(group_name+'_') else lbl for lbl in labels]
-                    self.logger.info(f"  • {group_name}: {', '.join(value_names)}")
-                    # Note: For now, multi-label trainer will still train binary classifiers
-                    # True multi-class support should be added to multi_label_trainer.train()
+            # Use multiclass_groups from config if provided, otherwise detect
+            multiclass_groups = config.get('multiclass_groups')
+            if multiclass_groups is None:
+                multiclass_groups = ml_trainer.detect_multiclass_groups(ml_samples)
+                # Only log if we detected it ourselves (not passed from config)
+                if multiclass_groups:
+                    self.logger.info(f"Detected {len(multiclass_groups)} multi-class group(s):")
+                    for group_name, labels in multiclass_groups.items():
+                        value_names = [lbl[len(group_name)+1:] if lbl.startswith(group_name+'_') else lbl for lbl in labels]
+                        self.logger.info(f"  • {group_name}: {', '.join(value_names)}")
 
             # Train models
             trained_models = ml_trainer.train(
@@ -940,7 +1076,8 @@ class ModelTrainer:
                 val_samples=val_samples,
                 auto_split=False,
                 output_dir=config.get('output_dir', 'models/best_model'),
-                multiclass_groups=multiclass_groups  # Pass detected groups
+                multiclass_groups=multiclass_groups,  # Pass detected or provided groups
+                confirmed_languages=config.get('confirmed_languages')  # Pass all detected languages
             )
 
             # Aggregate results
@@ -974,7 +1111,8 @@ class ModelTrainer:
             )
 
             # Get number of unique labels
-            all_labels = pd.concat([train_df[label_column], val_df[label_column], test_df[label_column]])
+            # Note: load_data returns dataframes with 'label' column (hardcoded)
+            all_labels = pd.concat([train_df['label'], val_df['label'], test_df['label']])
             num_labels = len(all_labels.unique())
 
             # Use single-label training
@@ -985,7 +1123,7 @@ class ModelTrainer:
                 test_df=test_df,
                 num_labels=num_labels,
                 output_dir=config.get('output_dir', 'models/best_model'),
-                label_column=label_column,
+                label_column='label',  # load_data returns 'label' column
                 training_strategy=training_strategy,
                 category_name=config.get('category_name')  # Pass category name for display
             )

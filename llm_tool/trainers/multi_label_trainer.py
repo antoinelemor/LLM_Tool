@@ -98,6 +98,8 @@ class TrainingConfig:
     track_languages: bool = True
     output_dir: str = "./multi_label_models"
     parallel_training: bool = False  # train models in parallel
+    multiclass_mode: bool = False  # Use true multi-class (num_labels > 2) instead of one-vs-all binary
+    multiclass_groups: Optional[Dict[str, List[str]]] = None  # Detected multi-class groups
     max_workers: int = 2  # max parallel training jobs
     # Data splitting parameters
     auto_split: bool = True  # automatically split data if no validation set
@@ -114,6 +116,109 @@ class ModelInfo:
     model_path: str
     performance_metrics: Dict[str, Any]
     training_config: Dict[str, Any]
+
+
+def setup_multiclass_model(model, num_classes: int, class_names: List[str]) -> None:
+    """
+    Configure a model for multi-class training.
+
+    This is a unified function to set up any model for multi-class classification.
+    Call this BEFORE calling model.encode() or model.run_training().
+
+    Args:
+        model: The model instance (BertBase or subclass)
+        num_classes: Number of classes (must be > 2 for multi-class)
+        class_names: List of class names for display in metrics
+
+    Example:
+        >>> model = XLMRobertaLongformer(model_name='markussagen/xlm-roberta-longformer-base-4096')
+        >>> setup_multiclass_model(model, 3, ['False', 'no', 'yes'])
+        >>> # Now model is configured for 3-class classification
+    """
+    if num_classes < 2:
+        raise ValueError(f"num_classes must be >= 2, got {num_classes}")
+
+    model.num_labels = num_classes
+    model.class_names = class_names
+
+    # Log the configuration (use model's logger if available)
+    if hasattr(model, 'logger'):
+        if num_classes > 2:
+            model.logger.info(f"🎯 Multi-class mode: {num_classes} classes - {class_names}")
+        else:
+            model.logger.debug(f"Binary mode: {class_names}")
+
+
+def convert_multiclass_samples(
+    samples: List['MultiLabelSample'],
+    group_name: str,
+    group_labels: List[str]
+) -> Tuple[List[DataSample], List[str]]:
+    """
+    Convert multi-label samples to multi-class samples.
+
+    This is a UNIFIED function used by ALL training modes (quick, benchmark, distributed, custom).
+
+    Args:
+        samples: List of MultiLabelSample with binary labels
+        group_name: Name of the multi-class group (e.g., 'type_of_rhetoric')
+        group_labels: List of label names in this group (e.g., ['type_of_rhetoric_False', ...])
+
+    Returns:
+        (multiclass_samples, class_names) where:
+            - multiclass_samples: List of DataSample with categorical labels
+            - class_names: List of short class names (e.g., ['False', 'no', 'yes'])
+
+    Example:
+        >>> samples = [MultiLabelSample(text='...', labels={'type_of_rhetoric_no': 1, 'type_of_rhetoric_yes': 0})]
+        >>> mc_samples, names = convert_multiclass_samples(samples, 'type_of_rhetoric', ['type_of_rhetoric_False', 'type_of_rhetoric_no', 'type_of_rhetoric_yes'])
+        >>> # mc_samples[0].label == 'no'
+        >>> # names == ['False', 'no', 'yes']
+    """
+    multiclass_samples = []
+
+    # Create mapping from full label name to (index, short_name)
+    label_to_idx = {}
+    class_names = []
+    for idx, full_label in enumerate(sorted(group_labels)):
+        # Extract short name by removing group prefix
+        if full_label.startswith(group_name + '_'):
+            short_name = full_label[len(group_name) + 1:]
+        else:
+            short_name = full_label
+        label_to_idx[full_label] = (idx, short_name)
+        class_names.append(short_name)
+
+    for sample in samples:
+        # Find which label in this group is active (value = 1)
+        active_label = None
+        for label_name, label_value in sample.labels.items():
+            if label_name in group_labels and label_value == 1:
+                active_label = label_name
+                break
+
+        # Skip samples with no active label
+        if active_label is None:
+            continue
+
+        # Convert to DataSample with categorical label
+        idx, class_name = label_to_idx[active_label]
+
+        data_sample = DataSample(
+            text=sample.text,
+            label=class_name,  # Use short name as label
+            id=sample.id,
+            lang=sample.lang,
+            metadata={
+                **(sample.metadata or {}),
+                'multiclass_group': group_name,
+                'class_idx': idx,
+                'num_classes': len(class_names)
+            }
+        )
+        multiclass_samples.append(data_sample)
+
+    return multiclass_samples, class_names
 
 
 class MultiLabelTrainer:
@@ -273,6 +378,29 @@ class MultiLabelTrainer:
                         used_labels.update(members)
 
         return multiclass_groups
+
+    def convert_to_multiclass_samples(
+        self,
+        samples: List[MultiLabelSample],
+        group_name: str,
+        group_labels: List[str]
+    ) -> Tuple[List[DataSample], List[str]]:
+        """
+        Convert multi-label samples to multi-class samples for a specific group.
+
+        DEPRECATED: Use the global convert_multiclass_samples() function instead.
+        This method is kept for backward compatibility.
+
+        Args:
+            samples: List of MultiLabelSample objects
+            group_name: Name of the multi-class group (e.g., 'type_of_rhetoric')
+            group_labels: List of label names in this group
+
+        Returns:
+            Tuple of (multiclass_samples, class_names)
+        """
+        # Use the unified global function
+        return convert_multiclass_samples(samples, group_name, group_labels)
 
     def _parse_data_item(self, data, text_field, label_fields, id_field, lang_field, labels_dict_field, item_num):
         """Parse a single data item into MultiLabelSample."""
@@ -685,9 +813,14 @@ class MultiLabelTrainer:
                          label_name: str,
                          train_samples: List[DataSample],
                          val_samples: List[DataSample],
-                         language: Optional[str] = None) -> ModelInfo:
+                         language: Optional[str] = None,
+                         num_labels: int = 2,
+                         class_names: Optional[List[str]] = None) -> ModelInfo:
         """
         Train a single model for one label.
+
+        For binary classification (num_labels=2), this trains a binary classifier.
+        For multi-class classification (num_labels>2), this trains a multi-class classifier.
 
         Args:
             label_name: Name of the label
@@ -718,6 +851,24 @@ class MultiLabelTrainer:
             # Auto-select model class based on data characteristics
             model_class = self._select_model_class(train_samples)
             model = model_class()
+
+        # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
+        from .model_trainer import set_detected_languages_on_model
+        confirmed_langs = self.confirmed_languages if hasattr(self, 'confirmed_languages') else None
+        detected_languages = set_detected_languages_on_model(
+            model=model,
+            train_samples=train_samples,
+            val_samples=val_samples,
+            confirmed_languages=confirmed_langs,
+            logger=self.logger
+        )
+
+        # Set num_labels and class_names for multi-class classification
+        if num_labels > 2:
+            model.num_labels = num_labels
+            if class_names:
+                model.class_names = class_names
+            self.logger.info(f"🎯 Multi-class mode: {num_labels} classes - {class_names}")
 
         # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================
         from .model_trainer import get_model_target_languages
@@ -792,6 +943,7 @@ class MultiLabelTrainer:
             label_key=label_key,  # Pass the parsed key (e.g., 'themes', 'sentiment')
             label_value=label_value,  # Pass the parsed value (e.g., 'transportation', 'positive')
             language=language  # Pass the language (e.g., 'EN', 'FR', 'MULTI')
+            # NOTE: num_labels and class_names are already set on model object (lines 808-812)
         )
 
         # calculate final metrics
@@ -845,7 +997,8 @@ class MultiLabelTrainer:
              stratified: bool = True,
              train_by_language: bool = None,
              output_dir: Optional[str] = None,
-             multiclass_groups: Optional[Dict[str, List[str]]] = None) -> Dict[str, ModelInfo]:
+             multiclass_groups: Optional[Dict[str, List[str]]] = None,
+             confirmed_languages: Optional[List[str]] = None) -> Dict[str, ModelInfo]:
         """
         Main training method with automatic data handling.
 
@@ -877,6 +1030,12 @@ class MultiLabelTrainer:
             self.config.train_by_language = train_by_language
         if output_dir:
             self.config.output_dir = output_dir
+        if multiclass_groups is not None:
+            self.config.multiclass_mode = True
+            self.config.multiclass_groups = multiclass_groups
+        if confirmed_languages is not None:
+            # Store confirmed languages to use in metrics display
+            self.confirmed_languages = [lang.upper() for lang in confirmed_languages]
 
         # Load data if file provided
         if data_file:
@@ -994,6 +1153,73 @@ class MultiLabelTrainer:
                 ))
         return samples
 
+    def _train_multiclass_models(self,
+                                 samples: List[MultiLabelSample],
+                                 train_ratio: float = 0.8,
+                                 val_ratio: float = 0.1) -> Dict[str, ModelInfo]:
+        """
+        Train multi-class models for detected groups.
+
+        Args:
+            samples: Multi-label samples
+            train_ratio: Training set ratio
+            val_ratio: Validation set ratio
+
+        Returns:
+            Dictionary of model_name -> ModelInfo
+        """
+        trained_models = {}
+
+        # Train one model per multi-class group
+        for group_name, group_labels in self.config.multiclass_groups.items():
+            if self.verbose:
+                self.logger.info(f"\n🎯 Training multi-class model for: {group_name}")
+                self.logger.info(f"   Classes: {group_labels}")
+
+            # Convert multi-label samples to multi-class samples
+            mc_samples, class_names = self.convert_to_multiclass_samples(
+                samples, group_name, group_labels
+            )
+
+            if not mc_samples:
+                self.logger.warning(f"No samples found for group {group_name}, skipping")
+                continue
+
+            if self.verbose:
+                self.logger.info(f"   Converted {len(mc_samples)} samples")
+                self.logger.info(f"   Class names: {class_names}")
+
+            # Split into train/val
+            split_idx = int(len(mc_samples) * train_ratio)
+            mc_train = mc_samples[:split_idx]
+            mc_val = mc_samples[split_idx:]
+
+            # Determine language label
+            unique_langs = set(s.lang for s in mc_samples if s.lang and isinstance(s.lang, str))
+            if len(unique_langs) > 1:
+                language_label = 'MULTI'
+            elif len(unique_langs) == 1:
+                language_label = list(unique_langs)[0]
+            else:
+                language_label = None
+
+            # Train the multi-class model
+            model_info = self.train_single_model(
+                label_name=group_name,
+                train_samples=mc_train,
+                val_samples=mc_val,
+                language=language_label,
+                num_labels=len(class_names),
+                class_names=class_names
+            )
+
+            trained_models[model_info.model_name] = model_info
+
+        self.trained_models = trained_models
+        self._save_training_summary()
+
+        return trained_models
+
     def train_all_models(self,
                         samples: List[MultiLabelSample],
                         train_ratio: float = 0.8,
@@ -1009,6 +1235,16 @@ class MultiLabelTrainer:
         Returns:
             Dictionary of model_name -> ModelInfo
         """
+        # Check if multi-class mode is enabled
+        if self.config.multiclass_mode and self.config.multiclass_groups:
+            if self.verbose:
+                self.logger.info(f"🎯 Multi-class training mode enabled")
+                self.logger.info(f"Groups: {self.config.multiclass_groups}")
+
+            # Train multi-class models
+            return self._train_multiclass_models(samples, train_ratio, val_ratio)
+
+        # Otherwise, continue with standard multi-label (one-vs-all) training
         # prepare datasets
         # Create centralized directory for distribution reports in training_logs/
         from datetime import datetime

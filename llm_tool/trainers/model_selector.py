@@ -726,6 +726,15 @@ class ModelSelector:
                 # Initialize model
                 model = profile.model_class()
 
+                # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
+                if language_info is not None:
+                    from .model_trainer import set_detected_languages_on_model
+                    set_detected_languages_on_model(
+                        model=model,
+                        confirmed_languages=language_info,
+                        logger=logger
+                    )
+
                 # Time training
                 start_time = time.time()
                 scores = model.run_training(

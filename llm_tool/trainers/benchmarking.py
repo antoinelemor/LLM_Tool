@@ -396,6 +396,18 @@ class BenchmarkRunner:
             progress_bar=True,
         )
 
+        # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
+        if test_languages:
+            from .model_trainer import set_detected_languages_on_model
+            # Combine train and test languages (train uses first len(train) from test_languages)
+            train_langs = test_languages[:len(train_texts)] if len(test_languages) >= len(train_texts) else []
+            set_detected_languages_on_model(
+                model=model,
+                train_languages=train_langs,
+                val_languages=test_languages,
+                logger=self.logger
+            )
+
         log_dir = logs_root / cat_name / language
         log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1175,6 +1187,15 @@ class BenchmarkRunner:
                     batch_size=adjusted_batch_size,
                     progress_bar=False
                 )
+
+                # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
+                if filtered_test_languages:
+                    from .model_trainer import set_detected_languages_on_model
+                    set_detected_languages_on_model(
+                        model=model,
+                        val_languages=filtered_test_languages,
+                        logger=self.logger
+                    )
 
                 # Run training
                 import time
