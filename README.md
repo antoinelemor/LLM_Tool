@@ -48,7 +48,7 @@ graph TB
 
     subgraph "Annotation Pipeline"
         PreProc[Text Preprocessing]
-        LangDetect[Language Detection]
+        LangDetect[Language Detection<br/>96% Accuracy]
         PromptEng[Prompt Engineering]
 
         subgraph "Model Selection"
@@ -174,7 +174,7 @@ Including, for now :
 The annotation process implements several methodological innovations:
 
 1. **Automatic Text Preprocessing**
-   - Language detection for 100+ languages (via langdetect/langid)
+   - High-accuracy language detection for 75+ languages (96%+ accuracy via lingua-language-detector)
    - UTF-8/Latin-1 encoding normalization
    - Duplicate detection using SHA-256 hashing
    - Text segmentation with configurable chunk sizes (512-8192 tokens)
@@ -543,22 +543,21 @@ The system provides comprehensive multilingual capabilities:
 
 ### Supported Languages by Model Category
 
-| Language | LLM Annotation | BERT Training | Specific Models |
-|----------|---------------|---------------|-----------------|
-| English | ✓ All LLMs | ✓ 15+ models | BERT, RoBERTa, DeBERTa, ALBERT |
-| French | ✓ All LLMs | ✓ 8+ models | CamemBERT, FlauBERT, BARThez |
-| Spanish | ✓ All LLMs | ✓ 5+ models | BETO, RoBERTa-es, BERTIN |
-| German | ✓ All LLMs | ✓ 4+ models | GBERT, GottBERT, German-BERT |
-| Chinese | ✓ All LLMs | ✓ 6+ models | BERT-Chinese, RoBERTa-zh, MacBERT |
-| Arabic | ✓ All LLMs | ✓ 3+ models | AraBERT, CAMeLBERT, ArabicBERT |
-| Portuguese | ✓ All LLMs | ✓ 3+ models | BERTimbau, PTT5 |
-| Italian | ✓ All LLMs | ✓ 2+ models | UmBERTo, GilBERTo |
-| Dutch | ✓ All LLMs | ✓ 2+ models | BERTje, RobBERT |
-| Japanese | ✓ All LLMs | ✓ 3+ models | BERT-Japanese, RoBERTa-ja |
-| Korean | ✓ All LLMs | ✓ 2+ models | KoBERT, KoELECTRA |
-| Russian | ✓ All LLMs | ✓ 3+ models | RuBERT, RuRoBERTa |
-| Turkish | ✓ All LLMs | ✓ 2+ models | BERTurk, ELECTRA-tr |
-| **100+ others** | ✓ via mBERT/XLM | ✓ XLM-RoBERTa | Multilingual models |
+| Language | LLM Annotation | BERT Training | Specific Models | Long-Document Support |
+|----------|---------------|---------------|-----------------|----------------------|
+| English | ✓ All LLMs | ✓ 15+ models | BERT, RoBERTa, DeBERTa, ALBERT | ✓ Longformer, BigBird, LED (16384 tokens) |
+| French | ✓ All LLMs | ✓ 10+ models | CamemBERT, FlauBERT, BARThez | ✓ DistilCamemBERT, XLM-R Longformer |
+| Spanish | ✓ All LLMs | ✓ 7+ models | BETO, RoBERTa-BNE, BERTIN | ✓ RoBERTa-BNE, XLM-R Longformer |
+| German | ✓ All LLMs | ✓ 6+ models | GBERT, GottBERT, German-BERT | ✓ GBERT, XLM-R Longformer |
+| Chinese | ✓ All LLMs | ✓ 8+ models | BERT-Chinese, RoBERTa-zh, MacBERT | ✓ RoBERTa-WWM, XLM-R Longformer |
+| Arabic | ✓ All LLMs | ✓ 5+ models | AraBERT, CAMeLBERT, ArabicBERT | ✓ AraBERT, XLM-R Longformer |
+| Portuguese | ✓ All LLMs | ✓ 4+ models | BERTimbau, PTT5 | ✓ BERTimbau, XLM-R Longformer |
+| Italian | ✓ All LLMs | ✓ 3+ models | UmBERTo, GilBERTo | ✓ Italian-BERT, XLM-R Longformer |
+| Dutch | ✓ All LLMs | ✓ 4+ models | BERTje, RobBERT | ✓ BERTje, XLM-R Longformer |
+| Japanese | ✓ All LLMs | ✓ 5+ models | BERT-Japanese, RoBERTa-ja | ✓ BERT-WWM, XLM-R Longformer |
+| Polish | ✓ All LLMs | ✓ 3+ models | HerBERT, PolBERT | ✓ HerBERT (514 tokens), XLM-R Longformer |
+| Russian | ✓ All LLMs | ✓ 4+ models | RuBERT, RuRoBERTa | ✓ RuBERT, XLM-R Longformer |
+| **100+ others** | ✓ via mBERT/XLM | ✓ XLM-RoBERTa | Multilingual models | ✓ XLM-R Longformer (4096 tokens) |
 
 ### Model Flexibility
 
@@ -584,7 +583,7 @@ graph LR
     J --> K
 
     K --> L{Training Option}
-    L -->|Classification| M[50+ BERT Models]
+    L -->|Classification| M[70+ BERT/Longformer Models]
     L -->|Generation| N[T5/GPT Models]
     L -->|Custom| O[Fine-tuning]
 

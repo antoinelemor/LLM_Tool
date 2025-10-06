@@ -76,6 +76,19 @@ class AnnotationToTrainingConverter:
         df = pd.read_csv(csv_path)
 
         total_rows = len(df)
+
+        # Check if annotation column exists
+        if annotation_column not in df.columns:
+            self.logger.error(f"Annotation column '{annotation_column}' not found in dataset. Available columns: {', '.join(df.columns)}")
+            return {
+                "total_rows": total_rows,
+                "annotated_rows": 0,
+                "annotation_keys": {},
+                "sample_annotation": None,
+                "all_columns": list(df.columns),
+                "issues": [f"Column '{annotation_column}' not found in dataset"]
+            }
+
         annotated_rows = df[annotation_column].notna().sum()
 
         if annotated_rows == 0:
@@ -94,8 +107,24 @@ class AnnotationToTrainingConverter:
         for idx, row in df.iterrows():
             if pd.notna(row[annotation_column]):
                 try:
-                    annotation = json.loads(row[annotation_column])
+                    # Ensure annotation is a string before parsing
+                    annotation_value = row[annotation_column]
+                    if not isinstance(annotation_value, str):
+                        # Skip non-string values (int, float, etc.)
+                        continue
 
+                    # Try JSON first
+                    annotation = json.loads(annotation_value)
+                except json.JSONDecodeError:
+                    # Try Python literal (handles single quotes)
+                    try:
+                        import ast
+                        annotation = ast.literal_eval(annotation_value)
+                    except (ValueError, SyntaxError):
+                        continue
+
+                # Process annotation if successfully parsed
+                try:
                     if sample_annotation is None:
                         sample_annotation = annotation
 
@@ -118,7 +147,7 @@ class AnnotationToTrainingConverter:
                             # For scalar values
                             annotation_keys[key]["values"][value] += 1
 
-                except json.JSONDecodeError:
+                except (AttributeError, TypeError):
                     continue
 
         # Convert Counter to dict for better display
@@ -203,7 +232,12 @@ class AnnotationToTrainingConverter:
 
             for idx, row in df.iterrows():
                 try:
-                    annotation = json.loads(row[annotation_column])
+                    # Ensure annotation is a string before parsing
+                    annotation_value = row[annotation_column]
+                    if not isinstance(annotation_value, str):
+                        continue
+
+                    annotation = json.loads(annotation_value)
 
                     if key not in annotation:
                         continue
@@ -294,6 +328,15 @@ class AnnotationToTrainingConverter:
         """
         df = pd.read_csv(csv_path)
 
+        # Check if required columns exist
+        if text_column not in df.columns:
+            self.logger.error(f"Text column '{text_column}' not found in dataset. Available columns: {', '.join(df.columns)}")
+            return None
+
+        if annotation_column not in df.columns:
+            self.logger.error(f"Annotation column '{annotation_column}' not found in dataset. Available columns: {', '.join(df.columns)}")
+            return None
+
         # Auto-detect ID and language columns if not specified
         if id_column is None:
             for col_name in ['id', 'promesse_id', 'sentence_id', 'doc_id', 'item_id']:
@@ -326,7 +369,41 @@ class AnnotationToTrainingConverter:
 
         for idx, row in df.iterrows():
             try:
-                annotation = json.loads(row[annotation_column])
+                annotation_val = row[annotation_column]
+
+                # Skip empty or null annotations
+                if pd.isna(annotation_val) or annotation_val == '' or annotation_val == 'null':
+                    continue
+
+                # Try to parse JSON with robust error handling
+                annotation = None
+                try:
+                    if isinstance(annotation_val, str):
+                        # Try standard JSON parsing first
+                        annotation = json.loads(annotation_val)
+                    elif isinstance(annotation_val, dict):
+                        annotation = annotation_val
+                    else:
+                        # Skip non-string, non-dict values
+                        continue
+                except json.JSONDecodeError as je:
+                    # Try to parse as Python literal (handles single quotes with escapes)
+                    try:
+                        import ast
+                        annotation = ast.literal_eval(annotation_val)
+                    except (ValueError, SyntaxError):
+                        # Try to fix common JSON issues as fallback
+                        try:
+                            # Replace single quotes with double quotes (simple case only)
+                            fixed_json = annotation_val.replace("'", '"')
+                            annotation = json.loads(fixed_json)
+                        except:
+                            # If still fails, log and skip
+                            self.logger.warning(f"Row {idx}: Malformed JSON - {str(je)[:100]}")
+                            continue
+
+                if not annotation or not isinstance(annotation, dict):
+                    continue
 
                 # Collect all labels from specified keys as a FLAT list
                 all_labels = []
@@ -338,25 +415,27 @@ class AnnotationToTrainingConverter:
                     value = annotation[key]
 
                     # Skip null values
-                    if value is None:
+                    if value is None or value == '' or value == 'null':
                         continue
 
                     # Create labels based on strategy and add to flat list
                     if isinstance(value, list):
+                        # Filter out empty or null values from list
+                        clean_values = [v for v in value if v is not None and v != '' and v != 'null']
                         if label_strategy == "key_value":
-                            all_labels.extend([f"{key}_{item}" for item in value])
+                            all_labels.extend([f"{key}_{item}" for item in clean_values])
                         else:
-                            all_labels.extend(value)
+                            all_labels.extend(clean_values)
                     else:
                         if label_strategy == "key_value":
                             all_labels.append(f"{key}_{value}")
                         else:
-                            all_labels.append(value)
+                            all_labels.append(str(value))
 
                 # Only include if we have at least one non-null label
                 if all_labels:
                     sample = {
-                        "text": row[text_column],
+                        "text": str(row[text_column]),
                         "labels": all_labels
                     }
 
@@ -371,11 +450,11 @@ class AnnotationToTrainingConverter:
 
                     # Add language metadata
                     if lang_column and lang_column in df.columns and pd.notna(row.get(lang_column)):
-                        sample["lang"] = row[lang_column]
+                        sample["lang"] = str(row[lang_column])
 
                     samples.append(sample)
 
-            except (json.JSONDecodeError, KeyError) as e:
+            except (KeyError, AttributeError, TypeError, ValueError) as e:
                 self.logger.warning(f"Row {idx}: Failed to process - {e}")
                 continue
 
@@ -399,10 +478,23 @@ class AnnotationToTrainingConverter:
         for idx, row in df.iterrows():
             if pd.notna(row[annotation_column]):
                 try:
-                    annotation = json.loads(row[annotation_column])
+                    # Ensure annotation is a string before parsing
+                    annotation_value = row[annotation_column]
+                    if not isinstance(annotation_value, str):
+                        continue
+
+                    # Try JSON first
+                    annotation = json.loads(annotation_value)
                     keys.update(annotation.keys())
                 except json.JSONDecodeError:
-                    continue
+                    # Try Python literal (handles single quotes)
+                    try:
+                        import ast
+                        annotation = ast.literal_eval(annotation_value)
+                        if isinstance(annotation, dict):
+                            keys.update(annotation.keys())
+                    except (ValueError, SyntaxError):
+                        continue
 
         return sorted(list(keys))
 

@@ -3,14 +3,16 @@ Smart Reinforced Training Parameters
 Adapts reinforced training parameters based on model characteristics and failure mode
 """
 
-def get_reinforced_params(model_name: str, best_f1_1: float, original_lr: float = 5e-5):
+def get_reinforced_params(model_name: str, best_f1_1: float, original_lr: float = 5e-5, num_classes: int = 2, class_f1_scores: list = None):
     """
     Get intelligent reinforced training parameters based on model and performance
 
     Args:
         model_name: Name of the model
-        best_f1_1: Best F1 score for class 1 after normal training
+        best_f1_1: Best F1 score for class 1 after normal training (for binary) or worst F1 (for multi-class)
         original_lr: Original learning rate used in normal training
+        num_classes: Number of classes (2 for binary, >2 for multi-class)
+        class_f1_scores: List of F1 scores for each class (for multi-class)
 
     Returns:
         dict: Reinforced training parameters
@@ -88,6 +90,30 @@ def get_reinforced_params(model_name: str, best_f1_1: float, original_lr: float 
         params['augmentation'] = True  # Enable data augmentation
         params['augmentation_prob'] = 0.2
         params['mixup_alpha'] = 0.2  # Use mixup for better generalization
+
+    # Calculate class weights for multi-class
+    if num_classes > 2 and class_f1_scores is not None:
+        # For multi-class: calculate weight for each class based on its F1 score
+        # Classes with lower F1 get higher weights
+        class_weights = []
+        for f1 in class_f1_scores:
+            if f1 == 0.0:
+                # Class completely failed - needs strong rebalancing
+                class_weights.append(params['class_1_weight'])
+            elif f1 < 0.3:
+                # Very poor performance - moderate rebalancing
+                class_weights.append(params['class_1_weight'] * 0.8)
+            elif f1 < 0.5:
+                # Below average - light rebalancing
+                class_weights.append(params['class_1_weight'] * 0.6)
+            else:
+                # Decent performance - minimal rebalancing
+                class_weights.append(1.0)
+
+        params['class_weights'] = class_weights
+    else:
+        # Binary classification: keep existing class_1_weight
+        params['class_weights'] = None
 
     return params
 

@@ -80,6 +80,100 @@ from .sota_models import (
 from .multilingual_selector import MultilingualModelSelector
 
 
+__all__ = [
+    'ModelTrainer',
+    'TrainingConfig',
+    'BenchmarkConfig',
+    'TrainingResults',
+    'MODEL_TARGET_LANGUAGES',
+    'get_model_target_languages',
+    'filter_data_by_language',
+]
+
+
+# Model-to-target-language mapping
+# Multilingual models (None = train on all languages)
+# Monolingual models (specific language codes = filter data to only that language)
+MODEL_TARGET_LANGUAGES = {
+    # English-specific models
+    "bert-base-uncased": ["EN"],
+    "bert-large-uncased": ["EN"],
+    "bert-base-cased": ["EN"],
+    "bert-large-cased": ["EN"],
+    "roberta-base": ["EN"],
+    "roberta-large": ["EN"],
+    "distilbert-base-uncased": ["EN"],
+    "distilbert-base-cased": ["EN"],
+    "electra-base-discriminator": ["EN"],
+    "electra-large-discriminator": ["EN"],
+    "albert-base-v2": ["EN"],
+    "albert-large-v2": ["EN"],
+    "albert-xlarge-v2": ["EN"],
+    "albert-xxlarge-v2": ["EN"],
+    "deberta-base": ["EN"],
+    "deberta-large": ["EN"],
+    "deberta-v3-base": ["EN"],
+    "deberta-v3-large": ["EN"],
+    "microsoft/deberta-v3-base": ["EN"],
+    "microsoft/deberta-v3-large": ["EN"],
+
+    # French-specific models
+    "camembert-base": ["FR"],
+    "camembert/camembert-base": ["FR"],
+    "camembert/camembert-large": ["FR"],
+    "flaubert/flaubert_base_cased": ["FR"],
+    "flaubert/flaubert_large_cased": ["FR"],
+    "cmarkea/distilcamembert-base": ["FR"],
+
+    # Spanish-specific models
+    "dccuchile/bert-base-spanish-wwm-cased": ["ES"],
+    "PlanTL-GOB-ES/roberta-base-bne": ["ES"],
+
+    # German-specific models
+    "bert-base-german-cased": ["DE"],
+    "deepset/gbert-base": ["DE"],
+    "deepset/gbert-large": ["DE"],
+
+    # Italian-specific models
+    "dbmdz/bert-base-italian-cased": ["IT"],
+    "Musixmatch/umberto-commoncrawl-cased-v1": ["IT"],
+
+    # Portuguese-specific models
+    "neuralmind/bert-base-portuguese-cased": ["PT"],
+    "neuralmind/bert-large-portuguese-cased": ["PT"],
+
+    # Arabic-specific models
+    "asafaya/bert-base-arabic": ["AR"],
+    "aubmindlab/bert-base-arabertv2": ["AR"],
+
+    # Chinese-specific models
+    "bert-base-chinese": ["ZH"],
+    "hfl/chinese-bert-wwm": ["ZH"],
+    "hfl/chinese-roberta-wwm-ext": ["ZH"],
+
+    # Russian-specific models
+    "DeepPavlov/rubert-base-cased": ["RU"],
+
+    # Dutch-specific models
+    "GroNLP/bert-base-dutch-cased": ["NL"],
+    "pdelobelle/robbert-v2-dutch-base": ["NL"],
+
+    # Polish-specific models
+    "dkleczek/bert-base-polish-cased-v1": ["PL"],
+
+    # Multilingual models (train on ALL languages)
+    "bert-base-multilingual-cased": None,
+    "bert-base-multilingual-uncased": None,
+    "xlm-roberta-base": None,
+    "xlm-roberta-large": None,
+    "FacebookAI/xlm-roberta-base": None,
+    "FacebookAI/xlm-roberta-large": None,
+    "microsoft/mdeberta-v3-base": None,
+    "microsoft/Multilingual-MiniLM-L12-H384": None,
+    "distilbert-base-multilingual-cased": None,
+}
+
+
 @dataclass
 class TrainingConfig:
     """Configuration for model training"""
@@ -149,6 +243,62 @@ class TrainingResult:
     validation_loss: float
     training_history: List[Dict]
     model_path: str
+
+
+def filter_data_by_language(df: pd.DataFrame, target_languages: List[str],
+                            language_column: str = 'language') -> pd.DataFrame:
+    """
+    Filter dataframe to keep only samples in target languages.
+
+    Args:
+        df: Input dataframe with language information
+        target_languages: List of language codes to keep (e.g., ['EN', 'FR'])
+        language_column: Name of column containing language codes
+
+    Returns:
+        Filtered dataframe with only target language samples
+    """
+    if language_column not in df.columns:
+        logging.warning(f"Language column '{language_column}' not found. Returning all data.")
+        return df
+
+    # Normalize target languages to uppercase
+    target_languages = [lang.upper() for lang in target_languages]
+
+    # Filter dataframe
+    original_size = len(df)
+    filtered_df = df[df[language_column].str.upper().isin(target_languages)].copy()
+    filtered_size = len(filtered_df)
+
+    logging.info(f"Filtered data: {original_size} → {filtered_size} samples "
+                f"(kept languages: {', '.join(target_languages)})")
+
+    return filtered_df
+
+
+def get_model_target_languages(model_name: str) -> Optional[List[str]]:
+    """
+    Get target languages for a model.
+
+    Args:
+        model_name: Model identifier (e.g., 'camembert-base', 'xlm-roberta-base')
+
+    Returns:
+        List of target language codes (e.g., ['FR']) or None for multilingual models
+    """
+    # Try exact match first
+    if model_name in MODEL_TARGET_LANGUAGES:
+        return MODEL_TARGET_LANGUAGES[model_name]
+
+    # Try partial match (e.g., 'camembert' in 'camembert-base')
+    model_name_lower = model_name.lower()
+    for key, langs in MODEL_TARGET_LANGUAGES.items():
+        if model_name_lower in key.lower() or key.lower() in model_name_lower:
+            return langs
+
+    # Default: assume multilingual
+    logging.info(f"Model '{model_name}' not in language map. Treating as multilingual.")
+    return None
 
 
 class ModelTrainer:
@@ -221,8 +371,20 @@ class ModelTrainer:
         if label_column not in df.columns:
             raise ValueError(f"Label column '{label_column}' not found in data")
 
-        # Encode labels
-        df['encoded_label'] = self.label_encoder.fit_transform(df[label_column])
+        # Encode labels with custom ordering: NOT_* labels first (class 0), others later
+        # CRITICAL FIX: LabelEncoder always re-sorts internally, so we need manual mapping
+        unique_labels = df[label_column].unique()
+        sorted_labels = sorted(unique_labels, key=lambda x: (not str(x).startswith('NOT_'), str(x)))
+
+        # Create manual label mapping to ensure NOT_* = 0, others = 1+
+        label_to_id = {label: idx for idx, label in enumerate(sorted_labels)}
+
+        # Still use label_encoder for consistency with rest of code, but override classes_
+        self.label_encoder.fit(unique_labels)  # Fit with any order
+        self.label_encoder.classes_ = np.array(sorted_labels)  # Override with correct order
+
+        # Apply manual mapping
+        df['encoded_label'] = df[label_column].map(label_to_id)
 
         # Split data
         X = df[text_column].values
@@ -293,6 +455,35 @@ class ModelTrainer:
         # Initialize model
         model_instance = model_class(model_name=model_name, device=self.device)
 
+        # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================
+        # Check if this model should only train on specific languages
+        target_languages = get_model_target_languages(model_name)
+
+        if target_languages is not None:
+            # This is a language-specific model - filter data
+            self.logger.info(f"🌍 Model '{model_name}' targets {target_languages}. Filtering data...")
+
+            # Check if language column exists
+            if 'language' in train_df.columns:
+                # Filter all splits
+                train_df_original_size = len(train_df)
+                train_df = filter_data_by_language(train_df, target_languages, 'language')
+                val_df = filter_data_by_language(val_df, target_languages, 'language')
+                test_df = filter_data_by_language(test_df, target_languages, 'language')
+
+                self.logger.info(f"✓ Filtered: {train_df_original_size} → {len(train_df)} train samples")
+
+                # Verify we still have enough data
+                if len(train_df) < 10:
+                    self.logger.warning(f"⚠️  Very few training samples ({len(train_df)}) for {model_name} "
+                                       f"targeting {target_languages}. Training may be unstable.")
+            else:
+                self.logger.warning(f"⚠️  No 'language' column found. Cannot filter for {model_name}. "
+                                   f"Training on ALL data (not recommended for monolingual models).")
+        else:
+            # Multilingual model - use all data
+            self.logger.info(f"🌍 Model '{model_name}' is multilingual. Using all language data.")
+
         # Prepare data - use the correct label column
         train_texts = train_df['text'].tolist()
         train_labels = train_df[label_column].tolist()
@@ -300,6 +491,26 @@ class ModelTrainer:
         val_labels = val_df[label_column].tolist()
         test_texts = test_df['text'].tolist()
         test_labels = test_df[label_column].tolist()
+
+        # CRITICAL FIX: Extract language information for language-specific metrics
+        train_languages = None
+        val_languages = None
+        test_languages = None
+        track_languages = False
+
+        # Check for language column (both 'language' and 'lang' for compatibility)
+        if 'language' in train_df.columns:
+            train_languages = train_df['language'].tolist()
+            val_languages = val_df['language'].tolist()
+            test_languages = test_df['language'].tolist()
+            track_languages = True
+            self.logger.info(f"✓ Found 'language' column. Will track per-language metrics.")
+        elif 'lang' in train_df.columns:
+            train_languages = train_df['lang'].tolist()
+            val_languages = val_df['lang'].tolist()
+            test_languages = test_df['lang'].tolist()
+            track_languages = True
+            self.logger.info(f"✓ Found 'lang' column. Will track per-language metrics.")
 
         # Create output directory
         if output_dir:
@@ -352,8 +563,11 @@ class ModelTrainer:
                 lr=self.config.learning_rate,
                 random_state=42,
                 save_model_as=str(output_dir / 'model'),
+                metrics_output_dir='training_logs',  # CRITICAL: Base dir - bert_base.py creates subdirs
                 label_key=label_key,      # Pass parsed label key
-                label_value=label_value   # Pass parsed label value
+                label_value=label_value,  # Pass parsed label value
+                track_languages=track_languages,  # CRITICAL: Enable language tracking
+                language_info=val_languages  # CRITICAL: Pass language info for validation set
             )
 
             # Evaluate on test set
@@ -422,7 +636,8 @@ class ModelTrainer:
             from ..utils.language_detector import LanguageDetector
             detector = LanguageDetector()
             sample_texts = train_df['text'].sample(min(100, len(train_df))).tolist()
-            detected_lang = detector.detect_language(' '.join(sample_texts))
+            detection_result = detector.detect(' '.join(sample_texts))
+            detected_lang = detection_result.get('language', 'en')
             self.logger.info(f"Detected language: {detected_lang}")
 
             # Add language-specific models
@@ -633,18 +848,39 @@ class ModelTrainer:
 
             ml_trainer = MultiLabelTrainer(config=ml_config, verbose=True)
 
+            # Detect multi-class groups
+            from llm_tool.trainers.multi_label_trainer import MultiLabelSample
+            ml_samples = [MultiLabelSample(
+                text=s['text'],
+                labels=s.get('labels', {}),
+                id=s.get('id'),
+                lang=s.get('lang'),
+                metadata=s.get('metadata')
+            ) for s in train_samples + val_samples]
+
+            multiclass_groups = ml_trainer.detect_multiclass_groups(ml_samples)
+
+            if multiclass_groups:
+                self.logger.info(f"Detected {len(multiclass_groups)} multi-class group(s):")
+                for group_name, labels in multiclass_groups.items():
+                    value_names = [lbl[len(group_name)+1:] if lbl.startswith(group_name+'_') else lbl for lbl in labels]
+                    self.logger.info(f"  • {group_name}: {', '.join(value_names)}")
+                    # Note: For now, multi-label trainer will still train binary classifiers
+                    # True multi-class support should be added to multi_label_trainer.train()
+
             # Train models
             trained_models = ml_trainer.train(
                 train_samples=train_samples,
                 val_samples=val_samples,
                 auto_split=False,
-                output_dir=config.get('output_dir', 'models/best_model')
+                output_dir=config.get('output_dir', 'models/best_model'),
+                multiclass_groups=multiclass_groups  # Pass detected groups
             )
 
             # Aggregate results
             if trained_models:
-                avg_f1 = np.mean([m.metrics.get('f1_macro', 0) for m in trained_models.values()])
-                avg_acc = np.mean([m.metrics.get('accuracy', 0) for m in trained_models.values()])
+                avg_f1 = np.mean([m.performance_metrics.get('f1_macro', 0) for m in trained_models.values()])
+                avg_acc = np.mean([m.performance_metrics.get('accuracy', 0) for m in trained_models.values()])
 
                 self.logger.info(f"Multi-label training complete!")
                 self.logger.info(f"Models trained: {len(trained_models)}/{len(trained_models)}")
@@ -871,14 +1107,20 @@ class ModelTrainer:
         metrics_dir.mkdir(exist_ok=True)
 
         # Train with enhanced tracking
-        history = model.run_training_enhanced(
+        # Extract language info from samples if available
+        val_language_info = [s.lang for s in val_samples if hasattr(s, 'lang')] if track_languages else None
+
+        # CRITICAL FIX: Use run_training (not run_training_enhanced which doesn't exist) with language_info
+        history = model.run_training(
             train_dataloader=train_loader,
             test_dataloader=val_loader,
             n_epochs=self.config.num_epochs,
             lr=self.config.learning_rate,
             save_model_as=str(output_dir / 'model'),
             metrics_output_dir=str(metrics_dir),
-            track_languages=track_languages
+            track_languages=track_languages,
+            language_info=val_language_info,  # CRITICAL: Pass language info for per-language metrics
+            reinforced_learning=self.config.reinforced_learning if hasattr(self.config, 'reinforced_learning') else False
         )
 
         # Evaluate on test set

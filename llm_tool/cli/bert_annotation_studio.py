@@ -33,9 +33,9 @@ from rich.prompt import Prompt, Confirm, IntPrompt
 from rich import box
 from sqlalchemy import create_engine, inspect, text
 
-# Package imports  
+# Package imports
 from llm_tool.trainers.parallel_inference import parallel_predict
-from llm_tool.validators.language_normalizer import LanguageNormalizer
+from llm_tool.cli.advanced_cli import LanguageNormalizer
 
 
 MODEL_LANGUAGE_MAP = {
@@ -214,20 +214,111 @@ class BERTAnnotationStudio:
             return self._select_sql_source()
 
     def _select_file_source(self) -> Optional[Dict[str, Any]]:
-        """Select file source"""
-        file_path = Prompt.ask("\n[cyan]File path[/cyan]")
-        file_path = Path(file_path).expanduser()
+        """Select file source with auto-detection"""
+        from llm_tool.cli.advanced_cli import DataDetector, DatasetInfo
 
-        if not file_path.exists():
-            self.console.print(f"[red]✗ File not found[/red]")
-            return None
+        # Auto-detect datasets in data directory
+        data_dir = self.settings.paths.data_dir
+        detector = DataDetector()
+        detected_datasets = detector.scan_directory(data_dir)
 
+        if detected_datasets:
+            self.console.print(f"\n[bold cyan]📊 Found {len(detected_datasets)} dataset(s) in {data_dir}:[/bold cyan]\n")
+
+            # Create table with dataset preview
+            datasets_table = Table(title="Available Datasets", border_style="cyan", show_header=True, box=box.ROUNDED)
+            datasets_table.add_column("#", style="bold yellow", width=4)
+            datasets_table.add_column("Filename", style="white", width=35)
+            datasets_table.add_column("Format", style="green", width=10)
+            datasets_table.add_column("Size", style="magenta", width=12)
+            datasets_table.add_column("Rows", style="cyan", width=10)
+            datasets_table.add_column("Columns", style="blue", width=10)
+            datasets_table.add_column("Preview", style="dim", width=40)
+
+            for i, ds in enumerate(detected_datasets[:20], 1):
+                # Format size
+                if ds.size_mb < 0.1:
+                    size_str = f"{ds.size_mb * 1024:.1f} KB"
+                else:
+                    size_str = f"{ds.size_mb:.1f} MB"
+
+                # Format rows and columns
+                rows_str = f"{ds.rows:,}" if ds.rows else "?"
+                cols_str = str(len(ds.columns)) if ds.columns else "?"
+
+                # Create preview of columns with text scores
+                preview_parts = []
+                if ds.columns:
+                    # Show up to 3 columns with highest text scores
+                    sorted_cols = sorted(
+                        [(col, ds.text_scores.get(col, 0)) for col in ds.columns],
+                        key=lambda x: x[1],
+                        reverse=True
+                    )[:3]
+                    preview_parts = [f"{col} ({score:.0f})" for col, score in sorted_cols if score > 0]
+
+                preview_str = ", ".join(preview_parts) if preview_parts else "No text columns"
+
+                datasets_table.add_row(
+                    str(i),
+                    ds.path.name,
+                    ds.format.upper(),
+                    size_str,
+                    rows_str,
+                    cols_str,
+                    preview_str[:40] + "..." if len(preview_str) > 40 else preview_str
+                )
+
+            self.console.print(datasets_table)
+            self.console.print()
+
+            # Ask user: use detected or manual path
+            use_detected = Confirm.ask("[bold yellow]Use detected dataset?[/bold yellow]", default=True)
+
+            if use_detected:
+                choice = Prompt.ask(
+                    "[cyan]Select dataset[/cyan]",
+                    choices=[str(i) for i in range(1, min(len(detected_datasets) + 1, 21))],
+                    default="1"
+                )
+                selected_dataset = detected_datasets[int(choice) - 1]
+                file_path = selected_dataset.path
+
+                self.console.print(f"\n[green]✓ Selected: {file_path.name}[/green]")
+            else:
+                # Manual path entry
+                file_path = Prompt.ask("\n[cyan]File path[/cyan]")
+                file_path = Path(file_path).expanduser()
+
+                if not file_path.exists():
+                    self.console.print(f"[red]✗ File not found[/red]")
+                    return None
+        else:
+            # No datasets detected - ask for manual path
+            self.console.print("[yellow]⚠ No datasets auto-detected in data directory[/yellow]")
+            file_path = Prompt.ask("\n[cyan]File path[/cyan]")
+            file_path = Path(file_path).expanduser()
+
+            if not file_path.exists():
+                self.console.print(f"[red]✗ File not found[/red]")
+                return None
+
+        # Determine format (support ALL formats from the package)
         suffix = file_path.suffix.lower()
-        format_map = {'.csv': 'csv', '.xlsx': 'excel', '.json': 'json', '.jsonl': 'jsonl', '.parquet': 'parquet'}
+        format_map = {
+            '.csv': 'csv',
+            '.xlsx': 'excel',
+            '.xls': 'excel',
+            '.json': 'json',
+            '.jsonl': 'jsonl',
+            '.parquet': 'parquet',
+            '.rdata': 'rdata',
+            '.RData': 'rdata'
+        }
         file_format = format_map.get(suffix, 'unknown')
 
         if file_format == 'unknown':
-            self.console.print(f"[red]✗ Unsupported format[/red]")
+            self.console.print(f"[red]✗ Unsupported format: {suffix}[/red]")
             return None
 
         self.console.print(f"[green]✓ Format: {file_format.upper()}[/green]")
@@ -258,6 +349,23 @@ class BERTAnnotationStudio:
                     df = pd.read_json(file_path, lines=True)
                 elif file_format == 'parquet':
                     df = pd.read_parquet(file_path)
+                elif file_format == 'rdata':
+                    # RData support (requires pyreadr)
+                    try:
+                        import pyreadr
+                        result = pyreadr.read_r(file_path)
+                        if result:
+                            # Take first dataframe from RData file
+                            df = list(result.values())[0]
+                        else:
+                            self.console.print("[red]✗ Empty RData file[/red]")
+                            return None, None
+                    except ImportError:
+                        self.console.print("[red]✗ pyreadr not installed. Install with: pip install pyreadr[/red]")
+                        return None, None
+                else:
+                    self.console.print(f"[red]✗ Unsupported format: {file_format}[/red]")
+                    return None, None
             else:
                 self.console.print("[red]SQL not yet implemented[/red]")
                 return None, None

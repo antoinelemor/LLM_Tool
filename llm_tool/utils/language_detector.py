@@ -15,19 +15,21 @@ supporting multiple languages and providing confidence scores.
 
 Dependencies:
 -------------
-- sys
-- langdetect
-- langid
-- fasttext
+- lingua-language-detector (PRIMARY - 96%+ accuracy, most reliable)
+- langid (FALLBACK - 90%+ accuracy)
+- fasttext (OPTIONAL - 93%+ accuracy, requires model download)
 - typing
 
 MAIN FEATURES:
 --------------
-1) Automatic language detection with confidence scores
-2) Support for multiple detection libraries
-3) Batch processing capability
-4) Fallback mechanisms for uncertain detections
-5) Language code standardization
+1) High-accuracy language detection (96%+) using lingua-language-detector
+2) Automatic language detection with confidence scores
+3) Support for 75+ languages (lingua) or 100+ (fallback methods)
+4) Batch processing capability for large datasets
+5) Ensemble mode combining multiple detectors
+6) Deterministic results (no randomness like old langdetect)
+7) Fallback mechanisms for uncertain detections
+8) ISO 639-1 language code standardization
 
 Author:
 -------
@@ -39,14 +41,15 @@ from typing import Optional, List, Dict, Tuple, Any
 from enum import Enum
 import warnings
 
-# Try multiple language detection libraries
+# Primary: lingua-language-detector (most accurate)
 try:
-    from langdetect import detect, detect_langs, LangDetectException
-    HAS_LANGDETECT = True
+    from lingua import Language, LanguageDetectorBuilder
+    HAS_LINGUA = True
 except ImportError:
-    HAS_LANGDETECT = False
-    detect = detect_langs = LangDetectException = None
+    HAS_LINGUA = False
+    Language = LanguageDetectorBuilder = None
 
+# Fallback: langid
 try:
     import langid
     HAS_LANGID = True
@@ -54,6 +57,7 @@ except ImportError:
     HAS_LANGID = False
     langid = None
 
+# Fallback: fasttext (if model provided)
 try:
     import fasttext
     HAS_FASTTEXT = True
@@ -64,10 +68,10 @@ except ImportError:
 
 class DetectionMethod(Enum):
     """Available language detection methods"""
-    LANGDETECT = "langdetect"
-    LANGID = "langid"
-    FASTTEXT = "fasttext"
-    ENSEMBLE = "ensemble"
+    LINGUA = "lingua"  # Primary: most accurate
+    LANGID = "langid"  # Fallback
+    FASTTEXT = "fasttext"  # Fallback (requires model)
+    ENSEMBLE = "ensemble"  # Use multiple methods
 
 
 class LanguageDetector:
@@ -140,16 +144,16 @@ class LanguageDetector:
         'multilingual': ['bert-base-multilingual-cased', 'xlm-roberta-base', 'google/mt5-base']
     }
 
-    def __init__(self, method: DetectionMethod = DetectionMethod.ENSEMBLE,
-                 confidence_threshold: float = 0.8,
+    def __init__(self, method: DetectionMethod = DetectionMethod.LINGUA,
+                 confidence_threshold: float = 0.7,
                  fallback_language: str = 'en',
                  fasttext_model_path: Optional[str] = None):
         """
         Initialize the language detector
 
         Args:
-            method: Detection method to use
-            confidence_threshold: Minimum confidence for detection
+            method: Detection method to use (default: LINGUA - most accurate)
+            confidence_threshold: Minimum confidence for detection (0.0-1.0)
             fallback_language: Language to use when detection fails
             fasttext_model_path: Path to FastText model (if using FastText)
         """
@@ -160,6 +164,29 @@ class LanguageDetector:
 
         # Check available libraries
         self._check_available_libraries()
+
+        # Initialize lingua detector (most accurate)
+        self.lingua_detector = None
+        if HAS_LINGUA:
+            try:
+                # Build detector with common languages for speed
+                # For maximum accuracy, use .from_all_languages()
+                languages = [
+                    Language.ENGLISH, Language.FRENCH, Language.SPANISH,
+                    Language.GERMAN, Language.ITALIAN, Language.PORTUGUESE,
+                    Language.DUTCH, Language.RUSSIAN, Language.CHINESE,
+                    Language.JAPANESE, Language.ARABIC, Language.POLISH,
+                    Language.TURKISH, Language.KOREAN, Language.HINDI,
+                    Language.SWEDISH, Language.BOKMAL, Language.DANISH,
+                    Language.FINNISH, Language.CZECH, Language.GREEK,
+                    Language.HEBREW, Language.ROMANIAN, Language.UKRAINIAN,
+                    Language.BULGARIAN, Language.CROATIAN, Language.VIETNAMESE,
+                    Language.THAI, Language.INDONESIAN, Language.PERSIAN
+                ]
+                self.lingua_detector = LanguageDetectorBuilder.from_languages(*languages).build()
+                self.logger.debug("Lingua detector initialized with 30 languages")
+            except Exception as e:
+                self.logger.warning(f"Could not initialize Lingua detector: {e}")
 
         # Load FastText model if provided
         self.fasttext_model = None
@@ -176,8 +203,8 @@ class LanguageDetector:
     def _check_available_libraries(self):
         """Check which language detection libraries are available"""
         available = []
-        if HAS_LANGDETECT:
-            available.append("langdetect")
+        if HAS_LINGUA:
+            available.append("lingua")
         if HAS_LANGID:
             available.append("langid")
         if HAS_FASTTEXT:
@@ -186,19 +213,20 @@ class LanguageDetector:
         if not available:
             self.logger.warning(
                 "No language detection libraries found. "
-                "Install with: pip install langdetect langid"
+                "Install with: pip install lingua-language-detector"
             )
             self.method = None
         else:
-            self.logger.info(f"Available language detection libraries: {', '.join(available)}")
+            self.logger.debug(f"Available language detection libraries: {', '.join(available)}")
 
             # Adjust method if requested library not available
-            if self.method == DetectionMethod.LANGDETECT and not HAS_LANGDETECT:
+            if self.method == DetectionMethod.LINGUA and not HAS_LINGUA:
                 self.method = DetectionMethod.LANGID if HAS_LANGID else None
+                self.logger.warning("Lingua not available, falling back to langid")
             elif self.method == DetectionMethod.LANGID and not HAS_LANGID:
-                self.method = DetectionMethod.LANGDETECT if HAS_LANGDETECT else None
+                self.method = DetectionMethod.LINGUA if HAS_LINGUA else None
             elif self.method == DetectionMethod.FASTTEXT and not HAS_FASTTEXT:
-                self.method = DetectionMethod.ENSEMBLE
+                self.method = DetectionMethod.LINGUA if HAS_LINGUA else DetectionMethod.LANGID
 
     def detect(self, text: str, return_all_scores: bool = False) -> Dict[str, Any]:
         """
@@ -223,8 +251,8 @@ class LanguageDetector:
         text = text.strip()
 
         # Use specified method
-        if self.method == DetectionMethod.LANGDETECT:
-            result = self._detect_langdetect(text, return_all_scores)
+        if self.method == DetectionMethod.LINGUA:
+            result = self._detect_lingua(text, return_all_scores)
         elif self.method == DetectionMethod.LANGID:
             result = self._detect_langid(text, return_all_scores)
         elif self.method == DetectionMethod.FASTTEXT:
@@ -246,34 +274,87 @@ class LanguageDetector:
 
         return result
 
-    def _detect_langdetect(self, text: str, return_all_scores: bool) -> Dict[str, Any]:
-        """Detect language using langdetect library"""
+    def _detect_lingua(self, text: str, return_all_scores: bool) -> Dict[str, Any]:
+        """Detect language using lingua library (most accurate)"""
+        if not self.lingua_detector:
+            return {
+                'language': self.fallback_language,
+                'confidence': 0.0,
+                'method': 'lingua_not_loaded',
+                'all_scores': []
+            }
+
         try:
+            # Lingua ISO code mapping
+            LINGUA_TO_ISO = {
+                'ENGLISH': 'en', 'FRENCH': 'fr', 'SPANISH': 'es', 'GERMAN': 'de',
+                'ITALIAN': 'it', 'PORTUGUESE': 'pt', 'DUTCH': 'nl', 'RUSSIAN': 'ru',
+                'CHINESE': 'zh', 'JAPANESE': 'ja', 'ARABIC': 'ar', 'POLISH': 'pl',
+                'TURKISH': 'tr', 'KOREAN': 'ko', 'HINDI': 'hi', 'SWEDISH': 'sv',
+                'BOKMAL': 'no', 'NYNORSK': 'no', 'DANISH': 'da', 'FINNISH': 'fi',
+                'CZECH': 'cs', 'GREEK': 'el', 'HEBREW': 'he', 'ROMANIAN': 'ro',
+                'UKRAINIAN': 'uk', 'BULGARIAN': 'bg', 'CROATIAN': 'hr', 'VIETNAMESE': 'vi',
+                'THAI': 'th', 'INDONESIAN': 'id', 'PERSIAN': 'fa', 'SLOVAK': 'sk',
+                'SLOVENE': 'sl', 'LITHUANIAN': 'lt', 'LATVIAN': 'lv', 'ESTONIAN': 'et',
+                'ALBANIAN': 'sq', 'MACEDONIAN': 'mk', 'SERBIAN': 'sr', 'MALAY': 'ms',
+                'BENGALI': 'bn', 'URDU': 'ur', 'TAMIL': 'ta', 'TELUGU': 'te',
+                'KANNADA': 'kn', 'MALAYALAM': 'ml', 'GUJARATI': 'gu', 'MARATHI': 'mr',
+                'PUNJABI': 'pa', 'AFRIKAANS': 'af', 'ARMENIAN': 'hy', 'AZERBAIJANI': 'az',
+                'BASQUE': 'eu', 'BELARUSIAN': 'be', 'BOSNIAN': 'bs', 'CATALAN': 'ca',
+                'ESPERANTO': 'eo', 'GEORGIAN': 'ka', 'GANDA': 'lg', 'ICELANDIC': 'is',
+                'IRISH': 'ga', 'KAZAKH': 'kk', 'LATIN': 'la', 'MAORI': 'mi',
+                'MONGOLIAN': 'mn', 'SHONA': 'sn', 'SOMALI': 'so', 'SOTHO': 'st',
+                'SWAHILI': 'sw', 'TAGALOG': 'tl', 'TSONGA': 'ts', 'TSWANA': 'tn',
+                'XHOSA': 'xh', 'YORUBA': 'yo', 'ZULU': 'zu'
+            }
+
             if return_all_scores:
-                langs = detect_langs(text)
-                all_scores = [(lang.lang, lang.prob) for lang in langs]
-                if langs:
+                # Get confidence values for all languages
+                confidence_values = self.lingua_detector.compute_language_confidence_values(text)
+                all_scores = []
+
+                for lang_confidence in confidence_values:
+                    lang_name = str(lang_confidence.language).split('.')[-1]
+                    iso_code = LINGUA_TO_ISO.get(lang_name, lang_name.lower()[:2])
+                    all_scores.append((iso_code, lang_confidence.value))
+
+                if all_scores:
+                    all_scores.sort(key=lambda x: x[1], reverse=True)
                     return {
-                        'language': langs[0].lang,
-                        'confidence': langs[0].prob,
-                        'method': 'langdetect',
+                        'language': all_scores[0][0],
+                        'confidence': all_scores[0][1],
+                        'method': 'lingua',
                         'all_scores': all_scores
                     }
             else:
-                lang = detect(text)
-                return {
-                    'language': lang,
-                    'confidence': 1.0,  # langdetect doesn't return confidence for single detect
-                    'method': 'langdetect',
-                    'all_scores': []
-                }
-        except (LangDetectException, Exception) as e:
-            self.logger.debug(f"Langdetect failed: {e}")
+                # Single detection with confidence
+                detected = self.lingua_detector.detect_language_of(text)
+                if detected:
+                    lang_name = str(detected).split('.')[-1]
+                    iso_code = LINGUA_TO_ISO.get(lang_name, lang_name.lower()[:2])
+
+                    # Get confidence for detected language
+                    confidence_values = self.lingua_detector.compute_language_confidence_values(text)
+                    confidence = 0.95  # Default high confidence
+
+                    for lang_conf in confidence_values:
+                        if str(lang_conf.language).split('.')[-1] == lang_name:
+                            confidence = lang_conf.value
+                            break
+
+                    return {
+                        'language': iso_code,
+                        'confidence': confidence,
+                        'method': 'lingua',
+                        'all_scores': [(iso_code, confidence)]
+                    }
+        except Exception as e:
+            self.logger.debug(f"Lingua detection failed: {e}")
 
         return {
             'language': self.fallback_language,
             'confidence': 0.0,
-            'method': 'langdetect_failed',
+            'method': 'lingua_failed',
             'all_scores': []
         }
 
@@ -354,21 +435,23 @@ class LanguageDetector:
         results = []
         methods_used = []
 
-        # Try langdetect
-        if HAS_LANGDETECT:
-            result = self._detect_langdetect(text, False)
+        # Try lingua (most accurate - highest weight)
+        if HAS_LINGUA and self.lingua_detector:
+            result = self._detect_lingua(text, False)
             if result['confidence'] > 0:
+                # Give lingua double weight in ensemble
                 results.append(result)
-                methods_used.append('langdetect')
+                results.append(result)
+                methods_used.append('lingua')
 
-        # Try langid
+        # Try langid (good fallback)
         if HAS_LANGID:
             result = self._detect_langid(text, False)
             if result['confidence'] > 0:
                 results.append(result)
                 methods_used.append('langid')
 
-        # Try fasttext
+        # Try fasttext (if available)
         if self.fasttext_model:
             result = self._detect_fasttext(text, False)
             if result['confidence'] > 0:

@@ -50,6 +50,7 @@ import time
 import logging
 import glob
 import shutil
+import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple, Set
 from dataclasses import dataclass, field
@@ -361,6 +362,60 @@ class TrainerModelDetector:
     def get_available_models() -> Dict[str, List[Dict[str, Any]]]:
         """Get all available models for training organized by category"""
         return {
+            "Multilingual Models": [
+                {"name": "xlm-roberta-base", "params": "278M", "type": "XLM-R", "languages": "100+", "performance": "★★★★"},
+                {"name": "xlm-roberta-large", "params": "560M", "type": "XLM-R", "languages": "100+", "performance": "★★★★★"},
+                {"name": "microsoft/mdeberta-v3-base", "params": "280M", "type": "mDeBERTa", "languages": "100+", "performance": "★★★★★"},
+                {"name": "bert-base-multilingual-cased", "params": "177M", "type": "mBERT", "languages": "104", "performance": "★★★"},
+            ],
+            "Long Document Models (Multilingual)": [
+                {"name": "facebook/xlm-roberta-longformer-base-4096", "params": "278M", "type": "XLM-R Longformer", "max_length": "4096", "languages": "100+", "performance": "★★★★★"},
+                {"name": "allenai/led-base-16384", "params": "406M", "type": "LED", "max_length": "16384", "language": "English", "performance": "★★★★★"},
+                {"name": "allenai/led-large-16384", "params": "406M", "type": "LED", "max_length": "16384", "language": "English", "performance": "★★★★★"},
+                {"name": "allenai/longformer-base-4096", "params": "149M", "type": "Longformer", "max_length": "4096", "language": "English", "performance": "★★★★"},
+                {"name": "allenai/longformer-large-4096", "params": "435M", "type": "Longformer", "max_length": "4096", "language": "English", "performance": "★★★★★"},
+                {"name": "google/bigbird-roberta-base", "params": "128M", "type": "BigBird", "max_length": "4096", "language": "English", "performance": "★★★★"},
+                {"name": "google/bigbird-roberta-large", "params": "340M", "type": "BigBird", "max_length": "4096", "language": "English", "performance": "★★★★★"},
+            ],
+            "Long Document Models (Language-Specific)": [
+                # French
+                {"name": "cmarkea/distilcamembert-base-nli", "params": "68M", "type": "DistilCamemBERT", "max_length": "512", "language": "French", "performance": "★★★★"},
+                {"name": "gilf/french-camembert-postag-model", "params": "110M", "type": "CamemBERT", "max_length": "512", "language": "French", "performance": "★★★★"},
+                # Spanish
+                {"name": "PlanTL-GOB-ES/roberta-base-bne", "params": "125M", "type": "RoBERTa-BNE", "max_length": "512", "language": "Spanish", "performance": "★★★★"},
+                {"name": "dccuchile/bert-base-spanish-wwm-cased", "params": "110M", "type": "BETO", "max_length": "512", "language": "Spanish", "performance": "★★★★"},
+                # German
+                {"name": "deepset/gbert-base", "params": "110M", "type": "GBERT", "max_length": "512", "language": "German", "performance": "★★★★"},
+                {"name": "bert-base-german-cased", "params": "110M", "type": "German BERT", "max_length": "512", "language": "German", "performance": "★★★★"},
+                # Italian
+                {"name": "dbmdz/bert-base-italian-cased", "params": "110M", "type": "Italian BERT", "max_length": "512", "language": "Italian", "performance": "★★★★"},
+                # Portuguese
+                {"name": "neuralmind/bert-base-portuguese-cased", "params": "110M", "type": "BERTimbau", "max_length": "512", "language": "Portuguese", "performance": "★★★★"},
+                # Dutch
+                {"name": "GroNLP/bert-base-dutch-cased", "params": "110M", "type": "BERTje", "max_length": "512", "language": "Dutch", "performance": "★★★★"},
+                {"name": "wietsedv/bert-base-dutch-cased", "params": "110M", "type": "Dutch BERT", "max_length": "512", "language": "Dutch", "performance": "★★★★"},
+                # Polish
+                {"name": "allegro/herbert-base-cased", "params": "124M", "type": "HerBERT", "max_length": "514", "language": "Polish", "performance": "★★★★"},
+                # Chinese
+                {"name": "hfl/chinese-roberta-wwm-ext", "params": "102M", "type": "Chinese RoBERTa", "max_length": "512", "language": "Chinese", "performance": "★★★★"},
+                {"name": "bert-base-chinese", "params": "110M", "type": "Chinese BERT", "max_length": "512", "language": "Chinese", "performance": "★★★★"},
+                # Japanese
+                {"name": "cl-tohoku/bert-base-japanese-whole-word-masking", "params": "111M", "type": "Japanese BERT WWM", "max_length": "512", "language": "Japanese", "performance": "★★★★"},
+                {"name": "cl-tohoku/bert-base-japanese", "params": "111M", "type": "Japanese BERT", "max_length": "512", "language": "Japanese", "performance": "★★★★"},
+                # Arabic
+                {"name": "aubmindlab/bert-base-arabert", "params": "135M", "type": "AraBERT", "max_length": "512", "language": "Arabic", "performance": "★★★★"},
+                {"name": "asafaya/bert-base-arabic", "params": "110M", "type": "Arabic BERT", "max_length": "512", "language": "Arabic", "performance": "★★★★"},
+                # Russian
+                {"name": "DeepPavlov/rubert-base-cased", "params": "178M", "type": "RuBERT", "max_length": "512", "language": "Russian", "performance": "★★★★"},
+            ],
+            "Efficient Models": [
+                {"name": "distilbert-base", "params": "66M", "type": "DistilBERT", "speed": "2x faster", "performance": "★★★"},
+                {"name": "distilroberta-base", "params": "82M", "type": "DistilRoBERTa", "speed": "2x faster", "performance": "★★★"},
+                {"name": "albert-base-v2", "params": "12M", "type": "ALBERT", "speed": "4x faster", "performance": "★★★"},
+                {"name": "albert-large-v2", "params": "18M", "type": "ALBERT", "speed": "3x faster", "performance": "★★★★"},
+                {"name": "deberta-v3-xsmall", "params": "22M", "type": "DeBERTa", "speed": "5x faster", "performance": "★★★"},
+                {"name": "electra-small", "params": "14M", "type": "ELECTRA", "speed": "4x faster", "performance": "★★★"},
+            ],
             "English Models": [
                 {"name": "bert-base-uncased", "params": "110M", "type": "BERT", "performance": "★★★"},
                 {"name": "bert-large-uncased", "params": "340M", "type": "BERT", "performance": "★★★★"},
@@ -369,27 +424,26 @@ class TrainerModelDetector:
                 {"name": "deberta-v3-base", "params": "184M", "type": "DeBERTa", "performance": "★★★★★"},
                 {"name": "deberta-v3-large", "params": "435M", "type": "DeBERTa", "performance": "★★★★★"},
                 {"name": "electra-base", "params": "110M", "type": "ELECTRA", "performance": "★★★★"},
-                {"name": "albert-base-v2", "params": "12M", "type": "ALBERT", "performance": "★★★"},
-            ],
-            "Multilingual Models": [
-                {"name": "bert-base-multilingual-cased", "params": "177M", "type": "mBERT", "languages": "104", "performance": "★★★"},
-                {"name": "xlm-roberta-base", "params": "278M", "type": "XLM-R", "languages": "100+", "performance": "★★★★"},
-                {"name": "xlm-roberta-large", "params": "560M", "type": "XLM-R", "languages": "100+", "performance": "★★★★★"},
-                {"name": "microsoft/mdeberta-v3-base", "params": "280M", "type": "mDeBERTa", "languages": "100+", "performance": "★★★★★"},
+                {"name": "electra-large", "params": "335M", "type": "ELECTRA", "performance": "★★★★★"},
+                {"name": "albert-xlarge-v2", "params": "60M", "type": "ALBERT", "performance": "★★★★"},
             ],
             "French Models": [
                 {"name": "camembert-base", "params": "110M", "type": "CamemBERT", "performance": "★★★★"},
+                {"name": "camembert-large", "params": "335M", "type": "CamemBERT", "performance": "★★★★★"},
+                {"name": "camemberta-base", "params": "110M", "type": "CamemBERTa-v2", "performance": "★★★★"},
                 {"name": "flaubert-base", "params": "137M", "type": "FlauBERT", "performance": "★★★★"},
+                {"name": "flaubert-large", "params": "373M", "type": "FlauBERT", "performance": "★★★★★"},
                 {"name": "distilcamembert", "params": "68M", "type": "DistilCamemBERT", "performance": "★★★"},
+                {"name": "barthez", "params": "165M", "type": "BARThez", "performance": "★★★★"},
+                {"name": "fralbert", "params": "12M", "type": "FrALBERT", "performance": "★★★"},
+                {"name": "fr-electra", "params": "110M", "type": "FrELECTRA", "performance": "★★★★"},
             ],
-            "Long Document Models": [
-                {"name": "longformer-base", "params": "149M", "type": "Longformer", "max_length": "4096", "performance": "★★★★"},
-                {"name": "bigbird-base", "params": "128M", "type": "BigBird", "max_length": "4096", "performance": "★★★★"},
-            ],
-            "Efficient Models": [
-                {"name": "distilbert-base", "params": "66M", "type": "DistilBERT", "speed": "2x faster", "performance": "★★★"},
-                {"name": "tinybert", "params": "14M", "type": "TinyBERT", "speed": "9x faster", "performance": "★★"},
-                {"name": "mobilebert", "params": "25M", "type": "MobileBERT", "speed": "4x faster", "performance": "★★★"},
+            "Other Language Models": [
+                {"name": "bert-base-arabic", "params": "110M", "type": "AraBERT", "language": "Arabic", "performance": "★★★★"},
+                {"name": "bert-base-chinese", "params": "110M", "type": "Chinese BERT", "language": "Chinese", "performance": "★★★★"},
+                {"name": "bert-base-german", "params": "110M", "type": "German BERT", "language": "German", "performance": "★★★★"},
+                {"name": "hindi-bert", "params": "110M", "type": "Hindi BERT", "language": "Hindi", "performance": "★★★"},
+                {"name": "bert-base-italian", "params": "110M", "type": "Italian BERT", "language": "Italian", "performance": "★★★★"},
             ]
         }
 
@@ -1213,11 +1267,11 @@ class AdvancedCLI:
             return
 
         # === ANNOTATION LLMs SECTION ===
-        llms_table = Table(title="🤖 Available LLMs for Annotation", border_style="cyan", show_lines=True)
+        llms_table = Table(title="🤖 Available LLMs for Annotation", border_style="cyan", show_lines=True, expand=False, width=75)
         llms_table.add_column("Provider", style="cyan", width=10)
-        llms_table.add_column("Model", style="white", width=20)
+        llms_table.add_column("Model", style="white", width=22)
         llms_table.add_column("Size", style="yellow", width=8)
-        llms_table.add_column("Context", style="green", width=10)
+        llms_table.add_column("Context", style="green", width=11)
         llms_table.add_column("Status", style="green", width=12)
 
         # Show Ollama models (all of them if available)
@@ -1246,37 +1300,91 @@ class AdvancedCLI:
                 )
 
         # === TRAINABLE MODELS SECTION ===
-        trainer_table = Table(title="🏋️ Available Models for Training", border_style="magenta", show_lines=False)
-        trainer_table.add_column("Category", style="magenta", width=20)
-        trainer_table.add_column("Models", style="white", width=60)
+        trainer_table = Table(title="🏋️ Available Models for Training", border_style="magenta", show_lines=False, expand=False, width=85)
+        trainer_table.add_column("Category", style="magenta bold", width=20)
+        trainer_table.add_column("Models", style="white", width=56)
 
+        # Define the desired order
+        desired_order = [
+            "Multilingual Models",
+            "Long Document Models",
+            "Long Document Models - French",
+            "Long Document Models - Spanish",
+            "Long Document Models - German",
+            "Long Document Models - Italian",
+            "Long Document Models - Portuguese",
+            "Long Document Models - Dutch",
+            "Long Document Models - Polish",
+            "Long Document Models - Chinese",
+            "Long Document Models - Japanese",
+            "Long Document Models - Arabic",
+            "Long Document Models - Russian",
+            "Efficient Models",
+            "English Models",
+            "French Models",
+            "Other Language Models"
+        ]
+
+        # Display models in the specified order
+        for category in desired_order:
+            if category in self.available_trainer_models:
+                models = self.available_trainer_models[category]
+                # Format model names compactly
+                model_names = [m['name'] for m in models[:4]]  # Show first 4
+                if len(models) > 4:
+                    model_names.append(f"(+{len(models)-4} more)")
+                trainer_table.add_row(
+                    category,
+                    ", ".join(model_names)
+                )
+
+        # Add any remaining categories not in the desired order
         for category, models in self.available_trainer_models.items():
-            # Format model names compactly
-            model_names = [m['name'] for m in models[:4]]  # Show first 4
-            if len(models) > 4:
-                model_names.append(f"(+{len(models)-4} more)")
-            trainer_table.add_row(
-                category,
-                ", ".join(model_names)
-            )
+            if category not in desired_order:
+                model_names = [m['name'] for m in models[:4]]
+                if len(models) > 4:
+                    model_names.append(f"(+{len(models)-4} more)")
+                trainer_table.add_row(
+                    category,
+                    ", ".join(model_names)
+                )
+
+        # === DISPLAY SIDE BY SIDE ===
+        self.console.print(Columns([llms_table, trainer_table], equal=False, expand=True))
+        self.console.print()
 
         # === DATASETS SECTION ===
-        datasets_table = Table(title="📊 Detected Datasets", border_style="yellow", show_lines=False)
-        datasets_table.add_column("File", style="cyan", width=25)
-        datasets_table.add_column("Format", style="white", width=8)
-        datasets_table.add_column("Size", style="green", width=10)
+        datasets_table = Table(title="📊 Detected Datasets", border_style="yellow", show_lines=False, expand=True)
+        datasets_table.add_column("File", style="cyan", no_wrap=True, width=30)
+        datasets_table.add_column("Format", style="white bold", width=12, justify="center")
+        datasets_table.add_column("Size", style="green", width=10, justify="right")
+        datasets_table.add_column("Folder", style="yellow", width=20)
         datasets_table.add_column("Columns", style="dim", width=35)
 
         if self.detected_datasets:
-            for dataset in self.detected_datasets[:5]:  # Show top 5
+            for dataset in self.detected_datasets:  # Show ALL datasets
                 columns_preview = ", ".join(dataset.columns[:3]) if dataset.columns else "N/A"
                 if len(dataset.columns) > 3:
                     columns_preview += f" (+{len(dataset.columns)-3} more)"
 
+                # Color format based on type
+                format_style = {
+                    'CSV': 'cyan bold',
+                    'JSON': 'green bold',
+                    'JSONL': 'blue bold',
+                    'EXCEL': 'magenta bold',
+                    'PARQUET': 'red bold',
+                    'TSV': 'yellow bold'
+                }.get(dataset.format.upper(), 'white')
+
+                # Get folder name (parent directory name)
+                folder_name = dataset.path.parent.name if dataset.path.parent.name else "data"
+
                 datasets_table.add_row(
                     dataset.path.name,
-                    dataset.format.upper(),
+                    f"[{format_style}]{dataset.format.upper()}[/{format_style}]",
                     f"{dataset.size_mb:.1f} MB" if dataset.size_mb else "Unknown",
+                    folder_name,
                     columns_preview
                 )
         else:
@@ -1284,15 +1392,49 @@ class AdvancedCLI:
                 "No datasets found",
                 "-",
                 "-",
+                "-",
                 "Place CSV/JSON files in current directory"
             )
 
-        # Print all tables
-        self.console.print(llms_table)
-        self.console.print()
-        self.console.print(trainer_table)
-        self.console.print()
+        # Print datasets table
         self.console.print(datasets_table)
+        self.console.print()
+
+        # === ALL SUPPORTED FORMATS SECTION ===
+        # Create a centered panel showing all supported formats
+        all_formats_text = Text(justify="center")
+        all_formats_text.append("📦 Supported Formats: ", style="bold cyan")
+
+        # File formats
+        all_formats_text.append("CSV", style="cyan bold")
+        all_formats_text.append(" • ", style="dim")
+        all_formats_text.append("JSON/JSONL", style="green bold")
+        all_formats_text.append(" • ", style="dim")
+        all_formats_text.append("Excel", style="magenta bold")
+        all_formats_text.append(" • ", style="dim")
+        all_formats_text.append("Parquet", style="red bold")
+        all_formats_text.append(" • ", style="dim")
+        all_formats_text.append("RData", style="yellow bold")
+        all_formats_text.append(" • ", style="dim")
+        all_formats_text.append("TSV", style="blue bold")
+
+        # Databases
+        all_formats_text.append("\n💾 Databases: ", style="bold cyan")
+        all_formats_text.append("PostgreSQL", style="blue bold")
+        all_formats_text.append(" • ", style="dim")
+        all_formats_text.append("MySQL", style="yellow bold")
+        all_formats_text.append(" • ", style="dim")
+        all_formats_text.append("SQLite", style="green bold")
+        all_formats_text.append(" • ", style="dim")
+        all_formats_text.append("MongoDB", style="magenta bold")
+
+        formats_panel = Panel(
+            all_formats_text,
+            border_style="cyan",
+            padding=(0, 2)
+        )
+
+        self.console.print(formats_panel)
         self.console.print()
 
     def get_main_menu_choice(self) -> str:
@@ -1827,24 +1969,87 @@ class AdvancedCLI:
             print("="*80 + "\n")
 
     def quick_start_wizard(self):
-        """Smart guided annotation wizard with all options"""
+        """Complete workflow: LLM annotation followed by intelligent model training"""
         # Display ASCII logo only
         self._display_ascii_logo()
 
         # Display personalized mode info
         self._display_section_header(
-            "🎯 Quick Start - Intelligent Pipeline Setup",
-            "Automated end-to-end pipeline with smart defaults",
+            "🎯 LLM Annotation → Training - Complete Workflow",
+            "End-to-end pipeline: annotate with LLM then train classifier models",
             mode_info={
-                'workflow': 'Data → Auto-Detect → LLM Annotate → Convert → Train → Export',
-                'capabilities': ['Auto-detection', 'Smart Configuration', 'One-Click Execution'],
+                'workflow': 'Data → LLM Annotate → Language Detection → Model Training → Export',
+                'capabilities': ['LLM Annotation', 'Multi-Language Support', 'Intelligent Training', 'Model Benchmarking'],
                 'input': 'CSV/Excel/JSON with text column',
-                'output': 'Annotated data + Trained model + Doccano export',
-                'best_for': 'Researchers wanting fast results with minimal configuration',
-                'duration': '~5-15 min (depends on dataset size)'
+                'output': 'Annotated data + Trained BERT models + Training metrics',
+                'best_for': 'Complete annotation-to-training pipeline with automatic language detection',
+                'duration': '~10-30 min (annotation + training time)'
             }
         )
 
+        if HAS_RICH and self.console:
+            # Get smart suggestions
+            suggestions = self._get_smart_suggestions()
+
+            # Create workflow menu table
+            from rich.table import Table
+            workflow_table = Table(show_header=False, box=None, padding=(0, 2))
+            workflow_table.add_column("Option", style="cyan", width=8)
+            workflow_table.add_column("Description")
+
+            workflows = [
+                ("1", "🔄 Resume/Relaunch Workflow (Use saved parameters or resume incomplete)"),
+                ("2", "🎯 Complete Workflow (New annotation → training pipeline)"),
+                ("3", "🗑️  Clean Old Metadata (Delete saved parameters)"),
+                ("0", "⬅️  Back to main menu")
+            ]
+
+            for option, desc in workflows:
+                workflow_table.add_row(f"[bold cyan]{option}[/bold cyan]", desc)
+
+            # Display panel with suggestions
+            panel = Panel(
+                workflow_table,
+                title="[bold]🎯 LLM Annotation → Training Workflow[/bold]",
+                subtitle=f"[dim]{suggestions}[/dim]" if suggestions else None,
+                border_style="cyan"
+            )
+
+            self.console.print("\n")
+            self.console.print(panel)
+
+            workflow = Prompt.ask(
+                "\n[bold yellow]Select workflow[/bold yellow]",
+                choices=["0", "1", "2", "3"],
+                default="2"
+            )
+
+            if workflow == "0":
+                return
+            elif workflow == "1":
+                self._resume_mode2()
+            elif workflow == "2":
+                self._complete_workflow_mode2()
+            elif workflow == "3":
+                self._clean_metadata()
+        else:
+            print("\n=== LLM Annotation → Training Workflow ===")
+            print("Complete annotation-to-training pipeline\n")
+            print("1. Resume/Relaunch Workflow")
+            print("2. Complete Workflow (Recommended)")
+            print("3. Clean Old Metadata")
+            print("0. Back")
+            choice = input("\nSelect workflow: ").strip()
+
+            if choice == "1":
+                self._resume_mode2()
+            elif choice == "2":
+                self._complete_workflow_mode2()
+            elif choice == "3":
+                self._clean_metadata()
+
+    def _complete_workflow_mode2(self):
+        """Execute complete annotation → training workflow"""
         # Step 1: Data Source Selection
         self.console.print("[bold]Step 1/7: Data Source Selection[/bold]\n")
 
@@ -3113,6 +3318,447 @@ class AdvancedCLI:
             self.logger.exception("Annotation execution failed")
             self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
             input()
+
+    def _resume_mode2(self):
+        """Resume or relaunch annotation → training workflow using saved parameters"""
+        self.console.print("\n[bold cyan]🔄 Resume/Relaunch Workflow[/bold cyan]\n")
+        self.console.print("[dim]Load saved parameters from previous annotation → training sessions[/dim]\n")
+
+        # ============================================================
+        # DETECT METADATA FILES
+        # ============================================================
+        annotations_dir = self.settings.paths.data_dir / 'annotations'
+
+        if not annotations_dir.exists():
+            self.console.print("[yellow]No annotations directory found.[/yellow]")
+            self.console.print("[dim]Run Complete Workflow first to create annotation sessions.[/dim]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        # Find all metadata JSON files
+        metadata_files = list(annotations_dir.glob("*_metadata_*.json"))
+
+        if not metadata_files:
+            self.console.print("[yellow]No saved workflow parameters found.[/yellow]")
+            self.console.print("[dim]Run Complete Workflow and save parameters to use this feature.[/dim]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        # Sort by modification time (most recent first)
+        metadata_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+        # Display available sessions
+        self.console.print(f"[green]Found {len(metadata_files)} saved workflow session(s)[/green]\n")
+
+        sessions_table = Table(border_style="cyan", show_header=True)
+        sessions_table.add_column("#", style="cyan", width=3)
+        sessions_table.add_column("Session", style="white")
+        sessions_table.add_column("Date", style="yellow")
+        sessions_table.add_column("Workflow", style="green")
+        sessions_table.add_column("Model", style="magenta")
+
+        import json
+        from datetime import datetime
+
+        # Load and display sessions
+        valid_sessions = []
+        for i, mf in enumerate(metadata_files[:20], 1):  # Show max 20 most recent
+            try:
+                with open(mf, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+
+                session_info = metadata.get('annotation_session', {})
+                model_config = metadata.get('model_configuration', {})
+
+                timestamp_str = session_info.get('timestamp', '')
+                try:
+                    dt = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                    date_str = dt.strftime('%Y-%m-%d %H:%M')
+                except:
+                    date_str = timestamp_str
+
+                workflow = session_info.get('workflow', 'Unknown')
+                model_name = model_config.get('model_name', 'Unknown')
+
+                sessions_table.add_row(
+                    str(i),
+                    mf.stem[:40],
+                    date_str,
+                    workflow.split(' - ')[0] if ' - ' in workflow else workflow,
+                    model_name
+                )
+
+                valid_sessions.append((mf, metadata))
+            except Exception as e:
+                self.logger.warning(f"Could not load metadata file {mf}: {e}")
+                continue
+
+        if not valid_sessions:
+            self.console.print("[yellow]No valid metadata files found.[/yellow]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        self.console.print(sessions_table)
+
+        # Select session
+        session_choice = self._int_prompt_with_validation(
+            "\n[bold yellow]Select session to resume/relaunch[/bold yellow]",
+            1, 1, len(valid_sessions)
+        )
+
+        selected_file, metadata = valid_sessions[session_choice - 1]
+
+        self.console.print(f"\n[green]✓ Selected: {selected_file.name}[/green]")
+
+        # ============================================================
+        # DISPLAY ALL PARAMETERS
+        # ============================================================
+        self._display_metadata_parameters(metadata)
+
+        # ============================================================
+        # ASK: RESUME OR RELAUNCH?
+        # ============================================================
+        self.console.print("\n[bold cyan]📋 Action Mode[/bold cyan]\n")
+        self.console.print("[yellow]What would you like to do?[/yellow]")
+        self.console.print("  • [cyan]resume[/cyan]   - Continue an incomplete workflow (skip already completed steps)")
+        self.console.print("           [dim]Requires output files from annotation and/or training[/dim]")
+        self.console.print("  • [cyan]relaunch[/cyan] - Start a new workflow with same parameters")
+        self.console.print("           [dim]Runs a fresh annotation → training session[/dim]")
+
+        action_mode = Prompt.ask(
+            "\n[bold yellow]Select action[/bold yellow]",
+            choices=["resume", "relaunch"],
+            default="relaunch"
+        )
+
+        # ============================================================
+        # ASK: MODIFY PARAMETERS?
+        # ============================================================
+        self.console.print("\n[bold cyan]⚙️  Parameter Modification[/bold cyan]\n")
+
+        modify_params = Confirm.ask(
+            "Do you want to modify any parameters?",
+            default=False
+        )
+
+        # Extract and potentially modify parameters
+        modified_metadata = self._modify_parameters_if_requested(metadata, modify_params)
+
+        # ============================================================
+        # EXECUTE WORKFLOW
+        # ============================================================
+        self._execute_mode2_from_metadata(modified_metadata, action_mode, selected_file)
+
+        self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
+        input()
+
+    def _execute_mode2_from_metadata(self, metadata: dict, action_mode: str, metadata_file: Path):
+        """Execute annotation → training workflow based on loaded metadata
+
+        This supports both annotation and training phases:
+        - Resume: Skip completed annotation, optionally skip completed training
+        - Relaunch: Re-run both annotation and training with same parameters
+        """
+        import json
+        from datetime import datetime
+
+        # Extract all parameters from metadata
+        data_source = metadata.get('data_source', {})
+        model_config = metadata.get('model_configuration', {})
+        prompts = metadata.get('prompts', [])
+        proc_config = metadata.get('processing_configuration', {})
+        output_config = metadata.get('output', {})
+        export_prefs = metadata.get('export_preferences', {})
+        training_workflow = metadata.get('training_workflow', {})
+
+        # Get export preferences
+        export_to_doccano = export_prefs.get('export_to_doccano', False)
+        export_to_labelstudio = export_prefs.get('export_to_labelstudio', False)
+        export_sample_size = export_prefs.get('export_sample_size', 'all')
+
+        # Prepare paths
+        data_path = Path(data_source.get('file_path', ''))
+        data_format = data_source.get('data_format', 'csv')
+        text_column = data_source.get('text_column', 'text')
+
+        # Check what phases are completed
+        annotation_complete = False
+        training_complete = False
+
+        if action_mode == 'resume':
+            # Try to find annotation output file
+            original_output = Path(output_config.get('output_path', ''))
+
+            if original_output.exists():
+                self.console.print(f"\n[green]✓ Found annotation output: {original_output.name}[/green]")
+                annotation_complete = True
+
+                # Count already annotated rows
+                import pandas as pd
+                try:
+                    if data_format == 'csv':
+                        df_output = pd.read_csv(original_output)
+                    elif data_format in ['excel', 'xlsx']:
+                        df_output = pd.read_excel(original_output)
+                    elif data_format == 'parquet':
+                        df_output = pd.read_parquet(original_output)
+
+                    # Count rows with valid annotations
+                    if 'annotation' in df_output.columns:
+                        annotated_mask = (
+                            df_output['annotation'].notna() &
+                            (df_output['annotation'].astype(str).str.strip() != '') &
+                            (df_output['annotation'].astype(str) != 'nan')
+                        )
+                        annotated_count = annotated_mask.sum()
+                        self.console.print(f"[cyan]  Rows already annotated: {annotated_count:,}[/cyan]")
+                except Exception as e:
+                    self.logger.warning(f"Could not read output file: {e}")
+                    annotation_complete = False
+
+            # Check if training was completed
+            training_params_file = training_workflow.get('training_params_file')
+            if training_params_file and Path(training_params_file).exists():
+                self.console.print(f"[green]✓ Found training parameters: {Path(training_params_file).name}[/green]")
+
+                # Check if model was saved
+                model_dir = Path(original_output).parent / f"{Path(original_output).stem}_model"
+                if model_dir.exists():
+                    self.console.print(f"[green]✓ Found trained model: {model_dir.name}[/green]")
+                    training_complete = True
+
+        # Determine what to run
+        run_annotation = not annotation_complete or action_mode == 'relaunch'
+        run_training = not training_complete or action_mode == 'relaunch'
+
+        if action_mode == 'resume' and annotation_complete and training_complete:
+            self.console.print("\n[yellow]✓ Both annotation and training are already complete![/yellow]")
+            retry_training = Confirm.ask("Re-run training with same annotations?", default=False)
+            if retry_training:
+                run_annotation = False
+                run_training = True
+            else:
+                self.console.print("[yellow]Nothing to do. Workflow is complete.[/yellow]")
+                return
+
+        # ============================================================
+        # PHASE 1: ANNOTATION (if needed)
+        # ============================================================
+        if run_annotation:
+            self.console.print("\n[bold cyan]📝 Phase 1: LLM Annotation[/bold cyan]\n")
+
+            # Use _execute_from_metadata logic for annotation
+            # (Reuse existing implementation from Mode 1)
+            annotations_dir = self.settings.paths.data_dir / 'annotations'
+            annotations_dir.mkdir(parents=True, exist_ok=True)
+            safe_model_name = model_config.get('model_name', 'unknown').replace(':', '_').replace('/', '_')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
+            output_path = annotations_dir / output_filename
+
+            # Build pipeline config (same as Mode 1)
+            provider = model_config.get('provider', 'ollama')
+            model_name = model_config.get('model_name', 'llama2')
+
+            # Get API key if needed
+            api_key = None
+            if provider in ['openai', 'anthropic', 'google']:
+                api_key = self._get_api_key(provider)
+                if not api_key:
+                    self.console.print(f"[red]API key required for {provider}[/red]")
+                    return
+
+            # Prepare prompts payload
+            prompts_payload = []
+            for p in prompts:
+                prompts_payload.append({
+                    'prompt': p.get('prompt_content', p.get('prompt', '')),
+                    'expected_keys': p.get('expected_keys', []),
+                    'prefix': p.get('prefix', '')
+                })
+
+            pipeline_config = {
+                'mode': 'file',
+                'data_source': data_format,
+                'data_format': data_format,
+                'file_path': str(data_path),
+                'text_column': text_column,
+                'text_columns': [text_column],
+                'annotation_column': 'annotation',
+                'identifier_column': 'annotation_id',
+                'run_annotation': True,
+                'annotation_mode': model_config.get('annotation_mode', 'local'),
+                'annotation_provider': provider,
+                'annotation_model': model_name,
+                'api_key': api_key,
+                'prompts': prompts_payload,
+                'annotation_sample_size': data_source.get('total_rows'),
+                'annotation_sampling_strategy': data_source.get('sampling_strategy', 'head'),
+                'max_tokens': model_config.get('max_tokens', 1000),
+                'temperature': model_config.get('temperature', 0.7),
+                'top_p': model_config.get('top_p', 1.0),
+                'max_workers': proc_config.get('parallel_workers', 1),
+                'output_format': data_format,
+                'output_path': str(output_path),
+                'save_incrementally': True,
+                'batch_size': proc_config.get('batch_size', 1),
+                'run_validation': False,
+                'run_training': False,
+            }
+
+            # Execute annotation
+            try:
+                self.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
+
+                from ..pipelines.pipeline_controller import PipelineController
+                from ..utils.rich_progress_manager import RichProgressManager
+                from ..pipelines.enhanced_pipeline_wrapper import EnhancedPipelineWrapper
+
+                pipeline_with_progress = PipelineController(settings=self.settings)
+
+                with RichProgressManager(show_json_every=1, compact_mode=False) as progress_manager:
+                    enhanced_pipeline = EnhancedPipelineWrapper(pipeline_with_progress, progress_manager)
+                    state = enhanced_pipeline.run_pipeline(pipeline_config)
+
+                    if state.errors:
+                        error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
+                        self.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
+                        return
+
+                annotation_results = state.annotation_results or {}
+                output_file = annotation_results.get('output_file', str(output_path))
+
+                self.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
+                self.console.print(f"[bold cyan]📄 Output File:[/bold cyan] {output_file}\n")
+
+            except Exception as exc:
+                self.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
+                self.logger.exception("Mode 2 annotation failed")
+                return
+
+        else:
+            # Use existing annotation file
+            output_file = str(original_output)
+            self.console.print(f"\n[yellow]⏭️  Skipping annotation (already complete)[/yellow]")
+            self.console.print(f"[cyan]Using existing file: {output_file}[/cyan]\n")
+
+        # ============================================================
+        # LANGUAGE DETECTION (if not already done)
+        # ============================================================
+        self.console.print("\n[bold cyan]🌍 Language Detection for Training[/bold cyan]")
+        self.console.print("[yellow]Checking for language column...[/yellow]\n")
+
+        try:
+            import pandas as pd
+            df_for_lang = pd.read_csv(output_file)
+
+            # Check if language detection already done
+            if 'lang' not in df_for_lang.columns:
+                self.console.print("[yellow]No language column found. Detecting languages...[/yellow]\n")
+
+                # Get annotated rows only
+                annotation_cols = [col for col in df_for_lang.columns if col in ['label', 'labels', 'category', 'annotation', 'predicted_label']]
+                if annotation_cols:
+                    annotation_col = annotation_cols[0]
+                    df_annotated = df_for_lang[df_for_lang[annotation_col].notna()].copy()
+
+                    self.console.print(f"[dim]Filtering to {len(df_annotated):,} annotated rows[/dim]")
+
+                    # Detect languages
+                    from llm_tool.utils.language_detector import LanguageDetector
+                    from tqdm import tqdm
+
+                    detector = LanguageDetector()
+                    all_texts = df_annotated[text_column].tolist()
+                    detected_languages = []
+
+                    non_empty_texts = sum(1 for t in all_texts if pd.notna(t) and str(t).strip() and len(str(t).strip()) > 10)
+                    self.console.print(f"[dim]Analyzing {non_empty_texts} texts...[/dim]")
+
+                    for text in tqdm(all_texts, desc="Detecting languages", disable=not HAS_RICH):
+                        if pd.isna(text) or not text or len(str(text).strip()) <= 10:
+                            detected_languages.append('unknown')
+                        else:
+                            try:
+                                detected = detector.detect(str(text))
+                                if detected and detected.get('language'):
+                                    detected_languages.append(detected['language'])
+                                else:
+                                    detected_languages.append('unknown')
+                            except Exception as e:
+                                self.logger.debug(f"Language detection failed for text: {e}")
+                                detected_languages.append('unknown')
+
+                    # Add language column
+                    df_annotated['lang'] = detected_languages
+
+                    # Update full file
+                    df_full = pd.read_csv(output_file)
+                    if 'lang' not in df_full.columns:
+                        df_full['lang'] = 'unknown'
+                    df_full.loc[df_annotated.index, 'lang'] = df_annotated['lang'].values
+                    df_full.to_csv(output_file, index=False)
+
+                    # Display language distribution
+                    lang_counts = df_annotated['lang'].value_counts()
+                    lang_counts_filtered = {k: v for k, v in lang_counts.items() if k != 'unknown'}
+
+                    if lang_counts_filtered:
+                        total = sum(lang_counts_filtered.values())
+                        self.console.print(f"\n[bold]🌍 Languages Detected ({total:,} texts):[/bold]")
+
+                        lang_table = Table(border_style="cyan", show_header=True, header_style="bold")
+                        lang_table.add_column("Language", style="cyan", width=12)
+                        lang_table.add_column("Count", style="yellow", justify="right", width=12)
+                        lang_table.add_column("Percentage", style="green", justify="right", width=12)
+
+                        for lang, count in sorted(lang_counts_filtered.items(), key=lambda x: x[1], reverse=True):
+                            pct = (count / total * 100)
+                            lang_table.add_row(lang.upper(), f"{count:,}", f"{pct:.1f}%")
+
+                        self.console.print(lang_table)
+                        self.console.print(f"\n[green]✓ Language column 'lang' added to output file[/green]\n")
+            else:
+                self.console.print("[green]✓ Language column already exists[/green]\n")
+
+        except Exception as e:
+            self.console.print(f"[yellow]⚠️  Language detection failed: {e}[/yellow]")
+            self.logger.exception("Language detection failed")
+
+        # ============================================================
+        # PHASE 2: TRAINING (if needed)
+        # ============================================================
+        if run_training:
+            self.console.print("\n[bold cyan]🎓 Phase 2: Model Training[/bold cyan]\n")
+
+            # Build prompt_configs for training workflow
+            prompt_configs_for_training = []
+            for p in prompts:
+                prompt_configs_for_training.append({
+                    'prompt': {
+                        'keys': p.get('expected_keys', []),
+                        'content': p.get('prompt_content', p.get('prompt', '')),
+                        'name': p.get('name', 'prompt')
+                    },
+                    'prefix': p.get('prefix', '')
+                })
+
+            # Execute training workflow
+            self._post_annotation_training_workflow(
+                output_file=output_file,
+                text_column=text_column,
+                prompt_configs=prompt_configs_for_training
+            )
+
+        else:
+            self.console.print(f"\n[yellow]⏭️  Skipping training (already complete)[/yellow]\n")
+
+        self.console.print("\n[bold green]✅ Workflow complete![/bold green]")
+
     def _post_annotation_training_workflow(
         self,
         output_file: str,
@@ -3202,7 +3848,7 @@ class AdvancedCLI:
             cat_table.add_column("Count", style="yellow", justify="right", width=12)
             cat_table.add_column("Percentage", style="green", justify="right", width=12)
 
-            total_labels = sum(label_counts.values())
+            total_labels = label_counts.sum()
             for label, count in label_counts.head(20).items():
                 percentage = (count / total_labels * 100)
                 cat_table.add_row(
@@ -3360,40 +4006,84 @@ class AdvancedCLI:
             # Step 5: Model Selection
             self.console.print("[bold cyan]Step 5: Model Selection[/bold cyan]\n")
 
-            # Get model recommendations based on languages and text length
-            recommended_models = []
+            # Handle specialized training: select model per language
+            if model_strategy == "specialized":
+                self.console.print("[yellow]Specialized Training: Select a model for EACH language[/yellow]\n")
 
-            if text_length_stats.get('user_prefers_long_models'):
-                self.console.print("[yellow]Long-document models:[/yellow]")
-                recommended_models = [
-                    "allenai/longformer-base-4096",
-                    "google/bigbird-roberta-base",
-                    "facebook/xlm-roberta-longformer-base-4096"
-                ]
+                for lang in sorted(confirmed_languages):
+                    lang_upper = lang.upper()
+                    self.console.print(f"[bold]Models for {lang_upper}:[/bold]")
+
+                    # Get language-specific recommendations
+                    if text_length_stats.get('user_prefers_long_models'):
+                        lang_recommendations = self._get_long_document_models_for_language(lang)
+                    else:
+                        from llm_tool.utils.language_normalizer import LanguageNormalizer
+                        lang_recs = LanguageNormalizer.recommend_models({lang}, self.available_trainer_models)
+                        lang_recommendations = lang_recs if lang_recs else []
+
+                    if not lang_recommendations:
+                        # Fallback to multilingual models
+                        lang_recommendations = [
+                            {'model': 'xlm-roberta-base', 'reason': 'Multilingual baseline (100+ languages)'},
+                            {'model': 'bert-base-multilingual-cased', 'reason': 'Multilingual BERT (104 languages)'},
+                        ]
+
+                    # Display recommendations
+                    for i, rec in enumerate(lang_recommendations[:5], 1):
+                        self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
+
+                    model_choice = Prompt.ask(
+                        f"\nSelect model for {lang_upper} (number or name)",
+                        default="1"
+                    )
+
+                    if model_choice.isdigit() and 0 < int(model_choice) <= len(lang_recommendations):
+                        selected = lang_recommendations[int(model_choice) - 1]['model']
+                    else:
+                        selected = model_choice
+
+                    language_model_mapping[lang] = selected
+                    self.console.print(f"[green]✓ {lang_upper}: {selected}[/green]\n")
+
+                # For training params, use first language's model as default
+                training_model = list(language_model_mapping.values())[0]
+
             else:
-                if confirmed_languages:
-                    from llm_tool.utils.language_normalizer import LanguageNormalizer
-                    recs = LanguageNormalizer.recommend_models(confirmed_languages, self.available_trainer_models)
-                    recommended_models = [r['model'] for r in recs[:5]] if recs else []
+                # Multilingual or Hybrid: single model for all languages
+                recommended_models = []
 
-                if not recommended_models:
-                    recommended_models = ["bert-base-multilingual-cased", "xlm-roberta-base", "distilbert-base-multilingual-cased"]
+                if text_length_stats.get('user_prefers_long_models'):
+                    self.console.print("[yellow]Long-document models:[/yellow]")
+                    recommended_models = [
+                        "allenai/longformer-base-4096",
+                        "google/bigbird-roberta-base",
+                        "facebook/xlm-roberta-longformer-base-4096"
+                    ]
+                else:
+                    if confirmed_languages:
+                        from llm_tool.utils.language_normalizer import LanguageNormalizer
+                        recs = LanguageNormalizer.recommend_models(confirmed_languages, self.available_trainer_models)
+                        recommended_models = [r['model'] for r in recs[:5]] if recs else []
 
-            self.console.print("[green]Recommended models:[/green]")
-            for i, model in enumerate(recommended_models[:5], 1):
-                self.console.print(f"  {i}. {model}")
+                    if not recommended_models:
+                        recommended_models = ["bert-base-multilingual-cased", "xlm-roberta-base", "distilbert-base-multilingual-cased"]
 
-            selected_model = Prompt.ask(
-                "\nSelect model (number or name)",
-                default="1"
-            )
+                self.console.print("[green]Recommended models:[/green]")
+                for i, model in enumerate(recommended_models[:5], 1):
+                    self.console.print(f"  {i}. {model}")
 
-            if selected_model.isdigit() and 0 < int(selected_model) <= len(recommended_models):
-                training_model = recommended_models[int(selected_model) - 1]
-            else:
-                training_model = selected_model
+                selected_model = Prompt.ask(
+                    "\nSelect model (number or name)",
+                    default="1"
+                )
 
-            self.console.print(f"[green]✓ Selected model: {training_model}[/green]\n")
+                if selected_model.isdigit() and 0 < int(selected_model) <= len(recommended_models):
+                    training_model = recommended_models[int(selected_model) - 1]
+                else:
+                    training_model = selected_model
+
+                self.console.print(f"[green]✓ Selected model: {training_model}[/green]\n")
 
             # Step 6: Training Configuration
             self.console.print("[bold cyan]Step 6: Training Configuration[/bold cyan]\n")
@@ -3503,8 +4193,7 @@ class AdvancedCLI:
 
                 # Call Training Studio's training method
                 try:
-                    from llm_tool.pipeline.training_pipeline import TrainingPipeline
-                    from llm_tool.trainers.dataset_builder import TrainingDatasetBuilder
+                    from llm_tool.trainers.training_data_builder import TrainingDatasetBuilder
 
                     # Prepare training dataset
                     builder = TrainingDatasetBuilder()
@@ -3818,15 +4507,70 @@ class AdvancedCLI:
 
             return max_tokens
 
-    def _prompt_file_path(self, prompt_text: str) -> str:
-        """Prompt for file path with validation and suggestions"""
+    def _prompt_file_path(self, prompt_text: str, filter_format: str = None) -> str:
+        """Prompt for file path with validation and Rich table display of detected datasets"""
         while True:
             if HAS_RICH and self.console:
-                # Show available files
-                files = list(Path.cwd().glob("*.csv")) + list(Path.cwd().glob("*.json"))
+                # Use detected datasets if available
+                if self.detected_datasets:
+                    # Filter by format if specified
+                    datasets = self.detected_datasets
+                    if filter_format:
+                        datasets = [d for d in datasets if d.format.lower() == filter_format.lower()]
+
+                    if datasets:
+                        self.console.print(f"\n[bold cyan]📊 Detected Datasets[/bold cyan]\n")
+
+                        datasets_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                        datasets_table.add_column("#", style="cyan", width=3)
+                        datasets_table.add_column("Name", style="white", width=50, no_wrap=True)
+                        datasets_table.add_column("Format", style="yellow bold", width=8, justify="center")
+                        datasets_table.add_column("Size", style="green", width=10, justify="right")
+                        datasets_table.add_column("Path", style="dim", width=45, no_wrap=True)
+
+                        for i, dataset in enumerate(datasets, 1):
+                            # Format size
+                            size_str = f"{dataset.size_mb:.1f} MB" if dataset.size_mb else "—"
+
+                            # Shorten path
+                            path_str = str(dataset.path.parent)
+                            if len(path_str) > 40:
+                                path_str = "..." + path_str[-37:]
+
+                            datasets_table.add_row(
+                                str(i),
+                                dataset.path.name,
+                                dataset.format.upper(),
+                                size_str,
+                                path_str
+                            )
+
+                        self.console.print(datasets_table)
+                        self.console.print()
+
+                        # Better instructions for user
+                        self.console.print("[dim]💡 You can either:[/dim]")
+                        self.console.print("[dim]   • Enter the [cyan]#[/cyan] number from the table above (e.g., '1', '13')[/dim]")
+                        self.console.print("[dim]   • Enter an [cyan]absolute path[/cyan] to any file (e.g., '/Users/name/data/file.csv')[/dim]\n")
+
+                        path = Prompt.ask(f"{prompt_text}")
+
+                        # Allow number selection
+                        if path.isdigit() and 1 <= int(path) <= len(datasets):
+                            return str(datasets[int(path)-1].path)
+
+                        # Allow path input
+                        if Path(path).exists():
+                            return path
+                        else:
+                            self.console.print(f"[red]File not found: {path}[/red]")
+                            continue
+
+                # Fallback: show files from current directory
+                files = list(Path.cwd().glob("*.csv")) + list(Path.cwd().glob("*.json")) + list(Path.cwd().glob("*.xlsx"))
                 if files:
-                    self.console.print("\n[dim]Available files:[/dim]")
-                    for i, f in enumerate(files[:5], 1):
+                    self.console.print("\n[dim]Available files in current directory:[/dim]")
+                    for i, f in enumerate(files[:10], 1):
                         self.console.print(f"  {i}. {f.name}")
 
                 path = Prompt.ask(f"\n{prompt_text}")
@@ -5120,638 +5864,6 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             elif choice == "4":
                 self._clean_metadata()
 
-    def annotation_wizard(self):
-        """Guided annotation wizard with step-by-step configuration"""
-        # Display ASCII logo only
-        self._display_ascii_logo()
-
-        # Display personalized mode info
-        self._display_section_header(
-            "📝 Annotation Wizard",
-            "Interactive step-by-step configuration for LLM annotation",
-            mode_info={
-                'workflow': 'Mode Selection → Data Config → Model Selection → Prompt Setup → Training Options → Execute',
-                'capabilities': ['Step-by-Step Guidance', 'Prompt Wizard', 'Training Integration', 'Multi-Prompt'],
-                'input': 'Any text data (CSV/JSON/Excel/Parquet)',
-                'output': 'Annotated data + Optional trained models',
-                'best_for': 'Users who want detailed control over each configuration step',
-                'duration': '~5-20 min setup + annotation time'
-            }
-        )
-
-        if HAS_RICH and self.console:
-            # Step 1: Choose annotation mode
-            self.console.print("\n[bold]Step 1: Annotation Mode[/bold]")
-            mode = Prompt.ask(
-                "Select mode",
-                choices=["local", "api", "hybrid", "back"],
-                default="local"
-            )
-
-            if mode == "back":
-                return
-
-            # Step 2: Model selection based on mode
-            self.console.print("\n[bold]Step 2: LLM Selection[/bold]")
-
-            if mode == "local":
-                local_llms = self.detected_llms.get('local', [])
-                if not local_llms:
-                    self.console.print("[red]No local LLMs found![/red]")
-                    self.console.print("[yellow]Run: ollama pull llama3.2[/yellow]")
-                    return
-
-                # Display LLMs in a nice table
-                llm_table = Table(title="Available Local LLMs", border_style="blue")
-                llm_table.add_column("#", style="cyan", width=3)
-                llm_table.add_column("Model", style="white")
-                llm_table.add_column("Size", style="yellow")
-                llm_table.add_column("Context", style="green")
-
-                for i, llm in enumerate(local_llms, 1):
-                    llm_table.add_row(
-                        str(i),
-                        llm.name,
-                        llm.size or "N/A",
-                        f"{llm.context_length:,}" if llm.context_length else "N/A"
-                    )
-
-                self.console.print(llm_table)
-                choice = self._int_prompt_with_validation("Select LLM", default=1, min_value=1, max_value=len(local_llms))
-                selected_llm = local_llms[choice-1]
-                api_key = None
-
-            else:  # API mode
-                provider = Prompt.ask(
-                    "Provider",
-                    choices=["openai", "anthropic", "google", "back"],
-                    default="openai"
-                )
-
-                if provider == "back":
-                    return
-
-                # Show available API models
-                api_models = self.detected_llms.get(provider, [])
-                for i, model in enumerate(api_models[:5], 1):
-                    cost = f"${model.cost_per_1k_tokens}/1K" if model.cost_per_1k_tokens else "N/A"
-                    self.console.print(f"  {i}. {model.name} ({cost})")
-
-                model_choice = self._int_prompt_with_validation("Select model", default=1, min_value=1, max_value=len(api_models))
-                selected_llm = api_models[model_choice-1]
-
-                # Get API key with secure storage
-                api_key = self._get_or_prompt_api_key(provider, selected_llm.name)
-
-            max_tokens = self._prompt_max_tokens(selected_llm)
-
-            # Step 3: Data configuration
-            self.console.print("\n[bold]Step 3: Data Configuration[/bold]")
-
-            # Show detected datasets or ask for path
-            if self.detected_datasets:
-                use_detected = Confirm.ask(
-                    f"Use detected dataset? ({len(self.detected_datasets)} found)",
-                    default=True
-                )
-                if use_detected:
-                    for i, ds in enumerate(self.detected_datasets[:5], 1):
-                        self.console.print(f"  {i}. {ds.path.name} ({ds.format}, {ds.size_mb:.1f} MB)")
-
-                    ds_choice = IntPrompt.ask("Select dataset", default=1)
-                    dataset = self.detected_datasets[ds_choice-1]
-                    data_path = str(dataset.path)
-                    text_column = self.data_detector.suggest_text_column(dataset) or "text"
-                else:
-                    data_path = self._prompt_file_path("Data file path")
-                    text_column = Prompt.ask("Text column", default="text")
-            else:
-                data_path = self._prompt_file_path("Data file path")
-                text_column = Prompt.ask("Text column", default="text")
-
-            # Step 4: Prompt engineering
-            self.console.print("\n[bold]Step 4: Prompt Engineering[/bold]")
-            self.console.print("[dim]• simple: Single prompt for all texts[/dim]")
-            self.console.print("[dim]• multi: Multiple prompts applied to each text[/dim]")
-            self.console.print("[dim]• template: Pre-configured prompt templates [yellow](Under development - not available)[/yellow][/dim]")
-
-            prompt_mode = Prompt.ask(
-                "Prompt strategy",
-                choices=["simple", "multi", "back"],
-                default="simple"
-            )
-
-            if prompt_mode == "back":
-                return
-
-            if prompt_mode == "simple":
-                prompt_text = self._get_custom_prompt()
-            else:  # multi
-                prompt_text = self._get_multi_prompts()
-
-            # Step 5: Advanced options
-            self.console.print("\n[bold]Step 5: Advanced Options[/bold]")
-
-            batch_size = self._int_prompt_with_validation("Batch size", default=10, min_value=1, max_value=100)
-            max_workers = self._int_prompt_with_validation("Parallel workers", default=4, min_value=1, max_value=16)
-            save_incrementally = Confirm.ask("Save incrementally?", default=True)
-
-            # Step 5.5: Training strategy
-            self.console.print("\n[bold]Training Strategy (Optional):[/bold]")
-            if Confirm.ask("Prepare data for model training after annotation?", default=True):
-                self._display_training_strategy_explanation(prompt_text)
-
-                training_strategy = Prompt.ask(
-                    "Training strategy",
-                    choices=["single-label", "multi-label"],
-                    default="multi-label"
-                )
-
-                # Ask which keys/values to train
-                training_annotation_keys = None
-                schema = self._extract_annotation_schema(prompt_text)
-
-                if training_strategy == "single-label":
-                    # Show all possible values from schema
-                    self.console.print("\n[dim]Detected annotation schema from prompt:[/dim]")
-                    for key, values in schema.items():
-                        if values:
-                            self.console.print(f"  • [cyan]{key}[/cyan]: {', '.join(values[:5])}")
-                        else:
-                            self.console.print(f"  • [cyan]{key}[/cyan]: [yellow]values will be detected from annotations[/yellow]")
-
-                    if Confirm.ask("\nCreate binary models for ALL values from ALL keys?", default=True):
-                        training_annotation_keys = None
-                    else:
-                        keys_input = Prompt.ask("Enter annotation keys to use (comma-separated)")
-                        training_annotation_keys = [k.strip() for k in keys_input.split(',') if k.strip()]
-                else:
-                    # multi-label: show all keys
-                    self.console.print("\n[dim]Detected annotation keys from prompt:[/dim]")
-                    for key in schema.keys():
-                        self.console.print(f"  • [cyan]{key}[/cyan]")
-
-                    if Confirm.ask("\nCreate multi-class models for ALL keys?", default=True):
-                        training_annotation_keys = None
-                    else:
-                        keys_input = Prompt.ask("Enter annotation keys to use (comma-separated)")
-                        training_annotation_keys = [k.strip() for k in keys_input.split(',') if k.strip()]
-
-                # Label creation strategy
-                self.console.print("\n[bold]Label Creation Strategy:[/bold]")
-                self.console.print("• [cyan]key_value[/cyan]: Labels include key name (e.g., 'sentiment_positive')")
-                self.console.print("• [cyan]value_only[/cyan]: Labels are just values (e.g., 'positive')")
-
-                label_strategy = Prompt.ask(
-                    "Label strategy",
-                    choices=["key_value", "value_only"],
-                    default="key_value"
-                )
-            else:
-                training_strategy = None
-                training_annotation_keys = None
-                label_strategy = None
-
-            # Step 6: Execute
-            self.console.print("\n[bold]Ready to annotate![/bold]")
-
-            config = {
-                'mode': mode,
-                'provider': selected_llm.provider,
-                'model': selected_llm.name,
-                'api_key': api_key,
-                'max_tokens': max_tokens,
-                'data_path': data_path,
-                'text_column': text_column,
-                'prompt': prompt_text,
-                'batch_size': batch_size,
-                'max_workers': max_workers,
-                'save_incrementally': save_incrementally,
-                'training_strategy': training_strategy,
-                'label_strategy': label_strategy,
-                'training_annotation_keys': training_annotation_keys
-            }
-
-            self._display_configuration_summary(config)
-
-            if Confirm.ask("\n[bold yellow]Start annotation?[/bold yellow]", default=True):
-                with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TaskProgressColumn(),
-                    console=self.console
-                ) as progress:
-
-                    task = progress.add_task("[cyan]Annotating...", total=100)
-
-                    # Here would call actual annotation
-                    from ..annotators.llm_annotator import LLMAnnotator
-                    annotator = LLMAnnotator()
-
-                    # Simulate for now
-                    for i in range(100):
-                        time.sleep(0.01)
-                        progress.update(task, advance=1)
-
-                    self.console.print("\n[bold green]✅ Annotation complete![/bold green]")
-                    self.console.print("📁 Results saved to: annotations_output.json")
-
-        else:
-            print("\n=== Annotation Wizard ===")
-            print("Guided LLM annotation setup\n")
-            # Simplified version
-            print("Feature coming soon with full implementation")
-
-    def complete_pipeline(self):
-        """Complete pipeline workflow - Full annotation to deployment"""
-        # Display ASCII logo only
-        self._display_ascii_logo()
-
-        # Display personalized mode info
-        self._display_section_header(
-            "🚀 Complete Pipeline",
-            "End-to-end automated workflow from raw data to deployed model",
-            mode_info={
-                'workflow': 'Data → Annotate → Validate → Train → Benchmark → Deploy → Export',
-                'capabilities': ['Full Automation', 'Quality Control', 'Model Selection', 'Doccano Export'],
-                'input': 'Raw text data (any format)',
-                'output': 'Annotated + Validated + Trained models + Deployment-ready files',
-                'best_for': 'Complete research projects requiring annotation, training, and validation',
-                'duration': '~15-60 min (full pipeline with all steps)'
-            }
-        )
-
-        if HAS_RICH and self.console:
-            # Step 1: Data Selection
-            self.console.print("\n[bold yellow]Step 1: Data Selection[/bold yellow]")
-
-            # Auto-detect or ask for dataset
-            if self.detected_datasets:
-                self.console.print("\n[dim]Available datasets detected:[/dim]")
-                for i, dataset in enumerate(self.detected_datasets[:10], 1):
-                    self.console.print(f"  {i}. {dataset.path.name} ({dataset.format.upper()}, {dataset.size_mb:.1f} MB)")
-
-                choice = Prompt.ask("Select dataset (number) or enter path", default="1")
-                if choice.isdigit() and int(choice) <= len(self.detected_datasets):
-                    selected_dataset = self.detected_datasets[int(choice)-1]
-                    data_path = str(selected_dataset.path)
-                    text_column = self.data_detector.suggest_text_column(selected_dataset) or "text"
-                else:
-                    data_path = choice
-                    text_column = Prompt.ask("Text column name", default="text")
-            else:
-                data_path = self._prompt_file_path("Enter dataset path")
-                text_column = Prompt.ask("Text column name", default="text")
-
-            # Step 2: LLM Selection for Annotation
-            self.console.print("\n[bold yellow]Step 2: LLM Selection for Annotation[/bold yellow]")
-
-            # Show available LLMs
-            local_llms = self.detected_llms.get('local', [])
-            if local_llms:
-                self.console.print("\n[green]Local LLMs available:[/green]")
-                for i, llm in enumerate(local_llms[:10], 1):
-                    self.console.print(f"  {i}. {llm.name} ({llm.size or 'N/A'})")
-
-                llm_choice = self._int_prompt_with_validation("Select LLM for annotation", default=1, min_value=1, max_value=len(local_llms))
-                selected_llm = local_llms[llm_choice-1]
-            else:
-                self.console.print("[yellow]No local LLMs detected. Using API model.[/yellow]")
-                provider = Prompt.ask("API Provider", choices=["openai", "anthropic", "back"], default="openai")
-                if provider == "back":
-                    return
-                model_name = Prompt.ask("Model name", default="gpt-4-turbo")
-                selected_llm = ModelInfo(name=model_name, provider=provider, requires_api_key=True)
-
-                # Get API key with secure storage
-                api_key = self._get_or_prompt_api_key(provider, model_name)
-
-            # Step 3: Prompt Configuration
-            self.console.print("\n[bold yellow]Step 3: Prompt Configuration[/bold yellow]")
-            prompt_text = self._get_custom_prompt()
-
-            # Step 4: Training Model Selection
-            self.console.print("\n[bold yellow]Step 4: Training Configuration[/bold yellow]")
-
-            benchmark_mode = Confirm.ask("Benchmark multiple models?", default=True)
-
-            if benchmark_mode:
-                num_models = self._int_prompt_with_validation("Number of models to benchmark", default=5, min_value=2, max_value=20)
-                self.console.print("[dim]Will test: BERT, RoBERTa, DeBERTa, ELECTRA, ALBERT...[/dim]")
-            else:
-                # Show available training models
-                self.console.print("\n[dim]Select model category:[/dim]")
-                categories = list(self.available_trainer_models.keys())
-                for i, cat in enumerate(categories, 1):
-                    self.console.print(f"  {i}. {cat}")
-
-                cat_choice = self._int_prompt_with_validation("Category", default=1, min_value=1, max_value=len(categories))
-                selected_category = categories[cat_choice-1]
-                models_in_cat = self.available_trainer_models[selected_category]
-
-                self.console.print(f"\n[dim]Models in {selected_category}:[/dim]")
-                for i, model in enumerate(models_in_cat[:10], 1):
-                    self.console.print(f"  {i}. {model['name']} ({model.get('params', 'N/A')})")
-
-            # Step 4.5: Training Data Preparation Strategy
-            self.console.print("\n[bold yellow]Step 4.5: Training Data Preparation[/bold yellow]")
-            self._display_training_strategy_explanation(prompt_text)
-
-            training_strategy = Prompt.ask(
-                "Training strategy",
-                choices=["single-label", "multi-label", "back"],
-                default="multi-label"
-            )
-
-            if training_strategy == "back":
-                return
-
-            # Ask which keys/values to train
-            training_annotation_keys = None
-            schema = self._extract_annotation_schema(prompt_text)
-
-            if training_strategy == "single-label":
-                # Show all possible values from schema
-                self.console.print("\n[dim]Detected annotation schema from prompt:[/dim]")
-                for key, values in schema.items():
-                    if values:
-                        self.console.print(f"  • [cyan]{key}[/cyan]: {', '.join(values[:5])}")
-                    else:
-                        self.console.print(f"  • [cyan]{key}[/cyan]: [yellow]values will be detected from annotations[/yellow]")
-
-                if Confirm.ask("\nCreate binary models for ALL values from ALL keys?", default=True):
-                    training_annotation_keys = None
-                else:
-                    keys_input = Prompt.ask("Enter annotation keys to use (comma-separated)")
-                    training_annotation_keys = [k.strip() for k in keys_input.split(',') if k.strip()]
-            else:
-                # multi-label: show all keys
-                self.console.print("\n[dim]Detected annotation keys from prompt:[/dim]")
-                for key in schema.keys():
-                    self.console.print(f"  • [cyan]{key}[/cyan]")
-
-                if Confirm.ask("\nCreate multi-class models for ALL keys?", default=True):
-                    training_annotation_keys = None
-                else:
-                    keys_input = Prompt.ask("Enter annotation keys to use (comma-separated)")
-                    training_annotation_keys = [k.strip() for k in keys_input.split(',') if k.strip()]
-
-            # Label creation strategy
-            self.console.print("\n[bold]Label Creation Strategy:[/bold]")
-            self.console.print("• [cyan]key_value[/cyan]: Labels include key name (e.g., 'sentiment_positive')")
-            self.console.print("• [cyan]value_only[/cyan]: Labels are just values (e.g., 'positive')")
-
-            label_strategy = Prompt.ask(
-                "Label strategy",
-                choices=["key_value", "value_only"],
-                default="key_value"
-            )
-
-            # Step 5: Configuration Summary
-            self.console.print("\n[bold yellow]Pipeline Configuration Summary:[/bold yellow]")
-
-            config_table = Table(border_style="green", show_lines=True)
-            config_table.add_column("Setting", style="cyan")
-            config_table.add_column("Value", style="white")
-
-            config_table.add_row("Dataset", data_path)
-            config_table.add_row("Text Column", text_column)
-            config_table.add_row("Annotation LLM", f"{selected_llm.provider}/{selected_llm.name}")
-            config_table.add_row("Training Mode", "Benchmark" if benchmark_mode else "Single Model")
-            config_table.add_row("Validation", "Enabled with Doccano export")
-
-            self.console.print(config_table)
-
-            # Step 6: Execution
-            if Confirm.ask("\n[bold yellow]Start pipeline execution?[/bold yellow]", default=True):
-
-                # Prepare configuration
-                pipeline_config = {
-                    'mode': 'file',
-                    'data_source': 'file',
-                    'file_path': data_path,
-                    'text_column': text_column,
-
-                    # Annotation config
-                    'run_annotation': True,
-                    'annotation_mode': 'local' if selected_llm.provider == 'ollama' else 'api',
-                    'annotation_provider': selected_llm.provider,
-                    'annotation_model': selected_llm.name,
-                    'api_key': api_key if selected_llm.requires_api_key else None,
-                    'prompt_text': prompt_text,
-
-                    # Validation config
-                    'run_validation': True,
-                    'validation_sample_size': 100,
-                    'export_to_doccano': True,
-
-                    # Training config
-                    'run_training': True,
-                    'benchmark_mode': benchmark_mode,
-                    'models_to_test': num_models if benchmark_mode else 1,
-                    'max_epochs': 10,
-                    'batch_size': 16,
-                    'training_strategy': training_strategy,
-                    'label_strategy': label_strategy,
-                    'training_annotation_keys': training_annotation_keys,
-
-                    # Deployment config
-                    'run_deployment': True,
-                    'save_model': True
-                }
-
-                # Execute with progress tracking
-                with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TaskProgressColumn(),
-                    console=self.console
-                ) as progress:
-
-                    # Initialize pipeline
-                    from ..pipelines.pipeline_controller import PipelineController
-                    controller = PipelineController()
-
-                    try:
-                        # Annotation phase
-                        task1 = progress.add_task("[cyan]Annotating with LLM...", total=100)
-                        progress.update(task1, advance=50)
-
-                        # Run pipeline
-                        state = controller.run_pipeline(pipeline_config)
-                        progress.update(task1, completed=100)
-
-                        # Show results
-                        self.console.print("\n[bold green]✅ Pipeline completed successfully![/bold green]")
-
-                        if state.annotation_results:
-                            self.console.print(f"📝 Annotations: {state.annotation_results.get('total_annotated', 0)} items")
-
-                        if state.validation_results:
-                            self.console.print(f"✓ Validation: Quality score {state.validation_results.get('quality_score', 0):.1f}/100")
-                            self.console.print(f"📁 Doccano export: {state.validation_results.get('doccano_export_path', 'N/A')}")
-
-                        if state.training_results:
-                            self.console.print(f"🏆 Best model: {state.training_results.get('best_model', 'unknown')}")
-                            self.console.print(f"📊 Best F1: {state.training_results.get('best_f1_macro', 0):.4f}")
-
-                        # Save configuration as profile
-                        if Confirm.ask("\nSave this configuration for future use?", default=True):
-                            profile_name = Prompt.ask("Profile name", default="complete_pipeline")
-                            self._save_profile(profile_name, pipeline_config)
-
-                    except Exception as e:
-                        self.console.print(f"\n[bold red]❌ Pipeline failed: {str(e)}[/bold red]")
-                        raise
-
-        else:
-            # Non-Rich fallback
-            print("\n=== Complete Pipeline ===")
-            print("Full workflow: Annotation → Training → Validation → Deployment\n")
-
-            # Simplified version
-            data_path = input("Dataset path: ").strip()
-            text_column = input("Text column (default: text): ").strip() or "text"
-
-            # Ask for LLM configuration
-            print("\n--- Annotation Configuration ---")
-            print("Select annotation method:")
-            print("1. Local LLM (Ollama)")
-            print("2. OpenAI API")
-            print("3. Anthropic API")
-            choice = input("Choice (1-3): ").strip()
-
-            if choice == "1":
-                # Check for Ollama models
-                local_llms = self.detected_llms.get('local', [])
-                if local_llms:
-                    print("\nLocal LLMs detected:")
-                    for i, llm in enumerate(local_llms[:10], 1):
-                        print(f"  {i}. {llm.name}")
-                    llm_choice = input("Select LLM (number): ").strip()
-                    if llm_choice.isdigit() and int(llm_choice) <= len(local_llms):
-                        selected_llm = local_llms[int(llm_choice)-1]
-                    else:
-                        selected_llm = local_llms[0] if local_llms else None
-                    provider = 'ollama'
-                    api_key = None
-                else:
-                    print("No local LLMs found. Install Ollama or use API provider.")
-                    return
-            elif choice == "2":
-                provider = 'openai'
-                api_key = input("OpenAI API Key: ").strip()
-                model_name = input("Model name (default: gpt-4): ").strip() or "gpt-4"
-                selected_llm = ModelInfo(name=model_name, provider=provider, requires_api_key=True)
-            elif choice == "3":
-                provider = 'anthropic'
-                api_key = input("Anthropic API Key: ").strip()
-                model_name = input("Model name (default: claude-3-opus-20240229): ").strip() or "claude-3-opus-20240229"
-                selected_llm = ModelInfo(name=model_name, provider=provider, requires_api_key=True)
-            else:
-                print("Invalid choice")
-                return
-
-            # Ask for prompt
-            print("\n--- Prompt Configuration ---")
-            print("Enter your classification prompt (or press Enter for default):")
-            prompt_text = input("Prompt: ").strip()
-            if not prompt_text:
-                prompt_text = "Classify the following text into one of these categories: positive, negative, neutral. Text: {text}. Return only the label."
-
-            # Training configuration
-            print("\n--- Training Configuration ---")
-            benchmark = input("Benchmark multiple models? (y/n, default: y): ").strip().lower()
-            benchmark_mode = benchmark != 'n'
-
-            if benchmark_mode:
-                num_models = input("Number of models to test (default: 5): ").strip()
-                num_models = int(num_models) if num_models.isdigit() else 5
-            else:
-                num_models = 1
-
-            # Execute pipeline
-            print("\n" + "="*50)
-            print("STARTING PIPELINE EXECUTION")
-            print("="*50)
-
-            # Prepare configuration
-            pipeline_config = {
-                'mode': 'file',
-                'data_source': 'file',
-                'file_path': data_path,
-                'text_column': text_column,
-
-                # Annotation config
-                'run_annotation': True,
-                'annotation_mode': 'local' if provider == 'ollama' else 'api',
-                'annotation_provider': provider,
-                'annotation_model': selected_llm.name if selected_llm else 'gpt-4',
-                'api_key': api_key,
-                'prompt_text': prompt_text,
-
-                # Validation config
-                'run_validation': True,
-                'validation_sample_size': 100,
-                'export_to_doccano': True,
-
-                # Training config
-                'run_training': True,
-                'benchmark_mode': benchmark_mode,
-                'models_to_test': num_models,
-                'max_epochs': 10,
-                'batch_size': 16,
-
-                # Deployment config
-                'run_deployment': True,
-                'save_model': True
-            }
-
-            # Initialize and run pipeline
-            from ..pipelines.pipeline_controller import PipelineController
-            controller = PipelineController()
-
-            try:
-                print("\n[Phase 1/4] Starting annotation...")
-                state = controller.run_pipeline(pipeline_config)
-
-                # Show results
-                print("\n" + "="*50)
-                print("PIPELINE COMPLETED SUCCESSFULLY")
-                print("="*50)
-
-                if state.annotation_results:
-                    print(f"✓ Annotations: {state.annotation_results.get('total_annotated', 0)} items processed")
-
-                if state.validation_results:
-                    print(f"✓ Validation: Quality score {state.validation_results.get('quality_score', 0):.1f}/100")
-                    print(f"✓ Doccano export: {state.validation_results.get('doccano_export_path', 'N/A')}")
-
-                if state.training_results:
-                    print(f"✓ Best model: {state.training_results.get('best_model', 'unknown')}")
-                    print(f"✓ Best F1 score: {state.training_results.get('best_f1_macro', 0):.4f}")
-                    print(f"✓ Model saved to: {state.training_results.get('model_save_path', 'N/A')}")
-
-                # Ask to save config
-                save = input("\nSave this configuration for future use? (y/n): ").strip().lower()
-                if save == 'y':
-                    profile_name = input("Profile name: ").strip() or "complete_pipeline"
-                    self._save_profile(profile_name, pipeline_config)
-                    print(f"Configuration saved as '{profile_name}'")
-
-            except Exception as e:
-                print(f"\n❌ Pipeline failed: {str(e)}")
-                print("\nDebug information:")
-                print(f"  - Data path: {data_path}")
-                print(f"  - Text column: {text_column}")
-                print(f"  - Provider: {provider}")
-                print(f"  - Model: {selected_llm.name if selected_llm else 'None'}")
-                import traceback
-                print("\nFull error trace:")
-                traceback.print_exc()
-
     def training_studio(self):
         """Training studio bringing dataset builders and trainers together."""
         # Display ASCII logo only
@@ -5763,7 +5875,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             "Professional model training with intelligent dataset preparation",
             mode_info={
                 'workflow': 'Load Data → Auto-Detect Columns → Detect Languages → Recommend Models → Train → Benchmark',
-                'capabilities': ['Multi-format Support', 'Language Detection', 'Model Recommendations', '50+ BERT Models'],
+                'capabilities': ['Multi-format Support', 'Language Detection', 'Model Recommendations', '70+ BERT/Longformer Models'],
                 'input': 'Annotated CSV/JSON/JSONL or Category labels',
                 'output': 'Trained BERT models + Performance metrics + Best model selection',
                 'best_for': 'Training custom models on annotated data with optimal model selection',
@@ -5776,19 +5888,79 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return
 
         self._ensure_training_models_loaded()
+
+        # NEW: Add resume/new menu BEFORE starting wizard
+        self.console.print("\n[bold cyan]🎯 Training Session Options[/bold cyan]\n")
+
+        session_options_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+        session_options_table.add_column("Option", style="cyan bold", width=10)
+        session_options_table.add_column("Description", style="white", width=70)
+
+        session_options_table.add_row(
+            "1",
+            "🔄 Resume/Relaunch Training\n   Load saved parameters from previous training sessions"
+        )
+        session_options_table.add_row(
+            "2",
+            "🆕 New Training Session\n   Start fresh with dataset selection and configuration"
+        )
+        session_options_table.add_row(
+            "3",
+            "← Back to Main Menu"
+        )
+
+        self.console.print(session_options_table)
+        self.console.print()
+
+        session_choice = Prompt.ask(
+            "[bold yellow]Select an option[/bold yellow]",
+            choices=["1", "2", "3"],
+            default="2"
+        )
+
+        if session_choice == "1":
+            # Resume/Relaunch existing session
+            self._resume_training_studio()
+            return
+        elif session_choice == "3":
+            # Back to main menu
+            return
+
+        # Continue with NEW training session
         builder = TrainingDatasetBuilder(self.settings.paths.data_dir / "training_data")
 
         self._training_studio_show_model_catalog()
 
-        mode = Prompt.ask(
-            "Training mode",
-            choices=["quick", "benchmark", "custom", "distributed", "back"],
-            default="quick",
+        # Display training mode options with Rich
+        self.console.print("\n[bold cyan]🎯 Training Mode Selection[/bold cyan]\n")
+
+        modes_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+        modes_table.add_column("Mode", style="cyan bold", width=15)
+        modes_table.add_column("Description", style="white", width=60)
+        modes_table.add_column("Duration", style="yellow", width=20)
+
+        modes_table.add_row(
+            "quick",
+            "Fast training with default settings (2 epochs)\n✓ Best for quick prototyping and testing",
+            "~5-10 minutes"
+        )
+        modes_table.add_row(
+            "benchmark",
+            "Compare multiple models to find the best one\n✓ Tests 5+ models and selects the best performer",
+            "~1-3 hours"
+        )
+        modes_table.add_row(
+            "custom",
+            "Full control over all training parameters\n✓ Configure epochs, batch size, learning rate, etc.",
+            "Varies"
+        )
+        modes_table.add_row(
+            "distributed",
+            "Multi-label parallel training (one model per label)\n✓ For datasets with multiple labels/categories",
+            "~30-60 minutes"
         )
 
-        if mode == "back":
-            return
-
+        # First, configure the dataset
         try:
             bundle = self._training_studio_dataset_wizard(builder)
         except Exception as exc:  # pylint: disable=broad-except
@@ -5800,20 +5972,219 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("[yellow]Training cancelled.[/yellow]")
             return
 
+        # Show dataset summary
         self._training_studio_render_bundle_summary(bundle)
 
-        if mode == "distributed":
-            self._training_studio_run_distributed(bundle)
-        elif mode == "quick":
-            self._training_studio_run_quick(bundle)
-        elif mode == "benchmark":
-            self._training_studio_run_benchmark(bundle)
-        else:
-            self._training_studio_run_custom(bundle)
+        # Now ask for training mode
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           📚 Training Mode Selection                          [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        self.console.print(modes_table)
+        self.console.print()
+
+        mode = Prompt.ask(
+            "[bold yellow]Select training mode[/bold yellow]",
+            choices=["quick", "benchmark", "custom", "distributed", "back"],
+            default="quick",
+        )
+
+        if mode == "back":
+            return
+
+        # Show training mode confirmation and parameters
+        self._training_studio_confirm_and_execute(bundle, mode)
 
     # ------------------------------------------------------------------
     # Training Studio helpers
     # ------------------------------------------------------------------
+    def _training_studio_confirm_and_execute(
+        self,
+        bundle: TrainingDataBundle,
+        mode: str,
+        preloaded_config: Optional[Dict[str, Any]] = None,
+        is_resume: bool = False
+    ) -> None:
+        """
+        Display training parameters and ask for confirmation before execution.
+        This ensures the user reviews all settings before starting training.
+
+        Parameters
+        ----------
+        bundle : TrainingDataBundle
+            The training data bundle
+        mode : str
+            Training mode (quick, benchmark, custom, distributed)
+        preloaded_config : dict, optional
+            Pre-loaded configuration from saved session (for resume/relaunch)
+        is_resume : bool
+            Whether this is a resume (True) or fresh start (False)
+        """
+        from datetime import datetime
+
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           ✅ Training Configuration Summary                     [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        # Create configuration table
+        config_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+        config_table.add_column("Parameter", style="cyan bold", width=25)
+        config_table.add_column("Value", style="white", width=60)
+
+        # Dataset information
+        config_table.add_row("📊 Dataset", str(bundle.primary_file.name) if bundle.primary_file else "—")
+        config_table.add_row("📝 Format", bundle.strategy)
+        config_table.add_row("📖 Text Column", bundle.text_column)
+        config_table.add_row("🏷️  Label Column", bundle.label_column)
+
+        if bundle.metadata.get('confirmed_languages'):
+            langs = ', '.join([l.upper() for l in bundle.metadata['confirmed_languages']])
+            config_table.add_row("🌍 Languages", langs)
+
+        # Model information
+        if hasattr(bundle, 'recommended_model') and bundle.recommended_model:
+            config_table.add_row("🤖 Recommended Model", bundle.recommended_model)
+
+        # Training mode
+        mode_descriptions = {
+            "quick": "⚡ Quick Start - Fast training with defaults",
+            "benchmark": "📊 Benchmark - Test multiple models",
+            "custom": "⚙️  Custom - Full parameter control",
+            "distributed": "🔄 Distributed - Parallel multi-label"
+        }
+        config_table.add_row("🎯 Training Mode", mode_descriptions.get(mode, mode))
+
+        # Mode-specific parameters
+        if mode == "quick":
+            config_table.add_row("⏱️  Epochs", "Will be asked (default: 10)")
+            config_table.add_row("📦 Batch Size", "16 (default)")
+        elif mode == "benchmark":
+            config_table.add_row("🔬 Models to Test", "5-7 (intelligent selection)")
+            config_table.add_row("⏱️  Epochs per Model", "Will be asked (default: 10)")
+        elif mode == "distributed":
+            num_labels = len(bundle.metadata.get('categories', []))
+            config_table.add_row("🔢 Models to Train", f"{num_labels} (one per label)")
+
+        # Statistics
+        if bundle.metadata.get('text_length_stats'):
+            stats = bundle.metadata['text_length_stats']
+            avg_len = stats.get('avg_chars', stats.get('avg_length', 0))
+            config_table.add_row("📏 Avg Text Length", f"{avg_len:.0f} characters")
+
+        self.console.print(config_table)
+        self.console.print()
+
+        # NEW: Ask to save metadata (unless resuming)
+        save_metadata = False
+        metadata_path = None
+
+        if not is_resume:
+            self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
+            self.console.print("  [green]1. Resume Capability[/green]")
+            self.console.print("     • Save parameters to resume later if interrupted")
+            self.console.print("     • Access via 'Resume/Relaunch Training' option\n")
+
+            self.console.print("  [green]2. Scientific Reproducibility[/green]")
+            self.console.print("     • Document exact training configuration")
+            self.console.print("     • Track model, dataset, and hyperparameters")
+            self.console.print("     • Share configurations with collaborators\n")
+
+            self.console.print("  [red]⚠️  If you choose NO:[/red]")
+            self.console.print("     • You CANNOT resume this training later")
+            self.console.print("     • Parameters will not be saved for future reference\n")
+
+            save_metadata = Confirm.ask(
+                "[bold yellow]Save training parameters to JSON?[/bold yellow]",
+                default=True
+            )
+
+        # Ask for confirmation
+        confirm = Confirm.ask(
+            "\n[bold yellow]🚀 Start training with these parameters?[/bold yellow]",
+            default=True
+        )
+
+        if not confirm:
+            self.console.print("[yellow]Training cancelled by user.[/yellow]")
+            return
+
+        # Prepare model configuration for metadata
+        model_config = {
+            'training_mode': mode,
+            'selected_model': preloaded_config.get('selected_model') if preloaded_config else None,
+            'epochs': preloaded_config.get('epochs') if preloaded_config else None,
+            'batch_size': preloaded_config.get('batch_size') if preloaded_config else 16,
+            'learning_rate': preloaded_config.get('learning_rate') if preloaded_config else 2e-5,
+            'early_stopping': True,
+            'recommended_model': bundle.recommended_model if hasattr(bundle, 'recommended_model') else None
+        }
+
+        # Save PRE-TRAINING metadata
+        if save_metadata:
+            try:
+                metadata_path = self._save_training_metadata(
+                    bundle=bundle,
+                    mode=mode,
+                    model_config=model_config,
+                    execution_status={
+                        'status': 'pending',
+                        'started_at': datetime.now().isoformat(),
+                        'completed_at': None,
+                        'models_trained': [],
+                        'best_model': None,
+                        'best_f1': None
+                    }
+                )
+                self.console.print(f"\n[green]✅ Metadata saved for reproducibility[/green]")
+                self.console.print(f"[cyan]📋 Metadata File:[/cyan]")
+                self.console.print(f"   {metadata_path}\n")
+            except Exception as e:
+                self.logger.error(f"Failed to save metadata: {e}")
+                self.console.print(f"[yellow]⚠️  Failed to save metadata: {e}[/yellow]\n")
+
+        # Execute the selected training mode
+        self.console.print("\n[green]✓ Starting training...[/green]\n")
+
+        training_result = None
+        try:
+            if mode == "distributed":
+                training_result = self._training_studio_run_distributed(bundle)
+            elif mode == "quick":
+                training_result = self._training_studio_run_quick(bundle)
+            elif mode == "benchmark":
+                training_result = self._training_studio_run_benchmark(bundle)
+            else:
+                training_result = self._training_studio_run_custom(bundle)
+
+            # Update POST-TRAINING metadata
+            if save_metadata and metadata_path:
+                try:
+                    execution_status = {
+                        'status': 'completed',
+                        'completed_at': datetime.now().isoformat(),
+                        'models_trained': training_result.get('models_trained', []) if training_result else [],
+                        'best_model': training_result.get('best_model') if training_result else None,
+                        'best_f1': training_result.get('best_f1') if training_result else None
+                    }
+                    self._update_training_metadata(metadata_path, execution_status=execution_status)
+                    self.console.print(f"\n[green]✅ Training metadata updated with results[/green]\n")
+                except Exception as e:
+                    self.logger.error(f"Failed to update metadata: {e}")
+
+        except Exception as e:
+            # Update metadata with failure status
+            if save_metadata and metadata_path:
+                try:
+                    execution_status = {
+                        'status': 'failed',
+                        'completed_at': datetime.now().isoformat(),
+                        'error_message': str(e)
+                    }
+                    self._update_training_metadata(metadata_path, execution_status=execution_status)
+                except:
+                    pass
+            raise  # Re-raise the exception
+
     def _ensure_training_models_loaded(self) -> None:
         if self.available_trainer_models:
             return
@@ -5828,15 +6199,47 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         if not self.available_trainer_models:
             return
 
-        table = Table(title="Available Model Categories", border_style="blue")
-        table.add_column("Category", style="cyan")
-        table.add_column("Models (sample)", style="white")
+        table = Table(title="Available Model Categories (70+ models)", border_style="blue")
+        table.add_column("Category", style="cyan", width=30)
+        table.add_column("Models (sample)", style="white", width=50)
 
+        # Define display order for categories
+        category_order = [
+            "Multilingual Models",
+            "Long Document Models",
+            "Long Document Models - French",
+            "Long Document Models - Spanish",
+            "Long Document Models - German",
+            "Long Document Models - Italian",
+            "Long Document Models - Portuguese",
+            "Long Document Models - Dutch",
+            "Long Document Models - Polish",
+            "Long Document Models - Chinese",
+            "Long Document Models - Japanese",
+            "Long Document Models - Arabic",
+            "Long Document Models - Russian",
+            "Efficient Models",
+            "English Models",
+            "French Models",
+            "Other Language Models"
+        ]
+
+        # Display categories in order
+        for category in category_order:
+            if category in self.available_trainer_models:
+                models = self.available_trainer_models[category]
+                sample = ", ".join(model["name"] for model in models[:2])
+                if len(models) > 2:
+                    sample += f" (+{len(models) - 2} more)"
+                table.add_row(category, sample)
+
+        # Add any remaining categories not in the order
         for category, models in self.available_trainer_models.items():
-            sample = ", ".join(model["name"] for model in models[:3])
-            if len(models) > 3:
-                sample += f" (+{len(models) - 3} more)"
-            table.add_row(category, sample)
+            if category not in category_order:
+                sample = ", ".join(model["name"] for model in models[:2])
+                if len(models) > 2:
+                    sample += f" (+{len(models) - 2} more)"
+                table.add_row(category, sample)
 
         self.console.print(table)
 
@@ -5861,24 +6264,46 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         """
 
         # Step 1: Dataset Detection and Selection
-        self.console.print("\n[bold cyan]Step 1: Dataset Selection[/bold cyan]\n")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 1:[/bold cyan] [bold white]Dataset Selection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Select your annotated dataset file to prepare for training.[/dim]\n")
 
         # Show detected datasets if available
         if self.detected_datasets:
             datasets_table = Table(title="📊 Detected Datasets", border_style="cyan")
             datasets_table.add_column("#", style="cyan", width=3)
-            datasets_table.add_column("Name", style="white")
-            datasets_table.add_column("Format", style="yellow")
-            datasets_table.add_column("Size", style="green")
-            datasets_table.add_column("Path", style="dim")
+            datasets_table.add_column("Name", style="white", width=40)
+            datasets_table.add_column("Format", style="yellow", width=8)
+            datasets_table.add_column("Size", style="green", width=10)
+            datasets_table.add_column("Folder", style="magenta", width=20)
 
-            for i, ds in enumerate(self.detected_datasets[:10], 1):
+            for i, ds in enumerate(self.detected_datasets, 1):  # Show ALL datasets
+                # Calculate file size
+                try:
+                    if hasattr(ds, 'path') and ds.path.exists():
+                        size_bytes = ds.path.stat().st_size
+                        if size_bytes < 1024:
+                            size_str = f"{size_bytes} B"
+                        elif size_bytes < 1024 * 1024:
+                            size_str = f"{size_bytes / 1024:.1f} KB"
+                        else:
+                            size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+                    else:
+                        size_str = "—"
+                except Exception as e:
+                    self.logger.debug(f"Could not get size for {ds.path}: {e}")
+                    size_str = "—"
+
+                # Get folder name (parent directory name)
+                folder_name = ds.path.parent.name if hasattr(ds, 'path') and ds.path.parent.name else "data"
+
                 datasets_table.add_row(
                     str(i),
-                    ds.path.name,
-                    ds.format,
-                    f"{ds.size:,} bytes" if hasattr(ds, 'size') else "—",
-                    str(ds.path.parent) if len(str(ds.path.parent)) < 40 else "..." + str(ds.path.parent)[-37:]
+                    ds.path.name if hasattr(ds, 'path') else "—",
+                    ds.format if hasattr(ds, 'format') else "—",
+                    size_str,
+                    folder_name
                 )
 
             self.console.print(datasets_table)
@@ -5897,8 +6322,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print(f"[green]✓ Selected: {data_path.name} ({data_path.suffix[1:]})[/green]\n")
 
         # Step 2: Intelligent File Analysis
-        self.console.print("[bold cyan]Step 2: Analyzing Dataset Structure[/bold cyan]\n")
-        self.console.print("[dim]🔍 Analyzing columns, detecting languages, and extracting samples...[/dim]")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 2:[/bold cyan] [bold white]Analyzing Dataset Structure[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]🔍 Analyzing columns, detecting types, and extracting samples...[/dim]")
 
         analysis = DataDetector.analyze_file_intelligently(data_path)
 
@@ -5908,7 +6335,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(f"  • {issue}")
 
         # Step 3: Intelligent Language Detection (MOVED HERE - before column selection)
-        self.console.print("\n[bold cyan]Step 3: Language Detection[/bold cyan]\n")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 3:[/bold cyan] [bold white]Language Detection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Detecting languages to recommend the best training model.[/dim]\n")
 
         languages_found_in_column = set(analysis.get('languages_detected', {}).keys())
         confirmed_languages = set()
@@ -5973,6 +6403,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     if all_texts:
                         detector = LanguageDetector()
                         lang_counts = {}
+                        detected_languages_per_text = []  # Store language for each text
 
                         # Progress indicator
                         from tqdm import tqdm
@@ -5985,9 +6416,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                     if detected and detected.get('language'):
                                         lang = detected['language']
                                         lang_counts[lang] = lang_counts.get(lang, 0) + 1
+                                        detected_languages_per_text.append(lang)
+                                    else:
+                                        detected_languages_per_text.append(None)
                                 except Exception as e:
                                     self.logger.debug(f"Language detection failed for text: {e}")
-                                    continue
+                                    detected_languages_per_text.append(None)
+                            else:
+                                detected_languages_per_text.append(None)  # Empty or too short text
 
                         if lang_counts:
                             # Store exact distribution
@@ -6034,18 +6470,83 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                     percentage = (count / total * 100)
                                     self.console.print(f"  • {lang.upper()}: {count} texts ({percentage:.2f}%)")
 
-                                self.console.print("\n[dim]These are likely detection errors. You have two options:[/dim]")
-                                self.console.print("  [cyan]1. reclassify[/cyan] - Manually review and reclassify these texts")
-                                self.console.print("  [cyan]2. exclude[/cyan] - Exclude these texts from training")
-                                self.console.print("  [cyan]3. keep[/cyan] - Keep them as detected (not recommended)")
+                                self.console.print("\n[dim]These are likely detection errors. You have options:[/dim]")
+                                self.console.print("  [cyan]1. exclude[/cyan] - Exclude ALL low-percentage languages from training")
+                                self.console.print("  [cyan]2. keep[/cyan] - Keep ALL detected languages (not recommended)")
+                                self.console.print("  [cyan]3. select[/cyan] - Manually select which languages to keep")
+                                self.console.print("  [cyan]4. correct[/cyan] - Force ALL minority languages to a single language (quick fix)")
+                                self.console.print("  [cyan]5. reclassify[/cyan] - Manually review and reclassify texts phrase-by-phrase")
 
                                 minority_action = Prompt.ask(
                                     "\n[bold yellow]How to handle low-percentage languages?[/bold yellow]",
-                                    choices=["reclassify", "exclude", "keep"],
-                                    default="reclassify"
+                                    choices=["exclude", "keep", "select", "correct", "reclassify"],
+                                    default="correct"
                                 )
 
-                                if minority_action == "reclassify":
+                                if minority_action == "correct":
+                                    # Quick correction: force all minority languages to one language
+                                    self.console.print("\n[bold cyan]🔧 Quick Language Correction[/bold cyan]\n")
+
+                                    # Show available languages (majority + all supported languages)
+                                    all_supported_langs = [
+                                        'en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'ru', 'zh', 'ja',
+                                        'ar', 'pl', 'tr', 'ko', 'hi', 'sv', 'no', 'da', 'fi', 'cs',
+                                        'el', 'he', 'ro', 'uk', 'bg', 'hr', 'vi', 'th', 'id', 'fa'
+                                    ]
+
+                                    # Suggest the majority language
+                                    majority_lang = max(majority_languages.items(), key=lambda x: x[1])[0] if majority_languages else 'en'
+
+                                    self.console.print(f"[bold]Available languages:[/bold]")
+                                    self.console.print(f"  • Majority language detected: [green]{majority_lang.upper()}[/green] ({majority_languages.get(majority_lang, 0)} texts)")
+                                    self.console.print(f"  • All supported: {', '.join([l.upper() for l in all_supported_langs])}")
+
+                                    correction_target = Prompt.ask(
+                                        f"\n[bold yellow]Force ALL minority languages to which language?[/bold yellow]",
+                                        default=majority_lang
+                                    ).lower().strip()
+
+                                    if correction_target not in all_supported_langs:
+                                        self.console.print(f"[yellow]Warning: '{correction_target}' not in standard list, but will be used anyway[/yellow]")
+
+                                    # CRITICAL FIX: Update detected_languages_per_text with corrections
+                                    total_corrected = 0
+                                    if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                        for i in range(len(detected_languages_per_text)):
+                                            if detected_languages_per_text[i] in minority_languages:
+                                                detected_languages_per_text[i] = correction_target
+                                                total_corrected += 1
+
+                                    # Update language_distribution
+                                    for minority_lang in minority_languages.keys():
+                                        if minority_lang in language_distribution:
+                                            del language_distribution[minority_lang]
+
+                                    # Add corrected texts to target language
+                                    if correction_target in language_distribution:
+                                        language_distribution[correction_target] += total_corrected
+                                    else:
+                                        language_distribution[correction_target] = total_corrected
+
+                                    # Update confirmed languages
+                                    confirmed_languages = set([correction_target] + list(majority_languages.keys()))
+
+                                    self.console.print(f"\n[green]✓ Corrected {total_corrected} texts from {len(minority_languages)} languages to {correction_target.upper()}[/green]")
+                                    # Display updated distribution
+                                    update_table = Table(title="Updated Language Distribution", border_style="green")
+                                    update_table.add_column("Language", style="cyan", justify="center")
+                                    update_table.add_column("Count", justify="right")
+                                    update_table.add_column("Percentage", justify="right")
+
+                                    new_total = sum(language_distribution.values())
+                                    for lang, count in sorted(language_distribution.items(), key=lambda x: x[1], reverse=True):
+                                        if count > 0:  # Only show non-zero counts
+                                            percentage = (count / new_total) * 100 if new_total > 0 else 0
+                                            update_table.add_row(lang.upper(), f"{count:,}", f"{percentage:.1f}%")
+
+                                    self.console.print(update_table)
+
+                                elif minority_action == "reclassify":
                                     # Manual reclassification
                                     self.console.print("\n[bold cyan]Manual Reclassification[/bold cyan]\n")
                                     self.console.print(f"[dim]Available majority languages: {', '.join([l.upper() for l in sorted(majority_languages.keys())])}[/dim]\n")
@@ -6161,29 +6662,113 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                     for lang in minority_languages.keys():
                                         language_distribution[lang] = 0  # Mark as excluded
 
+                                    # CRITICAL FIX: Mark excluded language texts as None
+                                    if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                        for i in range(len(detected_languages_per_text)):
+                                            if detected_languages_per_text[i] in minority_languages:
+                                                detected_languages_per_text[i] = None
+
                                     confirmed_languages = set(majority_languages.keys())
                                     excluded_count = sum(minority_languages.values())
                                     self.console.print(f"\n[yellow]✗ Excluded {excluded_count} texts from {len(minority_languages)} low-percentage language(s)[/yellow]")
                                     self.console.print(f"[green]✓ Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
 
-                                else:  # keep
+                                elif minority_action == "keep":
                                     self.console.print("[yellow]⚠ Keeping all detected languages (including low-percentage ones)[/yellow]")
 
-                            # Final confirmation
+                                elif minority_action == "select":
+                                    # Manual selection of languages to keep
+                                    self.console.print("\n[bold cyan]📝 Language Selection:[/bold cyan]")
+                                    self.console.print(f"[dim]Select which languages to keep for training (from all {len(lang_counts)} detected)[/dim]\n")
+
+                                    # Show all languages sorted by count
+                                    self.console.print("[bold]All Detected Languages:[/bold]")
+                                    for i, (lang, count) in enumerate(sorted(lang_counts.items(), key=lambda x: x[1], reverse=True), 1):
+                                        percentage = (count / total * 100)
+                                        status = "[green]✓ majority[/green]" if lang in majority_languages else "[yellow]⚠ minority[/yellow]"
+                                        self.console.print(f"  {i:2d}. {lang.upper():5s} - {count:6,} texts ({percentage:5.2f}%) {status}")
+
+                                    self.console.print("\n[bold yellow]Select languages to KEEP:[/bold yellow]")
+                                    self.console.print("[dim]Enter language codes separated by commas (e.g., 'fr,en,de')[/dim]")
+                                    self.console.print("[dim]Press Enter without typing to keep ALL languages[/dim]")
+
+                                    selected_langs = Prompt.ask("\n[bold]Languages to keep[/bold]", default="")
+
+                                    if selected_langs.strip():
+                                        # User selected specific languages
+                                        selected_set = set([l.strip().lower() for l in selected_langs.split(',') if l.strip()])
+
+                                        # Validate that selected languages exist
+                                        invalid_langs = selected_set - set(lang_counts.keys())
+                                        if invalid_langs:
+                                            self.console.print(f"[yellow]⚠ Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
+                                            selected_set = selected_set - invalid_langs
+
+                                        # Exclude non-selected languages
+                                        for lang in lang_counts.keys():
+                                            if lang not in selected_set:
+                                                language_distribution[lang] = 0  # Mark as excluded
+
+                                        # CRITICAL FIX: Mark non-selected language texts as None
+                                        if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                            for i in range(len(detected_languages_per_text)):
+                                                if detected_languages_per_text[i] and detected_languages_per_text[i] not in selected_set:
+                                                    detected_languages_per_text[i] = None
+
+                                        confirmed_languages = selected_set
+                                        kept_count = sum([lang_counts[lang] for lang in selected_set])
+                                        excluded_count = total - kept_count
+
+                                        self.console.print(f"\n[green]✓ Kept {len(selected_set)} language(s): {', '.join([l.upper() for l in sorted(selected_set)])}[/green]")
+                                        self.console.print(f"[dim]  → {kept_count:,} texts kept, {excluded_count:,} texts excluded[/dim]")
+                                    else:
+                                        # User pressed Enter - keep all
+                                        self.console.print("[green]✓ Keeping all detected languages[/green]")
+
+                            # Final confirmation (allow override even after selection)
                             lang_list = ', '.join([l.upper() for l in sorted(confirmed_languages)])
                             lang_confirmed = Confirm.ask(
-                                f"\n[bold]Detected languages: {lang_list}. Is this correct?[/bold]",
+                                f"\n[bold]Final languages: {lang_list}. Is this correct?[/bold]",
                                 default=True
                             )
 
                             if not lang_confirmed:
-                                self.console.print("\n[yellow]Please specify languages manually[/yellow]")
+                                self.console.print("\n[yellow]Override with manual selection[/yellow]")
                                 manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
                                 confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
-                                # Reset distribution if manual
-                                language_distribution = {}
+
+                                # Update distribution to exclude non-selected languages
+                                for lang in lang_counts.keys():
+                                    if lang not in confirmed_languages:
+                                        language_distribution[lang] = 0
+
+                                # CRITICAL FIX: Mark non-confirmed language texts as None
+                                if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                    for i in range(len(detected_languages_per_text)):
+                                        if detected_languages_per_text[i] and detected_languages_per_text[i] not in confirmed_languages:
+                                            detected_languages_per_text[i] = None
+
+                                self.console.print(f"[green]✓ Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
                             else:
                                 self.console.print("[green]✓ Languages confirmed from content analysis[/green]")
+
+                            # CRITICAL FIX: Add detected language column to DataFrame and save
+                            if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                # Create a temporary DataFrame for non-null texts
+                                temp_df = df[df[temp_text_column].notna()].copy()
+
+                                # Ensure same length
+                                if len(detected_languages_per_text) == len(temp_df):
+                                    # Map detected languages to the full DataFrame
+                                    df['language'] = None
+                                    df.loc[df[temp_text_column].notna(), 'language'] = detected_languages_per_text
+
+                                    # Set lang_column to use this new column
+                                    lang_column = 'language'
+
+                                    # Save updated DataFrame back to CSV
+                                    df.to_csv(data_path, index=False)
+                                    self.console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
                         else:
                             # Fallback: ask user
                             self.console.print("[yellow]Could not detect languages automatically[/yellow]")
@@ -6268,6 +6853,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'token_p25': float(np.percentile(token_lengths, 25)),
                         'token_p75': float(np.percentile(token_lengths, 75)),
                         'token_p95': float(np.percentile(token_lengths, 95)),
+                        'avg_chars': float(np.mean(char_lengths)),  # For compatibility with model selection
                     }
 
                     # Classify documents by length
@@ -6379,6 +6965,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'char_mean': float(np.mean(char_lengths)),
                         'char_median': float(np.median(char_lengths)),
                         'char_p95': float(np.percentile(char_lengths, 95)),
+                        'avg_chars': float(np.mean(char_lengths)),  # For compatibility with model selection
                     }
 
                     self.console.print(f"[dim]Average text length: {text_length_stats['char_mean']:.0f} characters[/dim]")
@@ -6388,7 +6975,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("[yellow]Could not perform text length analysis[/yellow]")
 
         # Step 4: Text Column Selection with Sophisticated Table
-        self.console.print("\n[bold cyan]Step 4: Text Column Selection[/bold cyan]\n")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Text Column Selection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold]💡 What You Need to Select:[/bold]")
+        self.console.print("   [cyan]• Text Column[/cyan] - Contains the text data to train on (input for predictions)\n")
 
         column_info = self._detect_text_columns(data_path)
         all_columns = column_info.get('all_columns', analysis.get('all_columns', []))
@@ -6432,10 +7023,20 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
             default_text_col = "text"
 
-        text_column = Prompt.ask("\n[bold yellow]Enter column name[/bold yellow] (or choose from above)", default=default_text_col)
+        # Ask for text column with validation
+        while True:
+            text_column = Prompt.ask("\n[bold yellow]Enter column name[/bold yellow] (or choose from above)", default=default_text_col)
+            if text_column in all_columns:
+                break
+            self.console.print(f"[red]✗ Column '{text_column}' not found in dataset![/red]")
+            self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
         # Step 5: Label/Category Column Selection with Category Analysis
-        self.console.print("\n[bold cyan]Step 5: Label/Category Column Selection[/bold cyan]\n")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Label/Category Column Selection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold]💡 What You Need to Select:[/bold]")
+        self.console.print("   [cyan]• Label Column[/cyan] - Contains the labels/categories (what the model will learn to predict)\n")
 
         label_column_default = "labels" if "multi" in format_type else "label"
 
@@ -6506,10 +7107,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         if all_columns:
             self.console.print(f"\n[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
-        label_column = Prompt.ask("\n[bold yellow]Category/label column[/bold yellow]", default=label_column_default)
+        # Ask for label column with validation
+        while True:
+            label_column = Prompt.ask("\n[bold yellow]Category/label column[/bold yellow]", default=label_column_default)
+            if label_column in all_columns:
+                break
+            self.console.print(f"[red]✗ Column '{label_column}' not found in dataset![/red]")
+            self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
         # Step 6: ID Column Selection with Sophisticated Strategy
-        self.console.print("\n[bold cyan]Step 6: Identifier Column Selection[/bold cyan]\n")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Identifier Column Selection (Optional)[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Optional: Select an ID column to track samples and link results to your original data.[/dim]\n")
 
         id_columns = self._detect_id_columns(all_columns)
         id_column = None
@@ -6561,14 +7171,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         if id_column:
             self.console.print(f"[green]✓ Identifier strategy: {id_column}[/green]")
 
-        # Step 7: Model Strategy Selection
-        self.console.print("\n[bold cyan]Step 7: Model Strategy Selection[/bold cyan]\n")
-
+        # Model selection will be done later when training mode is chosen
+        # Store languages and text characteristics for later use
         model_to_use = None
         model_strategy = "multilingual"  # default
         language_model_mapping = {}  # For per-language models
 
-        if confirmed_languages and len(confirmed_languages) > 1:
+        # Skip model selection - will be done in training mode
+        if False and confirmed_languages and len(confirmed_languages) > 1:
             # Multiple languages detected - offer strategy choice
             self.console.print(f"[bold]📊 Dataset contains {len(confirmed_languages)} languages:[/bold]")
 
@@ -6725,8 +7335,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         Now supports all formats with smart detection and recommendations.
         """
 
-        # Step 1: Explain options
-        self.console.print("\n[bold]📚 Dataset Source Options:[/bold]")
+        # Step 1: Dataset Source Selection
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 1:[/bold cyan] [bold white]Dataset Source Selection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Choose where your training data will come from.[/dim]\n")
+
+        self.console.print("[bold]📚 Dataset Source Options:[/bold]")
         self.console.print("  [cyan]build[/cyan]    - Build training dataset from annotated data (CSV/JSON/Excel/Parquet)")
         self.console.print("  [cyan]existing[/cyan] - Use pre-prepared training dataset (already in correct format)")
         self.console.print("  [cyan]back[/cyan]     - Return to previous menu")
@@ -6756,16 +7371,48 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             )
             return builder.build(request)
 
-        # Step 2: Explain format options
-        self.console.print("\n[bold]📋 Dataset Format Options:[/bold]")
-        self.console.print("  [cyan]llm-json[/cyan]      - CSV/JSON with LLM annotations (JSON objects in a column)")
-        self.console.print("  [cyan]category-csv[/cyan]  - Simple CSV with text and category/label columns")
-        self.console.print("  [cyan]binary-long[/cyan]   - Long-format CSV with binary values per category")
-        self.console.print("  [cyan]jsonl-single[/cyan]  - JSONL file for single-label classification")
-        self.console.print("  [cyan]jsonl-multi[/cyan]   - JSONL file for multi-label classification")
+        # Step 2: Explain format options with Rich table
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 2:[/bold cyan] [bold white]Dataset Format Selection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Choose the format that matches your annotated data structure.[/dim]\n")
+
+        formats_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+        formats_table.add_column("Format", style="cyan bold", width=18)
+        formats_table.add_column("Description", style="white", width=50)
+        formats_table.add_column("Example", style="dim", width=35)
+
+        formats_table.add_row(
+            "llm-json",
+            "CSV/JSON with LLM annotations in a column\n✓ JSON objects containing labels/categories\n✓ Output from LLM annotation tools",
+            "{'category': 'Tech', 'sentiment': 'pos'}"
+        )
+        formats_table.add_row(
+            "category-csv",
+            "Simple CSV with text and label columns\n✓ Most common format\n✓ One row = one sample with its label",
+            "text,label\n'Hello',positive"
+        )
+        formats_table.add_row(
+            "binary-long",
+            "Long-format CSV with binary labels\n✓ Multiple rows per sample\n✓ Each row = one category with 0/1 value",
+            "id,text,category,value\n1,'Hi',pos,1"
+        )
+        formats_table.add_row(
+            "jsonl-single",
+            "JSONL file for single-label tasks\n✓ One JSON object per line\n✓ Each sample has one label only",
+            "{'text':'Hi','label':'positive'}"
+        )
+        formats_table.add_row(
+            "jsonl-multi",
+            "JSONL file for multi-label tasks\n✓ One JSON object per line\n✓ Each sample can have multiple labels",
+            "{'text':'Hi','labels':['pos','friendly']}"
+        )
+
+        self.console.print(formats_table)
+        self.console.print()
 
         format_choice = Prompt.ask(
-            "\nSelect dataset format",
+            "[bold yellow]Select dataset format[/bold yellow]",
             choices=["llm-json", "category-csv", "binary-long", "jsonl-single", "jsonl-multi", "cancel", "back"],
             default="llm-json",
         )
@@ -6774,124 +7421,680 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return None
 
         if format_choice == "llm-json":
-            # Use intelligent file analysis
-            file_path_str = self._prompt_file_path("Annotated file path (CSV/JSON/Excel/Parquet)")
-            csv_path = Path(file_path_str)
+            # Step 1: Dataset Selection
+            self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold cyan]  STEP 1:[/bold cyan] [bold white]Dataset Selection[/bold white]")
+            self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[dim]Select your annotated dataset file to prepare for training.[/dim]\n")
 
-            # Analyze file intelligently
-            self.console.print("\n[cyan]🔍 Analyzing file structure...[/cyan]")
+            # Show detected datasets if available
+            if self.detected_datasets:
+                datasets_table = Table(title="📊 Detected Datasets", border_style="cyan")
+                datasets_table.add_column("#", style="cyan", width=3)
+                datasets_table.add_column("Name", style="white", width=40)
+                datasets_table.add_column("Format", style="yellow", width=8)
+                datasets_table.add_column("Size", style="green", width=10)
+                datasets_table.add_column("Folder", style="magenta", width=20)
+
+                for i, ds in enumerate(self.detected_datasets, 1):  # Show ALL datasets, not just [:10]
+                    # Calculate file size
+                    try:
+                        if hasattr(ds, 'path') and ds.path.exists():
+                            size_bytes = ds.path.stat().st_size
+                            if size_bytes < 1024:
+                                size_str = f"{size_bytes} B"
+                            elif size_bytes < 1024 * 1024:
+                                size_str = f"{size_bytes / 1024:.1f} KB"
+                            else:
+                                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+                        else:
+                            size_str = "—"
+                    except Exception as e:
+                        self.logger.debug(f"Could not get size for {ds.path}: {e}")
+                        size_str = "—"
+
+                    # Get folder name (parent directory name)
+                    folder_name = ds.path.parent.name if hasattr(ds, 'path') and ds.path.parent.name else "data"
+
+                    datasets_table.add_row(
+                        str(i),
+                        ds.path.name if hasattr(ds, 'path') else "—",
+                        ds.format if hasattr(ds, 'format') else "—",
+                        size_str,
+                        folder_name
+                    )
+
+                self.console.print(datasets_table)
+                self.console.print()
+                self.console.print("[dim]💡 You can either:[/dim]")
+                self.console.print("[dim]   • Enter the [cyan]#[/cyan] number from the table above (e.g., '1', '13')[/dim]")
+                self.console.print("[dim]   • Enter an [cyan]absolute path[/cyan] to any file (e.g., '/Users/name/data/file.csv')[/dim]\n")
+
+                dataset_choice = Prompt.ask("Dataset selection")
+
+                # Parse choice
+                if dataset_choice.isdigit():
+                    idx = int(dataset_choice) - 1
+                    if 0 <= idx < len(self.detected_datasets):
+                        csv_path = self.detected_datasets[idx].path
+                    else:
+                        self.console.print("[red]Invalid dataset number[/red]")
+                        return None
+                else:
+                    csv_path = Path(dataset_choice)
+            else:
+                file_path_str = self._prompt_file_path("Annotated file path (CSV/JSON/Excel/Parquet)")
+                csv_path = Path(file_path_str)
+
+            self.console.print(f"[green]✓ Selected: {csv_path.name} ({csv_path.suffix[1:]})[/green]\n")
+
+            # Step 2: File Structure Analysis
+            self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold cyan]  STEP 2:[/bold cyan] [bold white]Analyzing Dataset Structure[/bold white]")
+            self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[dim]🔍 Analyzing columns, detecting types, and extracting samples...[/dim]")
             analysis = DataDetector.analyze_file_intelligently(csv_path)
 
             # Show analysis results
             if analysis['issues']:
-                self.console.print("\n[yellow]⚠️  Analysis Results:[/yellow]")
+                self.console.print("\n[yellow]⚠️  Analysis warnings:[/yellow]")
                 for issue in analysis['issues']:
-                    self.console.print(f"  {issue}")
+                    self.console.print(f"  • {issue}")
+
+            # Step 3: Column Selection
+            self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold cyan]  Step 3:[/bold cyan] [bold white]Column Selection[/bold white]")
+            self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold]💡 What You Need to Select:[/bold]")
+            self.console.print("   [cyan]• Text Column[/cyan]     - Contains the text data to train on (input for predictions)")
+            self.console.print("   [cyan]• Annotation Column[/cyan] - Contains the JSON annotations (labels/categories for training)\n")
 
             # Auto-suggest text column with all available columns
             text_column_default = "sentence"
             all_columns = analysis.get('all_columns', [])
 
-            if analysis['text_column_candidates']:
-                best_text = analysis['text_column_candidates'][0]['name']
-                text_column_default = best_text
-                self.console.print(f"\n[green]✓ Text column detected: '{best_text}'[/green]")
+            # Read CSV to analyze ALL columns
+            import pandas as pd
+            df = pd.read_csv(csv_path)
 
-            # Show all available columns for reference
+            # Create comprehensive column overview table
             if all_columns:
-                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+                self.console.print(f"[bold]📊 Dataset Overview ({len(all_columns)} columns, {len(df):,} rows):[/bold]\n")
 
-            text_column = Prompt.ask("Text column", default=text_column_default)
+                # Create detailed columns table
+                all_columns_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                all_columns_table.add_column("#", style="dim", width=3)
+                all_columns_table.add_column("Column Name", style="cyan bold", width=30)
+                all_columns_table.add_column("Type", style="yellow", width=12)
+                all_columns_table.add_column("Sample Values", style="white", width=50)
 
-            # Auto-suggest annotation column with warning if empty
-            annotation_column_default = "annotation"
-            if analysis['annotation_column_candidates']:
-                best_annotation = analysis['annotation_column_candidates'][0]['name']
-                annotation_column_default = best_annotation
-                stats = analysis['annotation_stats'].get(best_annotation, {})
-                fill_rate = stats.get('fill_rate', 0)
-                if fill_rate > 0:
-                    self.console.print(f"[green]✓ Annotation column detected: '{best_annotation}' ({fill_rate*100:.1f}% filled)[/green]")
+                for idx, col in enumerate(all_columns, 1):
+                    # Detect column type
+                    col_type = "text"
+                    if col in df.columns:
+                        if df[col].dtype in ['int64', 'float64']:
+                            col_type = "numeric"
+                        elif pd.api.types.is_datetime64_any_dtype(df[col]):
+                            col_type = "datetime"
+                        else:
+                            # Check if it's likely JSON
+                            sample_val = df[col].dropna().iloc[0] if len(df[col].dropna()) > 0 else ""
+                            if isinstance(sample_val, str) and (sample_val.startswith('{') or sample_val.startswith('[')):
+                                col_type = "json/annotation"
+                            else:
+                                col_type = "text"
+
+                        # Get sample values
+                        samples = df[col].dropna().head(3).tolist()
+                        if samples:
+                            sample_str = ", ".join([str(s)[:30] + "..." if len(str(s)) > 30 else str(s) for s in samples])
+                        else:
+                            sample_str = "[empty]"
+                    else:
+                        sample_str = "—"
+
+                    all_columns_table.add_row(
+                        str(idx),
+                        col,
+                        col_type,
+                        sample_str
+                    )
+
+                self.console.print(all_columns_table)
+
+                # Now show AI suggestions
+                self.console.print("\n[bold]🔍 AI Suggestions (based on analysis):[/bold]")
+                self.console.print("[dim]The system recommends these columns, but you can choose ANY column from the table above.[/dim]\n")
+
+                suggestions_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.SIMPLE)
+                suggestions_table.add_column("Purpose", style="yellow bold", width=20)
+                suggestions_table.add_column("Suggested Column", style="green bold", width=25)
+                suggestions_table.add_column("Reason", style="white", width=45)
+
+                # Text column row
+                if analysis['text_column_candidates']:
+                    best_text = analysis['text_column_candidates'][0]['name']
+                    text_column_default = best_text
+                    text_stats = analysis['text_column_candidates'][0]
+                    avg_len = text_stats.get('avg_length', 0)
+                    suggestions_table.add_row(
+                        "📝 Text Data",
+                        best_text,
+                        f"Avg length {avg_len:.0f} chars (for model input)"
+                    )
                 else:
-                    self.console.print(f"[red]⚠️  Annotation column '{best_annotation}' is EMPTY - cannot be used for training![/red]")
+                    suggestions_table.add_row("📝 Text Data", "—", "⚠️  No suggestion - choose manually")
 
-            # Show all available columns for reference
-            if all_columns:
-                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+                # Annotation column row
+                annotation_column_default = "annotation"
+                if analysis['annotation_column_candidates']:
+                    best_annotation = analysis['annotation_column_candidates'][0]['name']
+                    annotation_column_default = best_annotation
+                    stats = analysis['annotation_stats'].get(best_annotation, {})
+                    fill_rate = stats.get('fill_rate', 0)
+                    if fill_rate > 0:
+                        suggestions_table.add_row(
+                            "🏷️  Annotations",
+                            best_annotation,
+                            f"{fill_rate*100:.1f}% filled (training labels)"
+                        )
+                    else:
+                        suggestions_table.add_row(
+                            "🏷️  Annotations",
+                            best_annotation,
+                            "[red]⚠️  EMPTY - cannot use[/red]"
+                        )
+                else:
+                    suggestions_table.add_row("🏷️  Annotations", "—", "⚠️  No suggestion - choose manually")
 
-            annotation_column = Prompt.ask("Annotation column", default=annotation_column_default)
+                self.console.print(suggestions_table)
+                self.console.print()
+            else:
+                # Fallback if no columns detected
+                if analysis['text_column_candidates']:
+                    best_text = analysis['text_column_candidates'][0]['name']
+                    text_column_default = best_text
+                    self.console.print(f"\n[green]✓ Suggested text column: '{best_text}'[/green]")
 
-            # Language detection and model recommendation
-            languages_found = set(analysis['languages_detected'].keys())
+                annotation_column_default = "annotation"
+                if analysis['annotation_column_candidates']:
+                    best_annotation = analysis['annotation_column_candidates'][0]['name']
+                    annotation_column_default = best_annotation
+                    stats = analysis['annotation_stats'].get(best_annotation, {})
+                    fill_rate = stats.get('fill_rate', 0)
+                    if fill_rate > 0:
+                        self.console.print(f"[green]✓ Suggested annotation column: '{best_annotation}' ({fill_rate*100:.1f}% filled)[/green]")
+                    else:
+                        self.console.print(f"[red]⚠️  Suggested annotation column '{best_annotation}' is EMPTY - cannot be used for training![/red]")
+
+            self.console.print("[bold yellow]📝 Make Your Selection:[/bold yellow]")
+            self.console.print("[dim]   → Press [bold]Enter[/bold] to accept the AI suggestion[/dim]")
+            self.console.print("[dim]   → Or type any column name from the complete list above[/dim]\n")
+
+            # Ask for text column with validation
+            while True:
+                text_column = Prompt.ask("[bold cyan]Text column[/bold cyan] (training input)", default=text_column_default)
+                if text_column in all_columns:
+                    break
+                self.console.print(f"[red]✗ Column '{text_column}' not found in dataset![/red]")
+                self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
+
+            # Ask for annotation column with validation
+            while True:
+                annotation_column = Prompt.ask("[bold cyan]Annotation column[/bold cyan] (training labels)", default=annotation_column_default)
+                if annotation_column in all_columns:
+                    break
+                self.console.print(f"[red]✗ Column '{annotation_column}' not found in dataset![/red]")
+                self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
+
+            # Show confirmation of selection
+            self.console.print(f"\n[green]✓ Selected columns:[/green]")
+            self.console.print(f"  [cyan]Text:[/cyan] '{text_column}' → Model will learn from this text")
+            self.console.print(f"  [cyan]Annotations:[/cyan] '{annotation_column}' → Model will learn these labels")
+
+            # Step 4: Language Detection and Text Analysis (using sophisticated universal system)
+            self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Language Detection & Text Analysis[/bold white]")
+            self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[dim]Analyzing languages and text characteristics to recommend the best model.[/dim]\n")
+
+            # Read CSV for analysis
+            import pandas as pd
+            df = pd.read_csv(csv_path)
+
+            # Use the SAME sophisticated language detection as category-csv
+            languages_found_in_column = set(analysis.get('languages_detected', {}).keys())
             confirmed_languages = set()
+            lang_column = None
+            language_distribution = {}  # Store exact language counts
 
-            if languages_found:
-                self.console.print(f"\n[bold]🌍 Languages Detected:[/bold]")
+            # Check if we have a language column with detected languages
+            has_lang_column = bool(analysis.get('language_column_candidates'))
+
+            if has_lang_column and languages_found_in_column:
+                # Option 1: Language column exists - offer to use it or detect automatically
+                self.console.print("[bold]🌍 Languages Found in Column:[/bold]")
                 for lang, count in analysis['languages_detected'].items():
-                    self.console.print(f"  • {lang.upper()}: {count} rows")
+                    self.console.print(f"  • {lang.upper()}: {count:,} rows")
 
-                # Confirm languages with user
-                lang_list = ', '.join([l.upper() for l in sorted(languages_found)])
-                lang_confirmed = Confirm.ask(
-                    f"\n[bold]Detected languages: {lang_list}. Is this correct?[/bold]",
+                lang_column_candidate = analysis['language_column_candidates'][0]
+                self.console.print(f"\n[green]✓ Language column detected: '{lang_column_candidate}'[/green]")
+
+                use_lang_column = Confirm.ask(
+                    f"\n[bold]Use language column '{lang_column_candidate}'?[/bold]",
                     default=True
                 )
 
-                if lang_confirmed:
-                    confirmed_languages = languages_found
-                    self.console.print("[green]✓ Languages confirmed[/green]")
+                if use_lang_column:
+                    confirmed_languages = languages_found_in_column
+                    lang_column = lang_column_candidate
+                    self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
                 else:
-                    # Ask user to specify languages manually
-                    self.console.print("\n[yellow]Please specify languages manually[/yellow]")
-                    manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
-                    confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+                    # User said no to language column - apply automatic detection
+                    self.console.print("\n[yellow]Language column not used. Applying automatic detection...[/yellow]")
+                    has_lang_column = False  # Trigger auto-detection below
+            else:
+                # Option 2: No language column
+                if not has_lang_column:
+                    self.console.print("[yellow]ℹ️  No language column detected[/yellow]")
+                apply_auto_detection = Confirm.ask("Apply automatic language detection on text content?", default=True)
+                if not apply_auto_detection:
+                    has_lang_column = True  # Skip auto-detection
 
-            # Get model recommendations based on confirmed languages
-            model_to_use = None
-            if confirmed_languages:
-                recommendations = LanguageNormalizer.recommend_models(confirmed_languages, self.available_trainer_models)
+            # Automatic language detection from text content (if no lang column used)
+            if not lang_column and (not has_lang_column or 'apply_auto_detection' in locals()):
+                self.console.print("\n[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
 
-                if recommendations:
-                    self.console.print(f"\n[bold]🤖 Recommended Models for Your Languages:[/bold]")
-                    for i, rec in enumerate(recommendations[:5], 1):
-                        self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
+                try:
+                    from llm_tool.utils.language_detector import LanguageDetector
 
-                    # Interactive model selection
-                    self.console.print(f"\n[bold]Select a model:[/bold]")
-                    self.console.print("  [cyan]1-{num}[/cyan] - Select from recommendations above".format(num=min(5, len(recommendations))))
-                    self.console.print("  [cyan]manual[/cyan] - Enter model name manually")
-                    self.console.print("  [cyan]skip[/cyan] - Use default (bert-base-uncased)")
+                    if text_column in df.columns:
+                        # Analyze ALL texts (not just sample) for precise distribution
+                        all_texts = df[text_column].dropna().tolist()
 
-                    model_choice = Prompt.ask("Your choice", default="1")
+                        if all_texts:
+                            detector = LanguageDetector()
+                            lang_counts = {}
+                            detected_languages_per_text = []  # Store language for each text
 
-                    if model_choice == "manual":
-                        # Show all available models by category
-                        self.console.print("\n[bold]Available Models by Category:[/bold]")
-                        all_models_list = []
-                        for category, models in self.available_trainer_models.items():
-                            self.console.print(f"\n[cyan]{category}:[/cyan]")
-                            for model in models:
-                                self.console.print(f"  • {model['name']}")
-                                all_models_list.append(model['name'])
+                            # Progress indicator
+                            from tqdm import tqdm
+                            self.console.print(f"[dim]Analyzing {len(all_texts)} texts...[/dim]")
 
-                        model_to_use = Prompt.ask("\nEnter model name", default="xlm-roberta-base")
+                            for text in tqdm(all_texts, desc="Detecting languages", disable=not HAS_RICH):
+                                if text and len(str(text).strip()) > 10:
+                                    try:
+                                        detected = detector.detect(str(text))
+                                        if detected:
+                                            # Handle both dict and string returns
+                                            if isinstance(detected, dict):
+                                                lang = detected.get('language')
+                                                confidence = detected.get('confidence', 0)
+                                                # Use confidence threshold (optional)
+                                                if lang and confidence >= 0.7:  # 70% confidence threshold
+                                                    lang_counts[lang] = lang_counts.get(lang, 0) + 1
+                                                    detected_languages_per_text.append(lang)
+                                                else:
+                                                    detected_languages_per_text.append(None)  # Low confidence
+                                            elif isinstance(detected, str):
+                                                lang_counts[detected] = lang_counts.get(detected, 0) + 1
+                                                detected_languages_per_text.append(detected)
+                                        else:
+                                            detected_languages_per_text.append(None)
+                                    except Exception as e:
+                                        self.logger.debug(f"Language detection failed for text: {e}")
+                                        detected_languages_per_text.append(None)
+                                else:
+                                    detected_languages_per_text.append(None)  # Empty or too short text
 
-                    elif model_choice == "skip":
-                        model_to_use = "bert-base-uncased"
+                            if lang_counts:
+                                # Store exact distribution
+                                language_distribution = lang_counts
+                                total = sum(lang_counts.values())
 
-                    elif model_choice.isdigit():
-                        idx = int(model_choice) - 1
-                        if 0 <= idx < len(recommendations):
-                            model_to_use = recommendations[idx]['model']
-                            self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")
+                                self.console.print(f"\n[bold]🌍 Languages Detected from Content ({total:,} texts analyzed):[/bold]")
+
+                                # Create detailed table
+                                lang_table = Table(border_style="cyan", show_header=True, header_style="bold")
+                                lang_table.add_column("Language", style="cyan", width=12)
+                                lang_table.add_column("Count", style="yellow", justify="right", width=12)
+                                lang_table.add_column("Percentage", style="green", justify="right", width=12)
+
+                                for lang, count in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True):
+                                    percentage = (count / total * 100) if total > 0 else 0
+                                    lang_table.add_row(
+                                        lang.upper(),
+                                        f"{count:,}",
+                                        f"{percentage:.1f}%"
+                                    )
+
+                                self.console.print(lang_table)
+
+                                # Detect low-percentage languages (likely detection errors)
+                                LOW_PERCENTAGE_THRESHOLD = 1.0  # Languages with < 1% are considered low
+                                majority_languages = {}  # Languages above threshold
+                                minority_languages = {}  # Languages below threshold (likely errors)
+
+                                for lang, count in lang_counts.items():
+                                    percentage = (count / total * 100) if total > 0 else 0
+                                    if percentage >= LOW_PERCENTAGE_THRESHOLD:
+                                        majority_languages[lang] = count
+                                    else:
+                                        minority_languages[lang] = count
+
+                                confirmed_languages = set(lang_counts.keys())
+
+                                # Handle low-percentage languages if detected
+                                if minority_languages:
+                                    self.console.print(f"\n[yellow]⚠ Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
+                                    for lang, count in sorted(minority_languages.items(), key=lambda x: x[1], reverse=True):
+                                        percentage = (count / total * 100)
+                                        self.console.print(f"  • {lang.upper()}: {count} texts ({percentage:.2f}%)")
+
+                                    self.console.print("\n[dim]These are likely detection errors. You have options:[/dim]")
+                                    self.console.print("  [cyan]1. exclude[/cyan] - Exclude ALL low-percentage languages from training")
+                                    self.console.print("  [cyan]2. keep[/cyan] - Keep ALL detected languages (not recommended)")
+                                    self.console.print("  [cyan]3. select[/cyan] - Manually select which languages to keep")
+                                    self.console.print("  [cyan]4. correct[/cyan] - Force ALL minority languages to a single language (quick fix)")
+
+                                    minority_action = Prompt.ask(
+                                        "\n[bold yellow]How to handle low-percentage languages?[/bold yellow]",
+                                        choices=["exclude", "keep", "select", "correct"],
+                                        default="correct"
+                                    )
+
+                                    if minority_action == "correct":
+                                        # Quick correction: force all minority languages to one language
+                                        self.console.print("\n[bold cyan]🔧 Quick Language Correction[/bold cyan]\n")
+
+                                        # Show available languages
+                                        all_supported_langs = [
+                                            'en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'ru', 'zh', 'ja',
+                                            'ar', 'pl', 'tr', 'ko', 'hi', 'sv', 'no', 'da', 'fi', 'cs',
+                                            'el', 'he', 'ro', 'uk', 'bg', 'hr', 'vi', 'th', 'id', 'fa'
+                                        ]
+
+                                        # Suggest the majority language
+                                        majority_lang = max(majority_languages.items(), key=lambda x: x[1])[0] if majority_languages else 'en'
+
+                                        self.console.print(f"[bold]Available languages:[/bold]")
+                                        self.console.print(f"  • Majority language detected: [green]{majority_lang.upper()}[/green] ({majority_languages.get(majority_lang, 0)} texts)")
+                                        self.console.print(f"  • All supported: {', '.join([l.upper() for l in all_supported_langs])}")
+
+                                        correction_target = Prompt.ask(
+                                            f"\n[bold yellow]Force ALL minority languages to which language?[/bold yellow]",
+                                            default=majority_lang
+                                        ).lower().strip()
+
+                                        if correction_target not in all_supported_langs:
+                                            self.console.print(f"[yellow]Warning: '{correction_target}' not in standard list, but will be used anyway[/yellow]")
+
+                                        # Update language_distribution and confirmed_languages
+                                        total_corrected = sum(minority_languages.values())
+
+                                        # Move all minority counts to the target language
+                                        for minority_lang in minority_languages.keys():
+                                            if minority_lang in language_distribution:
+                                                del language_distribution[minority_lang]
+
+                                        # Add corrected texts to target language
+                                        if correction_target in language_distribution:
+                                            language_distribution[correction_target] += total_corrected
+                                        else:
+                                            language_distribution[correction_target] = total_corrected
+
+                                        # Update confirmed languages
+                                        confirmed_languages = set([correction_target] + list(majority_languages.keys()))
+
+                                        # CRITICAL FIX: Update detected_languages_per_text with corrections
+                                        if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                            for i in range(len(detected_languages_per_text)):
+                                                if detected_languages_per_text[i] in minority_languages:
+                                                    detected_languages_per_text[i] = correction_target
+
+                                        self.console.print(f"\n[green]✓ Corrected {total_corrected} texts from {len(minority_languages)} languages to {correction_target.upper()}[/green]")
+
+                                        # Display updated distribution
+                                        update_table = Table(title="Updated Language Distribution", border_style="green")
+                                        update_table.add_column("Language", style="cyan", justify="center")
+                                        update_table.add_column("Count", justify="right")
+                                        update_table.add_column("Percentage", justify="right")
+
+                                        new_total = sum(language_distribution.values())
+                                        for lang, count in sorted(language_distribution.items(), key=lambda x: x[1], reverse=True):
+                                            if count > 0:  # Only show non-zero counts
+                                                percentage = (count / new_total) * 100 if new_total > 0 else 0
+                                                update_table.add_row(lang.upper(), f"{count:,}", f"{percentage:.1f}%")
+
+                                        self.console.print(update_table)
+
+                                    elif minority_action == "exclude":
+                                        # Exclude low-percentage languages
+                                        for lang in minority_languages.keys():
+                                            language_distribution[lang] = 0  # Mark as excluded
+
+                                        # CRITICAL FIX: Mark excluded language texts as None
+                                        if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                            for i in range(len(detected_languages_per_text)):
+                                                if detected_languages_per_text[i] in minority_languages:
+                                                    detected_languages_per_text[i] = None
+
+                                        confirmed_languages = set(majority_languages.keys())
+                                        excluded_count = sum(minority_languages.values())
+                                        self.console.print(f"\n[yellow]✗ Excluded {excluded_count} texts from {len(minority_languages)} low-percentage language(s)[/yellow]")
+                                        self.console.print(f"[green]✓ Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+
+                                    elif minority_action == "keep":
+                                        self.console.print("[yellow]⚠ Keeping all detected languages (including low-percentage ones)[/yellow]")
+
+                                    elif minority_action == "select":
+                                        # Manual selection of languages to keep
+                                        self.console.print("\n[bold cyan]📝 Language Selection:[/bold cyan]")
+                                        self.console.print(f"[dim]Select which languages to keep for training (from all {len(lang_counts)} detected)[/dim]\n")
+
+                                        # Show all languages sorted by count
+                                        self.console.print("[bold]All Detected Languages:[/bold]")
+                                        for i, (lang, count) in enumerate(sorted(lang_counts.items(), key=lambda x: x[1], reverse=True), 1):
+                                            percentage = (count / total * 100)
+                                            status = "[green]✓ majority[/green]" if lang in majority_languages else "[yellow]⚠ minority[/yellow]"
+                                            self.console.print(f"  {i:2d}. {lang.upper():5s} - {count:6,} texts ({percentage:5.2f}%) {status}")
+
+                                        self.console.print("\n[bold yellow]Select languages to KEEP:[/bold yellow]")
+                                        self.console.print("[dim]Enter language codes separated by commas (e.g., 'fr,en,de')[/dim]")
+                                        self.console.print("[dim]Press Enter without typing to keep ALL languages[/dim]")
+
+                                        selected_langs = Prompt.ask("\n[bold]Languages to keep[/bold]", default="")
+
+                                        if selected_langs.strip():
+                                            # User selected specific languages
+                                            selected_set = set([l.strip().lower() for l in selected_langs.split(',') if l.strip()])
+
+                                            # Validate that selected languages exist
+                                            invalid_langs = selected_set - set(lang_counts.keys())
+                                            if invalid_langs:
+                                                self.console.print(f"[yellow]⚠ Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
+                                                selected_set = selected_set - invalid_langs
+
+                                            # Exclude non-selected languages
+                                            for lang in lang_counts.keys():
+                                                if lang not in selected_set:
+                                                    language_distribution[lang] = 0  # Mark as excluded
+
+                                            # CRITICAL FIX: Mark non-selected language texts as None
+                                            if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                                for i in range(len(detected_languages_per_text)):
+                                                    if detected_languages_per_text[i] and detected_languages_per_text[i] not in selected_set:
+                                                        detected_languages_per_text[i] = None
+
+                                            confirmed_languages = selected_set
+                                            kept_count = sum([lang_counts[lang] for lang in selected_set])
+                                            excluded_count = total - kept_count
+
+                                            self.console.print(f"\n[green]✓ Kept {len(selected_set)} language(s): {', '.join([l.upper() for l in sorted(selected_set)])}[/green]")
+                                            self.console.print(f"[dim]  → {kept_count:,} texts kept, {excluded_count:,} texts excluded[/dim]")
+                                        else:
+                                            # User pressed Enter - keep all
+                                            self.console.print("[green]✓ Keeping all detected languages[/green]")
+
+                                # Final confirmation (allow override even after selection)
+                                lang_list = ', '.join([l.upper() for l in sorted(confirmed_languages)])
+                                lang_confirmed = Confirm.ask(
+                                    f"\n[bold]Final languages: {lang_list}. Is this correct?[/bold]",
+                                    default=True
+                                )
+
+                                if not lang_confirmed:
+                                    self.console.print("\n[yellow]Override with manual selection[/yellow]")
+                                    manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
+                                    confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+
+                                    # Update distribution to exclude non-selected languages
+                                    for lang in lang_counts.keys():
+                                        if lang not in confirmed_languages:
+                                            language_distribution[lang] = 0
+
+                                    # CRITICAL FIX: Mark non-confirmed language texts as None
+                                    if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                        for i in range(len(detected_languages_per_text)):
+                                            if detected_languages_per_text[i] and detected_languages_per_text[i] not in confirmed_languages:
+                                                detected_languages_per_text[i] = None
+
+                                    self.console.print(f"[green]✓ Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                                else:
+                                    self.console.print("[green]✓ Languages confirmed from content analysis[/green]")
+
+                                # CRITICAL FIX: Add detected language column to DataFrame and save
+                                if 'detected_languages_per_text' in locals() and detected_languages_per_text:
+                                    # Create a temporary DataFrame for non-null texts
+                                    temp_df = df[df[text_column].notna()].copy()
+
+                                    # Ensure same length
+                                    if len(detected_languages_per_text) == len(temp_df):
+                                        temp_df['language'] = detected_languages_per_text
+
+                                        # Map detected languages to the full DataFrame
+                                        df['language'] = None
+                                        df.loc[df[text_column].notna(), 'language'] = detected_languages_per_text
+
+                                        # Set lang_column to use this new column
+                                        lang_column = 'language'
+
+                                        # Save updated DataFrame back to CSV
+                                        df.to_csv(csv_path, index=False)
+                                        self.console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
+                            else:
+                                # Fallback: ask user
+                                self.console.print("[yellow]Could not detect languages automatically[/yellow]")
+                                manual_langs = Prompt.ask("Expected language codes (e.g., en,fr,de)", default="")
+                                if manual_langs.strip():
+                                    confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
                         else:
-                            self.console.print("[yellow]Invalid selection, using first recommendation[/yellow]")
-                            model_to_use = recommendations[0]['model']
-                    else:
-                        model_to_use = recommendations[0]['model']
+                            self.console.print("[yellow]Not enough text samples for language detection[/yellow]")
+                            manual_langs = Prompt.ask("Expected language codes (optional, e.g., en,fr,de)", default="")
+                            if manual_langs.strip():
+                                confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
 
-            # Explain training strategies for LLM-JSON format with REAL examples from data
-            self.console.print("\n[bold]📚 Training Strategy for LLM-JSON Format:[/bold]")
+                except Exception as e:
+                    self.logger.debug(f"Language detection from content failed: {e}")
+                    self.console.print("[yellow]Automatic detection failed. Please specify manually[/yellow]")
+                    manual_langs = Prompt.ask("Expected language codes (optional, e.g., en,fr,de)", default="")
+                    if manual_langs.strip():
+                        confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+
+            # Model selection will be done later when training mode is selected
+            # Store languages for later use
+
+            # Step 5: Annotation Data Preview
+            self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
+            self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[dim]🔍 Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
+
+            # df already loaded above for language detection
+
+            all_keys_values = {}  # {key: set_of_unique_values}
+            total_samples = 0
+            malformed_count = 0
+
+            for idx, row in df.iterrows():
+                annotation_val = row.get(annotation_column)
+                if pd.isna(annotation_val) or annotation_val == '':
+                    continue
+
+                total_samples += 1
+                try:
+                    if isinstance(annotation_val, str):
+                        # Try standard JSON first
+                        try:
+                            annotation_dict = json.loads(annotation_val)
+                        except json.JSONDecodeError:
+                            # Try Python literal (handles single quotes with escapes)
+                            import ast
+                            annotation_dict = ast.literal_eval(annotation_val)
+                    elif isinstance(annotation_val, dict):
+                        annotation_dict = annotation_val
+                    else:
+                        continue
+
+                    # Extract keys and values
+                    for key, value in annotation_dict.items():
+                        if key not in all_keys_values:
+                            all_keys_values[key] = set()
+
+                        if isinstance(value, list):
+                            for v in value:
+                                if v is not None and v != '':
+                                    all_keys_values[key].add(str(v))
+                        elif value is not None and value != '':
+                            all_keys_values[key].add(str(value))
+
+                except (json.JSONDecodeError, AttributeError, TypeError, ValueError, SyntaxError) as e:
+                    malformed_count += 1
+                    continue
+
+            # Display comprehensive preview with Rich table
+            if all_keys_values:
+                self.console.print(f"\n[bold cyan]📊 Complete Annotation Data Preview[/bold cyan]")
+                self.console.print(f"[dim]Analyzed {total_samples} samples ({malformed_count} malformed)[/dim]\n")
+
+                preview_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                preview_table.add_column("Key", style="yellow bold", width=20)
+                preview_table.add_column("Unique Values", style="white", width=15, justify="center")
+                preview_table.add_column("Sample Values", style="green", width=60)
+
+                for key in sorted(all_keys_values.keys()):
+                    values_set = all_keys_values[key]
+                    num_values = len(values_set)
+
+                    # Show first 10 values as sample
+                    sample_values = sorted(values_set)[:10]
+                    sample_str = ', '.join([f"'{v}'" for v in sample_values])
+                    if num_values > 10:
+                        sample_str += f" ... (+{num_values - 10} more)"
+
+                    preview_table.add_row(
+                        key,
+                        str(num_values),
+                        sample_str
+                    )
+
+                self.console.print(preview_table)
+                self.console.print()
+
+                # Show selection options
+                self.console.print("[bold]💡 Training Options:[/bold]")
+                self.console.print("  [dim]• You can choose to train on [cyan]ALL[/cyan] keys/values[/dim]")
+                self.console.print("  [dim]• Or select [cyan]specific keys[/cyan] to train (asked later)[/dim]")
+                self.console.print("  [dim]• Or select [cyan]specific values[/cyan] for each key (asked later)[/dim]\n")
+            else:
+                self.console.print("[yellow]⚠️  No valid annotation data found[/yellow]\n")
+
+            # Step 6: Training Strategy Selection
+            self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
+            self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold]📚 Choose How to Train Your Models:[/bold]")
+            self.console.print("[dim]This determines whether one text can have one label or multiple labels.[/dim]\n")
 
             # Parse real data to extract actual keys and values
             annotation_keys_found = analysis.get('annotation_keys_found', set())
@@ -7017,47 +8220,37 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # For multi-label CSV-JSON: ask which keys to use (one model per key)
             annotation_keys = None
+            detected_keys = []  # Initialize to empty list
+
             if mode == "multi-label":
                 self.console.print("\n[bold yellow]📋 Multi-label mode:[/bold yellow] One model will be trained per annotation key")
                 self.console.print("[dim]This means training SEPARATE BINARY classifiers for each category type[/dim]")
 
-                # Show detected keys if available WITH REAL VALUES
-                if analysis.get('annotation_keys_found'):
-                    detected_keys = sorted(analysis['annotation_keys_found'])
+                # Use comprehensive all_keys_values data collected earlier
+                if all_keys_values:
+                    detected_keys = sorted(all_keys_values.keys())
                     self.console.print(f"\n[green]✓ Detected annotation keys in your data: {', '.join(detected_keys)}[/green]")
-
-                    # Extract unique values for each key from sample data
-                    key_values = {}
-                    if real_example_data:
-                        for key in detected_keys:
-                            val = real_example_data.get(key)
-                            if val is not None:
-                                if isinstance(val, list):
-                                    key_values[key] = val if val else []
-                                else:
-                                    key_values[key] = [val]
 
                     self.console.print("\n[bold]What this means (with YOUR data):[/bold]")
                     for key in detected_keys:
-                        if key in key_values and key_values[key]:
-                            values_preview = ', '.join([f"'{v}'" for v in key_values[key][:3]])
-                            if len(key_values[key]) > 3:
-                                values_preview += ", ..."
-                            self.console.print(f"  • [cyan]{key}[/cyan] → One binary model for each value: {values_preview}")
-                        else:
-                            self.console.print(f"  • [cyan]{key}[/cyan] → One model will classify ALL {key} values")
+                        num_values = len(all_keys_values[key])
+                        values_preview = ', '.join([f"'{v}'" for v in sorted(all_keys_values[key])[:3]])
+                        if num_values > 3:
+                            values_preview += f" ... (+{num_values-3} more)"
+                        self.console.print(f"  • [cyan]{key}[/cyan] ({num_values} unique values) → {values_preview}")
 
                     # Build real example from detected keys
                     if len(detected_keys) >= 2:
                         example_keys = ', '.join(detected_keys[:2])
                         self.console.print(f"\n[bold]Example:[/bold] Selecting '{example_keys}' → {min(2, len(detected_keys))} models trained")
                         for idx, key in enumerate(detected_keys[:2], 1):
-                            if key in key_values and key_values[key]:
-                                val_preview = key_values[key][0]
-                                self.console.print(f"  Model {idx}: Trains '{key}_{val_preview}' vs NOT '{key}_{val_preview}' (and all other {key} values)")
-                            else:
-                                self.console.print(f"  Model {idx}: Detects all {key} categories")
+                            sample_val = sorted(all_keys_values[key])[0] if all_keys_values[key] else "value"
+                            self.console.print(f"  Model {idx}: Trains '{key}_{sample_val}' vs NOT '{key}_{sample_val}' (and all other {key} values)")
+                elif analysis.get('annotation_keys_found'):
+                    detected_keys = sorted(analysis['annotation_keys_found'])
+                    self.console.print(f"\n[green]✓ Detected annotation keys in your data: {', '.join(detected_keys)}[/green]")
                 else:
+                    detected_keys = []
                     self.console.print("Example: If you select 'themes,sentiment' → 2 models (one for themes, one for sentiment)")
 
                 # Show selection guidance with all available options
@@ -7075,36 +8268,92 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 keys_input = Prompt.ask("\nAnnotation keys (comma-separated, or BLANK for ALL)", default="")
                 annotation_keys = [key.strip() for key in keys_input.split(",") if key.strip()] or None
             else:
-                # For single-label mode
-                if analysis.get('annotation_keys_found'):
+                # For single-label mode - use comprehensive data
+                if all_keys_values:
+                    detected_keys = sorted(all_keys_values.keys())
+                    self.console.print(f"\n[bold cyan]📝 Single-Label Mode - Select Keys/Values:[/bold cyan]")
+
+                    # Show all keys and their values
+                    for key in detected_keys:
+                        num_values = len(all_keys_values[key])
+                        values_preview = ', '.join([f"'{v}'" for v in sorted(all_keys_values[key])[:5]])
+                        if num_values > 5:
+                            values_preview += f" ... (+{num_values-5} more)"
+                        self.console.print(f"  • [cyan]{key}[/cyan] ({num_values} values): {values_preview}")
+
+                    self.console.print("\n[dim]Options:[/dim]")
+                    self.console.print(f"  • [cyan]Leave blank[/cyan] → Use ALL {len(detected_keys)} keys with ALL their values")
+                    self.console.print(f"  • [cyan]Enter specific keys[/cyan] → Use only selected keys with ALL their values")
+                    self.console.print(f"    Example: '{detected_keys[0]}' → Use only {detected_keys[0]} key")
+                elif analysis.get('annotation_keys_found'):
                     detected_keys = sorted(analysis['annotation_keys_found'])
                     self.console.print(f"\n[dim]Note: Your data has keys: {', '.join(detected_keys)}[/dim]")
                     self.console.print("[dim]Leave blank to use all keys, or specify which ones to include[/dim]")
+                else:
+                    detected_keys = []
 
-                keys_input = Prompt.ask("Annotation keys to include (comma separated, leave blank for all)", default="")
+                keys_input = Prompt.ask("\nAnnotation keys to include (comma separated, leave blank for all)", default="")
                 annotation_keys = [key.strip() for key in keys_input.split(",") if key.strip()] or None
 
-            # Auto-suggest ID column
-            id_column_default = ""
+            # Step 7: Additional Columns (ID, Language)
+            self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold cyan]  STEP 7:[/bold cyan] [bold white]Additional Columns (Optional)[/bold white]")
+            self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[dim]Optional: Select ID and language columns if available in your dataset.[/dim]\n")
+
+            # Use ID column already detected in analysis
+            id_column = None
             if analysis['id_column_candidates']:
-                id_column_default = analysis['id_column_candidates'][0]
-                self.console.print(f"\n[green]✓ ID column detected: '{id_column_default}'[/green]")
-            # Show all available columns for reference
-            if all_columns:
-                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+                id_column = analysis['id_column_candidates'][0]
+                self.console.print(f"[green]✓ ID column detected: '{id_column}'[/green]")
+                # Allow user to override if they want
+                if all_columns:
+                    self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+                while True:
+                    override_id = Prompt.ask("\n[bold yellow]Identifier column (optional)[/bold yellow]", default=id_column)
+                    if not override_id or override_id in all_columns:
+                        if override_id and override_id != id_column:
+                            id_column = override_id
+                        break
+                    self.console.print(f"[red]✗ Column '{override_id}' not found in dataset![/red]")
+                    self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
+            else:
+                self.console.print("[dim]No ID columns detected - automatic IDs will be generated[/dim]")
+                if all_columns:
+                    self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+                while True:
+                    id_column_input = Prompt.ask("\n[bold yellow]Identifier column (optional)[/bold yellow]", default="")
+                    if not id_column_input or id_column_input in all_columns:
+                        if id_column_input:
+                            id_column = id_column_input
+                        break
+                    self.console.print(f"[red]✗ Column '{id_column_input}' not found in dataset![/red]")
+                    self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
-            id_column = Prompt.ask("Identifier column (optional)", default=id_column_default)
+            # Language column handling - check if already processed in Step 4
+            # Skip if we already did language detection (either with column or auto-detection)
+            language_already_processed = 'lang_column' in locals() and confirmed_languages
 
-            # Auto-suggest language column
-            lang_column_default = ""
-            if analysis['language_column_candidates']:
-                lang_column_default = analysis['language_column_candidates'][0]
-                self.console.print(f"\n[green]✓ Language column detected: '{lang_column_default}'[/green]")
-            # Show all available columns for reference
-            if all_columns:
-                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
-
-            lang_column = Prompt.ask("Language column (optional)", default=lang_column_default)
+            if language_already_processed:
+                # Language was already handled in Step 4
+                if lang_column:
+                    self.console.print(f"\n[green]✓ Language column from Step 4: '{lang_column}'[/green]")
+                else:
+                    self.console.print(f"\n[green]✓ Languages detected in Step 4: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                    self.console.print(f"[dim]  (Using automatic language detection - no specific column)[/dim]")
+            elif analysis['language_column_candidates']:
+                # Language column detected but Step 4 was skipped - ask user
+                lang_column_candidate = analysis['language_column_candidates'][0]
+                self.console.print(f"\n[green]✓ Language column detected: '{lang_column_candidate}'[/green]")
+                if all_columns:
+                    self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
+                while True:
+                    override_lang = Prompt.ask("\n[bold yellow]Language column (optional)[/bold yellow]", default=lang_column_candidate)
+                    if not override_lang or override_lang in all_columns:
+                        lang_column = override_lang if override_lang else lang_column_candidate
+                        break
+                    self.console.print(f"[red]✗ Column '{override_lang}' not found in dataset![/red]")
+                    self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
             request = TrainingDataRequest(
                 input_path=csv_path,
@@ -7119,9 +8368,20 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             )
             bundle = builder.build(request)
 
-            # Store recommended model in bundle for later use
-            if bundle and model_to_use:
-                bundle.recommended_model = model_to_use
+            # Store language metadata in bundle for later use (model selection will happen in training mode)
+            if bundle:
+                if confirmed_languages:
+                    bundle.metadata['confirmed_languages'] = confirmed_languages
+                if language_distribution:
+                    bundle.metadata['language_distribution'] = language_distribution
+                # Text length stats for intelligent model selection later
+                if text_column in df.columns:
+                    text_lengths = df[text_column].dropna().astype(str).apply(len)
+                    bundle.metadata['text_length_stats'] = {
+                        'avg_chars': int(text_lengths.mean()) if len(text_lengths) > 0 else 0,
+                        'max_chars': int(text_lengths.max()) if len(text_lengths) > 0 else 0,
+                        'min_chars': int(text_lengths.min()) if len(text_lengths) > 0 else 0,
+                    }
 
             return bundle
 
@@ -7131,6 +8391,39 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             if not selection:
                 return None
 
+            # Ask user for training strategy (mono-label vs multi-label)
+            self.console.print("\n[bold cyan]📊 Training Strategy Selection[/bold cyan]\n")
+            self.console.print("[dim]Choose how to handle the labels in your dataset:[/dim]\n")
+
+            strategy_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+            strategy_table.add_column("Strategy", style="cyan bold", width=18)
+            strategy_table.add_column("Description", style="white", width=60)
+
+            strategy_table.add_row(
+                "single-label",
+                "🎯 Each sample has ONE label/category\n"
+                "✓ Best for: classification tasks (sentiment, topic, etc.)\n"
+                "✓ Example: each text is either 'positive' OR 'negative'"
+            )
+            strategy_table.add_row(
+                "multi-label",
+                "🏷️  Each sample can have MULTIPLE labels\n"
+                "✓ Best for: tagging, multiple categories per text\n"
+                "✓ Example: a text can be 'politics' AND 'economy' AND 'urgent'"
+            )
+
+            self.console.print(strategy_table)
+            self.console.print()
+
+            mode = Prompt.ask(
+                "[bold yellow]Training strategy[/bold yellow]",
+                choices=["single-label", "multi-label", "back"],
+                default="single-label"
+            )
+
+            if mode == "back":
+                return None
+
             request = TrainingDataRequest(
                 input_path=selection['data_path'],
                 format="category_csv",
@@ -7138,13 +8431,20 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 label_column=selection['label_column'],
                 id_column=selection.get('id_column'),
                 lang_column=selection.get('lang_column'),
-                mode="single-label",
+                mode=mode,
             )
             bundle = builder.build(request)
 
-            # Store recommended model in bundle for later use
-            if bundle and selection.get('recommended_model'):
-                bundle.recommended_model = selection['recommended_model']
+            # Store recommended model and metadata in bundle for later use
+            if bundle:
+                if selection.get('recommended_model'):
+                    bundle.recommended_model = selection['recommended_model']
+                if selection.get('confirmed_languages'):
+                    bundle.metadata['confirmed_languages'] = selection['confirmed_languages']
+                if selection.get('language_distribution'):
+                    bundle.metadata['language_distribution'] = selection['language_distribution']
+                if selection.get('text_length_stats'):
+                    bundle.metadata['text_length_stats'] = selection['text_length_stats']
 
             return bundle
 
@@ -7170,8 +8470,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             )
             bundle = builder.build(request)
 
-            if bundle and selection.get('recommended_model'):
-                bundle.recommended_model = selection['recommended_model']
+            # Store recommended model and metadata in bundle for later use
+            if bundle:
+                if selection.get('recommended_model'):
+                    bundle.recommended_model = selection['recommended_model']
+                if selection.get('confirmed_languages'):
+                    bundle.metadata['confirmed_languages'] = selection['confirmed_languages']
+                if selection.get('language_distribution'):
+                    bundle.metadata['language_distribution'] = selection['language_distribution']
+                if selection.get('text_length_stats'):
+                    bundle.metadata['text_length_stats'] = selection['text_length_stats']
 
             return bundle
 
@@ -7190,8 +8498,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             )
             bundle = builder.build(request)
 
-            if bundle and selection.get('recommended_model'):
-                bundle.recommended_model = selection['recommended_model']
+            # Store recommended model and metadata in bundle for later use
+            if bundle:
+                if selection.get('recommended_model'):
+                    bundle.recommended_model = selection['recommended_model']
+                if selection.get('confirmed_languages'):
+                    bundle.metadata['confirmed_languages'] = selection['confirmed_languages']
+                if selection.get('language_distribution'):
+                    bundle.metadata['language_distribution'] = selection['language_distribution']
+                if selection.get('text_length_stats'):
+                    bundle.metadata['text_length_stats'] = selection['text_length_stats']
 
             return bundle
 
@@ -7211,8 +8527,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         )
         bundle = builder.build(request)
 
-        if bundle and selection.get('recommended_model'):
-            bundle.recommended_model = selection['recommended_model']
+        # Store recommended model and metadata in bundle for later use
+        if bundle:
+            if selection.get('recommended_model'):
+                bundle.recommended_model = selection['recommended_model']
+            if selection.get('confirmed_languages'):
+                bundle.metadata['confirmed_languages'] = selection['confirmed_languages']
+            if selection.get('language_distribution'):
+                bundle.metadata['language_distribution'] = selection['language_distribution']
+            if selection.get('text_length_stats'):
+                bundle.metadata['text_length_stats'] = selection['text_length_stats']
 
         return bundle
 
@@ -7246,14 +8570,55 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             default_model = bundle.recommended_model
             self.console.print(f"[green]Using recommended model: {default_model}[/green]")
         else:
-            default_model = self._training_studio_default_model()
+            # Select appropriate model based on language
+            if hasattr(bundle, 'languages') and bundle.languages:
+                langs = list(bundle.languages)
+                if 'FR' in langs or 'fr' in langs:
+                    default_model = 'camembert-base'
+                elif 'EN' in langs or 'en' in langs:
+                    default_model = 'bert-base-uncased'
+                else:
+                    default_model = 'xlm-roberta-base'  # Multilingual fallback
+            else:
+                default_model = self._training_studio_default_model()
 
         model_name = Prompt.ask("Model to train", default=default_model)
 
-        output_dir = self._training_studio_make_output_dir("training_studio_quick")
-        trainer = ModelTrainer()
+        # Ask for number of epochs
+        from rich.prompt import IntPrompt
+        epochs = IntPrompt.ask("Number of epochs", default=10)
 
-        config = bundle.to_trainer_config(output_dir, {"model_name": model_name})
+        output_dir = self._training_studio_make_output_dir("training_studio_quick")
+
+        # For multi-label, check if it's actually multi-class
+        if bundle.strategy == "multi-label":
+            # Load data to check structure
+            from llm_tool.trainers.multi_label_trainer import MultiLabelTrainer, TrainingConfig as MultiLabelTrainingConfig
+            ml_trainer = MultiLabelTrainer(config=MultiLabelTrainingConfig(), verbose=False)
+            samples = ml_trainer.load_multi_label_data(
+                str(bundle.dataset_path),
+                text_column=bundle.text_column,
+                label_column=bundle.label_column,
+                id_column=bundle.id_column if hasattr(bundle, 'id_column') else None,
+                lang_column=bundle.lang_column if hasattr(bundle, 'lang_column') else None
+            )
+
+            # Detect multi-class groups
+            multiclass_groups = ml_trainer.detect_multiclass_groups(samples)
+
+            if multiclass_groups:
+                # Has multi-class groups - should handle differently
+                self.console.print("\n[yellow]ℹ️  Detected multi-class classification:[/yellow]")
+                for group_name, labels in multiclass_groups.items():
+                    value_names = [lbl[len(group_name)+1:] if lbl.startswith(group_name+'_') else lbl for lbl in labels]
+                    self.console.print(f"  • {group_name}: {', '.join(value_names)}")
+
+                # For now, still use multi-label but warn user
+                self.console.print("\n[dim]Note: Training separate binary classifiers for each value.[/dim]")
+                self.console.print("[dim]For true multi-class, use benchmark mode instead.[/dim]\n")
+
+        trainer = ModelTrainer()
+        config = bundle.to_trainer_config(output_dir, {"model_name": model_name, "max_epochs": epochs})
 
         try:
             result = trainer.train(config)
@@ -7265,45 +8630,1001 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self._training_studio_show_training_result(result, bundle, title="Quick training results")
 
     def _training_studio_run_benchmark(self, bundle: TrainingDataBundle) -> None:
+        from rich.table import Table
+        from rich import box
+
+        # Handle multi-label benchmarking separately
+        if bundle.strategy == "multi-label":
+            self._training_studio_run_benchmark_multilabel(bundle)
+            return
+
         try:
             dataset_path, text_column, label_column = self._training_studio_resolve_benchmark_dataset(bundle)
         except ValueError as exc:
             self.console.print(f"[red]{exc}[/red]")
             return
 
-        num_models = self._int_prompt_with_validation("Number of models to test", default=5, min_value=1, max_value=20)
+        # Get dataset metadata
+        languages = bundle.metadata.get('confirmed_languages', bundle.metadata.get('languages', set()))
+        language_distribution = bundle.metadata.get('language_distribution', {})
+        text_length_avg = bundle.metadata.get('text_length_stats', {}).get('avg_chars', 0)
+        model_strategy = bundle.metadata.get('model_strategy', 'multilingual')
 
-        available_models = self._flatten_trainer_models()
-        if available_models:
-            preview = ", ".join(available_models[:5])
-            if len(available_models) > 5:
-                preview += " …"
-            self.console.print(f"\n[dim]Available backbones:[/dim] {preview}")
+        # If we have a recommended model from language detection, use it as hint
+        recommended_model = bundle.recommended_model if hasattr(bundle, 'recommended_model') else None
 
-        selected_models = available_models[:num_models] if available_models else ["bert-base-uncased"]
-        extra_model = Prompt.ask("Additional HuggingFace model id (optional)", default="")
-        if extra_model:
-            selected_models.append(extra_model.strip())
+        # For single-label with multiple categories, ask which category to benchmark
+        # Load the dataset to check number of unique labels
+        import pandas as pd
+        df = pd.read_csv(dataset_path)
+        unique_labels = df[label_column].unique()
+        num_labels = len(unique_labels)
 
-        benchmark_config = BenchmarkConfig(models_to_test=selected_models, max_models=num_models)
+        # Initialize selected_category variable
+        selected_category = None
 
-        trainer = ModelTrainer()
-        output_dir = self._training_studio_make_output_dir("training_studio_benchmark")
-        bundle.to_trainer_config(output_dir)  # ensure directory creation
+        if num_labels > 2:
+            self.console.print(f"\n[bold cyan]📊 Category Selection for Benchmarking[/bold cyan]\n")
+            self.console.print(f"[dim]Your dataset has {num_labels} categories. Choose which one to benchmark:[/dim]\n")
 
-        try:
-            report = trainer.benchmark_models(
-                data_path=str(dataset_path),
-                benchmark_config=benchmark_config,
-                text_column=text_column,
-                label_column=label_column,
+            # Show label distribution
+            label_counts = df[label_column].value_counts().to_dict()
+            labels_table = Table(show_header=True, header_style="bold magenta", border_style="cyan")
+            labels_table.add_column("#", style="cyan", width=5)
+            labels_table.add_column("Category", style="white", width=40)
+            labels_table.add_column("Count", style="yellow", justify="right", width=10)
+            labels_table.add_column("Percentage", style="green", justify="right", width=12)
+
+            total = len(df)
+            for idx, label in enumerate(sorted(label_counts.keys(), key=lambda x: label_counts[x], reverse=True), 1):
+                count = label_counts[label]
+                pct = (count / total * 100)
+                labels_table.add_row(str(idx), str(label), f"{count:,}", f"{pct:.1f}%")
+
+            self.console.print(labels_table)
+
+            # Ask user to select category
+            self.console.print("\n[bold]Select category to benchmark:[/bold]")
+            self.console.print("[dim]Enter category name or number from the table above[/dim]")
+
+            category_choice = Prompt.ask("Category name or number")
+
+            # Parse choice (number or name)
+            selected_category = None
+            try:
+                # Try as number first
+                idx = int(category_choice) - 1
+                sorted_labels = sorted(label_counts.keys(), key=lambda x: label_counts[x], reverse=True)
+                if 0 <= idx < len(sorted_labels):
+                    selected_category = sorted_labels[idx]
+            except ValueError:
+                # Not a number, try as category name
+                if category_choice in label_counts:
+                    selected_category = category_choice
+
+            if not selected_category:
+                self.console.print(f"[red]Invalid category: {category_choice}[/red]")
+                return
+
+            self.console.print(f"\n[green]✓ Selected category:[/green] {selected_category}")
+
+            # Convert to binary classification with string labels for proper mapping
+            # CRITICAL FIX: Use string labels NOT_category/category instead of 0/1
+            # This ensures bert_base.py can properly sort labels with NOT_* first
+            df[label_column] = df[label_column].apply(
+                lambda x: selected_category if x == selected_category else f"NOT_{selected_category}"
             )
-        except Exception as exc:  # pylint: disable=broad-except
-            self.console.print(f"[red]Benchmark failed:[/red] {exc}")
-            self.logger.exception("Benchmark run failed", exc_info=exc)
+
+            # Save filtered dataset temporarily
+            temp_path = dataset_path.parent / f"temp_benchmark_{selected_category.replace(' ', '_')}.csv"
+            df.to_csv(temp_path, index=False)
+            dataset_path = temp_path
+
+            # Count using string labels
+            class_1_count = (df[label_column] == selected_category).sum()
+            class_0_count = (df[label_column] == f"NOT_{selected_category}").sum()
+            self.console.print(f"[dim]Converted to binary:[/dim]")
+            self.console.print(f"[dim]  • {selected_category} (positive class): {class_1_count} samples[/dim]")
+            self.console.print(f"[dim]  • NOT_{selected_category} (negative class): {class_0_count} samples[/dim]\n")
+
+        # Display intelligent model selection options
+        self.console.print("\n[bold cyan]🎯 Model Selection for Benchmarking[/bold cyan]\n")
+
+        selection_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+        selection_table.add_column("Option", style="cyan bold", width=18)
+        selection_table.add_column("Description", style="white", width=70)
+
+        selection_table.add_row(
+            "intelligent",
+            "🤖 AI-powered selection based on your data\n" +
+            f"✓ Considers: {len(languages)} language(s), {text_length_avg:.0f} avg chars, '{model_strategy}' strategy\n" +
+            "✓ Selects 5-7 optimal models automatically"
+        )
+        selection_table.add_row(
+            "pre-selected",
+            "📋 Choose from pre-selected categories\n" +
+            "✓ Filter by: language, document length, efficiency\n" +
+            "✓ View and select from curated model lists"
+        )
+        selection_table.add_row(
+            "custom",
+            "✏️  Manual selection from all available models\n" +
+            "✓ Full access to 37+ models\n" +
+            "✓ Enter any HuggingFace model ID"
+        )
+
+        self.console.print(selection_table)
+        self.console.print()
+
+        selection_mode = Prompt.ask(
+            "[bold yellow]Model selection mode[/bold yellow]",
+            choices=["intelligent", "pre-selected", "custom"],
+            default="intelligent"
+        )
+
+        selected_models = []
+        model_lang_map = {}
+
+        if selection_mode == "intelligent":
+            selected_models, model_lang_map = self._get_intelligent_benchmark_models(
+                languages, text_length_avg, model_strategy, recommended_model, language_distribution
+            )
+
+            self.console.print(f"\n[green]✓ Intelligently selected {len(selected_models)} models:[/green]")
+            for i, model in enumerate(selected_models, 1):
+                lang_info = f" (for {model_lang_map[model].upper()} texts)" if model_lang_map.get(model) else " (multilingual)"
+                self.console.print(f"  {i}. {model}{lang_info}")
+
+            # Warning for monolingual models in multilingual dataset
+            if len(languages) > 1 and model_lang_map:
+                mono_models = [m for m in selected_models if model_lang_map.get(m)]
+                if mono_models:
+                    self.console.print(f"\n[yellow]⚠️  Note: Language-specific models will be trained on ALL texts[/yellow]")
+                    self.console.print(f"[dim]Ideally, monolingual models should only train on their target language.[/dim]")
+                    self.console.print(f"[dim]For better results with mixed languages, prefer multilingual models.[/dim]")
+
+        elif selection_mode == "pre-selected":
+            selected_models = self._get_preselected_benchmark_models(languages, text_length_avg)
+
+        else:  # custom
+            selected_models = self._get_custom_benchmark_models()
+
+        if not selected_models:
+            self.console.print("[yellow]No models selected. Using default: bert-base-uncased[/yellow]")
+            selected_models = ["bert-base-uncased"]
+
+        # Ask about reinforcement learning
+        self.console.print("\n[bold cyan]🎓 Reinforcement Learning Option[/bold cyan]")
+        self.console.print("[dim]Automatically triggered when model underperforms (F1 class 1 < threshold).[/dim]")
+        self.console.print("[dim]• Applies oversampling via WeightedRandomSampler for minority class[/dim]")
+        self.console.print("[dim]• Corrects cross-entropy loss with adaptive class weights[/dim]")
+        self.console.print("[dim]• Adjusts learning rate, batch size, and epochs based on failure severity[/dim]")
+        self.console.print("[dim]• Can improve F1 by 5-15% for underperforming models[/dim]\n")
+
+        use_reinforcement = Confirm.ask("Enable reinforcement learning?", default=False)
+
+        # Ask for number of epochs
+        self.console.print("\n[bold cyan]⏱️  Training Duration[/bold cyan]")
+        self.console.print("[dim]Number of epochs to train each model.[/dim]")
+        self.console.print("[dim]• More epochs = better performance but longer training time[/dim]")
+        self.console.print("[dim]• Recommended: 10-15 epochs for benchmark[/dim]\n")
+
+        n_epochs = IntPrompt.ask("Number of epochs per model", default=10)
+
+        # For single-label benchmark, we'll manually train each model to properly pass label_value
+        # This ensures class names are displayed correctly in the terminal output
+
+        # Determine if we have a selected category (binary) or multi-class
+        # CRITICAL FIX: Always pass category_name for proper class name display
+        category_name = selected_category
+
+        # Load dataset and prepare training data
+        from llm_tool.trainers.multi_label_trainer import MultiLabelTrainer, TrainingConfig as MultiLabelTrainingConfig
+        from llm_tool.trainers.model_selector import ModelSelector
+        import torch
+
+        ml_trainer = MultiLabelTrainer(config=MultiLabelTrainingConfig(), verbose=False)
+
+        # Read the CSV and convert to samples
+        import pandas as pd
+        from llm_tool.trainers.data_utils import DataSample
+
+        df = pd.read_csv(dataset_path)
+        samples = []
+        for _, row in df.iterrows():
+            # CRITICAL FIX: Check for both 'language' and 'lang' columns
+            lang_value = None
+            if 'language' in df.columns:
+                lang_value = row.get('language')
+            elif 'lang' in df.columns:
+                lang_value = row.get('lang')
+
+            # CRITICAL: Use DataSample for single-label benchmark (has .label attribute)
+            samples.append(DataSample(
+                text=str(row[text_column]),
+                label=str(row[label_column]),  # Keep as string for proper NOT_* mapping
+                lang=lang_value,
+                metadata={}
+            ))
+
+        # Split into train/test
+        from sklearn.model_selection import train_test_split
+        train_samples, test_samples = train_test_split(samples, test_size=0.2, random_state=42)
+
+        self.console.print(f"\n[bold cyan]🚀 Starting Benchmark Training[/bold cyan]")
+        self.console.print(f"[dim]Training {len(selected_models)} model(s) on {len(train_samples)} samples ({len(test_samples)} test)[/dim]\n")
+
+        # Train each model
+        results = []
+        selector = ModelSelector()
+
+        for idx, model_name in enumerate(selected_models, 1):
+            self.console.print(f"[bold]Model {idx}/{len(selected_models)}: {model_name}[/bold]")
+
+            try:
+                # Get model instance
+                model_name_mapping = {
+                    'roberta-base': 'RoBERTaBase',
+                    'roberta-large': 'RoBERTaLarge',
+                    'bert-base-uncased': 'BERTBase',
+                    'bert-large-uncased': 'BERTLarge',
+                    'bert-base-multilingual-cased': 'mBERTBase',
+                    'distilbert-base-uncased': 'DistilBERT',
+                    'distilroberta-base': 'DistilRoBERTa',
+                    'albert-base-v2': 'ALBERTBase',
+                    'camembert-base': 'CamemBERTBase',
+                    'xlm-roberta-base': 'XLMRoBERTaBase',
+                }
+
+                profile_key = model_name_mapping.get(model_name)
+
+                if profile_key and profile_key in selector.MODEL_PROFILES:
+                    model_class = selector.MODEL_PROFILES[profile_key].model_class
+                    model = model_class()
+                elif model_name in selector.MODEL_PROFILES:
+                    model_class = selector.MODEL_PROFILES[model_name].model_class
+                    model = model_class()
+                else:
+                    # Create generic model
+                    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+                    from llm_tool.trainers.bert_base import BertBase
+
+                    class CustomModel(BertBase):
+                        def __init__(self):
+                            super().__init__(
+                                model_name=model_name,
+                                tokenizer=AutoTokenizer,
+                                model_sequence_classifier=AutoModelForSequenceClassification
+                            )
+
+                    model = CustomModel()
+
+                # Encode data
+                train_texts = [s.text for s in train_samples]
+                train_labels = [s.label for s in train_samples]  # DataSample uses .label not .labels
+                test_texts = [s.text for s in test_samples]
+                test_labels = [s.label for s in test_samples]  # DataSample uses .label not .labels
+
+                train_loader = model.encode(train_texts, train_labels, batch_size=32, progress_bar=False)
+                test_loader = model.encode(test_texts, test_labels, batch_size=32, progress_bar=False)
+
+                # CRITICAL: Do NOT use pos_weight for initial training
+                # Let the model learn naturally first, then reinforcement learning
+                # will apply adaptive weights if needed (when F1 is low)
+                # Applying pos_weight from the start causes the model to over-predict minority class
+
+                # Train model
+                temp_model_name = f"benchmark_{model_name.replace('/', '_')}"
+
+                # CRITICAL FIX: Extract language information for per-language metrics
+                test_languages = [s.lang for s in test_samples] if test_samples else None
+                has_languages = test_languages and any(lang for lang in test_languages if lang)
+
+                # Determine language
+                sample_langs = set(s.lang for s in train_samples if s.lang)
+                if len(sample_langs) == 1:
+                    train_language = list(sample_langs)[0].upper()
+                elif len(sample_langs) > 1:
+                    train_language = "MULTI"
+                else:
+                    train_language = None
+
+                result = model.run_training(
+                    train_dataloader=train_loader,
+                    test_dataloader=test_loader,
+                    n_epochs=n_epochs,
+                    lr=5e-5,
+                    random_state=42,
+                    save_model_as=temp_model_name,
+                    pos_weight=None,  # CRITICAL: No pos_weight initially - let RL handle it
+                    metrics_output_dir="training_logs",
+                    best_model_criteria="combined",
+                    f1_class_1_weight=0.7,
+                    reinforced_learning=use_reinforcement,
+                    reinforced_epochs=10,
+                    rescue_low_class1_f1=True,  # CRITICAL: Enable automatic rescue for low F1
+                    f1_1_rescue_threshold=0.50,  # Trigger rescue if F1 classe 1 < 50%
+                    reinforced_f1_threshold=0.60,
+                    track_languages=has_languages,  # CRITICAL: Enable if we have language info
+                    language_info=test_languages,     # CRITICAL: Pass language info for metrics
+                    label_key=label_column,
+                    label_value=category_name,  # Pass the selected category name for proper display
+                    language=train_language,
+                )
+
+                # Extract metrics
+                best_metric_val, best_model_path, best_scores = result
+
+                if best_scores:
+                    results.append({
+                        'model': model_name,
+                        'f1_macro': best_scores.get('f1_macro', 0.0),
+                        'f1_class_0': best_scores.get('f1_class_0', 0.0),
+                        'f1_class_1': best_scores.get('f1_class_1', 0.0),
+                        'accuracy': best_scores.get('accuracy', 0.0),
+                        'precision_macro': best_scores.get('precision_macro', 0.0),
+                        'recall_macro': best_scores.get('recall_macro', 0.0),
+                    })
+
+                self.console.print(f"[green]✓ Completed[/green]\n")
+
+            except Exception as exc:
+                self.console.print(f"[red]✗ Failed: {exc}[/red]\n")
+                self.logger.exception(f"Model {model_name} failed", exc_info=exc)
+
+        # Display results summary
+        if results:
+            self.console.print("\n[bold cyan]📊 Benchmark Results Summary[/bold cyan]\n")
+
+            results_df = pd.DataFrame(results)
+            results_df = results_df.sort_values('f1_macro', ascending=False)
+
+            from rich.table import Table
+            table = Table(show_header=True, header_style="bold magenta", border_style="cyan")
+            table.add_column("Rank", style="cyan", width=5)
+            table.add_column("Model", style="white", width=35)
+            table.add_column("F1 Macro", style="green", justify="right", width=10)
+            table.add_column("F1 Class 0", style="yellow", justify="right", width=10)
+            table.add_column("F1 Class 1", style="blue", justify="right", width=10)
+            table.add_column("Accuracy", style="magenta", justify="right", width=10)
+
+            for idx, row in enumerate(results_df.itertuples(), 1):
+                table.add_row(
+                    str(idx),
+                    row.model,
+                    f"{row.f1_macro:.4f}",
+                    f"{row.f1_class_0:.4f}",
+                    f"{row.f1_class_1:.4f}",
+                    f"{row.accuracy:.4f}"
+                )
+
+            self.console.print(table)
+
+            # Show best model
+            best_model = results_df.iloc[0]
+            self.console.print(f"\n[bold green]🏆 Best Model: {best_model['model']}[/bold green]")
+            self.console.print(f"[dim]F1 Macro: {best_model['f1_macro']:.4f}[/dim]\n")
+        else:
+            self.console.print("[yellow]No results to display[/yellow]")
+
+    def _training_studio_run_benchmark_multilabel(self, bundle: TrainingDataBundle) -> None:
+        """Benchmark multiple models on a multi-label dataset"""
+        from rich.table import Table
+        from rich import box
+
+        self.console.print("\n[bold cyan]Multi-Label Benchmark Mode[/bold cyan]")
+        self.console.print("[dim]Benchmarking models across all labels in your dataset[/dim]\n")
+
+        # Get the multi-label dataset
+        resolved = self._training_studio_resolve_multilabel_dataset(bundle)
+        if resolved is None:
+            self.console.print(
+                "[red]This dataset does not expose a multi-label view."
+                " Please select a format that produces a consolidated JSONL and try again.[/red]"
+            )
             return
 
-        self._training_studio_show_benchmark_results(report)
+        dataset_path, label_fields = resolved
+
+        # Get dataset metadata
+        languages = bundle.metadata.get('confirmed_languages', bundle.metadata.get('languages', set()))
+        language_distribution = bundle.metadata.get('language_distribution', {})
+        text_length_avg = bundle.metadata.get('text_length_stats', {}).get('avg_chars', 0)
+        model_strategy = bundle.metadata.get('model_strategy', 'multilingual')
+        recommended_model = bundle.recommended_model if hasattr(bundle, 'recommended_model') else None
+
+        # Determine majority language
+        majority_lang = self._get_majority_language(languages, language_distribution)
+        if majority_lang:
+            lang_display = f"Majority: {majority_lang.upper()}"
+        else:
+            lang_display = f"{len(languages)} language(s)"
+
+        # Display intelligent model selection options
+        self.console.print("\n[bold cyan]🎯 Model Selection for Benchmarking[/bold cyan]\n")
+
+        selection_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+        selection_table.add_column("Option", style="cyan bold", width=18)
+        selection_table.add_column("Description", style="white", width=70)
+
+        selection_table.add_row(
+            "intelligent",
+            "🤖 AI-powered selection based on your data\n" +
+            f"✓ Considers: {lang_display}, {text_length_avg:.0f} avg chars, '{model_strategy}' strategy\n" +
+            "✓ Selects 5-7 optimal models automatically"
+        )
+        selection_table.add_row(
+            "pre-selected",
+            "📋 Choose from pre-selected categories\n" +
+            "✓ Filter by: language, document length, efficiency\n" +
+            "✓ View and select from curated model lists"
+        )
+        selection_table.add_row(
+            "custom",
+            "✏️  Manual selection from all available models\n" +
+            "✓ Full access to 37+ models\n" +
+            "✓ Enter any HuggingFace model ID"
+        )
+
+        self.console.print(selection_table)
+        self.console.print()
+
+        selection_mode = Prompt.ask(
+            "[bold yellow]Model selection mode[/bold yellow]",
+            choices=["intelligent", "pre-selected", "custom"],
+            default="intelligent"
+        )
+
+        selected_models = []
+        model_lang_map = {}
+
+        if selection_mode == "intelligent":
+            selected_models, model_lang_map = self._get_intelligent_benchmark_models(
+                languages, text_length_avg, model_strategy, recommended_model, language_distribution
+            )
+
+            self.console.print(f"\n[green]✓ Intelligently selected {len(selected_models)} models:[/green]")
+            for i, model in enumerate(selected_models, 1):
+                lang_info = f" (for {model_lang_map[model].upper()} texts)" if model_lang_map.get(model) else " (multilingual)"
+                self.console.print(f"  {i}. {model}{lang_info}")
+
+            # Warning for monolingual models in multilingual dataset
+            if len(languages) > 1 and model_lang_map:
+                mono_models = [m for m in selected_models if model_lang_map.get(m)]
+                if mono_models:
+                    self.console.print(f"\n[yellow]⚠️  Note: Language-specific models will be trained on ALL texts[/yellow]")
+                    self.console.print(f"[dim]Ideally, monolingual models should only train on their target language.[/dim]")
+                    self.console.print(f"[dim]For better results with mixed languages, prefer multilingual models.[/dim]")
+
+        elif selection_mode == "pre-selected":
+            selected_models = self._get_preselected_benchmark_models(languages, text_length_avg)
+
+        else:  # custom
+            selected_models = self._get_custom_benchmark_models()
+
+        if not selected_models:
+            self.console.print("[yellow]No models selected. Using default: bert-base-uncased[/yellow]")
+            selected_models = ["bert-base-uncased"]
+
+        # Ask about reinforcement learning
+        self.console.print("\n[bold cyan]🎓 Reinforcement Learning Option[/bold cyan]")
+        self.console.print("[dim]Automatically triggered when model underperforms (F1 class 1 < threshold).[/dim]")
+        self.console.print("[dim]• Applies oversampling via WeightedRandomSampler for minority class[/dim]")
+        self.console.print("[dim]• Corrects cross-entropy loss with adaptive class weights[/dim]")
+        self.console.print("[dim]• Adjusts learning rate, batch size, and epochs based on failure severity[/dim]")
+        self.console.print("[dim]• Can improve F1 by 5-15% for underperforming models[/dim]\n")
+
+        use_reinforcement = Confirm.ask("Enable reinforcement learning?", default=False)
+
+        # Ask for number of epochs
+        self.console.print("\n[bold cyan]⏱️  Training Duration[/bold cyan]")
+        self.console.print("[dim]Number of epochs to train each model.[/dim]")
+        self.console.print("[dim]• More epochs = better performance but longer training time[/dim]")
+        self.console.print("[dim]• Recommended: 10-15 epochs for benchmark[/dim]\n")
+
+        n_epochs = IntPrompt.ask("Number of epochs per model", default=10)
+
+        # Load the multi-label dataset
+        from llm_tool.trainers.multi_label_trainer import MultiLabelTrainer, TrainingConfig as MultiLabelTrainingConfig
+
+        output_dir = self._training_studio_make_output_dir("training_studio_benchmark_multilabel")
+
+        try:
+            trainer = MultiLabelTrainer(config=MultiLabelTrainingConfig(), verbose=False)
+            samples = trainer.load_multi_label_data(
+                str(dataset_path),
+                text_field="text",
+                labels_dict_field="labels",
+                label_fields=label_fields,
+            )
+        except Exception as exc:
+            self.console.print(f"[red]Failed to load dataset:[/red] {exc}")
+            self.logger.exception("Multi-label benchmark dataset loading failed", exc_info=exc)
+            return
+
+        if not samples:
+            self.console.print("[red]No samples found in dataset[/red]")
+            return
+
+        # Get all unique labels
+        all_labels = set()
+        for sample in samples:
+            all_labels.update(sample.labels.keys())
+
+        # Detect if labels have common prefixes (key_value format like "theme_politics", "theme_sports")
+        # Group labels by prefix to detect multi-class encoded as multi-label
+        # Strategy: Find the longest common prefix among all labels
+        label_groups = {}
+
+        # Sort labels to process them in order
+        sorted_labels = sorted(all_labels)
+
+        # Group by all possible prefixes (trying from shortest to longest)
+        potential_groups = {}
+
+        for label in sorted_labels:
+            if '_' not in label:
+                label_groups[label] = [label]
+                continue
+
+            # For each label, try all possible prefix lengths
+            parts = label.split('_')
+
+            # Start with the shortest meaningful prefix (first part only)
+            # and go up to the second-to-last part
+            for prefix_len in range(1, len(parts)):
+                prefix = '_'.join(parts[:prefix_len])
+
+                # Add this label to this prefix group
+                if prefix not in potential_groups:
+                    potential_groups[prefix] = []
+                potential_groups[prefix].append(label)
+
+        # Now find the best grouping: prefer longer prefixes that group multiple labels
+        # and don't have overlapping members
+        used_labels = set()
+
+        # Sort prefixes by length (longest first) to prefer more specific groupings
+        for prefix in sorted(potential_groups.keys(), key=len, reverse=True):
+            members = potential_groups[prefix]
+
+            # Skip if this group's members are already used in another group
+            if any(m in used_labels for m in members):
+                continue
+
+            # Only keep groups with 2+ members
+            if len(members) >= 2:
+                # Verify all members start with this exact prefix + underscore
+                if all(m.startswith(prefix + '_') for m in members):
+                    # Make sure none of the members have been grouped already
+                    label_groups[prefix] = members
+                    used_labels.update(members)
+
+        # Add remaining ungrouped labels as individual labels
+        for label in sorted_labels:
+            if label not in used_labels:
+                label_groups[label] = [label]
+
+        # Identify true multi-label vs multi-class encoded as multi-label
+        # If a prefix has multiple values and they're mutually exclusive, it's multi-class
+        true_label_keys = []
+        multiclass_groups = {}  # Track which labels are multi-class groups
+
+        for prefix, group_labels in label_groups.items():
+            if len(group_labels) > 1:
+                # Check if mutually exclusive (each sample has max 1 label from this group)
+                is_mutually_exclusive = True
+                for sample in samples:
+                    active_in_group = sum(1 for lbl in group_labels if sample.labels.get(lbl, 0))
+                    if active_in_group > 1:
+                        is_mutually_exclusive = False
+                        break
+
+                if is_mutually_exclusive:
+                    # This is multi-class encoded as multi-label - treat as single label
+                    # Extract value name = everything after the prefix
+                    value_names = [lbl[len(prefix)+1:] if lbl.startswith(prefix+'_') else lbl for lbl in group_labels]
+                    self.console.print(f"[yellow]ℹ️  Detected mutually exclusive labels '{prefix}' with {len(group_labels)} values: {', '.join(value_names)}[/yellow]")
+
+                    # Ask user to confirm if this should be treated as multi-class or separate binary labels
+                    treat_as_multiclass = Confirm.ask(
+                        f"[bold]Treat '{prefix}' as a single multi-class label (recommended)?[/bold]\n"
+                        f"  • Yes: Train one model to predict among {len(group_labels)} classes\n"
+                        f"  • No: Train {len(group_labels)} separate binary models (one per value)",
+                        default=True
+                    )
+
+                    if treat_as_multiclass:
+                        true_label_keys.append(prefix)
+                        multiclass_groups[prefix] = group_labels
+                        self.console.print(f"[green]✓ Will train as multi-class: {prefix}[/green]\n")
+                    else:
+                        # Treat each value as independent binary label
+                        true_label_keys.extend(group_labels)
+                        self.console.print(f"[green]✓ Will train {len(group_labels)} separate binary models[/green]\n")
+                else:
+                    # True multi-label - each label is independent
+                    true_label_keys.extend(group_labels)
+            else:
+                # Single label (either standalone or ungrouped)
+                true_label_keys.extend(group_labels)
+
+        self.console.print(f"\n[green]✓ Loaded {len(samples)} samples with {len(true_label_keys)} label type(s)[/green]")
+        self.console.print(f"[dim]Labels: {', '.join(sorted(true_label_keys))}[/dim]\n")
+
+        # Ask which labels to benchmark
+        self.console.print("[bold]Select labels to benchmark:[/bold]")
+        label_list = sorted(true_label_keys)
+        for idx, label in enumerate(label_list, 1):
+            # Count samples for this label
+            # For grouped multi-class labels, count samples with ANY member of the group
+            if label in multiclass_groups:
+                # Multi-class group - count samples with any member active
+                count = sum(1 for s in samples if any(s.labels.get(member, 0) for member in multiclass_groups[label]))
+                # Extract value name = everything after the prefix
+                value_counts = {member[len(label)+1:] if member.startswith(label+'_') else member: sum(1 for s in samples if s.labels.get(member, 0)) for member in multiclass_groups[label]}
+                values_str = ', '.join([f"{v}={c}" for v, c in value_counts.items()])
+                self.console.print(f"  {idx}. {label} ({count} total samples: {values_str})")
+            else:
+                # Single binary label
+                count = sum(1 for s in samples if label in s.labels and s.labels[label])
+                self.console.print(f"  {idx}. {label} ({count} positive samples)")
+
+        self.console.print("\n[dim]Press Enter to benchmark all labels, or enter label indices (comma-separated):[/dim]")
+        label_selection = Prompt.ask("Select labels", default="")
+
+        if label_selection.strip():
+            try:
+                indices = [int(i.strip()) for i in label_selection.split(",")]
+                selected_labels = [label_list[i-1] for i in indices if 1 <= i <= len(label_list)]
+            except (ValueError, IndexError):
+                self.console.print("[yellow]Invalid selection, benchmarking all labels[/yellow]")
+                selected_labels = label_list
+        else:
+            selected_labels = label_list
+
+        if not selected_labels:
+            self.console.print("[red]No labels selected[/red]")
+            return
+
+        # Run benchmark for each label with each model
+        from rich.table import Table
+        import pandas as pd
+
+        all_results = []
+
+        total_benchmarks = len(selected_labels) * len(selected_models)
+        current = 0
+
+        for label_name in selected_labels:
+            self.console.print(f"\n[bold cyan]{'━' * 80}[/bold cyan]")
+            self.console.print(f"[bold cyan]  Benchmarking Label:[/bold cyan] [bold white]{label_name}[/bold white]")
+            self.console.print(f"[bold cyan]{'━' * 80}[/bold cyan]\n")
+
+            # Determine if this is a grouped label or a direct label
+            if label_name in multiclass_groups:
+                # Multi-class encoded as multi-label - convert to multi-class classification
+                group_labels = multiclass_groups[label_name]
+                # Extract value names = everything after the prefix
+                value_names = [lbl[len(label_name)+1:] if lbl.startswith(label_name+'_') else lbl for lbl in group_labels]
+                self.console.print(f"[dim]Multi-class label with {len(group_labels)} values: {', '.join(value_names)}[/dim]\n")
+
+                # Convert to multi-class samples (label = value index, not binary)
+                from llm_tool.trainers.data_utils import DataSample
+                multiclass_samples = []
+                for sample in samples:
+                    # Find which value from the group is active (should be exactly 1)
+                    active_label_value = None
+                    for group_label in group_labels:
+                        if sample.labels.get(group_label, 0):
+                            active_label_value = group_label
+                            break
+
+                    if active_label_value:
+                        # Get the index of this value in the group
+                        label_idx = group_labels.index(active_label_value)
+                        multiclass_samples.append(DataSample(
+                            text=sample.text,
+                            label=label_idx,
+                            id=sample.id,
+                            lang=sample.lang,
+                            metadata={**(sample.metadata or {}), 'original_label': label_name, 'label_value': active_label_value}
+                        ))
+
+                binary_samples = multiclass_samples
+                num_classes = len(group_labels)
+            else:
+                # True binary label or ungrouped label
+                # CRITICAL FIX: Use string labels NOT_label/label instead of 0/1
+                binary_samples = []
+                for sample in samples:
+                    if label_name in sample.labels:
+                        from llm_tool.trainers.data_utils import DataSample
+                        binary_label = label_name if sample.labels[label_name] else f"NOT_{label_name}"
+                        binary_samples.append(DataSample(
+                            text=sample.text,
+                            label=binary_label,
+                            id=sample.id,
+                            lang=sample.lang,
+                            metadata={**(sample.metadata or {}), 'original_label': label_name}
+                        ))
+                num_classes = 2
+
+            if len(binary_samples) < 20:
+                self.console.print(f"[yellow]⚠️  Skipping {label_name}: insufficient samples ({len(binary_samples)})[/yellow]")
+                continue
+
+            # Split into train/test
+            from sklearn.model_selection import train_test_split
+            train_samples, test_samples = train_test_split(
+                binary_samples,
+                test_size=0.2,
+                random_state=42,
+                stratify=[s.label for s in binary_samples]  # DataSample uses .label not .labels
+            )
+
+            self.console.print(f"[dim]Train: {len(train_samples)}, Test: {len(test_samples)}[/dim]\n")
+
+            # Benchmark each model on this label
+            for model_name in selected_models:
+                current += 1
+                self.console.print(f"[cyan]Benchmark {current}/{total_benchmarks}:[/cyan] [bold]{model_name}[/bold] on [bold]{label_name}[/bold]")
+
+                try:
+                    # Import the appropriate model class
+                    from llm_tool.trainers.model_selector import ModelSelector
+                    selector = ModelSelector(verbose=False)
+
+                    # Map common model names to their profile keys
+                    model_name_mapping = {
+                        'camembert-base': 'Camembert',
+                        'flaubert-base': 'FlauBERTBase',
+                        'camembert-large': 'CamembertLarge',
+                        'xlm-roberta-base': 'XLMRobertaBase',
+                        'xlm-roberta-large': 'XLMRobertaLarge',
+                        'bert-base-uncased': 'BERTBase',
+                        'roberta-base': 'RoBERTaBase',
+                        'bert-large-uncased': 'BERTLarge',
+                        'bert-base-multilingual-cased': 'mBERTBase',
+                        'distilbert-base': 'DistilBERT',
+                        'distilroberta-base': 'DistilRoBERTa',
+                        'albert-base-v2': 'ALBERTBase',
+                        'cmarkea/distilcamembert-base': 'DistilCamemBERT',
+                    }
+
+                    # Try to find the model profile key
+                    profile_key = model_name_mapping.get(model_name)
+
+                    if profile_key and profile_key in selector.MODEL_PROFILES:
+                        # Found a matching profile
+                        model_class = selector.MODEL_PROFILES[profile_key].model_class
+                        model = model_class()
+                    elif model_name in selector.MODEL_PROFILES:
+                        # Direct match in profiles
+                        model_class = selector.MODEL_PROFILES[model_name].model_class
+                        model = model_class()
+                    else:
+                        # Try to create a generic model with AutoTokenizer and AutoModelForSequenceClassification
+                        from transformers import AutoTokenizer, AutoModelForSequenceClassification
+                        from llm_tool.trainers.bert_base import BertBase
+
+                        class CustomModel(BertBase):
+                            def __init__(self):
+                                super().__init__(
+                                    model_name=model_name,
+                                    tokenizer=AutoTokenizer,
+                                    model_sequence_classifier=AutoModelForSequenceClassification
+                                )
+
+                        model = CustomModel()
+
+                    # Encode data
+                    train_texts = [s.text for s in train_samples]
+                    train_labels = [s.label for s in train_samples]  # DataSample uses .label not .labels
+                    test_texts = [s.text for s in test_samples]
+                    test_labels = [s.label for s in test_samples]  # DataSample uses .label not .labels
+
+                    train_loader = model.encode(train_texts, train_labels, batch_size=32, progress_bar=False)
+                    test_loader = model.encode(test_texts, test_labels, batch_size=32, progress_bar=False)
+
+                    # CRITICAL: Do NOT use pos_weight for initial training
+                    # Let the model learn naturally first, then reinforcement learning
+                    # will apply adaptive weights if needed (when F1 is low)
+
+                    # Train model
+                    temp_model_name = f"benchmark_{label_name}_{model_name.replace('/', '_')}"
+
+                    # CRITICAL FIX: Extract language information for per-language metrics
+                    test_languages = [s.lang for s in test_samples] if test_samples else None
+                    has_languages = test_languages and any(lang for lang in test_languages if lang)
+
+                    # Determine language (use first sample's language or MULTI if multiple)
+                    sample_langs = set(s.lang for s in train_samples if s.lang)
+                    if len(sample_langs) == 1:
+                        train_language = list(sample_langs)[0].upper()
+                    elif len(sample_langs) > 1:
+                        train_language = "MULTI"
+                    else:
+                        train_language = None
+
+                    result = model.run_training(
+                        train_dataloader=train_loader,
+                        test_dataloader=test_loader,
+                        n_epochs=n_epochs,
+                        lr=5e-5,
+                        random_state=42,
+                        save_model_as=temp_model_name,
+                        pos_weight=None,  # CRITICAL: No pos_weight initially - let RL handle it
+                        metrics_output_dir="training_logs",
+                        best_model_criteria="combined",
+                        f1_class_1_weight=0.7,
+                        reinforced_learning=use_reinforcement,
+                        reinforced_epochs=10,
+                        rescue_low_class1_f1=True,  # CRITICAL: Enable automatic rescue
+                        f1_1_rescue_threshold=0.50,  # Trigger if F1 < 50%
+                        reinforced_f1_threshold=0.60,
+                        track_languages=has_languages,  # CRITICAL: Enable if we have language info
+                        language_info=test_languages,     # CRITICAL: Pass language info for metrics
+                        label_key=label_name,
+                        label_value=None if num_classes > 2 else label_name,
+                        language=train_language,
+                        class_names=value_names if num_classes > 2 else None,
+                    )
+
+                    # Extract metrics
+                    best_metric_val, best_model_path, best_scores = result
+
+                    if best_scores:
+                        # Multi-class: best_scores is a tuple of arrays (precision, recall, f1, support)
+                        # Each array has one value per class
+                        if num_classes > 2:
+                            # Multi-class
+                            macro_f1 = np.mean(best_scores[2])  # Average of all F1 scores
+                            result_dict = {
+                                'label': label_name,
+                                'model': model_name,
+                                'f1_macro': macro_f1,
+                            }
+                            # Add per-class metrics
+                            for i in range(num_classes):
+                                result_dict[f'f1_class_{i}'] = best_scores[2][i]
+                                result_dict[f'precision_{i}'] = best_scores[0][i]
+                                result_dict[f'recall_{i}'] = best_scores[1][i]
+                                result_dict[f'support_{i}'] = int(best_scores[3][i])
+                            all_results.append(result_dict)
+                            self.console.print(f"  [green]✓ F1 Macro: {macro_f1:.4f}[/green]\n")
+                        else:
+                            # Binary
+                            precision_0, recall_0, f1_0, support_0 = best_scores[0]
+                            precision_1, recall_1, f1_1, support_1 = best_scores[1]
+                            macro_f1 = (f1_0 + f1_1) / 2
+                            all_results.append({
+                                'label': label_name,
+                                'model': model_name,
+                                'f1_macro': macro_f1,
+                                'f1_class_0': f1_0,
+                                'f1_class_1': f1_1,
+                                'precision_1': precision_1,
+                                'recall_1': recall_1,
+                                'support_0': int(support_0),
+                                'support_1': int(support_1),
+                            })
+                            self.console.print(f"  [green]✓ F1 Macro: {macro_f1:.4f}, F1 Class 1: {f1_1:.4f}[/green]\n")
+                    else:
+                        # No scores
+                        macro_f1 = 0
+                        self.console.print(f"  [yellow]⚠ No scores available[/yellow]\n")
+
+                except Exception as exc:
+                    self.console.print(f"  [red]✗ Failed: {exc}[/red]\n")
+                    self.logger.exception(f"Benchmark failed for {model_name} on {label_name}", exc_info=exc)
+
+        # Display final results
+        if all_results:
+            self.console.print(f"\n[bold cyan]{'━' * 80}[/bold cyan]")
+            self.console.print(f"[bold cyan]  Benchmark Results Summary[/bold cyan]")
+            self.console.print(f"[bold cyan]{'━' * 80}[/bold cyan]\n")
+
+            # Determine max number of classes to create appropriate table columns
+            max_classes = 0
+            for result in all_results:
+                # Count how many f1_class_X keys exist
+                class_keys = [k for k in result.keys() if k.startswith('f1_class_')]
+                max_classes = max(max_classes, len(class_keys))
+
+            # Create summary table with dynamic columns based on max_classes
+            results_table = Table(show_header=True, header_style="bold magenta", border_style="cyan")
+            results_table.add_column("Label", style="cyan")
+            results_table.add_column("Model", style="white")
+            results_table.add_column("F1 Macro", justify="right", style="green")
+
+            # Add columns for each class
+            for i in range(max_classes):
+                results_table.add_column(f"F1 C{i}", justify="right", style="yellow")
+                results_table.add_column(f"P{i}", justify="right", style="dim")
+                results_table.add_column(f"R{i}", justify="right", style="dim")
+
+            # Sort by label and F1 macro
+            all_results.sort(key=lambda x: (x['label'], -x['f1_macro']))
+
+            for result in all_results:
+                row = [
+                    result['label'],
+                    result['model'],
+                    f"{result['f1_macro']:.4f}",
+                ]
+                # Add per-class metrics
+                for i in range(max_classes):
+                    f1_key = f'f1_class_{i}'
+                    precision_key = f'precision_{i}'
+                    recall_key = f'recall_{i}'
+
+                    if f1_key in result:
+                        row.append(f"{result[f1_key]:.4f}")
+                        row.append(f"{result[precision_key]:.4f}")
+                        row.append(f"{result[recall_key]:.4f}")
+                    else:
+                        row.append("")
+                        row.append("")
+                        row.append("")
+
+                results_table.add_row(*row)
+
+            self.console.print(results_table)
+
+            # Save results to CSV with proper handling of missing values
+            results_df = pd.DataFrame(all_results)
+
+            # Replace None/NaN with 0.0 for numeric columns to avoid NA values
+            for col in results_df.columns:
+                if col not in ['label', 'model']:
+                    results_df[col] = results_df[col].fillna(0.0)
+
+            # Save overall results
+            results_csv = output_dir / "multilabel_benchmark_results.csv"
+            results_df.to_csv(results_csv, index=False, na_rep='0.0')
+            self.console.print(f"\n[green]✓ Results saved to:[/green] {results_csv}")
+
+            # Create per-label summary CSVs in training_logs/{label_name}/
+            from pathlib import Path
+            training_logs_base = Path("training_logs")
+
+            for label_name in selected_labels:
+                label_results = [r for r in all_results if r['label'] == label_name]
+                if label_results:
+                    # Create label directory
+                    label_dir = training_logs_base / label_name
+                    label_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Create summary CSV for this label
+                    label_df = pd.DataFrame(label_results)
+                    label_df = label_df.drop(columns=['label'])  # Remove label column since it's redundant
+
+                    # Replace None/NaN with 0.0
+                    for col in label_df.columns:
+                        if col != 'model':
+                            label_df[col] = label_df[col].fillna(0.0)
+
+                    # Sort by F1 macro descending
+                    label_df = label_df.sort_values('f1_macro', ascending=False)
+
+                    summary_csv = label_dir / "models_summary.csv"
+                    label_df.to_csv(summary_csv, index=False, na_rep='0.0')
+
+                    # Create best models ranking CSV
+                    best_df = label_df.head(10)  # Top 10 models
+                    best_csv = label_dir / "best_models_ranking.csv"
+                    best_df.to_csv(best_csv, index=False, na_rep='0.0')
+
+            # Show best model per label
+            self.console.print("\n[bold]Best model per label:[/bold]")
+            for label_name in selected_labels:
+                label_results = [r for r in all_results if r['label'] == label_name]
+                if label_results:
+                    best = max(label_results, key=lambda x: x['f1_macro'])
+                    self.console.print(f"  • [cyan]{label_name}:[/cyan] {best['model']} (F1 {best['f1_macro']:.4f})")
+        else:
+            self.console.print("[yellow]No benchmark results to display[/yellow]")
 
     def _training_studio_run_custom(self, bundle: TrainingDataBundle) -> None:
         self.console.print("\n[bold]Custom training configuration[/bold]")
@@ -7616,13 +9937,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print(f"[green]Best model:[/green] {best_model} (F1 {best_f1:.4f})")
 
     def _training_studio_resolve_benchmark_dataset(self, bundle: TrainingDataBundle) -> Tuple[Path, str, str]:
-        if bundle.strategy == "single-label" and bundle.primary_file:
+        # Support both single-label and multi-label datasets for benchmarking
+        if bundle.primary_file:
             return bundle.primary_file, bundle.text_column, bundle.label_column
 
+        # For multi-label distributed training, we have individual label files
         candidates = [(label, path) for label, path in bundle.training_files.items() if label != "multilabel"]
 
         if not candidates:
-            raise ValueError("No single-label dataset available for benchmarking.")
+            raise ValueError("No dataset available for benchmarking.")
 
         if len(candidates) == 1:
             label, path = candidates[0]
@@ -7658,6 +9981,1052 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 unique.append(name)
                 seen.add(name)
         return unique
+
+    def _get_majority_language(self, languages: set, language_distribution: dict = None) -> str:
+        """
+        Determine the majority/dominant language from a set of languages.
+
+        Args:
+            languages: Set of language codes
+            language_distribution: Optional dict mapping language codes to counts
+
+        Returns:
+            Dominant language code (lowercase) or None
+        """
+        if not languages:
+            return None
+
+        # If we have distribution data, use it to find the majority
+        if language_distribution:
+            total = sum(language_distribution.values())
+            if total > 0:
+                # Find language with highest percentage
+                majority_lang = max(language_distribution.items(), key=lambda x: x[1])
+                percentage = (majority_lang[1] / total) * 100
+
+                # If a language represents >50%, it's the majority
+                if percentage > 50:
+                    return majority_lang[0].lower()
+
+        # Fallback: if only one language, return it
+        if len(languages) == 1:
+            return list(languages)[0].lower()
+
+        # If multiple languages without clear majority, check for common cases
+        lang_list = [l.lower() for l in languages]
+        if 'fr' in lang_list:
+            return 'fr'  # Often FR is dominant after correction
+        elif 'en' in lang_list:
+            return 'en'
+
+        return None
+
+    def _get_intelligent_benchmark_models(self, languages: set, text_length_avg: float, model_strategy: str, recommended_model: str = None, language_distribution: dict = None) -> Tuple[List[str], Dict[str, Optional[str]]]:
+        """
+        HIGHLY INTELLIGENT model selection using ALL available models in the package.
+
+        Selection criteria (scored):
+        1. Language match (primary, 100 points)
+        2. Text length compatibility (50 points)
+        3. Model size/efficiency (30 points)
+        4. Model popularity/reliability (20 points)
+        5. Multilingual capability (bonus for mixed languages)
+
+        Returns:
+            Tuple of (models_list, model_to_language_map)
+            model_to_language_map: {model_name: language_code or None for multilingual}
+        """
+        lang_list = list(languages) if languages else []
+
+        # COMPREHENSIVE language-to-model mapping using ALL models from sota_models
+        MODEL_LANGUAGE_MAP = {
+            # ============ MULTILINGUAL MODELS ============
+            'xlm-roberta-base': None,
+            'xlm-roberta-large': None,
+            'bert-base-multilingual-cased': None,
+            'bert-base-multilingual-uncased': None,
+            'distilbert-base-multilingual-cased': None,
+            'microsoft/mdeberta-v3-base': None,
+
+            # ============ ENGLISH MODELS ============
+            'bert-base-uncased': 'en',
+            'bert-base-cased': 'en',
+            'bert-large-uncased': 'en',
+            'bert-large-cased': 'en',
+            'roberta-base': 'en',
+            'roberta-large': 'en',
+            'distilbert-base-uncased': 'en',
+            'distilbert-base-cased': 'en',
+            'distilroberta-base': 'en',
+            'albert-base-v2': 'en',
+            'albert-large-v2': 'en',
+            'albert-xlarge-v2': 'en',
+            'google/electra-base-discriminator': 'en',
+            'google/electra-large-discriminator': 'en',
+            'microsoft/deberta-base': 'en',
+            'microsoft/deberta-large': 'en',
+            'microsoft/deberta-v3-base': 'en',
+            'microsoft/deberta-v3-large': 'en',
+            'microsoft/deberta-v3-small': 'en',
+            'allenai/longformer-base-4096': 'en',
+            'google/bigbird-roberta-base': 'en',
+            'google/bigbird-roberta-large': 'en',
+            'squeezebert/squeezebert-uncased': 'en',
+            'sentence-transformers/all-MiniLM-L6-v2': 'en',
+
+            # ============ FRENCH MODELS ============
+            'camembert-base': 'fr',
+            'camembert/camembert-base': 'fr',
+            'camembert/camembert-large': 'fr',
+            'flaubert/flaubert_base_cased': 'fr',
+            'flaubert/flaubert_base_uncased': 'fr',
+            'flaubert/flaubert_large_cased': 'fr',
+            'cmarkea/distilcamembert-base': 'fr',
+            'almanach/camembert-base': 'fr',
+            'dbmdz/bert-base-french-europeana-cased': 'fr',
+            'dangvantuan/sentence-camembert-base': 'fr',
+            'Lyon-NLP/FrALBERT': 'fr',
+
+            # ============ GERMAN MODELS ============
+            'bert-base-german-cased': 'de',
+            'bert-base-german-dbmdz-cased': 'de',
+            'bert-base-german-dbmdz-uncased': 'de',
+            'deepset/gbert-base': 'de',
+            'deepset/gbert-large': 'de',
+            'distilbert-base-german-cased': 'de',
+            'uklfr/gottbert-base': 'de',
+            'dbmdz/bert-base-german-europeana-cased': 'de',
+
+            # ============ SPANISH MODELS ============
+            'bert-base-spanish-wwm-cased': 'es',
+            'bert-base-spanish-wwm-uncased': 'es',
+            'dccuchile/bert-base-spanish-wwm-cased': 'es',
+            'dccuchile/bert-base-spanish-wwm-uncased': 'es',
+            'PlanTL-GOB-ES/roberta-base-bne': 'es',
+            'mrm8488/electricidad-base-discriminator': 'es',
+            'bertin-project/bertin-roberta-base-spanish': 'es',
+
+            # ============ ITALIAN MODELS ============
+            'dbmdz/bert-base-italian-cased': 'it',
+            'dbmdz/bert-base-italian-uncased': 'it',
+            'dbmdz/bert-base-italian-xxl-cased': 'it',
+            'dbmdz/bert-base-italian-xxl-uncased': 'it',
+            'Musixmatch/umberto-commoncrawl-cased-v1': 'it',
+
+            # ============ PORTUGUESE MODELS ============
+            'neuralmind/bert-base-portuguese-cased': 'pt',
+            'neuralmind/bert-large-portuguese-cased': 'pt',
+            'neuralmind/bert-base-portuguese-uncased': 'pt',
+            'pierreguillou/bert-base-cased-pt-lenerbr': 'pt',
+
+            # ============ DUTCH MODELS ============
+            'GroNLP/bert-base-dutch-cased': 'nl',
+            'wietsedv/bert-base-dutch-cased': 'nl',
+            'pdelobelle/robbert-v2-dutch-base': 'nl',
+            'pdelobelle/robbert-v2-dutch-large': 'nl',
+
+            # ============ POLISH MODELS ============
+            'dkleczek/bert-base-polish-uncased-v1': 'pl',
+            'dkleczek/bert-base-polish-cased-v1': 'pl',
+            'allegro/herbert-base-cased': 'pl',
+            'allegro/herbert-large-cased': 'pl',
+
+            # ============ ARABIC MODELS ============
+            'aubmindlab/bert-base-arabertv2': 'ar',
+            'aubmindlab/bert-large-arabertv2': 'ar',
+            'asafaya/bert-base-arabic': 'ar',
+            'CAMeL-Lab/bert-base-arabic-camelbert-msa': 'ar',
+            'UBC-NLP/MARBERT': 'ar',
+
+            # ============ CHINESE MODELS ============
+            'bert-base-chinese': 'zh',
+            'hfl/chinese-bert-wwm': 'zh',
+            'hfl/chinese-bert-wwm-ext': 'zh',
+            'hfl/chinese-roberta-wwm-ext': 'zh',
+            'hfl/chinese-roberta-wwm-ext-large': 'zh',
+            'hfl/chinese-electra-base-discriminator': 'zh',
+
+            # ============ RUSSIAN MODELS ============
+            'DeepPavlov/rubert-base-cased': 'ru',
+            'DeepPavlov/rubert-base-cased-conversational': 'ru',
+            'ai-forever/ruBert-base': 'ru',
+            'ai-forever/ruBert-large': 'ru',
+            'cointegrated/rubert-tiny': 'ru',
+
+            # ============ JAPANESE MODELS ============
+            'cl-tohoku/bert-base-japanese': 'ja',
+            'cl-tohoku/bert-base-japanese-whole-word-masking': 'ja',
+            'cl-tohoku/bert-large-japanese': 'ja',
+            'nlp-waseda/roberta-base-japanese': 'ja',
+            'nlp-waseda/roberta-large-japanese': 'ja',
+
+            # ============ KOREAN MODELS ============
+            'klue/bert-base': 'ko',
+            'kykim/bert-kor-base': 'ko',
+            'beomi/kcbert-base': 'ko',
+            'beomi/kcbert-large': 'ko',
+
+            # ============ TURKISH MODELS ============
+            'dbmdz/bert-base-turkish-cased': 'tr',
+            'dbmdz/bert-base-turkish-uncased': 'tr',
+            'dbmdz/electra-base-turkish-cased-discriminator': 'tr',
+
+            # ============ SWEDISH MODELS ============
+            'KB/bert-base-swedish-cased': 'sv',
+            'af-ai-center/bert-base-swedish-uncased': 'sv',
+
+            # ============ DANISH MODELS ============
+            'Maltehb/danish-bert-botxo': 'da',
+            'sarnikowski/convbert-small-da-cased': 'da',
+
+            # ============ NORWEGIAN MODELS ============
+            'ltg/norbert': 'no',
+            'NbAiLab/nb-bert-base': 'no',
+
+            # ============ FINNISH MODELS ============
+            'TurkuNLP/bert-base-finnish-cased-v1': 'fi',
+            'TurkuNLP/bert-base-finnish-uncased-v1': 'fi',
+
+            # ============ HINDI MODELS ============
+            'ai4bharat/indic-bert': 'hi',
+            'neuralspace-reverie/indic-transformers-hi-bert': 'hi',
+
+            # ============ VIETNAMESE MODELS ============
+            'vinai/phobert-base': 'vi',
+            'vinai/phobert-large': 'vi',
+
+            # ============ THAI MODELS ============
+            'airesearch/wangchanberta-base-att-spm-uncased': 'th',
+
+            # ============ INDONESIAN MODELS ============
+            'indobenchmark/indobert-base-p1': 'id',
+            'indobenchmark/indobert-large-p1': 'id',
+
+            # ============ CZECH MODELS ============
+            'Seznam/retro-bert-small-cs': 'cs',
+            'ufal/robeczech-base': 'cs',
+
+            # ============ GREEK MODELS ============
+            'nlpaueb/bert-base-greek-uncased-v1': 'el',
+
+            # ============ HEBREW MODELS ============
+            'onlplab/alephbert-base': 'he',
+
+            # ============ ROMANIAN MODELS ============
+            'dumitrescustefan/bert-base-romanian-cased-v1': 'ro',
+
+            # ============ BULGARIAN MODELS ============
+            'iarfmoose/roberta-base-bulgarian': 'bg',
+
+            # ============ CROATIAN MODELS ============
+            'classla/bcms-bertic': 'hr',
+
+            # ============ SERBIAN MODELS ============
+            'classla/bcms-bertic': 'sr',
+
+            # ============ UKRAINIAN MODELS ============
+            'youscan/ukr-roberta-base': 'uk',
+        }
+
+        # ============================================================
+        # STEP 1: Analyze language distribution
+        # ============================================================
+        total_samples = sum(language_distribution.values()) if language_distribution else 0
+        lang_percentages = {}
+        if total_samples > 0:
+            lang_percentages = {lang.lower(): (count / total_samples * 100)
+                                for lang, count in language_distribution.items()}
+
+        # Find dominant language (>70%)
+        dominant_lang = None
+        for lang, pct in lang_percentages.items():
+            if pct > 70:
+                dominant_lang = lang
+                break
+
+        # Check if single language
+        if len(lang_list) == 1:
+            dominant_lang = lang_list[0].lower()
+
+        # Check if balanced multilingual
+        is_balanced_multilingual = len(lang_list) > 1 and not dominant_lang
+
+        # ============================================================
+        # STEP 2: Score ALL available models
+        # ============================================================
+        model_scores = {}
+
+        for model_name, model_lang in MODEL_LANGUAGE_MAP.items():
+            score = 0.0
+
+            # CRITERION 1: Language Match (100 points max)
+            if model_lang is None:  # Multilingual model
+                if is_balanced_multilingual:
+                    score += 90  # Excellent for balanced multilingual
+                elif len(lang_list) > 1:
+                    score += 70  # Good for any multilingual
+                else:
+                    score += 40  # Okay for single language
+            else:  # Language-specific model
+                if dominant_lang and model_lang == dominant_lang:
+                    score += 100  # Perfect match!
+                elif model_lang in [l.lower() for l in lang_list]:
+                    pct = lang_percentages.get(model_lang, 0)
+                    score += pct  # Score based on language percentage
+                else:
+                    score += 0  # No language match
+
+            # CRITERION 2: Text Length Compatibility (50 points max)
+            if 'longformer' in model_name.lower() or 'bigbird' in model_name.lower():
+                if text_length_avg > 400:
+                    score += 50  # Perfect for long texts
+                elif text_length_avg > 200:
+                    score += 30  # Okay for medium texts
+                else:
+                    score += 10  # Overkill for short texts
+            else:
+                if text_length_avg <= 300:
+                    score += 40  # Good for short/medium texts
+                elif text_length_avg <= 500:
+                    score += 30  # Okay for longer texts
+                else:
+                    score += 15  # Not ideal but works
+
+            # CRITERION 3: Model Size/Efficiency (30 points max)
+            if 'distil' in model_name.lower() or 'tiny' in model_name.lower() or 'small' in model_name.lower():
+                score += 30  # Efficient models
+            elif 'base' in model_name.lower():
+                score += 25  # Standard models
+            elif 'large' in model_name.lower() or 'xlarge' in model_name.lower():
+                score += 15  # Large models (slower)
+            else:
+                score += 20  # Unknown size
+
+            # CRITERION 4: Model Popularity/Reliability (20 points max)
+            # Based on known high-quality models
+            high_quality_models = {
+                'xlm-roberta-base': 20,
+                'xlm-roberta-large': 18,
+                'bert-base-multilingual-cased': 18,
+                'camembert-base': 19,
+                'roberta-base': 20,
+                'bert-base-uncased': 19,
+                'flaubert-base': 17,
+                'bert-base-german-cased': 18,
+                'microsoft/deberta-v3-base': 20,
+                'microsoft/mdeberta-v3-base': 19,
+            }
+            score += high_quality_models.get(model_name, 15)  # Default 15 for others
+
+            # BONUS: Recommended model gets extra points
+            if recommended_model and model_name == recommended_model:
+                score += 50
+
+            model_scores[model_name] = score
+
+        # ============================================================
+        # STEP 3: Select top models by score
+        # ============================================================
+        sorted_models = sorted(model_scores.items(), key=lambda x: x[1], reverse=True)
+
+        # Select top 10 models, then filter to diverse set
+        top_candidates = [model for model, score in sorted_models[:20]]
+
+        final_models = []
+        selected_langs = set()
+
+        # Strategy: Pick diverse models
+        # 1. Add multilingual models first (max 2)
+        multilingual_added = 0
+        for model in top_candidates:
+            if MODEL_LANGUAGE_MAP[model] is None and multilingual_added < 2:
+                final_models.append(model)
+                multilingual_added += 1
+
+        # 2. Add language-specific models for each detected language (1-2 per language)
+        for lang in lang_list[:3]:  # Limit to 3 languages
+            lang_lower = lang.lower()
+            lang_models_added = 0
+            for model in top_candidates:
+                if MODEL_LANGUAGE_MAP[model] == lang_lower and lang_models_added < 2:
+                    if model not in final_models:
+                        final_models.append(model)
+                        lang_models_added += 1
+                        selected_langs.add(lang_lower)
+
+        # 3. Fill remaining slots with highest scored models
+        for model in top_candidates:
+            if model not in final_models:
+                final_models.append(model)
+            if len(final_models) >= 7:
+                break
+
+        # Ensure we have at least some models
+        if not final_models:
+            final_models = ['xlm-roberta-base', 'bert-base-multilingual-cased', 'bert-base-uncased']
+
+        # ============================================================
+        # STEP 4: Display selection rationale
+        # ============================================================
+        if len(lang_list) > 1:
+            lang_info = f"multilingual ({', '.join(lang_list[:3])})"
+            if len(lang_list) > 3:
+                lang_info += f" +{len(lang_list) - 3} more"
+        elif len(lang_list) == 1:
+            lang_info = f"{lang_list[0].upper()}"
+        else:
+            lang_info = "unknown language"
+
+        text_len_info = "short" if text_length_avg < 150 else "medium" if text_length_avg < 350 else "long"
+
+        self.console.print(f"[dim]🤖 AI Selection: {lang_info} dataset, {text_len_info} texts (avg {text_length_avg:.0f} chars)[/dim]")
+        self.console.print(f"[dim]   Scored {len(MODEL_LANGUAGE_MAP)} models → Selected top {len(final_models)} by intelligent criteria[/dim]")
+
+        # Build model-to-language mapping for selected models
+        model_lang_map = {model: MODEL_LANGUAGE_MAP.get(model, None) for model in final_models}
+
+        return final_models, model_lang_map
+
+    def _get_preselected_benchmark_models(self, languages: set, text_length_avg: float) -> List[str]:
+        """
+        Let user choose from pre-selected model categories.
+        NOW INCLUDES ALL LANGUAGES SUPPORTED IN THE PACKAGE!
+        """
+        self.console.print("\n[bold]📋 Pre-Selected Model Categories[/bold]\n")
+        self.console.print("[dim]Choose from curated model lists organized by language and characteristics[/dim]\n")
+
+        categories = {}
+        lang_list = [l.lower() for l in languages] if languages else ['en']
+
+        # ============ MULTILINGUAL MODELS ============
+        if len(lang_list) > 1:
+            categories['Multilingual'] = [
+                'xlm-roberta-base',
+                'xlm-roberta-large',
+                'bert-base-multilingual-cased',
+                'microsoft/mdeberta-v3-base'
+            ]
+
+        # ============ MAJOR LANGUAGES (Always show) ============
+        categories['English'] = [
+            'bert-base-uncased',
+            'roberta-base',
+            'distilbert-base-uncased',
+            'microsoft/deberta-v3-base'
+        ]
+
+        if 'fr' in lang_list or True:  # Always show major languages
+            categories['French'] = [
+                'camembert-base',
+                'flaubert/flaubert_base_cased',
+                'cmarkea/distilcamembert-base',
+                'almanach/camembert-base'
+            ]
+
+        if 'de' in lang_list or True:
+            categories['German'] = [
+                'bert-base-german-cased',
+                'deepset/gbert-base',
+                'distilbert-base-german-cased'
+            ]
+
+        if 'es' in lang_list or True:
+            categories['Spanish'] = [
+                'dccuchile/bert-base-spanish-wwm-cased',
+                'PlanTL-GOB-ES/roberta-base-bne',
+                'bertin-project/bertin-roberta-base-spanish'
+            ]
+
+        # ============ EUROPEAN LANGUAGES ============
+        if 'it' in lang_list:
+            categories['Italian'] = [
+                'dbmdz/bert-base-italian-cased',
+                'dbmdz/bert-base-italian-xxl-cased'
+            ]
+
+        if 'pt' in lang_list:
+            categories['Portuguese'] = [
+                'neuralmind/bert-base-portuguese-cased',
+                'neuralmind/bert-large-portuguese-cased'
+            ]
+
+        if 'nl' in lang_list:
+            categories['Dutch'] = [
+                'GroNLP/bert-base-dutch-cased',
+                'pdelobelle/robbert-v2-dutch-base'
+            ]
+
+        if 'pl' in lang_list:
+            categories['Polish'] = [
+                'dkleczek/bert-base-polish-uncased-v1',
+                'allegro/herbert-base-cased'
+            ]
+
+        if 'sv' in lang_list:
+            categories['Swedish'] = ['KB/bert-base-swedish-cased']
+
+        if 'da' in lang_list:
+            categories['Danish'] = ['Maltehb/danish-bert-botxo']
+
+        if 'no' in lang_list:
+            categories['Norwegian'] = ['ltg/norbert', 'NbAiLab/nb-bert-base']
+
+        if 'fi' in lang_list:
+            categories['Finnish'] = ['TurkuNLP/bert-base-finnish-cased-v1']
+
+        if 'el' in lang_list:
+            categories['Greek'] = ['nlpaueb/bert-base-greek-uncased-v1']
+
+        if 'tr' in lang_list:
+            categories['Turkish'] = ['dbmdz/bert-base-turkish-cased']
+
+        if 'ro' in lang_list:
+            categories['Romanian'] = ['dumitrescustefan/bert-base-romanian-cased-v1']
+
+        if 'bg' in lang_list:
+            categories['Bulgarian'] = ['iarfmoose/roberta-base-bulgarian']
+
+        if 'hr' in lang_list or 'sr' in lang_list:
+            categories['Croatian/Serbian'] = ['classla/bcms-bertic']
+
+        if 'uk' in lang_list:
+            categories['Ukrainian'] = ['youscan/ukr-roberta-base']
+
+        if 'cs' in lang_list:
+            categories['Czech'] = ['ufal/robeczech-base']
+
+        # ============ ASIAN LANGUAGES ============
+        if 'zh' in lang_list:
+            categories['Chinese'] = [
+                'bert-base-chinese',
+                'hfl/chinese-roberta-wwm-ext',
+                'hfl/chinese-roberta-wwm-ext-large'
+            ]
+
+        if 'ja' in lang_list:
+            categories['Japanese'] = [
+                'cl-tohoku/bert-base-japanese',
+                'nlp-waseda/roberta-base-japanese'
+            ]
+
+        if 'ko' in lang_list:
+            categories['Korean'] = [
+                'klue/bert-base',
+                'beomi/kcbert-base'
+            ]
+
+        if 'ar' in lang_list:
+            categories['Arabic'] = [
+                'aubmindlab/bert-base-arabertv2',
+                'CAMeL-Lab/bert-base-arabic-camelbert-msa',
+                'UBC-NLP/MARBERT'
+            ]
+
+        if 'ru' in lang_list:
+            categories['Russian'] = [
+                'DeepPavlov/rubert-base-cased',
+                'ai-forever/ruBert-base'
+            ]
+
+        if 'hi' in lang_list:
+            categories['Hindi'] = ['ai4bharat/indic-bert']
+
+        if 'vi' in lang_list:
+            categories['Vietnamese'] = ['vinai/phobert-base']
+
+        if 'th' in lang_list:
+            categories['Thai'] = ['airesearch/wangchanberta-base-att-spm-uncased']
+
+        if 'id' in lang_list:
+            categories['Indonesian'] = ['indobenchmark/indobert-base-p1']
+
+        if 'he' in lang_list:
+            categories['Hebrew'] = ['onlplab/alephbert-base']
+
+        # ============ SPECIAL CATEGORIES ============
+        if text_length_avg > 400:
+            categories['Long Documents (>400 chars)'] = [
+                'allenai/longformer-base-4096',
+                'google/bigbird-roberta-base'
+            ]
+
+        categories['Efficient/Fast'] = [
+            'distilbert-base-uncased',
+            'distilroberta-base',
+            'albert-base-v2',
+            'squeezebert/squeezebert-uncased'
+        ]
+
+        categories['State-of-the-Art'] = [
+            'microsoft/deberta-v3-base',
+            'microsoft/mdeberta-v3-base',
+            'google/electra-base-discriminator',
+            'xlm-roberta-large'
+        ]
+
+        # Display categories in organized fashion
+        self.console.print("[bold cyan]Available Categories:[/bold cyan]\n")
+        for i, (cat_name, models) in enumerate(categories.items(), 1):
+            model_list = ', '.join(models[:3])  # Show first 3
+            if len(models) > 3:
+                model_list += f" (+{len(models)-3} more)"
+            self.console.print(f"  [green]{i}.[/green] [cyan]{cat_name}:[/cyan] {model_list}")
+
+        self.console.print(f"\n[dim]Total: {len(categories)} categories available[/dim]")
+        self.console.print("\n[yellow]📝 Enter category names separated by commas[/yellow]")
+        self.console.print("[dim]   Example: 'English,Multilingual' or 'French,Efficient'[/dim]\n")
+
+        # Smart default based on detected languages
+        default_cats = []
+        if len(lang_list) > 1:
+            default_cats.append("Multilingual")
+        if 'en' in lang_list:
+            default_cats.append("English")
+        if 'fr' in lang_list:
+            default_cats.append("French")
+        if 'de' in lang_list:
+            default_cats.append("German")
+        if 'es' in lang_list:
+            default_cats.append("Spanish")
+
+        default_str = ','.join(default_cats) if default_cats else "Multilingual,English"
+
+        selected_cats = Prompt.ask("Select categories", default=default_str)
+
+        # Parse selected categories
+        selected_models = []
+        for cat in selected_cats.split(','):
+            cat = cat.strip()
+            # Case-insensitive matching
+            for cat_name, models in categories.items():
+                if cat.lower() in cat_name.lower():
+                    selected_models.extend(models)
+                    break
+
+        # Deduplicate
+        selected_models = list(dict.fromkeys(selected_models))
+
+        return selected_models if selected_models else ['xlm-roberta-base', 'bert-base-multilingual-cased']
+
+    def _get_custom_benchmark_models(self) -> List[str]:
+        """Let user manually select models"""
+        self.console.print("\n[bold]✏️  Custom Model Selection[/bold]\n")
+
+        all_models = self._flatten_trainer_models()
+        self.console.print(f"[dim]Available models ({len(all_models)}):[/dim]")
+        for i, model in enumerate(all_models, 1):
+            if i % 3 == 0:
+                self.console.print(f"  {model}")
+            else:
+                self.console.print(f"  {model}", end="  ")
+        if len(all_models) % 3 != 0:
+            self.console.print()
+
+        self.console.print("\n[dim]Enter model names separated by commas, or HuggingFace model IDs[/dim]")
+        models_input = Prompt.ask("Model names", default="bert-base-uncased,xlm-roberta-base")
+
+        selected_models = [m.strip() for m in models_input.split(',')]
+        return selected_models
+
+    def _save_training_metadata(
+        self,
+        bundle: TrainingDataBundle,
+        mode: str,
+        model_config: Dict[str, Any],
+        execution_status: Optional[Dict[str, Any]] = None
+    ) -> Path:
+        """
+        Save comprehensive training session metadata for reproducibility and resume capability.
+
+        Parameters
+        ----------
+        bundle : TrainingDataBundle
+            The training data bundle with all dataset information
+        mode : str
+            Training mode: quick, benchmark, custom, or distributed
+        model_config : dict
+            Model configuration including selected_model, epochs, batch_size, etc.
+        execution_status : dict, optional
+            Execution status information (status, started_at, completed_at, etc.)
+
+        Returns
+        -------
+        Path
+            Path to the saved metadata JSON file
+        """
+        import json
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        # Build comprehensive metadata
+        metadata = {
+            'training_session': {
+                'timestamp': timestamp,
+                'tool_version': 'LLMTool v1.0',
+                'workflow': f'Training Studio - {mode.capitalize()}',
+                'session_id': f'train_{timestamp}'
+            },
+            'dataset_config': {
+                'primary_file': str(bundle.primary_file) if bundle.primary_file else None,
+                'format': bundle.format_type if hasattr(bundle, 'format_type') else 'unknown',
+                'strategy': bundle.strategy,
+                'text_column': bundle.text_column,
+                'label_column': bundle.label_column,
+                'total_samples': len(bundle.samples) if hasattr(bundle, 'samples') and bundle.samples else 0,
+                'num_categories': len(bundle.metadata.get('categories', [])),
+                'category_distribution': bundle.metadata.get('category_distribution', {}),
+                'training_files': {k: str(v) for k, v in bundle.training_files.items()} if hasattr(bundle, 'training_files') and bundle.training_files else {}
+            },
+            'language_config': {
+                'confirmed_languages': list(bundle.metadata.get('confirmed_languages', [])),
+                'language_distribution': bundle.metadata.get('language_distribution', {}),
+                'model_strategy': bundle.metadata.get('model_strategy', 'multilingual'),
+                'language_model_mapping': bundle.metadata.get('language_model_mapping', {})
+            },
+            'text_analysis': {
+                'text_length_stats': bundle.metadata.get('text_length_stats', {}),
+                'requires_long_document_model': bundle.metadata.get('requires_long_document_model', False),
+                'avg_token_length': bundle.metadata.get('text_length_stats', {}).get('token_mean', 0),
+                'max_token_length': bundle.metadata.get('text_length_stats', {}).get('token_max', 0)
+            },
+            'model_config': model_config,
+            'execution_status': execution_status or {
+                'status': 'pending',
+                'started_at': None,
+                'completed_at': None,
+                'models_trained': [],
+                'best_model': None,
+                'best_f1': None
+            },
+            'output_paths': {
+                'models_dir': str(self.settings.paths.models_dir),
+                'logs_dir': str(self.settings.paths.logs_dir),
+                'results_csv': None
+            }
+        }
+
+        # Ensure training_sessions directory exists
+        metadata_dir = self.settings.paths.logs_dir / "training_sessions"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save metadata JSON
+        metadata_filename = f"training_metadata_{timestamp}.json"
+        metadata_path = metadata_dir / metadata_filename
+
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+        return metadata_path
+
+    def _update_training_metadata(
+        self,
+        metadata_path: Path,
+        **updates
+    ) -> None:
+        """
+        Update existing training metadata file with new information (post-training).
+
+        Parameters
+        ----------
+        metadata_path : Path
+            Path to the existing metadata JSON file
+        **updates : dict
+            Sections to update (e.g., execution_status={'status': 'completed'})
+        """
+        import json
+
+        if not metadata_path.exists():
+            self.logger.warning(f"Metadata file not found: {metadata_path}")
+            return
+
+        try:
+            # Load existing metadata
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+
+            # Update sections
+            for section, data in updates.items():
+                if section in metadata:
+                    if isinstance(metadata[section], dict) and isinstance(data, dict):
+                        metadata[section].update(data)
+                    else:
+                        metadata[section] = data
+                else:
+                    metadata[section] = data
+
+            # Save updated metadata
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+        except Exception as e:
+            self.logger.error(f"Failed to update metadata: {e}")
+
+    def _reconstruct_bundle_from_metadata(self, metadata: Dict[str, Any]) -> Optional[TrainingDataBundle]:
+        """
+        Reconstruct a TrainingDataBundle from saved metadata for resume/relaunch.
+
+        Parameters
+        ----------
+        metadata : dict
+            Loaded metadata dictionary from JSON file
+
+        Returns
+        -------
+        TrainingDataBundle or None
+            Reconstructed bundle, or None if reconstruction fails
+        """
+        try:
+            dataset_config = metadata.get('dataset_config', {})
+            language_config = metadata.get('language_config', {})
+            text_analysis = metadata.get('text_analysis', {})
+
+            # Load primary file
+            primary_file_str = dataset_config.get('primary_file')
+            if not primary_file_str:
+                self.console.print("[red]Error: No primary file found in metadata[/red]")
+                return None
+
+            primary_file = Path(primary_file_str)
+            if not primary_file.exists():
+                self.console.print(f"[red]Error: Dataset file not found: {primary_file}[/red]")
+                return None
+
+            # Create bundle with basic info
+            bundle = TrainingDataBundle(
+                primary_file=primary_file,
+                format_type=dataset_config.get('format', 'unknown'),
+                strategy=dataset_config.get('strategy', 'single-label'),
+                text_column=dataset_config.get('text_column', 'text'),
+                label_column=dataset_config.get('label_column', 'label'),
+                samples=[],  # Will be loaded during training
+                metadata={}
+            )
+
+            # Restore metadata fields
+            bundle.metadata['confirmed_languages'] = set(language_config.get('confirmed_languages', []))
+            bundle.metadata['language_distribution'] = language_config.get('language_distribution', {})
+            bundle.metadata['model_strategy'] = language_config.get('model_strategy', 'multilingual')
+            bundle.metadata['language_model_mapping'] = language_config.get('language_model_mapping', {})
+
+            bundle.metadata['text_length_stats'] = text_analysis.get('text_length_stats', {})
+            bundle.metadata['requires_long_document_model'] = text_analysis.get('requires_long_document_model', False)
+
+            bundle.metadata['categories'] = list(dataset_config.get('category_distribution', {}).keys())
+            bundle.metadata['category_distribution'] = dataset_config.get('category_distribution', {})
+
+            # Restore training files paths if they exist
+            training_files_dict = dataset_config.get('training_files', {})
+            if training_files_dict:
+                bundle.training_files = {k: Path(v) for k, v in training_files_dict.items()}
+
+            # Restore recommended model if available
+            model_config = metadata.get('model_config', {})
+            if 'recommended_model' in model_config:
+                bundle.recommended_model = model_config['recommended_model']
+
+            return bundle
+
+        except Exception as e:
+            self.logger.error(f"Failed to reconstruct bundle from metadata: {e}")
+            self.console.print(f"[red]Error reconstructing dataset: {e}[/red]")
+            return None
+
+    def _resume_training_studio(self):
+        """Resume or relaunch training using saved parameters from previous sessions"""
+
+        self.console.print("\n[bold cyan]🔄 Resume/Relaunch Training[/bold cyan]\n")
+        self.console.print("[dim]Load saved parameters from previous training sessions[/dim]\n")
+
+        # Detect metadata files
+        metadata_dir = self.settings.paths.logs_dir / "training_sessions"
+
+        if not metadata_dir.exists():
+            self.console.print("[yellow]No training sessions found.[/yellow]")
+            self.console.print("[dim]Complete a training first to create session history.[/dim]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        # Find all metadata JSON files
+        metadata_files = list(metadata_dir.glob("training_metadata_*.json"))
+
+        if not metadata_files:
+            self.console.print("[yellow]No saved training sessions found.[/yellow]")
+            self.console.print("[dim]Complete a training and save parameters to use this feature.[/dim]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        # Sort by modification time (most recent first)
+        metadata_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+        # Display sessions table
+        sessions_table = Table(
+            title="📚 Previous Training Sessions (20 most recent)",
+            border_style="cyan",
+            box=box.ROUNDED
+        )
+        sessions_table.add_column("#", style="cyan bold", width=4)
+        sessions_table.add_column("Date", style="yellow", width=18)
+        sessions_table.add_column("Mode", style="magenta", width=15)
+        sessions_table.add_column("Dataset", style="green", width=30)
+        sessions_table.add_column("Model", style="blue", width=25)
+        sessions_table.add_column("Status", style="white", width=12)
+
+        import json
+        from datetime import datetime
+
+        # Load and display sessions
+        valid_sessions = []
+        for i, mf in enumerate(metadata_files[:20], 1):  # Show max 20 most recent
+            try:
+                with open(mf, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+
+                session_info = metadata.get('training_session', {})
+                dataset_config = metadata.get('dataset_config', {})
+                model_config = metadata.get('model_config', {})
+                exec_status = metadata.get('execution_status', {})
+
+                # Format display
+                timestamp_str = session_info.get('timestamp', '')
+                try:
+                    dt = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                    date_str = dt.strftime('%Y-%m-%d %H:%M')
+                except:
+                    date_str = timestamp_str
+
+                mode = model_config.get('training_mode', 'unknown')
+                dataset_path = dataset_config.get('primary_file', '')
+                dataset_name = Path(dataset_path).name if dataset_path else 'N/A'
+                if len(dataset_name) > 28:
+                    dataset_name = dataset_name[:25] + "..."
+
+                model_name = model_config.get('selected_model', 'N/A')
+                if len(model_name) > 23:
+                    model_name = model_name[:20] + "..."
+
+                status = exec_status.get('status', 'unknown')
+
+                # Color code status
+                if status == 'completed':
+                    status_display = f"[green]✓ {status}[/green]"
+                elif status == 'failed':
+                    status_display = f"[red]✗ {status}[/red]"
+                else:
+                    status_display = f"[yellow]⏸ {status}[/yellow]"
+
+                sessions_table.add_row(
+                    str(i),
+                    date_str,
+                    mode,
+                    dataset_name,
+                    model_name,
+                    status_display
+                )
+
+                valid_sessions.append((mf, metadata))
+
+            except Exception as e:
+                self.logger.debug(f"Skipping invalid metadata file {mf}: {e}")
+                continue
+
+        if not valid_sessions:
+            self.console.print("[yellow]No valid training sessions found.[/yellow]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        self.console.print(sessions_table)
+
+        # Select session
+        session_choices = [str(i) for i in range(1, len(valid_sessions) + 1)] + ["back"]
+        session_choice = Prompt.ask(
+            "\n[bold yellow]Select session to resume/relaunch[/bold yellow]",
+            choices=session_choices,
+            default="1"
+        )
+
+        if session_choice == "back":
+            return
+
+        metadata_file, metadata = valid_sessions[int(session_choice) - 1]
+
+        # Display selected session details
+        self.console.print("\n[bold cyan]📋 Selected Session Details[/bold cyan]")
+
+        details_table = Table(border_style="green", box=box.SIMPLE)
+        details_table.add_column("Parameter", style="cyan bold", width=25)
+        details_table.add_column("Value", style="white", width=60)
+
+        session_info = metadata.get('training_session', {})
+        dataset_config = metadata.get('dataset_config', {})
+        model_config = metadata.get('model_config', {})
+        exec_status = metadata.get('execution_status', {})
+
+        details_table.add_row("Timestamp", session_info.get('timestamp', 'N/A'))
+        details_table.add_row("Workflow", session_info.get('workflow', 'N/A'))
+        details_table.add_row("Dataset", Path(dataset_config.get('primary_file', '')).name)
+        details_table.add_row("Strategy", dataset_config.get('strategy', 'N/A'))
+        details_table.add_row("Total Samples", str(dataset_config.get('total_samples', 0)))
+        details_table.add_row("Training Mode", model_config.get('training_mode', 'N/A'))
+
+        selected_model = model_config.get('selected_model')
+        if selected_model:
+            details_table.add_row("Model", selected_model)
+
+        epochs = model_config.get('epochs')
+        if epochs:
+            details_table.add_row("Epochs", str(epochs))
+
+        batch_size = model_config.get('batch_size')
+        if batch_size:
+            details_table.add_row("Batch Size", str(batch_size))
+
+        details_table.add_row("Status", exec_status.get('status', 'unknown'))
+
+        self.console.print(details_table)
+
+        # Ask: resume or relaunch?
+        self.console.print("\n[bold cyan]🎯 Action Mode[/bold cyan]")
+        self.console.print("  • [cyan]resume[/cyan]   - Continue incomplete training (if interrupted)")
+        self.console.print("  • [cyan]relaunch[/cyan] - Start fresh with same parameters\n")
+
+        action_mode = Prompt.ask(
+            "[bold yellow]Resume or relaunch?[/bold yellow]",
+            choices=["resume", "relaunch"],
+            default="relaunch"  # Default to relaunch since resume is complex for training
+        )
+
+        # Reconstruct bundle from metadata
+        self.console.print(f"\n[cyan]Reconstructing dataset configuration...[/cyan]")
+
+        bundle = self._reconstruct_bundle_from_metadata(metadata)
+
+        if bundle is None:
+            self.console.print("[red]Failed to reconstruct training configuration.[/red]")
+            self.console.print("\n[dim]Press Enter to continue...[/dim]")
+            input()
+            return
+
+        # Get training mode
+        mode = model_config.get('training_mode', 'quick')
+
+        # Display confirmation message
+        if action_mode == 'resume':
+            self.console.print(f"\n[green]✓ Resuming training session...[/green]\n")
+        else:
+            self.console.print(f"\n[green]✓ Relaunching training with saved parameters...[/green]\n")
+
+        # Execute with loaded parameters
+        # We'll modify _training_studio_confirm_and_execute to accept optional pre-loaded config
+        self._training_studio_confirm_and_execute(
+            bundle,
+            mode,
+            preloaded_config=model_config,
+            is_resume=action_mode == 'resume'
+        )
 
     def _training_studio_default_model(self) -> str:
         models = self._flatten_trainer_models()
@@ -7834,29 +11203,130 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         """
         Get long-document model recommendations for a specific language.
         Returns list in LanguageNormalizer.recommend_models format.
+        Uses the model catalog (TrainerModelDetector) when available.
         """
-        # Language-specific long-document models
+        # Try to get models from catalog first
+        if self.available_trainer_models:
+            # Map language codes to catalog categories
+            LANG_TO_CATEGORY = {
+                'en': 'Long Document Models',
+                'fr': 'Long Document Models - French',
+                'es': 'Long Document Models - Spanish',
+                'de': 'Long Document Models - German',
+                'it': 'Long Document Models - Italian',
+                'pt': 'Long Document Models - Portuguese',
+                'nl': 'Long Document Models - Dutch',
+                'pl': 'Long Document Models - Polish',
+                'ru': 'Long Document Models - Russian',
+                'zh': 'Long Document Models - Chinese',
+                'ja': 'Long Document Models - Japanese',
+                'ar': 'Long Document Models - Arabic',
+            }
+
+            category = LANG_TO_CATEGORY.get(lang, 'Long Document Models')
+
+            # Get models from catalog
+            if category in self.available_trainer_models:
+                catalog_models = self.available_trainer_models[category]
+                recommendations = []
+
+                for model in catalog_models:
+                    # Build reason from model metadata
+                    reason_parts = [
+                        model.get('type', 'Unknown type'),
+                        f"({model.get('max_length', '512')} tokens)"
+                    ]
+                    if model.get('performance'):
+                        reason_parts.append(model['performance'])
+
+                    recommendations.append({
+                        'model': model['name'],
+                        'reason': ' - '.join(reason_parts)
+                    })
+
+                # Add multilingual fallback if not already included
+                if lang != 'en' and 'Long Document Models' in self.available_trainer_models:
+                    for model in self.available_trainer_models['Long Document Models'][:2]:
+                        if 'xlm' in model['name'].lower() or 'multilingual' in model.get('type', '').lower():
+                            recommendations.append({
+                                'model': model['name'],
+                                'reason': f"{model.get('type')} - Multilingual fallback ({model.get('max_length', '4096')} tokens)"
+                            })
+
+                if recommendations:
+                    return recommendations
+
+        # Fallback: hardcoded comprehensive list if catalog unavailable
         LANG_LONG_MODELS = {
             'en': [
-                {'model': 'allenai/longformer-base-4096', 'reason': 'English long-document (4096 tokens)'},
-                {'model': 'google/bigbird-roberta-base', 'reason': 'English sparse-attention (4096 tokens)'},
-                {'model': 'roberta-base', 'reason': 'English baseline (512 tokens, fallback)'},
+                {'model': 'allenai/longformer-base-4096', 'reason': 'English Longformer (4096 tokens, best for English)'},
+                {'model': 'google/bigbird-roberta-base', 'reason': 'English BigBird sparse-attention (4096 tokens)'},
+                {'model': 'allenai/led-base-16384', 'reason': 'English LED (16384 tokens, very long documents)'},
+                {'model': 'roberta-base', 'reason': 'English RoBERTa baseline (512 tokens, fallback)'},
             ],
             'fr': [
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual long-document (4096 tokens)'},
-                {'model': 'camembert-base', 'reason': 'French baseline (512 tokens, fallback)'},
+                {'model': 'cmarkea/distilcamembert-base-nli', 'reason': 'French DistilCamemBERT optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting French (4096 tokens)'},
+                {'model': 'camembert-base', 'reason': 'French CamemBERT baseline (512 tokens)'},
+                {'model': 'almanach/camembert-large', 'reason': 'French CamemBERT large (512 tokens, high performance)'},
             ],
             'es': [
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual long-document (4096 tokens)'},
-                {'model': 'dccuchile/bert-base-spanish-wwm-cased', 'reason': 'Spanish baseline (512 tokens, fallback)'},
+                {'model': 'PlanTL-GOB-ES/roberta-base-bne', 'reason': 'Spanish RoBERTa optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Spanish (4096 tokens)'},
+                {'model': 'dccuchile/bert-base-spanish-wwm-cased', 'reason': 'Spanish BERT baseline (512 tokens)'},
+                {'model': 'bertin-project/bertin-roberta-base-spanish', 'reason': 'Spanish BERTIN RoBERTa (512 tokens)'},
             ],
             'de': [
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual long-document (4096 tokens)'},
-                {'model': 'bert-base-german-cased', 'reason': 'German baseline (512 tokens, fallback)'},
+                {'model': 'deepset/gbert-base', 'reason': 'German GBERT optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting German (4096 tokens)'},
+                {'model': 'bert-base-german-cased', 'reason': 'German BERT baseline (512 tokens)'},
+                {'model': 'dbmdz/bert-base-german-uncased', 'reason': 'German BERT uncased (512 tokens)'},
+            ],
+            'it': [
+                {'model': 'dbmdz/bert-base-italian-cased', 'reason': 'Italian BERT optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Italian (4096 tokens)'},
+                {'model': 'dbmdz/bert-base-italian-xxl-cased', 'reason': 'Italian BERT XXL (512 tokens, high performance)'},
+            ],
+            'pt': [
+                {'model': 'neuralmind/bert-base-portuguese-cased', 'reason': 'Portuguese BERT optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Portuguese (4096 tokens)'},
+                {'model': 'adalbertojunior/distilbert-portuguese-cased', 'reason': 'Portuguese DistilBERT (512 tokens, efficient)'},
+            ],
+            'nl': [
+                {'model': 'GroNLP/bert-base-dutch-cased', 'reason': 'Dutch BERT optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Dutch (4096 tokens)'},
+                {'model': 'wietsedv/bert-base-dutch-cased', 'reason': 'Dutch BERT baseline (512 tokens)'},
+            ],
+            'pl': [
+                {'model': 'allegro/herbert-base-cased', 'reason': 'Polish HerBERT optimized (514 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Polish (4096 tokens)'},
+                {'model': 'dkleczek/bert-base-polish-cased-v1', 'reason': 'Polish BERT baseline (512 tokens)'},
+            ],
+            'ru': [
+                {'model': 'DeepPavlov/rubert-base-cased', 'reason': 'Russian RuBERT optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Russian (4096 tokens)'},
+                {'model': 'sberbank-ai/ruBert-base', 'reason': 'Russian BERT baseline (512 tokens)'},
+            ],
+            'zh': [
+                {'model': 'hfl/chinese-roberta-wwm-ext', 'reason': 'Chinese RoBERTa WWM optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Chinese (4096 tokens)'},
+                {'model': 'bert-base-chinese', 'reason': 'Chinese BERT baseline (512 tokens)'},
+            ],
+            'ja': [
+                {'model': 'cl-tohoku/bert-base-japanese-whole-word-masking', 'reason': 'Japanese BERT WWM optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Japanese (4096 tokens)'},
+                {'model': 'cl-tohoku/bert-base-japanese', 'reason': 'Japanese BERT baseline (512 tokens)'},
+            ],
+            'ar': [
+                {'model': 'aubmindlab/bert-base-arabert', 'reason': 'Arabic AraBERT optimized (512 tokens)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Arabic (4096 tokens)'},
+                {'model': 'asafaya/bert-base-arabic', 'reason': 'Arabic BERT baseline (512 tokens)'},
             ],
             'multilingual': [
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual long-document (4096 tokens)'},
-                {'model': 'xlm-roberta-base', 'reason': 'Multilingual baseline (512 tokens, fallback)'},
+                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer (100+ languages, 4096 tokens)'},
+                {'model': 'xlm-roberta-large', 'reason': 'Multilingual XLM-RoBERTa large (100+ languages, 512 tokens)'},
+                {'model': 'xlm-roberta-base', 'reason': 'Multilingual XLM-RoBERTa base (100+ languages, 512 tokens)'},
+                {'model': 'bert-base-multilingual-cased', 'reason': 'Multilingual BERT baseline (104 languages, 512 tokens)'},
             ],
         }
 
@@ -7903,6 +11373,207 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 return recommendations[0]['model']
         else:
             return recommendations[0]['model']
+
+    def _detect_languages_and_analyze_text(
+        self,
+        df: 'pd.DataFrame',
+        text_column: str,
+        sample_size: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Universal function to detect languages and analyze text characteristics.
+        Works for ANY dataset format and ANY training mode.
+
+        Args:
+            df: DataFrame containing the text data
+            text_column: Name of the column containing text
+            sample_size: Number of samples to analyze for language detection
+
+        Returns:
+            Dictionary with:
+            - languages_detected: {lang: count} dictionary
+            - text_length_stats: {avg_length, max_length, min_length, median_length}
+            - long_document_percentage: Percentage of documents > 512 tokens
+            - user_prefers_long_models: Boolean recommendation
+        """
+        from llm_tool.utils.language_detector import LanguageDetector
+
+        # Initialize results
+        results = {
+            'languages_detected': {},
+            'text_length_stats': {
+                'avg_length': 0,
+                'max_length': 0,
+                'min_length': 0,
+                'median_length': 0
+            },
+            'long_document_percentage': 0,
+            'user_prefers_long_models': False
+        }
+
+        # Check if text column exists
+        if text_column not in df.columns:
+            self.logger.warning(f"Text column '{text_column}' not found in dataset")
+            return results
+
+        # Get text samples (filter out NaN values)
+        text_samples = df[text_column].dropna()
+
+        if len(text_samples) == 0:
+            self.logger.warning("No text data found in dataset")
+            return results
+
+        # Sample for language detection (use up to sample_size rows)
+        sample_texts = text_samples.head(sample_size).tolist()
+
+        # Detect languages using LanguageDetector
+        detector = LanguageDetector()
+        language_counts = Counter()
+
+        for text in sample_texts:
+            if isinstance(text, str) and text.strip():
+                detected_lang = detector.detect(text)
+                if detected_lang:
+                    # LanguageDetector returns dict like {'language': 'fr', 'confidence': 0.95}
+                    if isinstance(detected_lang, dict):
+                        lang = detected_lang.get('language')
+                        if lang:
+                            language_counts[lang] += 1
+                    elif isinstance(detected_lang, str):
+                        language_counts[detected_lang] += 1
+
+        results['languages_detected'] = dict(language_counts)
+
+        # Calculate text length statistics
+        text_lengths = [len(str(text)) for text in text_samples if pd.notna(text)]
+
+        if text_lengths:
+            import statistics
+            results['text_length_stats'] = {
+                'avg_length': sum(text_lengths) / len(text_lengths),
+                'max_length': max(text_lengths),
+                'min_length': min(text_lengths),
+                'median_length': statistics.median(text_lengths)
+            }
+
+            # Estimate long documents (assuming ~4 chars per token)
+            long_docs = sum(1 for length in text_lengths if length > 2048)  # 512 tokens * 4 chars
+            results['long_document_percentage'] = (long_docs / len(text_lengths)) * 100
+
+            # Recommend long-document models if >20% of docs are long
+            results['user_prefers_long_models'] = results['long_document_percentage'] > 20
+
+        return results
+
+    def _display_language_analysis_and_get_model(
+        self,
+        analysis_results: Dict[str, Any],
+        interactive: bool = True
+    ) -> Tuple[Set[str], Optional[str]]:
+        """
+        Display language analysis results and get model recommendation.
+        Universal function that works for ANY dataset format and ANY training mode.
+
+        Args:
+            analysis_results: Results from _detect_languages_and_analyze_text
+            interactive: If True, ask user to confirm languages and select model
+
+        Returns:
+            Tuple of (confirmed_languages, selected_model)
+        """
+        # LanguageNormalizer is defined at the module level, no need to import
+
+        languages_found = set(analysis_results['languages_detected'].keys())
+        text_stats = analysis_results['text_length_stats']
+        confirmed_languages = set()
+        model_to_use = None
+
+        # Display language detection results
+        if languages_found:
+            self.console.print(f"\n[bold]🌍 Languages Detected:[/bold]")
+            for lang, count in analysis_results['languages_detected'].items():
+                self.console.print(f"  • {lang.upper()}: {count} samples")
+
+            # Display text statistics
+            self.console.print(f"\n[bold]📊 Text Statistics:[/bold]")
+            self.console.print(f"  • Average length: {text_stats['avg_length']:.0f} characters")
+            self.console.print(f"  • Max length: {text_stats['max_length']:.0f} characters")
+            self.console.print(f"  • Median length: {text_stats['median_length']:.0f} characters")
+
+            if analysis_results['long_document_percentage'] > 0:
+                self.console.print(f"  • Long documents (>512 tokens): {analysis_results['long_document_percentage']:.1f}%")
+
+                if analysis_results['user_prefers_long_models']:
+                    self.console.print("\n[yellow]💡 Recommendation: Consider using long-document models (e.g., Longformer, BigBird)[/yellow]")
+
+            if interactive:
+                # Confirm languages with user
+                lang_list = ', '.join([l.upper() for l in sorted(languages_found)])
+                lang_confirmed = Confirm.ask(
+                    f"\n[bold]Detected languages: {lang_list}. Is this correct?[/bold]",
+                    default=True
+                )
+
+                if lang_confirmed:
+                    confirmed_languages = languages_found
+                    self.console.print("[green]✓ Languages confirmed[/green]")
+                else:
+                    # Ask user to specify languages manually
+                    self.console.print("\n[yellow]Please specify languages manually[/yellow]")
+                    manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
+                    confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+            else:
+                confirmed_languages = languages_found
+        else:
+            # No languages detected - ask user
+            self.console.print("\n[yellow]⚠️ No languages could be auto-detected[/yellow]")
+
+            if interactive:
+                manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)", default="en")
+                confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+            else:
+                confirmed_languages = {'en'}  # Default to English
+
+        # Get model recommendations based on confirmed languages
+        if confirmed_languages and interactive:
+            # Consider long-document models if needed
+            if analysis_results.get('user_prefers_long_models'):
+                self.console.print("\n[bold]🤖 Recommended Long-Document Models:[/bold]")
+
+                # Get multilingual long-doc models
+                long_doc_recs = [
+                    {"model": "allenai/longformer-base-4096", "reason": "Efficient for documents up to 4096 tokens"},
+                    {"model": "google/bigbird-roberta-base", "reason": "Sparse attention for very long documents"},
+                    {"model": "facebook/xlm-roberta-longformer-base-4096", "reason": "Multilingual long-document support"}
+                ]
+
+                for i, rec in enumerate(long_doc_recs, 1):
+                    self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
+
+                use_long = Confirm.ask("\n[bold]Use long-document model?[/bold]", default=True)
+
+                if use_long:
+                    choice = IntPrompt.ask("Select model (1-3)", default=1)
+                    if 1 <= choice <= len(long_doc_recs):
+                        model_to_use = long_doc_recs[choice - 1]['model']
+                        self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")
+                        return confirmed_languages, model_to_use
+
+            # Get standard model recommendations
+            recommendations = LanguageNormalizer.recommend_models(confirmed_languages, self.available_trainer_models)
+
+            if recommendations:
+                self.console.print(f"\n[bold]🤖 Recommended Models for Your Languages:[/bold]")
+                for i, rec in enumerate(recommendations[:5], 1):
+                    self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
+
+                # Store recommendations in bundle for later use, don't ask now
+                self.console.print(f"\n[dim]ℹ️  Model selection will be done when choosing the training mode[/dim]")
+
+                # Use first recommendation as default, but don't force it
+                model_to_use = recommendations[0]['model'] if recommendations else "bert-base-uncased"
+
+        return confirmed_languages, model_to_use
 
     def bert_annotation_studio(self):
         """BERT Annotation Studio - Advanced annotation with trained models"""
@@ -9579,6 +13250,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.logger.exception("Annotation execution failed")
             self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
             input()
+
+    def _display_metadata_parameters(self, metadata: dict):
         """Display all parameters from metadata in a formatted way"""
         self.console.print("\n[bold cyan]📋 Saved Parameters[/bold cyan]\n")
 

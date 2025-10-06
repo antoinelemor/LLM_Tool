@@ -339,8 +339,8 @@ class TrainingCLI:
             reinforced_learning=use_reinforced,
             reinforced_epochs=5 if use_reinforced else 0,
             reinforced_f1_threshold=0.60,
-            rescue_low_class1_f1=use_reinforced,
-            f1_rescue_threshold=0.01,
+            rescue_low_class1_f1=True,  # CRITICAL: Enable automatic rescue for low F1
+            f1_rescue_threshold=0.50,  # Trigger rescue if F1 classe 1 < 50%
             optimize_for_short_sequences=optimize_short,
             short_sequence_threshold=100,
             large_model_adjustments=True

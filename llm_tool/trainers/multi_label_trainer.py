@@ -220,6 +220,59 @@ class MultiLabelTrainer:
 
         return samples
 
+    def detect_multiclass_groups(self, samples: List[MultiLabelSample]) -> Dict[str, List[str]]:
+        """
+        Detect multi-class groups encoded as multi-label.
+
+        Returns a dict mapping group names to their label members.
+        Example: {'type_of_rhetoric': ['type_of_rhetoric_natural_sciences', 'type_of_rhetoric_no', 'type_of_rhetoric_social_sciences']}
+        """
+        # Get all unique labels
+        all_labels = set()
+        for sample in samples:
+            all_labels.update(sample.labels.keys())
+
+        # Group labels by prefix
+        potential_groups = {}
+        sorted_labels = sorted(all_labels)
+
+        for label in sorted_labels:
+            if '_' not in label:
+                continue
+
+            parts = label.split('_')
+            for prefix_len in range(1, len(parts)):
+                prefix = '_'.join(parts[:prefix_len])
+                if prefix not in potential_groups:
+                    potential_groups[prefix] = []
+                potential_groups[prefix].append(label)
+
+        # Find best grouping
+        used_labels = set()
+        multiclass_groups = {}
+
+        for prefix in sorted(potential_groups.keys(), key=len, reverse=True):
+            members = potential_groups[prefix]
+
+            if any(m in used_labels for m in members):
+                continue
+
+            if len(members) >= 2:
+                if all(m.startswith(prefix + '_') for m in members):
+                    # Check if mutually exclusive
+                    is_mutually_exclusive = True
+                    for sample in samples:
+                        active_in_group = sum(1 for lbl in members if sample.labels.get(lbl, 0))
+                        if active_in_group > 1:
+                            is_mutually_exclusive = False
+                            break
+
+                    if is_mutually_exclusive:
+                        multiclass_groups[prefix] = members
+                        used_labels.update(members)
+
+        return multiclass_groups
+
     def _parse_data_item(self, data, text_field, label_fields, id_field, lang_field, labels_dict_field, item_num):
         """Parse a single data item into MultiLabelSample."""
         try:
@@ -663,6 +716,33 @@ class MultiLabelTrainer:
         else:
             model = model_class()
 
+        # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================
+        from .model_trainer import get_model_target_languages
+
+        # Get model's actual name
+        actual_model_name = model.model_name if hasattr(model, 'model_name') else model.__class__.__name__
+        target_languages = get_model_target_languages(actual_model_name)
+
+        if target_languages is not None:
+            # Language-specific model - filter samples to target language
+            if self.verbose:
+                self.logger.info(f"🌍 Filtering samples to {target_languages} for {actual_model_name}")
+
+            # Filter train samples
+            train_samples_original = len(train_samples)
+            train_samples = [s for s in train_samples if hasattr(s, 'lang') and s.lang and s.lang.upper() in target_languages]
+
+            # Filter validation samples
+            val_samples = [s for s in val_samples if hasattr(s, 'lang') and s.lang and s.lang.upper() in target_languages]
+
+            if self.verbose:
+                self.logger.info(f"✓ Filtered: {train_samples_original} → {len(train_samples)} train samples")
+
+            # Check if we have enough data
+            if len(train_samples) < 10:
+                self.logger.warning(f"⚠️  Very few samples ({len(train_samples)}) for {actual_model_name} "
+                                   f"targeting {target_languages}. Training may be unstable.")
+
         # Use encode_with_metadata if available for full metadata tracking
         use_enhanced = hasattr(model, 'encode_with_metadata')
 
@@ -688,16 +768,13 @@ class MultiLabelTrainer:
         # train model with unified run_training method (always includes full logging)
         model_path = os.path.join(self.config.output_dir, model_name)
 
-        # Create centralized training logs directory with timestamp and model name
-        # Structure: training_logs/YYYYMMDD_HHMMSS_modelname/
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        centralized_logs_dir = os.path.join('training_logs', f"{timestamp}_{model_name}")
-
         # Extract language information from validation samples for per-language metrics
         # This enables automatic per-language metric tracking even without track_languages=True
         val_language_info = [s.lang for s in val_samples] if val_samples else None
 
+        # CRITICAL: Use standard "training_logs" base dir
+        # bert_base.py will automatically create: training_logs/{label_value}/{model_type}/
+        # This ensures consistent structure across ALL training modes
         scores = model.run_training(
             train_loader,
             val_loader,
@@ -708,7 +785,7 @@ class MultiLabelTrainer:
             n_epochs_reinforced=self.config.n_epochs_reinforced,
             track_languages=True,  # Always enable to get per-language metrics
             language_info=val_language_info,  # Pass language info for each validation sample
-            metrics_output_dir=centralized_logs_dir,  # Use centralized logs directory
+            metrics_output_dir='training_logs',  # CRITICAL: Base dir - bert_base.py creates subdirs
             label_key=label_key,  # Pass the parsed key (e.g., 'themes', 'sentiment')
             label_value=label_value,  # Pass the parsed value (e.g., 'transportation', 'positive')
             language=language  # Pass the language (e.g., 'EN', 'FR', 'MULTI')
@@ -764,7 +841,8 @@ class MultiLabelTrainer:
              split_ratio: float = 0.8,
              stratified: bool = True,
              train_by_language: bool = None,
-             output_dir: Optional[str] = None) -> Dict[str, ModelInfo]:
+             output_dir: Optional[str] = None,
+             multiclass_groups: Optional[Dict[str, List[str]]] = None) -> Dict[str, ModelInfo]:
         """
         Main training method with automatic data handling.
 

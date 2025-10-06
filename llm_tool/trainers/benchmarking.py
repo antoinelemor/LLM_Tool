@@ -99,8 +99,8 @@ class BenchmarkConfig:
     reinforced_epochs: int = 20
     best_model_criteria: str = "combined"
     f1_class_1_weight: float = 0.7
-    rescue_low_class1_f1: bool = False
-    f1_rescue_threshold: float = 0.0
+    rescue_low_class1_f1: bool = True  # CRITICAL: Enable automatic rescue for low F1
+    f1_rescue_threshold: float = 0.50  # Trigger rescue if F1 classe 1 < 50%
     track_languages: bool = True
     # Dataset building options
     auto_build_datasets: bool = True
@@ -344,8 +344,44 @@ class BenchmarkRunner:
             self.logger.warning("Skipping %s/%s – empty split", cat_name, language)
             return
 
-        pos_weight = self._compute_pos_weight(train_labels)
+        # CRITICAL: Do NOT use pos_weight for initial training
+        # Let the model learn naturally first, then reinforcement learning
+        # will apply adaptive weights if needed (when F1 is low)
+        pos_weight = None
         model = self._get_model_for_language(language)
+
+        # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================
+        # Import language filtering utilities
+        from .model_trainer import get_model_target_languages, filter_data_by_language
+        import pandas as pd
+
+        # Get model name (e.g., 'camembert-base', 'xlm-roberta-base')
+        model_name = model.model_name if hasattr(model, 'model_name') else model.__class__.__name__
+        target_languages = get_model_target_languages(model_name)
+
+        if target_languages is not None and test_languages is not None:
+            # Language-specific model - filter data to target language only
+            self.logger.info(f"🌍 Model '{model_name}' targets {target_languages}. Filtering data...")
+
+            # Create temporary dataframes for filtering
+            train_df = pd.DataFrame({'text': train_texts, 'label': train_labels, 'language': test_languages[:len(train_texts)]})
+            test_df = pd.DataFrame({'text': test_texts, 'label': test_labels, 'language': test_languages})
+
+            # Filter
+            train_df_filtered = filter_data_by_language(train_df, target_languages, 'language')
+            test_df_filtered = filter_data_by_language(test_df, target_languages, 'language')
+
+            # Update lists
+            train_texts = train_df_filtered['text'].tolist()
+            train_labels = train_df_filtered['label'].tolist()
+            test_texts = test_df_filtered['text'].tolist()
+            test_labels = test_df_filtered['label'].tolist()
+
+            # Update language info - CRITICAL FIX: only use test set languages for validation
+            if test_languages:
+                test_languages = test_df_filtered['language'].tolist()
+
+            self.logger.info(f"✓ Filtered to {len(train_texts)} train + {len(test_texts)} test samples")
 
         train_loader = model.encode(
             train_texts,
@@ -386,7 +422,7 @@ class BenchmarkRunner:
             random_state=self.config.random_state,
             save_model_as=temp_model_name,
             pos_weight=pos_weight,
-            metrics_output_dir=str(log_dir),
+            metrics_output_dir='training_logs',  # CRITICAL: Base dir - bert_base.py creates subdirs
             best_model_criteria=self.config.best_model_criteria,
             f1_class_1_weight=self.config.f1_class_1_weight,
             reinforced_learning=self.config.reinforced_learning,
@@ -397,6 +433,9 @@ class BenchmarkRunner:
             track_languages=self.config.track_languages,
             language_info=test_languages,
             model_identifier=f"{cat_name}_{language}_{model.__class__.__name__}" if self.config.track_languages and test_languages else None,
+            label_key=None,  # Benchmark uses label_value directly
+            label_value=cat_name,  # CRITICAL: Category name for organized logs (e.g., "Health")
+            language=language  # CRITICAL: Language for metadata (e.g., "EN", "FR")
         )
 
         best_path = model.last_saved_model_path
@@ -970,6 +1009,53 @@ class BenchmarkRunner:
                 # Initialize model
                 model = model_class()
 
+                # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================
+                # Apply additional filtering for language-specific models
+                from .model_trainer import get_model_target_languages, filter_data_by_language
+                import pandas as pd
+
+                # Get model name from class
+                actual_model_name = model.model_name if hasattr(model, 'model_name') else model_name
+                target_languages = get_model_target_languages(actual_model_name)
+
+                if target_languages is not None and filtered_test_languages:
+                    # This model should only train on specific languages
+                    if verbose:
+                        print(f"   🌍 Filtering data to {target_languages} for {model_name}")
+
+                    # Create dataframes for filtering
+                    train_df = pd.DataFrame({
+                        'text': filtered_train_texts,
+                        'label': filtered_train_labels,
+                        'language': filtered_test_languages[:len(filtered_train_texts)]
+                    })
+                    test_df = pd.DataFrame({
+                        'text': filtered_test_texts,
+                        'label': filtered_test_labels,
+                        'language': filtered_test_languages
+                    })
+
+                    # Filter to target language
+                    train_df_filtered = filter_data_by_language(train_df, target_languages, 'language')
+                    test_df_filtered = filter_data_by_language(test_df, target_languages, 'language')
+
+                    # Check if we have enough data
+                    if len(train_df_filtered) < 10 or len(test_df_filtered) < 5:
+                        if verbose:
+                            print(f"   ⚠️ Insufficient data after language filtering: "
+                                 f"{len(train_df_filtered)} train, {len(test_df_filtered)} test. Skipping.")
+                        continue
+
+                    # Update filtered data
+                    filtered_train_texts = train_df_filtered['text'].tolist()
+                    filtered_train_labels = train_df_filtered['label'].tolist()
+                    filtered_test_texts = test_df_filtered['text'].tolist()
+                    filtered_test_labels = test_df_filtered['label'].tolist()
+                    filtered_test_languages = train_df_filtered['language'].tolist() + test_df_filtered['language'].tolist()
+
+                    if verbose:
+                        print(f"   ✓ Filtered to {len(filtered_train_texts)} train + {len(filtered_test_texts)} test samples")
+
                 # Determine if model needs adjustment based on its characteristics
                 # Large models or models designed for long sequences often struggle with short texts
                 needs_adjustment = (
@@ -1130,7 +1216,10 @@ class BenchmarkRunner:
                     f1_1_rescue_threshold=self.config.f1_rescue_threshold,
                     reinforced_f1_threshold=self.config.reinforced_f1_threshold,
                     model_identifier=f"benchmark_{model_name.lower()}",
-                    metrics_output_dir="./training_logs"  # Use consistent logging directory
+                    metrics_output_dir='training_logs',  # CRITICAL: Base dir - bert_base.py creates subdirs
+                    label_key=None,  # Benchmark uses label_value directly
+                    label_value=dataset.category,  # CRITICAL: Category name from dataset
+                    language=dataset.language  # CRITICAL: Language from dataset
                 )
 
                 training_time = time.time() - start_time

@@ -212,9 +212,15 @@ class TrainingDatasetBuilder:
         if request.label_column not in df.columns:
             raise ValueError(f"Label column '{request.label_column}' not present in {request.input_path}")
 
-        out_df = df[[request.text_column, request.label_column]].rename(
-            columns={request.text_column: "text", request.label_column: "label"}
-        )
+        # CRITICAL FIX: Include language column if it exists
+        columns_to_copy = [request.text_column, request.label_column]
+        rename_mapping = {request.text_column: "text", request.label_column: "label"}
+
+        if request.lang_column and request.lang_column in df.columns:
+            columns_to_copy.append(request.lang_column)
+            rename_mapping[request.lang_column] = "language"
+
+        out_df = df[columns_to_copy].rename(columns=rename_mapping)
 
         output_path = dataset_dir / f"single_label_{_timestamp()}.csv"
         out_df.to_csv(output_path, index=False)
@@ -301,9 +307,15 @@ class TrainingDatasetBuilder:
             if col not in df.columns:
                 raise ValueError(f"Column '{col}' not present in {request.input_path}")
 
-        clean_df = df[[request.text_column, request.label_column]].rename(
-            columns={request.text_column: "text", request.label_column: "label"}
-        )
+        # CRITICAL FIX: Include language column if it exists
+        columns_to_copy = [request.text_column, request.label_column]
+        rename_mapping = {request.text_column: "text", request.label_column: "label"}
+
+        if request.lang_column and request.lang_column in df.columns:
+            columns_to_copy.append(request.lang_column)
+            rename_mapping[request.lang_column] = "language"
+
+        clean_df = df[columns_to_copy].rename(columns=rename_mapping)
 
         output_path = dataset_dir / f"single_label_{_timestamp()}.jsonl"
         clean_df.to_json(output_path, orient="records", lines=True, force_ascii=False)

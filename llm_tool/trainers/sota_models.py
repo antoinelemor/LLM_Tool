@@ -513,3 +513,356 @@ class CamembertBioBERT(BertBase):
             device=device,
             model_sequence_classifier=CamembertForSequenceClassification
         )
+
+
+# ============================================================================
+# LONG-DOCUMENT MODELS (4096+ tokens) - Multilingual and Language-Specific
+# ============================================================================
+
+class XLMRobertaLongformer(BertBase):
+    """XLM-RoBERTa Longformer: Multilingual long-document model (4096 tokens, 100+ languages).
+    Best choice for long documents in multiple languages."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class LEDBase(BertBase):
+    """LED (Longformer Encoder-Decoder) Base: English long-document model (16384 tokens).
+    Best for very long English documents."""
+
+    def __init__(
+            self,
+            model_name='allenai/led-base-16384',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class LEDLarge(BertBase):
+    """LED Large: High-performance English long-document model (16384 tokens)."""
+
+    def __init__(
+            self,
+            model_name='allenai/led-large-16384',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# French Long-Document Models
+class FrenchLongformer(BertBase):
+    """French-optimized Longformer: Uses XLM-RoBERTa Longformer with French focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# Spanish Long-Document Models
+class SpanishLongformer(BertBase):
+    """Spanish-optimized Longformer: Uses XLM-RoBERTa Longformer with Spanish focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class SpanishRoBERTaBNE(BertBase):
+    """Spanish RoBERTa-BNE: State-of-the-art Spanish model from Spanish National Library (512 tokens)."""
+
+    def __init__(
+            self,
+            model_name='PlanTL-GOB-ES/roberta-base-bne',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# German Long-Document Models
+class GermanLongformer(BertBase):
+    """German-optimized Longformer: Uses XLM-RoBERTa Longformer with German focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class GermanGBERT(BertBase):
+    """German GBERT: Deepset's optimized German BERT model (512 tokens)."""
+
+    def __init__(
+            self,
+            model_name='deepset/gbert-base',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# Italian Long-Document Models
+class ItalianLongformer(BertBase):
+    """Italian-optimized Longformer: Uses XLM-RoBERTa Longformer with Italian focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# Portuguese Long-Document Models
+class PortugueseLongformer(BertBase):
+    """Portuguese-optimized Longformer: Uses XLM-RoBERTa Longformer with Portuguese focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# Dutch Long-Document Models
+class DutchLongformer(BertBase):
+    """Dutch-optimized Longformer: Uses XLM-RoBERTa Longformer with Dutch focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class DutchBERT(BertBase):
+    """Dutch BERT: GroNLP's optimized Dutch BERT model (512 tokens)."""
+
+    def __init__(
+            self,
+            model_name='GroNLP/bert-base-dutch-cased',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# Polish Long-Document Models
+class PolishLongformer(BertBase):
+    """Polish-optimized Longformer: Uses XLM-RoBERTa Longformer with Polish focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class PolishHerBERT(BertBase):
+    """Polish HerBERT: Allegro's optimized Polish BERT model (512 tokens)."""
+
+    def __init__(
+            self,
+            model_name='allegro/herbert-base-cased',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# Chinese Long-Document Models
+class ChineseLongformer(BertBase):
+    """Chinese-optimized Longformer: Uses XLM-RoBERTa Longformer with Chinese focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class ChineseRoBERTa(BertBase):
+    """Chinese RoBERTa WWM: HFL's optimized Chinese RoBERTa model (512 tokens)."""
+
+    def __init__(
+            self,
+            model_name='hfl/chinese-roberta-wwm-ext',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# Japanese Long-Document Models
+class JapaneseLongformer(BertBase):
+    """Japanese-optimized Longformer: Uses XLM-RoBERTa Longformer with Japanese focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class JapaneseBERTWWM(BertBase):
+    """Japanese BERT WWM: Tohoku's Japanese BERT with Whole Word Masking (512 tokens)."""
+
+    def __init__(
+            self,
+            model_name='cl-tohoku/bert-base-japanese-whole-word-masking',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# Arabic Long-Document Models
+class ArabicLongformer(BertBase):
+    """Arabic-optimized Longformer: Uses XLM-RoBERTa Longformer with Arabic focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+class ArabicAraBERT(BertBase):
+    """Arabic AraBERT v2: AUB MIND Lab's state-of-the-art Arabic BERT (512 tokens)."""
+
+    def __init__(
+            self,
+            model_name='aubmindlab/bert-base-arabertv2',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )
+
+
+# Russian Long-Document Models
+class RussianLongformer(BertBase):
+    """Russian-optimized Longformer: Uses XLM-RoBERTa Longformer with Russian focus (4096 tokens)."""
+
+    def __init__(
+            self,
+            model_name='facebook/xlm-roberta-longformer-base-4096',
+            device=None
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=AutoTokenizer,
+            device=device,
+            model_sequence_classifier=AutoModelForSequenceClassification
+        )

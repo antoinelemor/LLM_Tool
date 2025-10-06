@@ -47,7 +47,19 @@ from llm_tool.trainers.sota_models import (
     ALBERTBase, ALBERTLarge, ALBERTXLarge,
     BigBirdBase, BigBirdLarge,
     LongformerBase, LongformerLarge,
-    MDeBERTaV3Base, XLMRobertaBase, XLMRobertaLarge
+    MDeBERTaV3Base, XLMRobertaBase, XLMRobertaLarge,
+    # Long-document models
+    XLMRobertaLongformer, LEDBase, LEDLarge,
+    # Language-specific long-document models
+    FrenchLongformer, SpanishLongformer, SpanishRoBERTaBNE,
+    GermanLongformer, GermanGBERT,
+    ItalianLongformer, PortugueseLongformer,
+    DutchLongformer, DutchBERT,
+    PolishLongformer, PolishHerBERT,
+    ChineseLongformer, ChineseRoBERTa,
+    JapaneseLongformer, JapaneseBERTWWM,
+    ArabicLongformer, ArabicAraBERT,
+    RussianLongformer
 )
 
 
