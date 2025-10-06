@@ -76,7 +76,7 @@ from .sota_models import (
     DeBERTaV3Base, DeBERTaV3Large, RoBERTaBase, RoBERTaLarge,
     ELECTRABase, ELECTRALarge, ALBERTBase, ALBERTLarge,
     BigBirdBase, LongformerBase, MDeBERTaV3Base, XLMRobertaBase,
-    LongT5Base, LongT5TGlobalBase
+    LongT5Base, LongT5TGlobalBase, get_model_class_for_name
 )
 from .multilingual_selector import MultilingualModelSelector
 
@@ -480,8 +480,8 @@ class ModelTrainer:
         # Get model class
         model_class = self.model_registry.get(model_name)
         if not model_class:
-            # Try to use base Bert with custom model name
-            model_class = Bert
+            # Use mapping function to get correct class for model name
+            model_class = get_model_class_for_name(model_name)
 
         # Initialize model
         model_instance = model_class(model_name=model_name, device=self.device)
@@ -1138,11 +1138,13 @@ class ModelTrainer:
 
         self.logger.info(f"Training with metadata support: {model_name}")
 
-        # Initialize enhanced model
-        if 'bert' in model_name.lower():
-            model = BertBase(model_name=model_name, device=self.device)
+        # Initialize enhanced model using correct model class
+        model_class = get_model_class_for_name(model_name)
+        if model_class == BertBase:
+            # Only BertBase supports the advanced metadata features currently
+            model = model_class(model_name=model_name, device=self.device)
         else:
-            # Use regular model for non-BERT
+            # Use regular training for other model types
             return self.train_single_model(
                 model_name=model_name,
                 train_df=pd.DataFrame([{'text': s.text, 'label': s.label} for s in train_samples]),

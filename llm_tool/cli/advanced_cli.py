@@ -390,7 +390,7 @@ class TrainerModelDetector:
                 {"name": "bert-base-multilingual-cased", "params": "177M", "type": "mBERT", "languages": "104", "performance": "★★★"},
             ],
             "Long Document Models (Multilingual)": [
-                {"name": "facebook/xlm-roberta-longformer-base-4096", "params": "278M", "type": "XLM-R Longformer", "max_length": "4096", "languages": "100+", "performance": "★★★★★"},
+                {"name": "markussagen/xlm-roberta-longformer-base-4096", "params": "278M", "type": "XLM-R Longformer", "max_length": "4096", "languages": "100+", "performance": "★★★★★"},
                 {"name": "allenai/led-base-16384", "params": "406M", "type": "LED", "max_length": "16384", "language": "English", "performance": "★★★★★"},
                 {"name": "allenai/led-large-16384", "params": "406M", "type": "LED", "max_length": "16384", "language": "English", "performance": "★★★★★"},
                 {"name": "allenai/longformer-base-4096", "params": "149M", "type": "Longformer", "max_length": "4096", "language": "English", "performance": "★★★★"},
@@ -460,11 +460,11 @@ class TrainerModelDetector:
                 {"name": "fr-electra", "params": "110M", "type": "FrELECTRA", "performance": "★★★★"},
             ],
             "Other Language Models": [
-                {"name": "bert-base-arabic", "params": "110M", "type": "AraBERT", "language": "Arabic", "performance": "★★★★"},
+                {"name": "asafaya/bert-base-arabic", "params": "110M", "type": "AraBERT", "language": "Arabic", "performance": "★★★★"},
                 {"name": "bert-base-chinese", "params": "110M", "type": "Chinese BERT", "language": "Chinese", "performance": "★★★★"},
-                {"name": "bert-base-german", "params": "110M", "type": "German BERT", "language": "German", "performance": "★★★★"},
-                {"name": "hindi-bert", "params": "110M", "type": "Hindi BERT", "language": "Hindi", "performance": "★★★"},
-                {"name": "bert-base-italian", "params": "110M", "type": "Italian BERT", "language": "Italian", "performance": "★★★★"},
+                {"name": "bert-base-german-cased", "params": "110M", "type": "German BERT", "language": "German", "performance": "★★★★"},
+                {"name": "ai4bharat/indic-bert", "params": "110M", "type": "Hindi BERT", "language": "Hindi", "performance": "★★★"},
+                {"name": "dbmdz/bert-base-italian-cased", "params": "110M", "type": "Italian BERT", "language": "Italian", "performance": "★★★★"},
             ]
         }
 
@@ -549,7 +549,7 @@ class LanguageNormalizer:
         LANGUAGE_SPECIFIC_MODELS = {
             'en': ('English Models', ['bert-base-uncased', 'roberta-base', 'deberta-v3-base']),
             'fr': ('French Models', ['camembert-base', 'flaubert-base', 'distilcamembert']),
-            'es': ('Spanish Models', ['dccuchile/bert-base-spanish-wwm-cased', 'BSC-TeMU/roberta-base-bne']),
+            'es': ('Spanish Models', ['dccuchile/bert-base-spanish-wwm-cased', 'PlanTL-GOB-ES/roberta-base-bne']),
             'de': ('German Models', ['bert-base-german-cased', 'deepset/gbert-base']),
             'it': ('Italian Models', ['dbmdz/bert-base-italian-cased', 'idb-ita/gilberto-uncased-from-camembert']),
             'pt': ('Portuguese Models', ['neuralmind/bert-base-portuguese-cased', 'portuguese-bert-base']),
@@ -4301,7 +4301,7 @@ class AdvancedCLI:
                 if text_length_stats.get('user_prefers_long_models'):
                     self.console.print("[yellow]Long-document models (4096+ tokens):[/yellow]")
                     recommended_models = [
-                        "facebook/xlm-roberta-longformer-base-4096",  # Multilingual FIRST
+                        "markussagen/xlm-roberta-longformer-base-4096",  # Multilingual FIRST
                         "google/long-t5-local-base",  # Multilingual
                         "allenai/longformer-base-4096",  # English only
                         "google/bigbird-roberta-base"  # English only
@@ -7573,22 +7573,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             "text,label\n'Hello',positive"
         )
         formats_table.add_row(
-            "binary-long",
-            "Long-format CSV with binary labels\n✓ Multiple rows per sample\n✓ Each row = one category with 0/1 value",
-            "id,text,category,value\n1,'Hi',pos,1"
+            "[dim]binary-long[/dim]",
+            "[dim]Long-format CSV with binary labels\n✓ Multiple rows per sample\n✓ Each row = one category with 0/1 value[/dim]",
+            "[dim]id,text,category,value\n1,'Hi',pos,1[/dim]"
         )
         formats_table.add_row(
-            "jsonl-single",
-            "JSONL file for single-label tasks\n✓ One JSON object per line\n✓ Each sample has one label only",
-            "{'text':'Hi','label':'positive'}"
+            "[dim]jsonl-single[/dim]",
+            "[dim]JSONL file for single-label tasks\n✓ One JSON object per line\n✓ Each sample has one label only[/dim]",
+            "[dim]{'text':'Hi','label':'positive'}[/dim]"
         )
         formats_table.add_row(
-            "jsonl-multi",
-            "JSONL file for multi-label tasks\n✓ One JSON object per line\n✓ Each sample can have multiple labels",
-            "{'text':'Hi','labels':['pos','friendly']}"
+            "[dim]jsonl-multi[/dim]",
+            "[dim]JSONL file for multi-label tasks\n✓ One JSON object per line\n✓ Each sample can have multiple labels[/dim]",
+            "[dim]{'text':'Hi','labels':['pos','friendly']}[/dim]"
         )
 
         self.console.print(formats_table)
+        self.console.print()
+
+        # Add development notice for experimental formats
+        self.console.print("[yellow]⚠️  Note:[/yellow] [dim]binary-long, jsonl-single, and jsonl-multi are in development and may contain errors.[/dim]")
         self.console.print()
 
         format_choice = Prompt.ask(
@@ -10917,8 +10921,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         MONOLINGUAL_PATTERNS = {
             'camembert': 'fr',
             'flaubert': 'fr',
-            'bert-base-german': 'de',
-            'distilbert-base-german': 'de',
+            'bert-base-german-cased': 'de',
+            'distilbert-base-german-cased': 'de',
             'roberta': 'en',  # RoBERTa is English-only unless specified
             'bert-base-uncased': 'en',
             'bert-base-cased': 'en',
@@ -10966,7 +10970,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'microsoft/mdeberta-v3-base': None,
 
             # ============ MULTILINGUAL LONG-DOCUMENT MODELS ============
-            'facebook/xlm-roberta-longformer-base-4096': None,  # Multilingual Longformer, 4096 tokens, 100+ languages
+            'markussagen/xlm-roberta-longformer-base-4096': None,  # Multilingual Longformer, 4096 tokens, 100+ languages
             'google/long-t5-local-base': None,  # Multilingual T5 with local attention, 4096+ tokens
             'google/long-t5-tglobal-base': None,  # Multilingual T5 with transient global attention, 4096+ tokens
 
@@ -11007,7 +11011,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'almanach/camembert-base': 'fr',
             'dbmdz/bert-base-french-europeana-cased': 'fr',
             'dangvantuan/sentence-camembert-base': 'fr',
-            'Lyon-NLP/FrALBERT': 'fr',
+            'qwant/fralbert-base': 'fr',
 
             # ============ GERMAN MODELS ============
             'bert-base-german-cased': 'de',
@@ -11020,8 +11024,6 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'dbmdz/bert-base-german-europeana-cased': 'de',
 
             # ============ SPANISH MODELS ============
-            'bert-base-spanish-wwm-cased': 'es',
-            'bert-base-spanish-wwm-uncased': 'es',
             'dccuchile/bert-base-spanish-wwm-cased': 'es',
             'dccuchile/bert-base-spanish-wwm-uncased': 'es',
             'PlanTL-GOB-ES/roberta-base-bne': 'es',
@@ -11038,14 +11040,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # ============ PORTUGUESE MODELS ============
             'neuralmind/bert-base-portuguese-cased': 'pt',
             'neuralmind/bert-large-portuguese-cased': 'pt',
-            'neuralmind/bert-base-portuguese-uncased': 'pt',
+            'adalbertojunior/distilbert-portuguese-cased': 'pt',
             'pierreguillou/bert-base-cased-pt-lenerbr': 'pt',
 
             # ============ DUTCH MODELS ============
             'GroNLP/bert-base-dutch-cased': 'nl',
             'wietsedv/bert-base-dutch-cased': 'nl',
             'pdelobelle/robbert-v2-dutch-base': 'nl',
-            'pdelobelle/robbert-v2-dutch-large': 'nl',
+            'DTAI-KULeuven/robbert-2023-dutch-large': 'nl',
 
             # ============ POLISH MODELS ============
             'dkleczek/bert-base-polish-uncased-v1': 'pl',
@@ -11111,7 +11113,6 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # ============ HINDI MODELS ============
             'ai4bharat/indic-bert': 'hi',
-            'neuralspace-reverie/indic-transformers-hi-bert': 'hi',
 
             # ============ VIETNAMESE MODELS ============
             'vinai/phobert-base': 'vi',
@@ -11125,7 +11126,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'indobenchmark/indobert-large-p1': 'id',
 
             # ============ CZECH MODELS ============
-            'Seznam/retro-bert-small-cs': 'cs',
+            'Seznam/retromae-small-cs': 'cs',
             'ufal/robeczech-base': 'cs',
 
             # ============ GREEK MODELS ============
@@ -11255,7 +11256,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'bert-base-german-cased': 18,
                 'microsoft/deberta-v3-base': 20,
                 'microsoft/mdeberta-v3-base': 19,
-                'facebook/xlm-roberta-longformer-base-4096': 20,  # Excellent multilingual long-document (100+ languages)
+                'markussagen/xlm-roberta-longformer-base-4096': 20,  # Excellent multilingual long-document (100+ languages)
                 'google/long-t5-local-base': 18,  # High-quality multilingual T5 long-document
                 'google/long-t5-tglobal-base': 18,  # High-quality multilingual T5 long-document
                 'allenai/longformer-base-4096': 17,  # Popular long-document (EN only)
@@ -11491,7 +11492,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============ SPECIAL CATEGORIES ============
         if text_length_avg > 400:
             categories['Long Documents (>400 chars, 4096 tokens)'] = [
-                'facebook/xlm-roberta-longformer-base-4096',  # Multilingual FIRST
+                'markussagen/xlm-roberta-longformer-base-4096',  # Multilingual FIRST
                 'google/long-t5-local-base',  # Multilingual
                 'allenai/longformer-base-4096',  # English only
                 'google/bigbird-roberta-base'  # English only
@@ -11856,7 +11857,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 if len(dataset_name) > 28:
                     dataset_name = dataset_name[:25] + "..."
 
-                model_name = model_config.get('selected_model', 'N/A')
+                model_name = model_config.get('selected_model') or 'N/A'
                 if len(model_name) > 23:
                     model_name = model_name[:20] + "..."
 
@@ -12119,7 +12120,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'reason': 'English sparse-attention long-document model (4096 tokens)'
             },
             {
-                'model': 'facebook/xlm-roberta-longformer-base-4096',
+                'model': 'markussagen/xlm-roberta-longformer-base-4096',
                 'max_tokens': 4096,
                 'languages': ['multilingual'],
                 'reason': 'Multilingual long-document model (4096 tokens)'
@@ -12226,65 +12227,65 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 {'model': 'roberta-base', 'reason': 'English RoBERTa baseline (512 tokens, fallback)'},
             ],
             'fr': [
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting French (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting French (4096 tokens)'},
                 {'model': 'google/long-t5-local-base', 'reason': 'Multilingual T5 for long documents (4096+ tokens)'},
                 {'model': 'cmarkea/distilcamembert-base-nli', 'reason': 'French DistilCamemBERT optimized (512 tokens)'},
                 {'model': 'camembert-base', 'reason': 'French CamemBERT baseline (512 tokens)'},
             ],
             'es': [
                 {'model': 'PlanTL-GOB-ES/roberta-base-bne', 'reason': 'Spanish RoBERTa optimized (512 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Spanish (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Spanish (4096 tokens)'},
                 {'model': 'dccuchile/bert-base-spanish-wwm-cased', 'reason': 'Spanish BERT baseline (512 tokens)'},
                 {'model': 'bertin-project/bertin-roberta-base-spanish', 'reason': 'Spanish BERTIN RoBERTa (512 tokens)'},
             ],
             'de': [
                 {'model': 'deepset/gbert-base', 'reason': 'German GBERT optimized (512 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting German (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting German (4096 tokens)'},
                 {'model': 'bert-base-german-cased', 'reason': 'German BERT baseline (512 tokens)'},
                 {'model': 'dbmdz/bert-base-german-uncased', 'reason': 'German BERT uncased (512 tokens)'},
             ],
             'it': [
                 {'model': 'dbmdz/bert-base-italian-cased', 'reason': 'Italian BERT optimized (512 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Italian (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Italian (4096 tokens)'},
                 {'model': 'dbmdz/bert-base-italian-xxl-cased', 'reason': 'Italian BERT XXL (512 tokens, high performance)'},
             ],
             'pt': [
                 {'model': 'neuralmind/bert-base-portuguese-cased', 'reason': 'Portuguese BERT optimized (512 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Portuguese (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Portuguese (4096 tokens)'},
                 {'model': 'adalbertojunior/distilbert-portuguese-cased', 'reason': 'Portuguese DistilBERT (512 tokens, efficient)'},
             ],
             'nl': [
                 {'model': 'GroNLP/bert-base-dutch-cased', 'reason': 'Dutch BERT optimized (512 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Dutch (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Dutch (4096 tokens)'},
                 {'model': 'wietsedv/bert-base-dutch-cased', 'reason': 'Dutch BERT baseline (512 tokens)'},
             ],
             'pl': [
                 {'model': 'allegro/herbert-base-cased', 'reason': 'Polish HerBERT optimized (514 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Polish (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Polish (4096 tokens)'},
                 {'model': 'dkleczek/bert-base-polish-cased-v1', 'reason': 'Polish BERT baseline (512 tokens)'},
             ],
             'ru': [
                 {'model': 'DeepPavlov/rubert-base-cased', 'reason': 'Russian RuBERT optimized (512 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Russian (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Russian (4096 tokens)'},
                 {'model': 'sberbank-ai/ruBert-base', 'reason': 'Russian BERT baseline (512 tokens)'},
             ],
             'zh': [
                 {'model': 'hfl/chinese-roberta-wwm-ext', 'reason': 'Chinese RoBERTa WWM optimized (512 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Chinese (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Chinese (4096 tokens)'},
                 {'model': 'bert-base-chinese', 'reason': 'Chinese BERT baseline (512 tokens)'},
             ],
             'ja': [
                 {'model': 'cl-tohoku/bert-base-japanese-whole-word-masking', 'reason': 'Japanese BERT WWM optimized (512 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Japanese (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Japanese (4096 tokens)'},
                 {'model': 'cl-tohoku/bert-base-japanese', 'reason': 'Japanese BERT baseline (512 tokens)'},
             ],
             'ar': [
                 {'model': 'aubmindlab/bert-base-arabert', 'reason': 'Arabic AraBERT optimized (512 tokens)'},
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Arabic (4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer supporting Arabic (4096 tokens)'},
                 {'model': 'asafaya/bert-base-arabic', 'reason': 'Arabic BERT baseline (512 tokens)'},
             ],
             'multilingual': [
-                {'model': 'facebook/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer (100+ languages, 4096 tokens)'},
+                {'model': 'markussagen/xlm-roberta-longformer-base-4096', 'reason': 'Multilingual Longformer (100+ languages, 4096 tokens)'},
                 {'model': 'xlm-roberta-large', 'reason': 'Multilingual XLM-RoBERTa large (100+ languages, 512 tokens)'},
                 {'model': 'xlm-roberta-base', 'reason': 'Multilingual XLM-RoBERTa base (100+ languages, 512 tokens)'},
                 {'model': 'bert-base-multilingual-cased', 'reason': 'Multilingual BERT baseline (104 languages, 512 tokens)'},
@@ -12503,7 +12504,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 # Get multilingual long-doc models - MULTILINGUAL FIRST
                 long_doc_recs = [
-                    {"model": "facebook/xlm-roberta-longformer-base-4096", "reason": "Multilingual long-document support (100+ languages, 4096 tokens)"},
+                    {"model": "markussagen/xlm-roberta-longformer-base-4096", "reason": "Multilingual long-document support (100+ languages, 4096 tokens)"},
                     {"model": "google/long-t5-local-base", "reason": "Multilingual T5 for long documents (4096+ tokens)"},
                     {"model": "allenai/longformer-base-4096", "reason": "English-only, efficient for documents up to 4096 tokens"},
                     {"model": "google/bigbird-roberta-base", "reason": "English-only, sparse attention for very long documents"}

@@ -54,6 +54,7 @@ from llm_tool.trainers.data_utils import DataSample, DataLoader as DataUtil, Per
 from llm_tool.trainers.bert_base import BertBase
 from llm_tool.trainers.multilingual_selector import MultilingualModelSelector
 from llm_tool.trainers.model_selector import ModelSelector, auto_select_model
+from llm_tool.trainers.sota_models import get_model_class_for_name
 
 
 @dataclass
@@ -708,13 +709,14 @@ class MultiLabelTrainer:
         if self.verbose:
             self.logger.info(f"Training model: {model_name}")
 
-        # select model class
-        model_class = self._select_model_class(train_samples)
-
-        # initialize model with configured model name
+        # select model class based on model name if provided, otherwise auto-select
         if self.config.model_name:
+            # Get the correct model class for the specified model name
+            model_class = get_model_class_for_name(self.config.model_name)
             model = model_class(model_name=self.config.model_name)
         else:
+            # Auto-select model class based on data characteristics
+            model_class = self._select_model_class(train_samples)
             model = model_class()
 
         # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================

@@ -527,7 +527,7 @@ class XLMRobertaLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -611,7 +611,7 @@ class FrenchLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -628,7 +628,7 @@ class SpanishLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -661,7 +661,7 @@ class GermanLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -694,7 +694,7 @@ class ItalianLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -711,7 +711,7 @@ class PortugueseLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -728,7 +728,7 @@ class DutchLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -761,7 +761,7 @@ class PolishLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -794,7 +794,7 @@ class ChineseLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -827,7 +827,7 @@ class JapaneseLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -860,7 +860,7 @@ class ArabicLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -893,7 +893,7 @@ class RussianLongformer(BertBase):
 
     def __init__(
             self,
-            model_name='facebook/xlm-roberta-longformer-base-4096',
+            model_name='markussagen/xlm-roberta-longformer-base-4096',
             device=None
     ):
         super().__init__(
@@ -902,3 +902,112 @@ class RussianLongformer(BertBase):
             device=device,
             model_sequence_classifier=AutoModelForSequenceClassification
         )
+
+# ===========================================================================
+# MODEL NAME TO CLASS MAPPING
+# ===========================================================================
+
+def get_model_class_for_name(model_name: str):
+    """
+    Get the appropriate model class for a given HuggingFace model name.
+    
+    This function maps model names to their correct wrapper classes that use
+    the appropriate tokenizer and model architecture.
+    
+    Args:
+        model_name: HuggingFace model identifier (e.g., 'markussagen/xlm-roberta-longformer-base-4096')
+    
+    Returns:
+        Model class (e.g., XLMRobertaLongformer) or BertBase as fallback
+    
+    Examples:
+        >>> cls = get_model_class_for_name('markussagen/xlm-roberta-longformer-base-4096')
+        >>> model = cls()
+    """
+    # Normalize model name for matching
+    name_lower = model_name.lower()
+    
+    # Long-document models (4096+ tokens)
+    if 'xlm-roberta-longformer' in name_lower or 'xlm-long' in name_lower:
+        return XLMRobertaLongformer
+    if 'longformer' in name_lower and 'allenai' in name_lower:
+        if 'large' in name_lower:
+            return LongformerLarge
+        return LongformerBase
+    if 'bigbird' in name_lower:
+        if 'large' in name_lower:
+            return BigBirdLarge
+        return BigBirdBase
+    if 'led-' in name_lower or 'longformer-encoder-decoder' in name_lower:
+        if 'large' in name_lower:
+            return LEDLarge
+        return LEDBase
+    if 'long-t5' in name_lower:
+        if 'tglobal' in name_lower:
+            return LongT5TGlobalBase
+        return LongT5Base
+    
+    # DeBERTa models
+    if 'deberta-v3' in name_lower or 'deberta-v2' in name_lower:
+        if 'xsmall' in name_lower:
+            return DeBERTaV3XSmall
+        elif 'small' in name_lower:
+            return DeBERTaV3Small
+        elif 'large' in name_lower:
+            return DeBERTaV3Large
+        else:
+            return DeBERTaV3Base
+    if 'mdeberta' in name_lower:
+        return MDeBERTaV3Base
+    
+    # RoBERTa models
+    if 'xlm-roberta' in name_lower:
+        if 'large' in name_lower:
+            return XLMRobertaLarge
+        return XLMRobertaBase
+    if 'roberta' in name_lower:
+        if 'large' in name_lower:
+            return RoBERTaLarge
+        elif 'distil' in name_lower:
+            return DistilRoBERTa
+        return RoBERTaBase
+    
+    # ELECTRA models
+    if 'electra' in name_lower:
+        if 'large' in name_lower:
+            return ELECTRALarge
+        elif 'small' in name_lower:
+            return ELECTRASmall
+        return ELECTRABase
+    
+    # ALBERT models
+    if 'albert' in name_lower:
+        if 'xlarge' in name_lower:
+            return ALBERTXLarge
+        elif 'large' in name_lower:
+            return ALBERTLarge
+        return ALBERTBase
+    
+    # French models
+    if 'camembert' in name_lower:
+        if 'distil' in name_lower:
+            return DistilCamemBERT
+        elif 'large' in name_lower:
+            return CamembertLarge
+        return CamembertaV2Base
+    if 'flaubert' in name_lower:
+        if 'large' in name_lower:
+            return FlauBERTLarge
+        return FlauBERTBase
+    if 'fralbert' in name_lower:
+        return FrALBERT
+    if 'barthez' in name_lower:
+        return BARThez
+
+    # German models
+    if 'gbert' in name_lower or ('german' in name_lower and 'deepset' in name_lower):
+        return GermanGBERT
+    
+    # Default to BertBase with AutoTokenizer for unknown models
+    # This allows flexibility for new models
+    return BertBase
