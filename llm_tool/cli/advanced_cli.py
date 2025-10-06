@@ -13112,6 +13112,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def _smart_annotate(self):
         """Smart guided annotation wizard with all options"""
+        import pandas as pd
         self.console.print("\n[bold cyan]🎯 Smart Annotate - Guided Wizard[/bold cyan]\n")
     
         # Step 1: Data Selection
