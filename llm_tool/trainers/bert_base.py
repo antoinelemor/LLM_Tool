@@ -1635,7 +1635,11 @@ class BertBase(BertABC):
 
                     if save_model_as is not None:
                         # Save the new best model in a temporary folder
-                        best_model_path = f"./models/{save_model_as}_epoch_{i_epoch+1}"
+                        # Check if save_model_as already contains a path
+                        if '/' in save_model_as or '\\' in save_model_as:
+                            best_model_path = f"{save_model_as}_epoch_{i_epoch+1}"  # Already contains path
+                        else:
+                            best_model_path = f"./models/{save_model_as}_epoch_{i_epoch+1}"  # Simple name, add ./models/
                         os.makedirs(best_model_path, exist_ok=True)
 
                         model_to_save = model.module if hasattr(model, 'module') else model
@@ -1811,15 +1815,27 @@ class BertBase(BertABC):
             # If we have a best model, rename it to the final user-specified name (for normal training)
             final_path = None
             if save_model_as is not None and best_model_path is not None:
-                final_path = f"./models/{save_model_as}"
+                # CRITICAL FIX: Use save_model_as directly if it contains a path, otherwise prepend ./models/
+                if '/' in save_model_as or '\\' in save_model_as:
+                    final_path = save_model_as  # Already contains path
+                else:
+                    final_path = f"./models/{save_model_as}"  # Simple name, add ./models/
+
                 # Remove existing final path if any
                 if os.path.exists(final_path):
                     shutil.rmtree(final_path)
                 shutil.move(best_model_path, final_path)
                 best_model_path = final_path
+
+                # Log model save confirmation
+                self.logger.info(f"✅ Best model saved to: {final_path}")
             elif save_model_as is not None and best_model_path is None:
                 # Save current model as fallback
-                final_path = f"./models/{save_model_as}"
+                if '/' in save_model_as or '\\' in save_model_as:
+                    final_path = save_model_as  # Already contains path
+                else:
+                    final_path = f"./models/{save_model_as}"  # Simple name, add ./models/
+
                 os.makedirs(final_path, exist_ok=True)
                 model_to_save = model.module if hasattr(model, 'module') else model
                 output_model_file = os.path.join(final_path, WEIGHTS_NAME)
@@ -1828,6 +1844,9 @@ class BertBase(BertABC):
                 model_to_save.config.to_json_file(output_config_file)
                 self.tokenizer.save_vocabulary(final_path)
                 best_model_path = final_path
+
+                # Log model save confirmation
+                self.logger.info(f"✅ Model saved to: {final_path}")
 
             # ==================== Reinforced Training Check ====================
             # Use a flag to ensure reinforced learning only triggers once per training session
@@ -2280,7 +2299,11 @@ class BertBase(BertABC):
 
                             # Save new best model
                             if save_model_as is not None:
-                                temp_reinforced_path = f"./models/{save_model_as}_reinforced_temp"
+                                # Check if save_model_as already contains a path
+                                if '/' in save_model_as or '\\' in save_model_as:
+                                    temp_reinforced_path = f"{save_model_as}_reinforced_temp"  # Already contains path
+                                else:
+                                    temp_reinforced_path = f"./models/{save_model_as}_reinforced_temp"  # Simple name, add ./models/
                                 os.makedirs(temp_reinforced_path, exist_ok=True)
 
                                 model_to_save = model.module if hasattr(model, 'module') else model
@@ -2358,7 +2381,8 @@ class BertBase(BertABC):
                             shutil.rmtree(final_path)
                         os.rename(best_model_path, final_path)
                         best_model_path = final_path
-                        # Don't log here - would interfere with Rich display
+                        # Log reinforced model save
+                        self.logger.info(f"✅ Reinforced model saved to: {final_path}")
 
                     # Reset display back to normal mode with clean transition
                     display.is_reinforced = False
@@ -2414,9 +2438,11 @@ class BertBase(BertABC):
                 # Load the best model from disk (the one with highest F1)
                 self.model = self.load_model(best_model_path)
                 self.model.to(self.device)
+                self.logger.info(f"📦 Loaded best model from: {best_model_path}")
             else:
                 # Fallback: use current model in memory (last epoch)
                 self.model = model
+                self.logger.warning(f"⚠️ No saved model found, using last epoch model in memory")
 
             # Return the expected 3-tuple for backward compatibility
             return best_metric_val, best_model_path, best_scores
@@ -2426,8 +2452,10 @@ class BertBase(BertABC):
         if best_model_path and os.path.exists(best_model_path):
             self.model = self.load_model(best_model_path)
             self.model.to(self.device)
+            self.logger.info(f"📦 Loaded best model from: {best_model_path}")
         else:
             self.model = model
+            self.logger.warning(f"⚠️ No saved model found, using last epoch model in memory")
         return best_metric_val, best_model_path, best_scores
 
     def predict(

@@ -8673,10 +8673,20 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(approach_table)
                 self.console.print()
 
+                # Determine available choices and default based on context
+                if annotation_keys and len(annotation_keys) == 1:
+                    # Single key: no hybrid or custom modes
+                    available_choices = ["multi-class", "one-vs-all", "back"]
+                    default_approach = "multi-class"
+                else:
+                    # Multiple keys: all modes available
+                    available_choices = ["multi-class", "one-vs-all", "hybrid", "custom", "back"]
+                    default_approach = "hybrid"
+
                 training_approach = Prompt.ask(
                     "[bold yellow]Training approach[/bold yellow]",
-                    choices=["multi-class", "one-vs-all", "hybrid", "custom", "back"],
-                    default="hybrid"
+                    choices=available_choices,
+                    default=default_approach
                 )
 
                 if training_approach == "back":
@@ -8688,13 +8698,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 if training_approach == "hybrid":
                     # Automatic: ≤5 values = multi-class, >5 values = one-vs-all
                     self.console.print("\n[bold cyan]📊 Hybrid Strategy Assignment:[/bold cyan]\n")
+
+                    # Calculate total models for hybrid approach
+                    total_hybrid_models = 0
                     for key in keys_to_train:
                         num_values = len(all_keys_values[key])
                         if num_values <= 5:
                             key_strategies[key] = 'multi-class'
+                            total_hybrid_models += 1
                             self.console.print(f"  • [green]{key}[/green] ({num_values} values) → [bold]multi-class[/bold] (1 model)")
                         else:
                             key_strategies[key] = 'one-vs-all'
+                            total_hybrid_models += num_values
                             self.console.print(f"  • [yellow]{key}[/yellow] ({num_values} values) → [bold]one-vs-all[/bold] ({num_values} models)")
 
                     self.console.print(f"\n[dim]Total models: {total_hybrid_models}[/dim]\n")
@@ -8748,6 +8763,32 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     # All keys use one-vs-all
                     for key in keys_to_train:
                         key_strategies[key] = 'one-vs-all'
+
+            # Step 6c: Data Split Configuration
+            self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+            self.console.print("[bold cyan]  STEP 6c:[/bold cyan] [bold white]Data Split Configuration[/bold white]")
+            self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+
+            split_config = self._configure_data_splits(
+                keys_to_train=keys_to_train,
+                all_keys_values=all_keys_values,
+                training_approach=training_approach,
+                key_strategies=key_strategies,
+                total_samples=len(df)
+            )
+
+            if split_config is None:
+                return None
+
+            # Display split configuration summary
+            self._display_split_summary(
+                split_config=split_config,
+                keys_to_train=keys_to_train,
+                all_keys_values=all_keys_values,
+                key_strategies=key_strategies
+            )
+
+            # Note: split_config will be stored in bundle.metadata after bundle is created
 
             # Step 6d: Label naming strategy
             self.console.print("\n[bold]🏷️  Label Naming Strategy:[/bold]")
@@ -8960,6 +9001,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 # Store source file and annotation column for benchmark mode
                 bundle.metadata['source_file'] = str(csv_path)
                 bundle.metadata['annotation_column'] = annotation_column
+                # Store split configuration if it exists
+                if 'split_config' in locals() and split_config:
+                    bundle.metadata['split_config'] = split_config
                 # Text length stats for intelligent model selection later
                 # ONLY calculate if not already done (avoid duplicate analysis)
                 if 'text_length_stats' in locals() and text_length_stats:
@@ -9104,6 +9148,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     bundle.metadata['language_distribution'] = selection['language_distribution']
                 if selection.get('text_length_stats'):
                     bundle.metadata['text_length_stats'] = selection['text_length_stats']
+                # Store split configuration if it exists
+                if 'split_config' in locals() and split_config:
+                    bundle.metadata['split_config'] = split_config
 
             return bundle
 
@@ -9145,6 +9192,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     bundle.metadata['language_distribution'] = selection['language_distribution']
                 if selection.get('text_length_stats'):
                     bundle.metadata['text_length_stats'] = selection['text_length_stats']
+                # Store split configuration if it exists
+                if 'split_config' in locals() and split_config:
+                    bundle.metadata['split_config'] = split_config
 
             return bundle
 
@@ -9179,6 +9229,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     bundle.metadata['language_distribution'] = selection['language_distribution']
                 if selection.get('text_length_stats'):
                     bundle.metadata['text_length_stats'] = selection['text_length_stats']
+                # Store split configuration if it exists
+                if 'split_config' in locals() and split_config:
+                    bundle.metadata['split_config'] = split_config
 
             return bundle
 
@@ -9194,6 +9247,39 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print(f"\n[bold red]❌ Error: Unknown format '{format_choice}'[/bold red]")
         self.console.print("[dim]Supported formats: llm-json, category-csv[/dim]\n")
         return None
+
+    def _display_model_details(self, model_id: str, MODEL_METADATA: dict):
+        """Display complete model information including full description."""
+        from rich.panel import Panel
+        from rich.text import Text
+
+        meta = MODEL_METADATA.get(model_id, {})
+        if not meta:
+            self.console.print(f"[red]Model '{model_id}' not found in metadata[/red]")
+            return
+
+        # Create detailed info panel
+        info = Text()
+        info.append(f"Model: ", style="bold cyan")
+        info.append(f"{model_id}\n\n", style="bold white")
+
+        info.append(f"Languages: ", style="bold yellow")
+        langs = ', '.join(meta.get('languages', ['?']))
+        info.append(f"{langs}\n", style="white")
+
+        info.append(f"Max Tokens: ", style="bold blue")
+        info.append(f"{meta.get('max_length', '?')}\n", style="white")
+
+        info.append(f"Size: ", style="bold magenta")
+        info.append(f"{meta.get('size', '?')}\n\n", style="white")
+
+        info.append(f"Description:\n", style="bold green")
+        # Full description, not truncated
+        full_desc = meta.get('description', 'No description available')
+        info.append(full_desc, style="dim white")
+
+        panel = Panel(info, title="📋 Model Details", border_style="cyan", expand=False)
+        self.console.print(panel)
 
     def _run_benchmark_mode(
         self,
@@ -9315,13 +9401,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         models_table.add_column("#", style="yellow", width=3)
                         models_table.add_column("Model ID", style="cyan", width=45)
                         models_table.add_column("Languages", style="green", width=15)
+                        models_table.add_column("Max Tokens", style="blue", width=11)
                         models_table.add_column("Size", style="magenta", width=10)
+                        models_table.add_column("Description", style="white", width=46)
 
                         for idx, model_id in enumerate(lang_recommended[:10], 1):
                             meta = MODEL_METADATA.get(model_id, {})
                             langs = ', '.join(meta.get('languages', ['?']))
+                            max_len = str(meta.get('max_length', '?'))
                             size = meta.get('size', '?')
-                            models_table.add_row(str(idx), model_id, langs, size)
+                            desc = meta.get('description', '')[:44] + '..' if len(meta.get('description', '')) > 44 else meta.get('description', '')
+                            models_table.add_row(str(idx), model_id, langs, max_len, size, desc)
 
                         self.console.print(models_table)
                         default_model = lang_recommended[0] if not lang_models else lang_recommended[0]
@@ -9333,10 +9423,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         for m in lang_models:
                             self.console.print(f"  • {m}")
 
+                    # Show selection hint
+                    self.console.print(f"\n[dim]💡 Tip: Type 'info X' (e.g., 'info 1') to see full details of a model[/dim]")
+
                     model_input = Prompt.ask(
                         f"\n[bold yellow]{'Add' if lang_models else 'Select'} model #{len(lang_models)+1} for {lang}[/bold yellow]",
                         default=default_model
                     )
+
+                    # Check if user wants info on a model
+                    if model_input.lower().startswith('info '):
+                        info_target = model_input[5:].strip()
+                        if info_target.isdigit():
+                            info_idx = int(info_target) - 1
+                            if lang_recommended and 0 <= info_idx < len(lang_recommended):
+                                self._display_model_details(lang_recommended[info_idx], MODEL_METADATA)
+                            else:
+                                self.console.print(f"[red]Invalid model number: {info_target}[/red]")
+                        else:
+                            self._display_model_details(info_target, MODEL_METADATA)
+                        continue  # Ask again for selection
 
                     # Parse selection
                     if model_input.isdigit():
@@ -9350,6 +9456,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     lang_models.append(selected_model)
                     self.console.print(f"[green]✓ Added: {selected_model}[/green]")
+
+                    # Display full model details after selection
+                    self._display_model_details(selected_model, MODEL_METADATA)
 
                     # Ask to add more (require at least 2)
                     if len(lang_models) >= 2:
@@ -9391,13 +9500,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     models_table.add_column("#", style="yellow", width=3)
                     models_table.add_column("Model ID", style="cyan", width=45)
                     models_table.add_column("Languages", style="green", width=15)
+                    models_table.add_column("Max Tokens", style="blue", width=11)
                     models_table.add_column("Size", style="magenta", width=10)
+                    models_table.add_column("Description", style="white", width=46)
 
                     for idx, model_id in enumerate(recommended_models_list[:10], 1):
                         meta = MODEL_METADATA.get(model_id, {})
                         langs = ', '.join(meta.get('languages', ['?']))
+                        max_len = str(meta.get('max_length', '?'))
                         size = meta.get('size', '?')
-                        models_table.add_row(str(idx), model_id, langs, size)
+                        desc = meta.get('description', '')[:44] + '..' if len(meta.get('description', '')) > 44 else meta.get('description', '')
+                        models_table.add_row(str(idx), model_id, langs, max_len, size, desc)
 
                     self.console.print(models_table)
 
@@ -9408,10 +9521,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 default_model = recommended_models_list[0] if recommended_models_list and not selected_models_benchmark else (recommended_models_list[1] if recommended_models_list and len(recommended_models_list) > 1 else 'bert-base-uncased')
 
+                # Show selection hint
+                self.console.print(f"\n[dim]💡 Tip: Type 'info X' (e.g., 'info 1') to see full details of a model[/dim]")
+
                 model_input = Prompt.ask(
                     f"\n[bold yellow]{'Add' if selected_models_benchmark else 'Select'} model #{len(selected_models_benchmark)+1}[/bold yellow]",
                     default=default_model
                 )
+
+                # Check if user wants info on a model
+                if model_input.lower().startswith('info '):
+                    info_target = model_input[5:].strip()
+                    if info_target.isdigit():
+                        info_idx = int(info_target) - 1
+                        if recommended_models_list and 0 <= info_idx < len(recommended_models_list):
+                            self._display_model_details(recommended_models_list[info_idx], MODEL_METADATA)
+                        else:
+                            self.console.print(f"[red]Invalid model number: {info_target}[/red]")
+                    else:
+                        self._display_model_details(info_target, MODEL_METADATA)
+                    continue  # Ask again for selection
 
                 # Parse selection
                 if model_input.isdigit():
@@ -9430,6 +9559,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 selected_models_benchmark.append(selected_model)
                 self.console.print(f"[green]✓ Added: {selected_model}[/green]")
+
+                # Display full model details after selection
+                self._display_model_details(selected_model, MODEL_METADATA)
 
                 # Ask to add more (require at least 2)
                 if len(selected_models_benchmark) >= 2:
@@ -10105,6 +10237,448 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self.console.print(table)
 
+    def _configure_data_splits(self, keys_to_train: List[str], all_keys_values: Dict[str, set],
+                               training_approach: str, key_strategies: Dict[str, str],
+                               total_samples: int) -> Optional[Dict[str, Any]]:
+        """
+        Configure train/test/validation split ratios.
+
+        Args:
+            total_samples: Total number of samples in the dataset
+
+        Returns:
+            split_config dict or None if user cancels
+        """
+        from rich.prompt import Prompt, Confirm, FloatPrompt
+        from rich.table import Table
+        from rich import box
+
+        self.console.print("\n[bold]📊 Data Split Configuration[/bold]\n")
+        self.console.print("[dim]Configure how your data will be split for training, validation, and testing.[/dim]\n")
+
+        # Tableau explicatif
+        split_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+        split_table.add_column("Set", style="cyan bold", width=15)
+        split_table.add_column("Purpose", style="white", width=60)
+
+        split_table.add_row(
+            "Training",
+            "Used to train the model (learn patterns from data)"
+        )
+        split_table.add_row(
+            "Validation",
+            "Used DURING training to:\n"
+            "  • Monitor performance at each epoch\n"
+            "  • Select best model checkpoint\n"
+            "  • Enable early stopping\n"
+            "  • Activate reinforced learning if needed"
+        )
+        split_table.add_row(
+            "Test (Optional)",
+            "Reserved for FINAL evaluation AFTER training:\n"
+            "  • Provides unbiased performance metrics\n"
+            "  • Never used during training\n"
+            "  • Only evaluated once at the very end"
+        )
+
+        self.console.print(split_table)
+        self.console.print()
+
+        # Dataset size information
+        self.console.print(f"[bold]📈 Dataset Size:[/bold] {total_samples:,} samples\n")
+
+        # Question 1: Use separate test set for final evaluation?
+        # Provide recommendation based on dataset size
+        if total_samples < 1000:
+            self.console.print("[yellow]⚠️  With fewer than 1,000 samples, it's recommended to skip the separate test set.[/yellow]")
+            self.console.print("[dim]   Reason: You need as much data as possible for training and validation.[/dim]\n")
+            use_test_set_default = False
+        elif total_samples < 5000:
+            self.console.print("[dim]💡 With your dataset size, a separate test set is optional but not critical.[/dim]\n")
+            use_test_set_default = False
+        else:
+            self.console.print("[dim]✓ Your dataset is large enough to benefit from a separate test set.[/dim]\n")
+            use_test_set_default = True
+
+        use_test_set = Confirm.ask(
+            "[bold yellow]Keep a separate test set for final evaluation?[/bold yellow]",
+            default=use_test_set_default
+        )
+
+        self.console.print()
+
+        # Question: Uniform or custom splits?
+        self.console.print("\n[bold]Split Mode:[/bold]\n")
+        self.console.print("  • [cyan]uniform[/cyan]: Same ratios for all keys/values")
+        self.console.print("  • [cyan]custom[/cyan]:  Different ratios per key or value\n")
+
+        split_mode = Prompt.ask(
+            "[bold yellow]Split mode[/bold yellow]",
+            choices=["uniform", "custom", "u", "c", "back"],
+            default="uniform"
+        )
+
+        if split_mode == "back":
+            return None
+
+        # Normalize shortcuts
+        if split_mode == "u":
+            split_mode = "uniform"
+        elif split_mode == "c":
+            split_mode = "custom"
+
+        split_config = {
+            'use_test_set': use_test_set,
+            'mode': split_mode
+        }
+
+        # UNIFORM MODE
+        if split_mode == "uniform":
+            split_config['uniform'] = self._configure_uniform_splits(use_test_set)
+            if split_config['uniform'] is None:
+                return None
+
+        # CUSTOM MODE
+        else:
+            custom_config = self._configure_custom_splits(
+                keys_to_train=keys_to_train,
+                all_keys_values=all_keys_values,
+                training_approach=training_approach,
+                key_strategies=key_strategies,
+                use_test_set=use_test_set
+            )
+
+            if custom_config is None:
+                return None
+
+            split_config.update(custom_config)
+
+        # Display summary
+        self._display_split_summary(split_config, keys_to_train, all_keys_values, key_strategies)
+
+        return split_config
+
+    def _configure_uniform_splits(self, use_test_set: bool) -> Optional[Dict[str, float]]:
+        """Configure uniform split ratios.
+
+        Args:
+            use_test_set: If True, configure train/val/test. If False, configure train/val only.
+        """
+        from rich.prompt import FloatPrompt
+
+        if use_test_set:
+            self.console.print("\n[bold]📈 Configure Split Ratios (Train / Validation / Test)[/bold]\n")
+            self.console.print("[dim]Ratios must sum to 1.0[/dim]\n")
+
+            train_ratio = FloatPrompt.ask("  Training ratio", default=0.7)
+            validation_ratio = FloatPrompt.ask("  Validation ratio", default=0.2)
+            test_ratio = FloatPrompt.ask("  Test ratio", default=0.1)
+
+        else:
+            self.console.print("\n[bold]📈 Configure Split Ratios (Train / Validation)[/bold]\n")
+            self.console.print("[dim]Ratios must sum to 1.0. Validation will be used for training evaluation.[/dim]\n")
+
+            train_ratio = FloatPrompt.ask("  Training ratio", default=0.8)
+            validation_ratio = FloatPrompt.ask("  Validation ratio", default=0.2)
+            test_ratio = 0.0
+
+        # Validate and normalize
+        try:
+            train_ratio, validation_ratio, test_ratio = self._validate_split_ratios(
+                train_ratio, validation_ratio, test_ratio
+            )
+        except ValueError as e:
+            self.console.print(f"[red]Error: {e}[/red]")
+            return None
+
+        return {
+            'train_ratio': train_ratio,
+            'validation_ratio': validation_ratio,
+            'test_ratio': test_ratio
+        }
+
+    def _configure_custom_splits(self, keys_to_train: List[str], all_keys_values: Dict[str, set],
+                                  training_approach: str, key_strategies: Dict[str, str],
+                                  use_test_set: bool) -> Optional[Dict[str, Any]]:
+        """Configure custom split ratios per key or value.
+
+        Args:
+            use_test_set: If True, configure train/val/test. If False, configure train/val only.
+        """
+        from rich.prompt import Confirm, FloatPrompt
+
+        custom_config = {}
+
+        # Configure defaults first
+        self.console.print("\n[bold]Default Ratios[/bold]")
+        self.console.print("[dim]Applied to keys/values not configured below[/dim]\n")
+
+        if use_test_set:
+            default_train = FloatPrompt.ask("  Default train ratio", default=0.7)
+            default_validation = FloatPrompt.ask("  Default validation ratio", default=0.2)
+            default_test = FloatPrompt.ask("  Default test ratio", default=0.1)
+        else:
+            default_train = FloatPrompt.ask("  Default train ratio", default=0.8)
+            default_validation = FloatPrompt.ask("  Default validation ratio", default=0.2)
+            default_test = 0.0
+
+        # Validate defaults
+        try:
+            default_train, default_validation, default_test = self._validate_split_ratios(
+                default_train, default_validation, default_test
+            )
+        except ValueError as e:
+            self.console.print(f"[red]Error in defaults: {e}[/red]")
+            return None
+
+        custom_config['defaults'] = {
+            'train_ratio': default_train,
+            'validation_ratio': default_validation,
+            'test_ratio': default_test
+        }
+
+        # Determine if we configure by key or by value
+        if training_approach == "multi-class":
+            # Configure by key
+            custom_config['custom_by_key'] = self._configure_custom_by_key(
+                keys_to_train, all_keys_values, use_test_set,
+                default_train, default_validation, default_test
+            )
+
+        elif training_approach == "one-vs-all":
+            # Configure by value
+            custom_config['custom_by_value'] = self._configure_custom_by_value(
+                keys_to_train, all_keys_values, use_test_set,
+                default_train, default_validation, default_test
+            )
+
+        elif training_approach in ["hybrid", "custom"]:
+            # Mix: some keys, some values
+            custom_by_key = {}
+            custom_by_value = {}
+
+            for key in keys_to_train:
+                strategy = key_strategies.get(key, 'multi-class')
+
+                if strategy == 'multi-class':
+                    # Configure this key
+                    self.console.print(f"\n[bold cyan]{key}[/bold cyan] ([green]multi-class[/green])")
+                    customize = Confirm.ask(f"  Customize split for '{key}'?", default=False)
+
+                    if customize:
+                        config = self._ask_split_ratios(use_test_set, default_train, default_validation, default_test)
+                        if config:
+                            custom_by_key[key] = config
+                            self.console.print(f"  [green]✓ {key}: {config['train_ratio']:.1%} / {config['validation_ratio']:.1%} / {config['test_ratio']:.1%}[/green]")
+                        else:
+                            self.console.print(f"  [dim]Using defaults[/dim]")
+                    else:
+                        self.console.print(f"  [dim]Using defaults[/dim]")
+
+                else:  # one-vs-all
+                    # Configure values for this key
+                    self.console.print(f"\n[bold yellow]{key}[/bold yellow] ([yellow]one-vs-all[/yellow])")
+                    customize = Confirm.ask(f"  Customize splits for values in '{key}'?", default=False)
+
+                    if customize:
+                        values = sorted(all_keys_values[key])
+                        for value in values:
+                            full_name = f"{key}_{value}"
+
+                            customize_value = Confirm.ask(f"    Customize '{value}'?", default=False)
+
+                            if customize_value:
+                                config = self._ask_split_ratios(use_test_set, default_train, default_validation, default_test)
+                                if config:
+                                    custom_by_value[full_name] = config
+                                    self.console.print(f"    [green]✓ {value}: {config['train_ratio']:.1%} / {config['validation_ratio']:.1%} / {config['test_ratio']:.1%}[/green]")
+                                else:
+                                    self.console.print(f"    [dim]Using defaults[/dim]")
+                            else:
+                                self.console.print(f"    [dim]Using defaults[/dim]")
+
+            if custom_by_key:
+                custom_config['custom_by_key'] = custom_by_key
+            if custom_by_value:
+                custom_config['custom_by_value'] = custom_by_value
+
+        return custom_config
+
+    def _configure_custom_by_key(self, keys_to_train: List[str], all_keys_values: Dict[str, set],
+                                  use_test_set: bool, default_train: float,
+                                  default_validation: float, default_test: float) -> Dict[str, Dict[str, float]]:
+        """Configure custom splits per key.
+
+        Args:
+            use_test_set: If True, configure train/val/test. If False, configure train/val only.
+        """
+        from rich.prompt import Confirm
+
+        custom_by_key = {}
+
+        self.console.print("\n[bold cyan]⚙️  Custom Configuration (per key)[/bold cyan]\n")
+
+        for key in keys_to_train:
+            num_values = len(all_keys_values[key])
+            self.console.print(f"[bold]{key}[/bold] ({num_values} values)")
+
+            customize = Confirm.ask(f"  Customize split for '{key}'?", default=False)
+
+            if customize:
+                config = self._ask_split_ratios(use_test_set, default_train, default_validation, default_test)
+                if config:
+                    custom_by_key[key] = config
+                    self.console.print(f"  [green]✓ {key}: {config['train_ratio']:.1%} / {config['validation_ratio']:.1%} / {config['test_ratio']:.1%}[/green]")
+                else:
+                    self.console.print(f"  [dim]Using defaults[/dim]")
+            else:
+                self.console.print(f"  [dim]Using defaults[/dim]")
+
+            self.console.print()
+
+        return custom_by_key
+
+    def _configure_custom_by_value(self, keys_to_train: List[str], all_keys_values: Dict[str, set],
+                                    use_test_set: bool, default_train: float,
+                                    default_validation: float, default_test: float) -> Dict[str, Dict[str, float]]:
+        """Configure custom splits per value.
+
+        Args:
+            use_test_set: If True, configure train/val/test. If False, configure train/val only.
+        """
+        from rich.prompt import Confirm
+
+        custom_by_value = {}
+
+        self.console.print("\n[bold yellow]⚙️  Custom Configuration (per value)[/bold yellow]\n")
+
+        for key in keys_to_train:
+            values = sorted(all_keys_values[key])
+            self.console.print(f"[bold cyan]{key}[/bold cyan] ({len(values)} values)")
+
+            customize_key = Confirm.ask(f"  Customize splits for values in '{key}'?", default=False)
+
+            if customize_key:
+                for value in values:
+                    full_name = f"{key}_{value}"
+
+                    customize_value = Confirm.ask(f"    Customize '{value}'?", default=False)
+
+                    if customize_value:
+                        config = self._ask_split_ratios(use_test_set, default_train, default_validation, default_test)
+                        if config:
+                            custom_by_value[full_name] = config
+                            self.console.print(f"    [green]✓ {value}: {config['train_ratio']:.1%} / {config['validation_ratio']:.1%} / {config['test_ratio']:.1%}[/green]")
+                        else:
+                            self.console.print(f"    [dim]Using defaults[/dim]")
+                    else:
+                        self.console.print(f"    [dim]Using defaults[/dim]")
+
+            self.console.print()
+
+        return custom_by_value
+
+    def _ask_split_ratios(self, use_test_set: bool, default_train: float,
+                          default_validation: float, default_test: float) -> Optional[Dict[str, float]]:
+        """Ask for split ratios and validate them.
+
+        Args:
+            use_test_set: If True, ask for train/val/test. If False, ask for train/val only.
+        """
+        from rich.prompt import FloatPrompt
+
+        try:
+            train = FloatPrompt.ask("      Train ratio", default=default_train)
+            validation = FloatPrompt.ask("      Validation ratio", default=default_validation)
+
+            if use_test_set:
+                test = FloatPrompt.ask("      Test ratio", default=default_test)
+            else:
+                test = 0.0
+
+            # Validate
+            train, validation, test = self._validate_split_ratios(train, validation, test)
+
+            return {
+                'train_ratio': train,
+                'validation_ratio': validation,
+                'test_ratio': test
+            }
+
+        except ValueError as e:
+            self.console.print(f"      [red]Error: {e}[/red]")
+            return None
+
+    def _validate_split_ratios(self, train: float, validation: float, test: float) -> Tuple[float, float, float]:
+        """Validate and normalize split ratios."""
+        # Check total
+        total = train + validation + test
+
+        if abs(total - 1.0) > 0.001:
+            # Auto-adjust
+            factor = 1.0 / total
+            train *= factor
+            validation *= factor
+            test *= factor
+            self.console.print(f"  [yellow]⚠️  Ratios adjusted to sum to 1.0[/yellow]")
+
+        # Minimum values
+        if train < 0.5:
+            raise ValueError("Training ratio must be at least 50%")
+
+        if validation > 0 and validation < 0.05:
+            raise ValueError("Validation ratio must be at least 5% if used")
+
+        if test > 0 and test < 0.05:
+            raise ValueError("Test ratio must be at least 5% if used")
+
+        return train, validation, test
+
+    def _display_split_summary(self, split_config: Dict[str, Any], keys_to_train: List[str],
+                               all_keys_values: Dict[str, set], key_strategies: Dict[str, str]) -> None:
+        """Display summary of split configuration."""
+        from rich.table import Table
+        from rich import box
+
+        self.console.print("\n[bold green]✓ Split Configuration Complete[/bold green]\n")
+
+        mode = split_config['mode']
+        use_test_set = split_config['use_test_set']
+
+        if mode == 'uniform':
+            ratios = split_config['uniform']
+            self.console.print("[bold]Uniform Split (all keys/values):[/bold]")
+            self.console.print(f"  • Train:      {ratios['train_ratio']:.1%}")
+            self.console.print(f"  • Validation: {ratios['validation_ratio']:.1%}")
+            if use_test_set:
+                self.console.print(f"  • Test:       {ratios['test_ratio']:.1%}")
+
+        else:
+            self.console.print("[bold]Custom Split:[/bold]")
+
+            custom_by_key = split_config.get('custom_by_key', {})
+            custom_by_value = split_config.get('custom_by_value', {})
+            defaults = split_config.get('defaults', {})
+
+            if custom_by_key:
+                self.console.print(f"\n  [green]Configured keys: {len(custom_by_key)}[/green]")
+                for key, ratios in list(custom_by_key.items())[:5]:
+                    self.console.print(f"    • {key}: {ratios['train_ratio']:.1%} / {ratios['validation_ratio']:.1%} / {ratios['test_ratio']:.1%}")
+                if len(custom_by_key) > 5:
+                    self.console.print(f"    ... and {len(custom_by_key) - 5} more")
+
+            if custom_by_value:
+                self.console.print(f"\n  [yellow]Configured values: {len(custom_by_value)}[/yellow]")
+                for value, ratios in list(custom_by_value.items())[:5]:
+                    self.console.print(f"    • {value}: {ratios['train_ratio']:.1%} / {ratios['validation_ratio']:.1%} / {ratios['test_ratio']:.1%}")
+                if len(custom_by_value) > 5:
+                    self.console.print(f"    ... and {len(custom_by_value) - 5} more")
+
+            if defaults:
+                self.console.print(f"\n  [dim]Defaults (for others): {defaults['train_ratio']:.1%} / {defaults['validation_ratio']:.1%} / {defaults['test_ratio']:.1%}[/dim]")
+
+        self.console.print()
+
     def _collect_quick_mode_parameters(self, bundle: TrainingDataBundle, preloaded_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
         Collect parameters for quick mode training (STEP 1 of new flow).
@@ -10512,10 +11086,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 # Offer to display all models
                 self.console.print(f"\n[dim]💡 Selection Options:[/dim]")
                 self.console.print(f"[dim]  • Enter [cyan]1-10[/cyan] to select from Top 10 recommendations[/dim]")
+                self.console.print(f"[dim]  • Enter [cyan]'info X'[/cyan] (e.g., 'info 1') to see full details of a model[/dim]")
                 self.console.print(f"[dim]  • Enter [cyan]'all'[/cyan] to see ALL {len(MODEL_METADATA)} available models[/dim]")
                 self.console.print(f"[dim]  • Enter any [cyan]HuggingFace model ID[/cyan] directly[/dim]")
 
                 model_input = Prompt.ask(f"\n[bold yellow]Model for {lang}[/bold yellow]", default=default_model)
+
+                # Check if user wants info on a model
+                if model_input.lower().startswith('info '):
+                    info_target = model_input[5:].strip()
+                    if info_target.isdigit():
+                        info_idx = int(info_target) - 1
+                        if lang_recommended and 0 <= info_idx < len(lang_recommended):
+                            self._display_model_details(lang_recommended[info_idx], MODEL_METADATA)
+                        else:
+                            self.console.print(f"[red]Invalid model number: {info_target}[/red]")
+                    else:
+                        self._display_model_details(info_target, MODEL_METADATA)
+                    # After showing info, ask again for selection
+                    model_input = Prompt.ask(f"\n[bold yellow]Model for {lang}[/bold yellow]", default=default_model)
 
                 # Check if user wants to see all models
                 if model_input.lower() == 'all':
@@ -10590,6 +11179,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 else:
                     lang_model = model_input
 
+                # Display full model details after selection
+                self._display_model_details(lang_model, MODEL_METADATA)
+
                 models_by_language[lang] = lang_model
 
             # Show summary of selected models
@@ -10660,10 +11252,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Offer to display all models
             self.console.print(f"\n[dim]💡 Selection Options:[/dim]")
             self.console.print(f"[dim]  • Enter [cyan]1-10[/cyan] to select from Top 10 recommendations[/dim]")
+            self.console.print(f"[dim]  • Enter [cyan]'info X'[/cyan] (e.g., 'info 1') to see full details of a model[/dim]")
             self.console.print(f"[dim]  • Enter [cyan]'all'[/cyan] to see ALL {len(MODEL_METADATA)} available models with complete characteristics[/dim]")
             self.console.print(f"[dim]  • Enter any [cyan]HuggingFace model ID[/cyan] directly (e.g., 'bert-base-multilingual-cased')[/dim]")
 
             model_input = Prompt.ask("\n[bold yellow]Model to train[/bold yellow]", default=default_model)
+
+            # Check if user wants info on a model
+            if model_input.lower().startswith('info '):
+                info_target = model_input[5:].strip()
+                if info_target.isdigit():
+                    info_idx = int(info_target) - 1
+                    if recommended_models_list and 0 <= info_idx < len(recommended_models_list):
+                        self._display_model_details(recommended_models_list[info_idx], MODEL_METADATA)
+                    else:
+                        self.console.print(f"[red]Invalid model number: {info_target}[/red]")
+                else:
+                    self._display_model_details(info_target, MODEL_METADATA)
+                # After showing info, ask again for selection
+                model_input = Prompt.ask("\n[bold yellow]Model to train[/bold yellow]", default=default_model)
 
             # Check if user wants to see all models
             if model_input.lower() == 'all':
@@ -10739,6 +11346,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     model_name = default_model
             else:
                 model_name = model_input
+
+            # Display full model details after selection
+            self._display_model_details(model_name, MODEL_METADATA)
 
         # STEP 3: Reinforced Learning
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
@@ -11273,7 +11883,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'category_name': category_name,  # For display in metrics
                         'confirmed_languages': list(languages) if languages else None,
                         'train_by_language': needs_language_training,
-                        'session_id': session_id
+                        'session_id': session_id,
+                        'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
                     }
 
                     # Add models_by_language if user selected per-language models
@@ -11349,7 +11960,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'training_strategy': 'single-label',
                     'category_name': key_name,
                     'reinforced_learning': enable_reinforced_learning,
-                    'session_id': session_id
+                    'session_id': session_id,
+                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
                 }
 
                 if models_by_language:
@@ -11377,9 +11989,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'output_dir': str(output_dir / "onevsall"),
                     'text_column': bundle.text_column,
                     'label_column': bundle.label_column,
+                    'training_strategy': 'multi-label',  # CRITICAL: Use multi-label trainer
                     'multiclass_groups': None,  # Force one-vs-all
                     'reinforced_learning': enable_reinforced_learning,
-                    'session_id': session_id
+                    'confirmed_languages': list(languages) if languages else None,
+                    'session_id': session_id,
+                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
                 }
 
                 if models_by_language:
@@ -11443,7 +12058,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'training_strategy': 'single-label',  # Each key file is single-label
                         'category_name': key_name,
                         'reinforced_learning': enable_reinforced_learning,
-                        'session_id': session_id
+                        'session_id': session_id,
+                        'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
                     }
 
                     # Add models_by_language if user selected per-language models
@@ -11498,12 +12114,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'multiclass_groups': multiclass_groups,
                     'reinforced_learning': enable_reinforced_learning,
                     'session_id': session_id,
+                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
                     **extra_config
                 })
         else:
             # Standard training (multi-class or multi-label)
             config = bundle.to_trainer_config(output_dir, extra_config)
             config['session_id'] = session_id
+            config['split_config'] = bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
 
             try:
                 result = trainer.train(config)
@@ -12772,6 +13390,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         config = bundle.to_trainer_config(output_dir, extra)
         config['session_id'] = session_id
+        config['split_config'] = bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
 
         try:
             result = trainer.train(config)

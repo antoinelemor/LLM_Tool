@@ -345,8 +345,9 @@ def filter_data_by_language(df: pd.DataFrame, target_languages: List[str],
     target_languages = [lang.upper() for lang in target_languages]
 
     # Filter dataframe
+    # Use apply() to avoid pandas dtype issues with .str accessor
     original_size = len(df)
-    filtered_df = df[df[language_column].str.upper().isin(target_languages)].copy()
+    filtered_df = df[df[language_column].apply(lambda x: str(x).upper() if pd.notna(x) else '').isin(target_languages)].copy()
     filtered_size = len(filtered_df)
 
     logging.info(f"Filtered data: {original_size} → {filtered_size} samples "
@@ -432,8 +433,21 @@ class ModelTrainer:
         }
 
     def load_data(self, data_path: str, text_column: str = "text",
-                  label_column: str = "label") -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """Load and split data for training"""
+                  label_column: str = "label",
+                  split_config: Optional[Dict[str, Any]] = None,
+                  category_name: Optional[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Load and split data for training
+
+        Args:
+            data_path: Path to the data file
+            text_column: Name of the text column
+            label_column: Name of the label column
+            split_config: Configuration for data splitting (from bundle.metadata)
+            category_name: Name of the category being trained (key or key_value)
+
+        Returns:
+            Tuple of (train_df, val_df, test_df)
+        """
         self.logger.info(f"Loading data from {data_path}")
 
         # Load data based on file extension
@@ -569,41 +583,92 @@ class ModelTrainer:
                 self.logger.error(error_msg)
                 raise ValueError(error_msg)
 
+        # Extract split ratios from split_config or use defaults
+        # NOTE: Validation is ALWAYS present for training evaluation
+        # Test is optional for final evaluation
+        validation_split = self.config.validation_split
+        test_split = self.config.test_split
+
+        if split_config is not None:
+            mode = split_config.get('mode', 'uniform')
+            use_test_set = split_config.get('use_test_set', False)
+
+            if mode == 'uniform':
+                # Uniform mode: same ratios for all categories
+                uniform_config = split_config.get('uniform', {})
+                validation_split = uniform_config.get('validation_ratio', validation_split)
+                test_split = uniform_config.get('test_ratio', test_split) if use_test_set else 0.0
+            elif mode == 'custom':
+                # Custom mode: different ratios per category
+                default_config = split_config.get('defaults', {})
+                custom_by_key = split_config.get('custom_by_key', {})
+                custom_by_value = split_config.get('custom_by_value', {})
+
+                # Check if we have a custom config for this category
+                if category_name and category_name in custom_by_key:
+                    # Category-specific (key) configuration
+                    category_config = custom_by_key[category_name]
+                    validation_split = category_config.get('validation_ratio', default_config.get('validation_ratio', validation_split))
+                    test_split = category_config.get('test_ratio', default_config.get('test_ratio', test_split))
+                elif category_name and category_name in custom_by_value:
+                    # Value-specific configuration
+                    category_config = custom_by_value[category_name]
+                    validation_split = category_config.get('validation_ratio', default_config.get('validation_ratio', validation_split))
+                    test_split = category_config.get('test_ratio', default_config.get('test_ratio', test_split))
+                else:
+                    # Use default custom ratios
+                    validation_split = default_config.get('validation_ratio', validation_split)
+                    test_split = default_config.get('test_ratio', test_split)
+
+                # If not using test set, set to 0.0
+                if not use_test_set:
+                    test_split = 0.0
+
+            self.logger.info(f"Using split ratios for category '{category_name}': validation={validation_split:.2%}, test={test_split:.2%}")
+        else:
+            self.logger.info(f"Using default split ratios: validation={validation_split:.2%}, test={test_split:.2%}")
+
         # Check if we have enough samples for stratification
         n_samples = len(y)
         n_classes = len(np.unique(y))
-        test_samples = int(n_samples * self.config.test_split)
-        val_samples = int(n_samples * self.config.validation_split)
+        test_samples = int(n_samples * test_split) if test_split > 0 else 0
+        val_samples = int(n_samples * validation_split)
 
         # Determine if stratification is possible
         # We need at least n_classes samples in each split for stratification
-        can_stratify_test = (test_samples >= n_classes and
+        can_stratify_test = (test_split > 0 and test_samples >= n_classes and
                             (n_samples - test_samples) >= n_classes)
         can_stratify_val = (val_samples >= n_classes and
                            (n_samples - val_samples) >= n_classes)
 
-        if not can_stratify_test or not can_stratify_val:
+        if (test_split > 0 and not can_stratify_test) or not can_stratify_val:
             self.logger.warning(
                 f"Too few samples ({n_samples}) for stratified split with {n_classes} classes. "
                 f"Using random split instead. Consider increasing annotation sample size."
             )
 
-        # First split: train+val and test
-        stratify_test = y if can_stratify_test else None
-        if lang_col is not None:
-            X_temp, X_test, y_temp, y_test, lang_temp, lang_test = train_test_split(
-                X, y, lang_col, test_size=self.config.test_split,
-                random_state=self.config.seed, stratify=stratify_test
-            )
+        # NEW LOGIC: Validation is ALWAYS created, test is optional
+        if test_split > 0.0:
+            # Split 1: Separate test set from train+val
+            stratify_test = y if can_stratify_test else None
+            if lang_col is not None:
+                X_temp, X_test, y_temp, y_test, lang_temp, lang_test = train_test_split(
+                    X, y, lang_col, test_size=test_split,
+                    random_state=self.config.seed, stratify=stratify_test
+                )
+            else:
+                X_temp, X_test, y_temp, y_test = train_test_split(
+                    X, y, test_size=test_split,
+                    random_state=self.config.seed, stratify=stratify_test
+                )
+                lang_temp, lang_test = None, None
         else:
-            X_temp, X_test, y_temp, y_test = train_test_split(
-                X, y, test_size=self.config.test_split,
-                random_state=self.config.seed, stratify=stratify_test
-            )
-            lang_temp, lang_test = None, None
+            # No test set - all data goes to train+val
+            X_temp, y_temp, lang_temp = X, y, lang_col
+            X_test, y_test, lang_test = np.array([]), np.array([]), (np.array([]) if lang_col is not None else None)
 
-        # Second split: train and validation
-        val_size = self.config.validation_split / (1 - self.config.test_split)
+        # Split 2: ALWAYS split train and validation (validation is mandatory)
+        val_size = validation_split / (1 - test_split) if test_split > 0 else validation_split
         stratify_val = y_temp if can_stratify_val else None
         if lang_temp is not None:
             X_train, X_val, y_train, y_val, lang_train, lang_val = train_test_split(
@@ -627,7 +692,10 @@ class ModelTrainer:
             val_df = pd.DataFrame({'text': X_val, 'label': y_val})
             test_df = pd.DataFrame({'text': X_test, 'label': y_test})
 
-        self.logger.info(f"Data split - Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
+        if test_split > 0.0:
+            self.logger.info(f"Data split - Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
+        else:
+            self.logger.info(f"Data split - Train: {len(train_df)}, Val: {len(val_df)} (no test set - validation used for final eval)")
         self.logger.info(f"Number of classes: {len(self.label_encoder.classes_)}")
 
         return train_df, val_df, test_df
@@ -827,7 +895,7 @@ class ModelTrainer:
             class_names_for_display = list(self.label_encoder.classes_) if hasattr(self, 'label_encoder') and self.label_encoder is not None else None
 
             # Train (using test_dataloader as validation for compatibility with bert_base)
-            history = model_instance.run_training(
+            best_metric, best_model_path, best_scores = model_instance.run_training(
                 train_dataloader=train_dataloader,
                 test_dataloader=val_dataloader,  # bert_base expects test_dataloader for validation
                 n_epochs=self.config.num_epochs,
@@ -842,26 +910,46 @@ class ModelTrainer:
                 class_names=class_names_for_display  # CRITICAL: Pass class names for table display
             )
 
-            # Evaluate on test set
-            test_predictions = model_instance.predict(test_dataloader, model_instance.model)
-            test_probs = model_instance.predict(test_dataloader, model_instance.model, proba=True)
+            # Log final model path
+            if best_model_path:
+                self.logger.info(f"🎯 Training complete. Best model at: {best_model_path}")
+            else:
+                self.logger.warning(f"⚠️ Training complete but no model path returned")
 
-            # Calculate metrics
-            accuracy = accuracy_score(test_labels, test_predictions)
-            precision, recall, f1_weighted, _ = precision_recall_fscore_support(
-                test_labels, test_predictions, average='weighted'
-            )
-            _, _, f1_macro, _ = precision_recall_fscore_support(
-                test_labels, test_predictions, average='macro'
-            )
-            cm = confusion_matrix(test_labels, test_predictions)
+            # FINAL EVALUATION: Use test set if available, otherwise use validation metrics
+            if len(test_df) > 0:
+                # Evaluate on separate test set (final unbiased evaluation)
+                self.logger.info(f"📊 Final evaluation on test set ({len(test_df)} samples)...")
+                test_predictions = model_instance.predict(test_dataloader, model_instance.model)
+                test_probs = model_instance.predict(test_dataloader, model_instance.model, proba=True)
 
-            # Get detailed classification report
-            report = classification_report(
-                test_labels, test_predictions,
-                target_names=[str(c) for c in self.label_encoder.classes_],
-                output_dict=True
-            )
+                # Calculate metrics
+                accuracy = accuracy_score(test_labels, test_predictions)
+                precision, recall, f1_weighted, _ = precision_recall_fscore_support(
+                    test_labels, test_predictions, average='weighted'
+                )
+                _, _, f1_macro, _ = precision_recall_fscore_support(
+                    test_labels, test_predictions, average='macro'
+                )
+                cm = confusion_matrix(test_labels, test_predictions)
+
+                # Get detailed classification report
+                report = classification_report(
+                    test_labels, test_predictions,
+                    target_names=[str(c) for c in self.label_encoder.classes_],
+                    output_dict=True
+                )
+            else:
+                # No separate test set - use validation metrics from training
+                self.logger.info(f"📊 Using validation metrics as final evaluation (no separate test set)")
+                # best_scores contains the metrics from the best epoch on validation set
+                accuracy = best_scores.get('accuracy', 0.0)
+                precision = best_scores.get('precision', 0.0)
+                recall = best_scores.get('recall', 0.0)
+                f1_weighted = best_scores.get('f1_weighted', 0.0)
+                f1_macro = best_scores.get('f1_macro', 0.0)
+                cm = best_scores.get('confusion_matrix', np.array([]))
+                report = best_scores.get('classification_report', {})
 
             # Count parameters
             num_params = sum(p.numel() for p in model_instance.model.parameters())
@@ -879,10 +967,10 @@ class ModelTrainer:
                 num_parameters=num_params,
                 confusion_matrix=cm,
                 classification_report=report,
-                best_epoch=len(history),
-                validation_loss=history[-1]['val_loss'] if history else 0,
-                training_history=history,
-                model_path=str(output_dir)
+                best_epoch=0,  # TODO: Extract from training logs
+                validation_loss=0,  # TODO: Extract from training logs
+                training_history=[],  # TODO: Extract from training logs
+                model_path=best_model_path if best_model_path else str(output_dir)  # CRITICAL: Use actual saved model path
             )
 
             self.logger.info(f"Model {model_name} - Accuracy: {accuracy:.4f}, F1: {f1_macro:.4f}")
@@ -1072,21 +1160,50 @@ class ModelTrainer:
             if 'lang' in df.columns:
                 lang_col = df['lang'].values
 
-            # First split: train+val and test
-            if lang_col is not None:
-                X_temp, X_test, y_temp, y_test, lang_temp, lang_test = train_test_split(
-                    X, y, lang_col, test_size=self.config.test_split,
-                    random_state=self.config.seed
-                )
-            else:
-                X_temp, X_test, y_temp, y_test = train_test_split(
-                    X, y, test_size=self.config.test_split,
-                    random_state=self.config.seed
-                )
-                lang_temp, lang_test = None, None
+            # Extract split ratios from split_config or use defaults
+            split_config = config.get('split_config')
+            category_name = config.get('category_name')
+            validation_split = self.config.validation_split
+            test_split = self.config.test_split
 
-            # Second split: train and validation
-            val_size = self.config.validation_split / (1 - self.config.test_split)
+            if split_config is not None:
+                mode = split_config.get('mode', 'uniform')
+                use_test_set = split_config.get('use_test_set', False)
+
+                if mode == 'uniform':
+                    # Uniform mode: same ratios for all categories
+                    uniform_config = split_config.get('uniform', {})
+                    validation_split = uniform_config.get('validation_ratio', validation_split)
+                    test_split = uniform_config.get('test_ratio', test_split) if use_test_set else 0.0
+                elif mode == 'custom':
+                    # Custom mode: use default ratios for multi-label (category_name typically not specific here)
+                    default_config = split_config.get('defaults', {})
+                    validation_split = default_config.get('validation_ratio', validation_split)
+                    test_split = default_config.get('test_ratio', test_split) if use_test_set else 0.0
+
+                self.logger.info(f"Using split ratios for multi-label: validation={validation_split:.2%}, test={test_split:.2%}")
+
+            # NEW LOGIC: Validation is ALWAYS created, test is optional
+            if test_split > 0.0:
+                # Split 1: Separate test set from train+val
+                if lang_col is not None:
+                    X_temp, X_test, y_temp, y_test, lang_temp, lang_test = train_test_split(
+                        X, y, lang_col, test_size=test_split,
+                        random_state=self.config.seed
+                    )
+                else:
+                    X_temp, X_test, y_temp, y_test = train_test_split(
+                        X, y, test_size=test_split,
+                        random_state=self.config.seed
+                    )
+                    lang_temp, lang_test = None, None
+            else:
+                # No test set - all data goes to train+val
+                X_temp, y_temp, lang_temp = X, y, lang_col
+                X_test, y_test, lang_test = np.array([]), np.array([]), (np.array([]) if lang_col is not None else None)
+
+            # Split 2: ALWAYS split train and validation (validation is mandatory)
+            val_size = validation_split / (1 - test_split) if test_split > 0 else validation_split
             if lang_temp is not None:
                 X_train, X_val, y_train, y_val, lang_train, lang_val = train_test_split(
                     X_temp, y_temp, lang_temp, test_size=val_size,
@@ -1204,10 +1321,15 @@ class ModelTrainer:
                 }
         else:
             # Load data for single-label training (uses encoding)
+            split_config = config.get('split_config')
+            category_name = config.get('category_name')
+
             train_df, val_df, test_df = self.load_data(
                 data_path,
                 text_column=text_column,
-                label_column=label_column
+                label_column=label_column,
+                split_config=split_config,
+                category_name=category_name
             )
 
             # Get number of unique labels
@@ -1245,9 +1367,23 @@ class ModelTrainer:
 
                     # Filter data to this language only
                     lang_code_upper = lang_code.upper()
-                    train_df_lang = train_df[train_df[lang_col_name].str.upper() == lang_code_upper].copy()
-                    val_df_lang = val_df[val_df[lang_col_name].str.upper() == lang_code_upper].copy()
-                    test_df_lang = test_df[test_df[lang_col_name].str.upper() == lang_code_upper].copy()
+
+                    # Ensure language column is string type before filtering
+                    # Use apply() instead of astype(str).str to avoid pandas dtype issues
+                    if len(train_df) > 0:
+                        train_df_lang = train_df[train_df[lang_col_name].apply(lambda x: str(x).upper() if pd.notna(x) else '') == lang_code_upper].copy()
+                    else:
+                        train_df_lang = train_df.copy()
+
+                    if len(val_df) > 0:
+                        val_df_lang = val_df[val_df[lang_col_name].apply(lambda x: str(x).upper() if pd.notna(x) else '') == lang_code_upper].copy()
+                    else:
+                        val_df_lang = val_df.copy()
+
+                    if len(test_df) > 0:
+                        test_df_lang = test_df[test_df[lang_col_name].apply(lambda x: str(x).upper() if pd.notna(x) else '') == lang_code_upper].copy()
+                    else:
+                        test_df_lang = test_df.copy()
 
                     self.logger.info(f"  • Filtered to {lang_code}: Train={len(train_df_lang)}, Val={len(val_df_lang)}, Test={len(test_df_lang)}")
 
@@ -1259,7 +1395,12 @@ class ModelTrainer:
                     # CRITICAL: Re-encode labels to ensure they are contiguous (0, 1, 2, ..., n-1)
                     # After filtering by language, we may have gaps in label encoding
                     # Example: Original labels [0, 1, 2] → After filtering EN: [0, 2] → Need to remap to [0, 1]
-                    all_labels_lang = pd.concat([train_df_lang['label'], val_df_lang['label'], test_df_lang['label']])
+
+                    # Only concat non-empty dataframes for label remapping
+                    dfs_to_concat = [train_df_lang['label'], test_df_lang['label']]
+                    if len(val_df_lang) > 0:
+                        dfs_to_concat.insert(1, val_df_lang['label'])
+                    all_labels_lang = pd.concat(dfs_to_concat)
                     unique_labels_lang = sorted(all_labels_lang.unique())
 
                     # Create mapping from old labels to new contiguous labels
@@ -1268,7 +1409,8 @@ class ModelTrainer:
 
                     # Apply remapping
                     train_df_lang['label'] = train_df_lang['label'].map(label_mapping)
-                    val_df_lang['label'] = val_df_lang['label'].map(label_mapping)
+                    if len(val_df_lang) > 0:
+                        val_df_lang['label'] = val_df_lang['label'].map(label_mapping)
                     test_df_lang['label'] = test_df_lang['label'].map(label_mapping)
 
                     num_labels_lang = len(unique_labels_lang)
@@ -1550,7 +1692,7 @@ class ModelTrainer:
         val_language_info = [s.lang for s in val_samples if hasattr(s, 'lang')] if track_languages else None
 
         # CRITICAL FIX: Use run_training (not run_training_enhanced which doesn't exist) with language_info
-        history = model.run_training(
+        best_metric, best_model_path, best_scores = model.run_training(
             train_dataloader=train_loader,
             test_dataloader=val_loader,
             n_epochs=self.config.num_epochs,
@@ -1562,6 +1704,12 @@ class ModelTrainer:
             reinforced_learning=self.config.reinforced_learning if hasattr(self.config, 'reinforced_learning') else False,
             session_id=config.get('session_id')
         )
+
+        # Log final model path
+        if best_model_path:
+            self.logger.info(f"🎯 Training complete. Best model at: {best_model_path}")
+        else:
+            self.logger.warning(f"⚠️ Training complete but no model path returned")
 
         # Evaluate on test set
         test_predictions = model.predict(test_loader, model.model)
@@ -1598,10 +1746,12 @@ class ModelTrainer:
             'f1_weighted': f1_weighted,
             'precision': precision,
             'recall': recall,
-            'model_path': str(output_dir),
-            'training_time': sum(h.get('time', 0) for h in history) if history else 0,
-            'best_epoch': len(history),
-            'training_history': history,
+            'model_path': best_model_path if best_model_path else str(output_dir),  # CRITICAL: Use actual saved model path
+            'output_dir': str(output_dir),  # Keep output_dir for backward compatibility
+            'best_metric': best_metric,
+            'best_scores': best_scores,
+            'training_time': 0,  # TODO: Extract from training logs
+            'best_epoch': 0,  # TODO: Extract from training logs
             'classification_report': report,
             'language_metrics': language_metrics
         }
