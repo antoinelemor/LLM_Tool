@@ -935,7 +935,6 @@ class BertBase(BertABC):
 
         # Create or use session ID (timestamp)
         if session_id is None:
-            import datetime
             session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Determine category name
@@ -953,25 +952,37 @@ class BertBase(BertABC):
         # Build directory structure based on mode
         session_dir = os.path.join(metrics_output_dir, session_id)
 
+        # Also create the same structure for model outputs in models/ directory
+        models_base = "models"
+        model_session_dir = os.path.join(models_base, session_id)
+
         if is_benchmark:
             # Benchmark mode: add benchmark, category, language, and model folders
             benchmark_dir = os.path.join(session_dir, "benchmark")
             category_dir = os.path.join(benchmark_dir, category_name)
 
+            # Model directory with same structure
+            model_benchmark_dir = os.path.join(model_session_dir, "benchmark")
+            model_category_dir = os.path.join(model_benchmark_dir, category_name)
+
             # Add language folder if language is specified
             if language:
                 lang_clean = language.upper().replace("/", "_").replace(" ", "_")
                 category_dir = os.path.join(category_dir, lang_clean)
+                model_category_dir = os.path.join(model_category_dir, lang_clean)
 
             # Add model folder if model name is specified
             if model_name_for_logging:
                 model_clean = model_name_for_logging.replace("/", "_").replace(" ", "_")
                 category_dir = os.path.join(category_dir, model_clean)
+                model_category_dir = os.path.join(model_category_dir, model_clean)
         else:
             # Normal mode: just session_id/category
             category_dir = os.path.join(session_dir, category_name)
+            model_category_dir = os.path.join(model_session_dir, category_name)
 
         os.makedirs(category_dir, exist_ok=True)
+        os.makedirs(model_category_dir, exist_ok=True)
 
         # CSV files are now general (contain all models for this category)
         training_metrics_csv = os.path.join(category_dir, "training.csv")
@@ -1033,11 +1044,19 @@ class BertBase(BertABC):
 
         csv_headers.append("macro_f1")
 
-        # Add comprehensive language-specific headers if tracking languages
+        # Add language-specific headers ONLY for the current training language
+        # Individual CSVs should only contain metrics for their specific language
+        # Full cross-language metrics are in consolidated session CSVs only
         if track_languages and language_info is not None:
-            # CRITICAL FIX: Filter out NaN/None/float values and normalize to uppercase
-            unique_langs = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
-            for lang in unique_langs:
+            # Determine which languages to include in headers
+            if language and language != 'MULTI':
+                # Single language training: only add columns for THIS language
+                langs_for_headers = [language.upper()]
+            else:
+                # Multilingual or unspecified: add columns for all detected languages
+                langs_for_headers = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
+
+            for lang in langs_for_headers:
                 csv_headers.append(f"{lang}_accuracy")
                 for i in range(num_labels):
                     class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
@@ -1062,19 +1081,7 @@ class BertBase(BertABC):
         with open(training_metrics_csv, mode=mode, newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if write_headers:
-                # Write metadata header rows for clear label identification
-                writer.writerow(['# TRAINING METRICS'])
-                writer.writerow(['# Label:', label_key if label_key else 'N/A'])
-                writer.writerow(['# Label Value:', label_value if label_value else 'N/A'])
-                writer.writerow(['# Model:', model_identifier if model_identifier else 'N/A'])
-                writer.writerow(['# Language:', language if language else 'N/A'])
-                writer.writerow(['# Number of Classes:', num_labels])
-                if class_names:
-                    # Convert all class names to strings (in case they're numpy.int64 or other types)
-                    class_names_str = [str(name) for name in class_names]
-                    writer.writerow(['# Class Names:', ', '.join(class_names_str)])
-                writer.writerow([])  # Empty row separator
-                # Write column headers
+                # Write column headers only (metadata is in the columns themselves)
                 writer.writerow(csv_headers)
 
         # Initialize best_models.csv headers now that we know num_labels
@@ -1104,20 +1111,29 @@ class BertBase(BertABC):
 
         best_models_headers.append("macro_f1")
 
-        # Always add standard language columns (EN, FR) for consistency
-        # This ensures all rows have the same structure
-        standard_languages = ['EN', 'FR']
-        for lang in standard_languages:
-            best_models_headers.append(f"{lang}_accuracy")
-            for i in range(num_labels):
-                class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
-                best_models_headers.extend([
-                    f"{lang}_precision{class_suffix}",
-                    f"{lang}_recall{class_suffix}",
-                    f"{lang}_f1{class_suffix}",
-                    f"{lang}_support{class_suffix}"
-                ])
-            best_models_headers.append(f"{lang}_macro_f1")
+        # Add language-specific headers ONLY for the current training language
+        # Individual CSVs should only contain metrics for their specific language
+        # Full cross-language metrics are in consolidated session CSVs only
+        if track_languages and language_info is not None:
+            # Determine which languages to include in headers
+            if language and language != 'MULTI':
+                # Single language training: only add columns for THIS language
+                langs_for_headers = [language.upper()]
+            else:
+                # Multilingual or unspecified: add columns for all detected languages
+                langs_for_headers = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
+
+            for lang in langs_for_headers:
+                best_models_headers.append(f"{lang}_accuracy")
+                for i in range(num_labels):
+                    class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
+                    best_models_headers.extend([
+                        f"{lang}_precision{class_suffix}",
+                        f"{lang}_recall{class_suffix}",
+                        f"{lang}_f1{class_suffix}",
+                        f"{lang}_support{class_suffix}"
+                    ])
+                best_models_headers.append(f"{lang}_macro_f1")
 
         best_models_headers.extend([
             "saved_model_path",
@@ -1137,19 +1153,7 @@ class BertBase(BertABC):
         with open(best_models_csv, mode=mode, newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if write_headers:
-                # Write metadata header rows for clear label identification
-                writer.writerow(['# BEST MODELS'])
-                writer.writerow(['# Label:', label_key if label_key else 'N/A'])
-                writer.writerow(['# Label Value:', label_value if label_value else 'N/A'])
-                writer.writerow(['# Model:', model_identifier if model_identifier else 'N/A'])
-                writer.writerow(['# Language:', language if language else 'N/A'])
-                writer.writerow(['# Number of Classes:', num_labels])
-                if class_names:
-                    # Convert all class names to strings (in case they're numpy.int64 or other types)
-                    class_names_str = [str(name) for name in class_names]
-                    writer.writerow(['# Class Names:', ', '.join(class_names_str)])
-                writer.writerow([])  # Empty row separator
-                # Write column headers
+                # Write column headers only (metadata is in the columns themselves)
                 writer.writerow(best_models_headers)
 
         # Potentially store label names (if dict_labels is available)
@@ -1568,11 +1572,17 @@ class BertBase(BertABC):
 
                     row.append(macro_f1)
 
-                    # Add language metrics if available
+                    # Add language metrics ONLY for the current training language
                     if track_languages and language_info is not None:
-                        # CRITICAL FIX: Filter out NaN/None/float values and normalize to uppercase
-                        unique_languages = list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang]))
-                        for lang in sorted(unique_languages):
+                        # Determine which languages to include (must match headers logic)
+                        if language and language != 'MULTI':
+                            # Single language training: only write data for THIS language
+                            langs_for_data = [language.upper()]
+                        else:
+                            # Multilingual or unspecified: write data for all detected languages
+                            langs_for_data = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
+
+                        for lang in langs_for_data:
                             if language_metrics and lang in language_metrics:
                                 row.append(language_metrics[lang]['accuracy'])
                                 for i in range(num_labels):
@@ -1658,12 +1668,9 @@ class BertBase(BertABC):
                         best_language_metrics = language_metrics.copy()
 
                     if save_model_as is not None:
-                        # Save the new best model in a temporary folder
-                        # Check if save_model_as already contains a path
-                        if '/' in save_model_as or '\\' in save_model_as:
-                            best_model_path = f"{save_model_as}_epoch_{i_epoch+1}"  # Already contains path
-                        else:
-                            best_model_path = f"./models/{save_model_as}_epoch_{i_epoch+1}"  # Simple name, add ./models/
+                        # Save the new best model in session-organized directory
+                        # Use model_category_dir from session structure
+                        best_model_path = os.path.join(model_category_dir, f"{save_model_as}_epoch_{i_epoch+1}")
                         os.makedirs(best_model_path, exist_ok=True)
 
                         model_to_save = model.module if hasattr(model, 'module') else model
@@ -1787,10 +1794,19 @@ class BertBase(BertABC):
 
                             row.append(macro_f1)
 
-                            # Add language metrics for standard languages (EN, FR)
-                            # Always add these columns to maintain CSV consistency
-                            standard_languages = ['EN', 'FR']
-                            for lang in standard_languages:
+                            # Add language metrics ONLY for the current training language
+                            if track_languages and language_info is not None:
+                                # Determine which languages to include (must match headers logic)
+                                if language and language != 'MULTI':
+                                    # Single language training: only write data for THIS language
+                                    langs_for_data = [language.upper()]
+                                else:
+                                    # Multilingual or unspecified: write data for all detected languages
+                                    langs_for_data = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
+                            else:
+                                langs_for_data = []
+
+                            for lang in langs_for_data:
                                 if track_languages and language_info is not None and language_metrics and lang in language_metrics:
                                     row.append(language_metrics[lang]['accuracy'])
                                     # Add per-class metrics for this language
@@ -1835,11 +1851,8 @@ class BertBase(BertABC):
             # If we have a best model, rename it to the final user-specified name (for normal training)
             final_path = None
             if save_model_as is not None and best_model_path is not None:
-                # CRITICAL FIX: Use save_model_as directly if it contains a path, otherwise prepend ./models/
-                if '/' in save_model_as or '\\' in save_model_as:
-                    final_path = save_model_as  # Already contains path
-                else:
-                    final_path = f"./models/{save_model_as}"  # Simple name, add ./models/
+                # Use session-organized directory structure
+                final_path = os.path.join(model_category_dir, save_model_as)
 
                 # Remove existing final path if any
                 if os.path.exists(final_path):
@@ -1851,10 +1864,7 @@ class BertBase(BertABC):
                 self.logger.info(f"✅ Best model saved to: {final_path}")
             elif save_model_as is not None and best_model_path is None:
                 # Save current model as fallback
-                if '/' in save_model_as or '\\' in save_model_as:
-                    final_path = save_model_as  # Already contains path
-                else:
-                    final_path = f"./models/{save_model_as}"  # Simple name, add ./models/
+                final_path = os.path.join(model_category_dir, save_model_as)
 
                 os.makedirs(final_path, exist_ok=True)
                 model_to_save = model.module if hasattr(model, 'module') else model
@@ -1966,10 +1976,18 @@ class BertBase(BertABC):
 
                     reinforced_headers.append("macro_f1")
 
+                    # Add language-specific headers ONLY for the current training language
+                    # Individual CSVs should only contain metrics for their specific language
                     if track_languages and language_info is not None:
-                        # CRITICAL FIX: Filter out NaN/None/float values and normalize to uppercase
-                        unique_langs = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
-                        for lang in unique_langs:
+                        # Determine which languages to include in headers
+                        if language and language != 'MULTI':
+                            # Single language training: only add columns for THIS language
+                            langs_for_headers = [language.upper()]
+                        else:
+                            # Multilingual or unspecified: add columns for all detected languages
+                            langs_for_headers = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
+
+                        for lang in langs_for_headers:
                             reinforced_headers.append(f"{lang}_accuracy")
                             for i in range(num_labels):
                                 class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
@@ -1981,17 +1999,7 @@ class BertBase(BertABC):
 
                     with open(reinforced_metrics_csv, mode='w', newline='', encoding='utf-8') as f:
                         writer = csv.writer(f)
-                        # Write metadata header rows
-                        writer.writerow(['# REINFORCED LEARNING METRICS'])
-                        writer.writerow(['# Label:', label_key if label_key else 'N/A'])
-                        writer.writerow(['# Label Value:', label_value if label_value else 'N/A'])
-                        writer.writerow(['# Model:', model_identifier if model_identifier else 'N/A'])
-                        writer.writerow(['# Language:', language if language else 'N/A'])
-                        writer.writerow(['# Number of Classes:', num_labels])
-                        if class_names:
-                            writer.writerow(['# Class Names:', ', '.join(class_names)])
-                        writer.writerow([])  # Empty row separator
-                        # Write column headers
+                        # Write column headers only (metadata is in the columns themselves)
                         writer.writerow(reinforced_headers)
 
                     # Extract dataset from train_dataloader and apply WeightedRandomSampler
@@ -2279,8 +2287,17 @@ class BertBase(BertABC):
 
                         reinforced_row.append(macro_f1)
 
+                        # Add language metrics ONLY for the current training language
                         if track_languages and language_info is not None:
-                            for lang in sorted(unique_languages):
+                            # Determine which languages to include (must match headers logic)
+                            if language and language != 'MULTI':
+                                # Single language training: only write data for THIS language
+                                langs_for_data = [language.upper()]
+                            else:
+                                # Multilingual or unspecified: write data for all detected languages
+                                langs_for_data = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
+
+                            for lang in langs_for_data:
                                 if lang in language_metrics:
                                     lm = language_metrics[lang]
                                     reinforced_row.append(lm['accuracy'])
@@ -2319,11 +2336,8 @@ class BertBase(BertABC):
 
                             # Save new best model
                             if save_model_as is not None:
-                                # Check if save_model_as already contains a path
-                                if '/' in save_model_as or '\\' in save_model_as:
-                                    temp_reinforced_path = f"{save_model_as}_reinforced_temp"  # Already contains path
-                                else:
-                                    temp_reinforced_path = f"./models/{save_model_as}_reinforced_temp"  # Simple name, add ./models/
+                                # Use session-organized directory structure
+                                temp_reinforced_path = os.path.join(model_category_dir, f"{save_model_as}_reinforced_temp")
                                 os.makedirs(temp_reinforced_path, exist_ok=True)
 
                                 model_to_save = model.module if hasattr(model, 'module') else model
@@ -2368,9 +2382,19 @@ class BertBase(BertABC):
 
                                     row.append(macro_f1)
 
-                                    # Add language metrics for standard languages
-                                    standard_languages = ['EN', 'FR']
-                                    for lang in standard_languages:
+                                    # Add language metrics ONLY for the current training language
+                                    if track_languages and language_info is not None:
+                                        # Determine which languages to include (must match headers logic)
+                                        if language and language != 'MULTI':
+                                            # Single language training: only write data for THIS language
+                                            langs_for_data = [language.upper()]
+                                        else:
+                                            # Multilingual or unspecified: write data for all detected languages
+                                            langs_for_data = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
+                                    else:
+                                        langs_for_data = []
+
+                                    for lang in langs_for_data:
                                         if track_languages and lang in language_metrics:
                                             lm = language_metrics[lang]
                                             row.append(lm['accuracy'])

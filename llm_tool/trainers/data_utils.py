@@ -217,9 +217,18 @@ class DataLoader:
                       val_ratio: float = 0.1,
                       test_ratio: float = 0.1,
                       stratify_by_lang: bool = False,
-                      random_seed: int = 42) -> Tuple[List[DataSample], List[DataSample], List[DataSample]]:
+                      stratify_by_label: bool = True,
+                      random_seed: int = 42,
+                      min_train_per_class: int = 1,
+                      min_val_per_class: int = 1) -> Tuple[List[DataSample], List[DataSample], List[DataSample]]:
         """
-        Split data into train/val/test sets with optional language stratification.
+        Split data into train/val/test sets with GUARANTEED minimum samples per class.
+
+        CRITICAL GUARANTEES:
+        - At least min_train_per_class samples per class in training set (default: 1)
+        - At least min_val_per_class samples per class in validation set (default: 1)
+        - If a class has < (min_train + min_val) samples, raises clear error
+        - Stratification when possible, with intelligent fallback otherwise
 
         Args:
             samples: List of DataSample objects
@@ -227,37 +236,34 @@ class DataLoader:
             val_ratio: Proportion for validation set
             test_ratio: Proportion for test set
             stratify_by_lang: Whether to stratify splits by language
+            stratify_by_label: Whether to stratify splits by label (default: True, CRITICAL for class balance)
             random_seed: Random seed for reproducibility
+            min_train_per_class: Minimum samples per class in train set (default: 1, DO NOT SET TO 0)
+            min_val_per_class: Minimum samples per class in val set (default: 1, DO NOT SET TO 0)
 
         Returns:
             Tuple of (train_samples, val_samples, test_samples)
+
+        Raises:
+            ValueError: If any class has fewer than (min_train_per_class + min_val_per_class) samples
         """
+        from sklearn.model_selection import train_test_split
+
         np.random.seed(random_seed)
 
-        if stratify_by_lang and any(s.lang for s in samples):
-            # Group samples by language
-            lang_groups = defaultdict(list)
-            for sample in samples:
-                lang_groups[sample.lang or 'unknown'].append(sample)
+        # CRITICAL: Enforce minimum requirements
+        if min_train_per_class < 1:
+            min_train_per_class = 1
+            logging.warning("min_train_per_class must be >= 1. Setting to 1.")
+        if min_val_per_class < 1:
+            min_val_per_class = 1
+            logging.warning("min_val_per_class must be >= 1. Setting to 1.")
 
-            train_samples = []
-            val_samples = []
-            test_samples = []
+        min_total_required = min_train_per_class + min_val_per_class
 
-            # Split each language group
-            for lang, lang_samples in lang_groups.items():
-                n = len(lang_samples)
-                indices = np.random.permutation(n)
-
-                train_end = int(n * train_ratio)
-                val_end = train_end + int(n * val_ratio)
-
-                train_samples.extend([lang_samples[i] for i in indices[:train_end]])
-                val_samples.extend([lang_samples[i] for i in indices[train_end:val_end]])
-                test_samples.extend([lang_samples[i] for i in indices[val_end:]])
-
-        else:
-            # Simple random split
+        # Determine stratification strategy
+        if not stratify_by_label and not stratify_by_lang:
+            # No stratification - simple random split (NOT RECOMMENDED)
             n = len(samples)
             indices = np.random.permutation(n)
 
@@ -267,6 +273,123 @@ class DataLoader:
             train_samples = [samples[i] for i in indices[:train_end]]
             val_samples = [samples[i] for i in indices[train_end:val_end]]
             test_samples = [samples[i] for i in indices[val_end:]]
+
+            return train_samples, val_samples, test_samples
+
+        # Build stratification keys and check minimum requirements
+        stratify_keys = []
+        for sample in samples:
+            if stratify_by_label and stratify_by_lang:
+                # Stratify by both label AND language
+                lang = sample.lang or 'unknown'
+                key = f"{sample.label}_{lang}"
+            elif stratify_by_label:
+                # Stratify by label only (CRITICAL: ensures all classes in train AND val)
+                key = str(sample.label)
+            else:
+                # Stratify by language only
+                key = sample.lang or 'unknown'
+            stratify_keys.append(key)
+
+        # Count samples per class
+        key_counts = Counter(stratify_keys)
+
+        # CRITICAL: Check absolute minimums
+        insufficient_classes = {k: v for k, v in key_counts.items() if v < min_total_required}
+        if insufficient_classes:
+            error_msg = (
+                f"❌ CRITICAL ERROR: Cannot split dataset - some classes have insufficient samples:\n"
+            )
+            for key, count in insufficient_classes.items():
+                error_msg += f"   • Class '{key}': {count} sample(s) (minimum required: {min_total_required})\n"
+            error_msg += f"\n   Required: at least {min_train_per_class} train + {min_val_per_class} val = {min_total_required} total per class"
+            raise ValueError(error_msg)
+
+        # Check for classes at the critical minimum (exactly min_total_required)
+        critical_classes = {k: v for k, v in key_counts.items() if v == min_total_required}
+        if critical_classes:
+            logging.warning(
+                f"⚠️  CRITICAL WARNING: Some classes have exactly the minimum required samples "
+                f"({min_total_required} = {min_train_per_class} train + {min_val_per_class} val):"
+            )
+            for key, count in critical_classes.items():
+                logging.warning(f"   • Class '{key}': {count} samples (MINIMUM THRESHOLD)")
+            logging.warning(
+                f"   → Training may be unstable. Consider collecting more data for these classes."
+            )
+
+        # Check for low-sample classes (< 10 total)
+        low_sample_classes = {k: v for k, v in key_counts.items()
+                            if min_total_required < v < 10}
+        if low_sample_classes:
+            logging.warning(
+                f"⚠️  WARNING: Some classes have very few samples (recommended: >= 10):"
+            )
+            for key, count in low_sample_classes.items():
+                logging.warning(f"   • Class '{key}': {count} samples")
+
+        # Perform guaranteed minimum split
+        # Strategy: manually ensure minimum samples per class, then use stratification for the rest
+
+        # Group samples by class
+        class_samples = defaultdict(list)
+        for sample, key in zip(samples, stratify_keys):
+            class_samples[key].append(sample)
+
+        train_samples = []
+        val_samples = []
+        test_samples = []
+
+        # For each class, allocate minimum required samples first
+        for class_key, class_sample_list in class_samples.items():
+            n_class = len(class_sample_list)
+
+            # Shuffle class samples
+            np.random.shuffle(class_sample_list)
+
+            # Allocate minimums first (1 train + 1 val guaranteed)
+            train_samples.extend(class_sample_list[:min_train_per_class])
+            val_samples.extend(class_sample_list[min_train_per_class:min_train_per_class + min_val_per_class])
+
+            # Distribute remaining samples according to ratios
+            remaining = class_sample_list[min_train_per_class + min_val_per_class:]
+            if remaining:
+                n_remaining = len(remaining)
+
+                # Calculate how many more go to each set (proportional to original ratios)
+                total_ratio = train_ratio + val_ratio + test_ratio
+                if total_ratio > 0:
+                    train_extra = int(n_remaining * (train_ratio / total_ratio))
+                    val_extra = int(n_remaining * (val_ratio / total_ratio))
+                    test_extra = n_remaining - train_extra - val_extra  # Remainder goes to test
+
+                    idx = 0
+                    train_samples.extend(remaining[idx:idx + train_extra])
+                    idx += train_extra
+                    val_samples.extend(remaining[idx:idx + val_extra])
+                    idx += val_extra
+                    test_samples.extend(remaining[idx:])
+                else:
+                    # Default: put remaining in train
+                    train_samples.extend(remaining)
+
+        # Verify minimum guarantees (sanity check)
+        if stratify_by_label:
+            # Check that each class has minimum in train and val
+            train_labels = Counter([str(s.label) for s in train_samples])
+            val_labels = Counter([str(s.label) for s in val_samples])
+
+            for class_key in key_counts.keys():
+                # Extract just the label part if combined with language
+                if stratify_by_label and stratify_by_lang:
+                    label_part = class_key.split('_')[0]
+                else:
+                    label_part = class_key
+
+                if train_labels.get(label_part, 0) < min_train_per_class:
+                    logging.error(f"❌ Guarantee violation: Class '{label_part}' has {train_labels.get(label_part, 0)} train samples (required: {min_train_per_class})")
+                if val_labels.get(label_part, 0) < min_val_per_class:
+                    logging.error(f"❌ Guarantee violation: Class '{label_part}' has {val_labels.get(label_part, 0)} val samples (required: {min_val_per_class})")
 
         return train_samples, val_samples, test_samples
 

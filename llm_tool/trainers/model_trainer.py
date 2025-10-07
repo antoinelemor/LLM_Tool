@@ -1325,6 +1325,7 @@ class ModelTrainer:
                 output_dir=config.get('output_dir', 'models/best_model'),
                 multiclass_groups=multiclass_groups,  # Pass detected or provided groups
                 confirmed_languages=config.get('confirmed_languages'),  # Pass all detected languages
+                session_id=config.get('session_id'),  # Pass unified session ID for benchmark
                 is_benchmark=config.get('is_benchmark', False),  # Pass benchmark flag
                 model_name_for_logging=config.get('model_name')  # Pass model name for logging
             )

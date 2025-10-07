@@ -104,9 +104,25 @@ class TrainingDatasetBuilder:
         "prepared": "_build_prepared",
     }
 
-    def __init__(self, base_output_dir: Path):
-        self.base_output_dir = Path(base_output_dir)
+    def __init__(self, base_output_dir: Path, session_id: Optional[str] = None):
+        """
+        Initialize training dataset builder.
+
+        Args:
+            base_output_dir: Base directory for training data outputs
+            session_id: Optional session ID for session-based organization.
+                       If provided, files will be saved to {base_output_dir}/{session_id}/training_data/
+                       If None, files will be saved directly to {base_output_dir}/ (flat structure)
+        """
+        if session_id:
+            # Session-based: base_output_dir/{session_id}/training_data/
+            self.base_output_dir = Path(base_output_dir) / session_id / "training_data"
+        else:
+            # Flat structure (backward compatibility)
+            self.base_output_dir = Path(base_output_dir)
+
         self.base_output_dir.mkdir(parents=True, exist_ok=True)
+        self.session_id = session_id
         self.converter = AnnotationToTrainingConverter(verbose=False)
 
     # ------------------------------------------------------------------

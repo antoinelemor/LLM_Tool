@@ -1788,9 +1788,9 @@ class AdvancedCLI:
             menu_table.add_column()
 
             options = [
-                ("1", "🎨 LLM Annotation Studio - Annotate with LLM (No Training)"),
-                ("2", "🎯 LLM Annotation → Training - Complete Workflow"),
-                ("3", "🏋️ Training Studio - Model Training & Benchmarking"),
+                ("1", "🎨 The Annotator - LLM Tool annotates, you decide"),
+                ("2", "🏭 The Annotator Factory - Clone The Annotator into ML Models"),
+                ("3", "🎮 Training Arena - Train Your Own Models"),
                 ("4", "🤖 BERT Annotation Studio - Annotate with Trained Models"),
                 ("5", "🔍 Validation Lab - Quality Assurance Tools"),
                 ("6", "💾 Profile Manager - Save & Load Configurations"),
@@ -1827,9 +1827,9 @@ class AdvancedCLI:
             print("\n" + "="*50)
             print("Main Menu")
             print("="*50)
-            print("1. LLM Annotation Studio - Annotate with LLM (No Training)")
-            print("2. LLM Annotation → Training - Complete Workflow")
-            print("3. Training Studio - Model Training & Benchmarking")
+            print("1. The Annotator - LLM Tool annotates, you decide")
+            print("2. The Annotator Factory - Clone The Annotator into ML Models")
+            print("3. Training Arena - Train Your Own Models")
             print("4. BERT Annotation Studio - Annotate with Trained Models")
             print("5. Validation Lab - Quality Assurance Tools")
             print("6. Profile Manager - Save & Load Configurations")
@@ -2184,6 +2184,66 @@ class AdvancedCLI:
             print("  AI   Annotate Clean Label Train Test Deploy\n")
             print("="*80 + "\n")
 
+    def _display_mode_banner(self, mode: str):
+        """Display mode-specific ASCII banner"""
+        if not (HAS_RICH and self.console):
+            return
+
+        from rich.align import Align
+
+        banners = {
+            'annotator': {
+                'color': 'bright_magenta',
+                'ascii': """
+████████╗██╗  ██╗███████╗     █████╗ ███╗   ██╗███╗   ██╗ ██████╗ ████████╗ █████╗ ████████╗ ██████╗ ██████╗
+╚══██╔══╝██║  ██║██╔════╝    ██╔══██╗████╗  ██║████╗  ██║██╔═══██╗╚══██╔══╝██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗
+   ██║   ██║  ██║█████╗      ███████║██╔██╗ ██║██╔██╗ ██║██║   ██║   ██║   ███████║   ██║   ██║   ██║██████╔╝
+   ██║   ██║  ██║██╔══╝      ██╔══██║██║╚██╗██║██║╚██╗██║██║   ██║   ██║   ██╔══██║   ██║   ██║   ██║██╔══██╗
+   ██║   ██║  ██║███████╗    ██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║
+   ╚═╝   ╚═╝  ╚═╝╚══════╝    ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
+""",
+                'tagline': '🎨 LLM Tool annotates, you decide'
+            },
+            'factory': {
+                'color': 'bright_yellow',
+                'ascii': """
+ █████╗ ███╗   ██╗███╗   ██╗ ██████╗ ████████╗ █████╗ ████████╗ ██████╗ ██████╗     ███████╗ █████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗
+██╔══██╗████╗  ██║████╗  ██║██╔═══██╗╚══██╔══╝██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗    ██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗╚██╗ ██╔╝
+███████║██╔██╗ ██║██╔██╗ ██║██║   ██║   ██║   ███████║   ██║   ██║   ██║██████╔╝    █████╗  ███████║██║        ██║   ██║   ██║██████╔╝ ╚████╔╝
+██╔══██║██║╚██╗██║██║╚██╗██║██║   ██║   ██║   ██╔══██║   ██║   ██║   ██║██╔══██╗    ██╔══╝  ██╔══██║██║        ██║   ██║   ██║██╔══██╗  ╚██╔╝
+██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║    ██║     ██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║   ██║
+╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝    ╚═╝     ╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝   ╚═╝
+""",
+                'tagline': '🏭 Clone The Annotator into ML Models'
+            },
+            'arena': {
+                'color': 'bright_green',
+                'ascii': """
+████████╗██████╗  █████╗ ██╗███╗   ██╗██╗███╗   ██╗ ██████╗      █████╗ ██████╗ ███████╗███╗   ██╗ █████╗
+ ╚══██╔══╝██╔══██╗██╔══██╗██║████╗  ██║██║████╗  ██║██╔════╝     ██╔══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗
+    ██║   ██████╔╝███████║██║██╔██╗ ██║██║██╔██╗ ██║██║  ███╗    ███████║██████╔╝█████╗  ██╔██╗ ██║███████║
+    ██║   ██╔══██╗██╔══██║██║██║╚██╗██║██║██║╚██╗██║██║   ██║    ██╔══██║██╔══██╗██╔══╝  ██║╚██╗██║██╔══██║
+    ██║   ██║  ██║██║  ██║██║██║ ╚████║██║██║ ╚████║╚██████╔╝    ██║  ██║██║  ██║███████╗██║ ╚████║██║  ██║
+    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚═════╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝
+""",
+                'tagline': '🎮 Train Your Own Models'
+            }
+        }
+
+        if mode not in banners:
+            return
+
+        banner_data = banners[mode]
+        color = banner_data['color']
+
+        self.console.print()
+        for line in banner_data['ascii'].strip().split('\n'):
+            self.console.print(Align.center(f"[bold {color}]{line}[/bold {color}]"))
+
+        self.console.print()
+        self.console.print(Align.center(f"[bold {color}]{banner_data['tagline']}[/bold {color}]"))
+        self.console.print()
+
     def _display_section_header(self, title: str, description: str, mode_info: Optional[Dict[str, Any]] = None):
         """Display a personalized section header with mode-specific information"""
         if HAS_RICH and self.console:
@@ -2315,9 +2375,12 @@ class AdvancedCLI:
         # Display ASCII logo only
         self._display_ascii_logo()
 
+        # Display mode-specific banner
+        self._display_mode_banner('factory')
+
         # Display personalized mode info
         self._display_section_header(
-            "🎯 LLM Annotation → Training - Complete Workflow",
+            "🏭 The Annotator Factory - Clone The Annotator into ML Models",
             "End-to-end pipeline: annotate with LLM then train classifier models",
             mode_info={
                 'workflow': 'Data → LLM Annotate → Language Detection → Model Training → Export',
@@ -2352,7 +2415,7 @@ class AdvancedCLI:
             # Display panel with suggestions
             panel = Panel(
                 workflow_table,
-                title="[bold]🎯 LLM Annotation → Training Workflow[/bold]",
+                title="[bold]🏭 The Annotator Factory[/bold]",
                 subtitle=f"[dim]{suggestions}[/dim]" if suggestions else None,
                 border_style="cyan"
             )
@@ -2375,8 +2438,8 @@ class AdvancedCLI:
             elif workflow == "3":
                 self._clean_metadata()
         else:
-            print("\n=== LLM Annotation → Training Workflow ===")
-            print("Complete annotation-to-training pipeline\n")
+            print("\n=== The Annotator Factory ===")
+            print("Clone The Annotator into ML Models\n")
             print("1. Resume/Relaunch Workflow")
             print("2. Complete Workflow (Recommended)")
             print("3. Clean Old Metadata")
@@ -3373,7 +3436,7 @@ class AdvancedCLI:
                 'annotation_session': {
                     'timestamp': timestamp,
                     'tool_version': 'LLMTool v1.0',
-                    'workflow': 'LLM Annotation Studio - Smart Annotate'
+                    'workflow': 'The Annotator - Smart Annotate'
                 },
                 'data_source': {
                     'file_path': str(data_path),
@@ -4109,7 +4172,7 @@ class AdvancedCLI:
     ):
         """
         Comprehensive post-annotation training workflow.
-        Inspired by Training Studio (Mode 5) but adapted for annotated data.
+        Inspired by Training Arena (Mode 3) but adapted for annotated data.
 
         Features:
         - Language detection & analysis (with low-percentage reclassification)
@@ -4244,7 +4307,7 @@ class AdvancedCLI:
 
                 self.console.print(f"[green]✓ Benchmark category: {benchmark_category}[/green]\n")
 
-            # Step 3: Text Length Analysis (from Training Studio)
+            # Step 3: Text Length Analysis (from Training Arena)
             self.console.print("[bold cyan]Step 3: Text Length Analysis[/bold cyan]\n")
 
             text_length_stats = {}
@@ -4297,7 +4360,7 @@ class AdvancedCLI:
 
             self.console.print()
 
-            # Step 4: Language Strategy Analysis (from Training Studio)
+            # Step 4: Language Strategy Analysis (from Training Arena)
             self.console.print("[bold cyan]Step 4: Language Strategy[/bold cyan]\n")
 
             # Check if language column exists
@@ -4534,7 +4597,7 @@ class AdvancedCLI:
             if start_training:
                 self.console.print("[green]🚀 Starting training...[/green]\n")
 
-                # Call Training Studio's training method
+                # Call Training Arena's training method
                 try:
                     from llm_tool.trainers.training_data_builder import TrainingDatasetBuilder
 
@@ -6173,7 +6236,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
     # Placeholder methods for other menu options
     def llm_annotation_studio(self):
         """
-        LLM Annotation Studio - Complete annotation workflow without training.
+        The Annotator - Complete annotation workflow without training.
 
         Features:
         - Auto-detection of prompts from prompts/ folder
@@ -6186,9 +6249,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Display ASCII logo only
         self._display_ascii_logo()
 
+        # Display mode-specific banner
+        self._display_mode_banner('annotator')
+
         # Display personalized mode info
         self._display_section_header(
-            "🎨 LLM Annotation Studio",
+            "🎨 The Annotator - LLM Tool annotates, you decide",
             "Professional annotation workflow without model training",
             mode_info={
                 'workflow': 'Data → Select Prompts → LLM Annotate → Export (JSON/Doccano/Label Studio)',
@@ -6224,7 +6290,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Display panel with suggestions
             panel = Panel(
                 workflow_table,
-                title="[bold]🎨 LLM Annotation Studio[/bold]",
+                title="[bold]🎨 The Annotator[/bold]",
                 subtitle=f"[dim]{suggestions}[/dim]" if suggestions else None,
                 border_style="cyan"
             )
@@ -6249,8 +6315,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             elif workflow == "4":
                 self._clean_metadata()
         else:
-            print("\n=== LLM Annotation Studio ===")
-            print("Professional LLM annotation without model training\n")
+            print("\n=== The Annotator ===")
+            print("LLM Tool annotates, you decide\n")
             print("1. Resume/Relaunch Annotation")
             print("2. Smart Annotate (Recommended)")
             print("3. Database Annotator")
@@ -6272,9 +6338,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Display ASCII logo only
         self._display_ascii_logo()
 
+        # Display mode-specific banner
+        self._display_mode_banner('arena')
+
         # Display personalized mode info
         self._display_section_header(
-            "🏋️ Training Studio",
+            "🎮 Training Arena - Train Your Own Models",
             "Professional model training with intelligent dataset preparation",
             mode_info={
                 'workflow': 'Load Data → Auto-Detect Columns → Detect Languages → Recommend Models → Train → Benchmark',
@@ -6287,7 +6356,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         )
 
         if not (HAS_RICH and self.console):
-            print("\nTraining Studio requires the Rich interface. Launch `llm-tool --simple` for basic commands.")
+            print("\nTraining Arena requires the Rich interface. Launch `llm-tool --simple` for basic commands.")
             return
 
         self._ensure_training_models_loaded()
@@ -6330,7 +6399,28 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return
 
         # Continue with NEW training session
-        builder = TrainingDatasetBuilder(self.settings.paths.data_dir / "training_data")
+        # Create session ID for this training session
+        from datetime import datetime
+        from llm_tool.utils.training_data_utils import TrainingDataSessionManager
+
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.console.print(f"\n[dim]📋 Session ID: {session_id}[/dim]")
+
+        # Initialize session manager for comprehensive data distribution logging
+        session_manager = TrainingDataSessionManager(
+            session_id=session_id,
+            base_dir=str(self.settings.paths.data_dir / "training_data")
+        )
+
+        # Initialize builder with session-based organization
+        builder = TrainingDatasetBuilder(
+            self.settings.paths.data_dir / "training_data",
+            session_id=session_id
+        )
+
+        # Store for later use throughout the training session
+        self.current_session_id = session_id
+        self.current_session_manager = session_manager
 
         self._training_studio_show_model_catalog()
 
@@ -6368,7 +6458,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             bundle = self._training_studio_dataset_wizard(builder)
         except Exception as exc:  # pylint: disable=broad-except
             self.console.print(f"[red]Dataset preparation failed:[/red] {exc}")
-            self.logger.exception("Training Studio dataset preparation failed", exc_info=exc)
+            self.logger.exception("Training Arena dataset preparation failed", exc_info=exc)
             return
 
         if bundle is None:
@@ -6377,6 +6467,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Show dataset summary
         self._training_studio_render_bundle_summary(bundle)
+
+        # Log comprehensive training data distributions for ALL created datasets
+        if hasattr(self, 'current_session_manager') and self.current_session_manager:
+            self._log_training_data_distributions(bundle)
 
         # Now ask for training mode
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
@@ -6418,7 +6512,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self._training_studio_confirm_and_execute(bundle, mode)
 
     # ------------------------------------------------------------------
-    # Training Studio helpers
+    # Training Arena helpers
     # ------------------------------------------------------------------
     def _training_studio_confirm_and_execute(
         self,
@@ -6773,7 +6867,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
     ) -> Optional[Dict[str, Any]]:
         """
         Universal sophisticated interface for dataset and column selection.
-        Adapted specifically for Training Studio with:
+        Adapted specifically for Training Arena with:
         - Automatic dataset detection
         - Intelligent column analysis with confidence scores
         - Category/label detection and display
@@ -8455,6 +8549,236 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             else:
                 self.console.print("[yellow]⚠️  No valid annotation data found[/yellow]\n")
 
+            # Step 6.5: Value Filtering (Optional) - CRITICAL FOR DATA QUALITY
+            if all_keys_values:
+                self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+                self.console.print("[bold cyan]  STEP 6.5:[/bold cyan] [bold white]Value Filtering (Optional)[/bold white]")
+                self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+                self.console.print("[dim]📋 You can exclude specific values from your training data.[/dim]")
+                self.console.print("[dim]   For example: Remove 'null' values, or exclude rare categories.[/dim]\n")
+
+                filter_values = Confirm.ask(
+                    "[bold yellow]Do you want to exclude any specific values from training?[/bold yellow]",
+                    default=False
+                )
+
+                excluded_values = {}  # {key: [list_of_excluded_values]}
+                rows_to_remove = []  # List of indices to remove from df
+
+                if filter_values:
+                    self.console.print("\n[bold]🔍 Value Filtering Configuration[/bold]\n")
+
+                    # Ask for each key
+                    for key in sorted(all_keys_values.keys()):
+                        values_set = all_keys_values[key]
+                        num_values = len(values_set)
+
+                        if num_values == 0:
+                            continue
+
+                        # Display key and its values
+                        self.console.print(f"\n[cyan]Key:[/cyan] [bold]{key}[/bold] ({num_values} values)")
+
+                        # Create table for values with counts
+                        values_table = Table(show_header=True, header_style="bold magenta", border_style="dim", box=box.SIMPLE)
+                        values_table.add_column("Value", style="yellow", width=30)
+                        values_table.add_column("Count", style="white", width=10, justify="right")
+                        values_table.add_column("Percentage", style="green", width=12, justify="right")
+
+                        # Count occurrences of each value in the dataset
+                        value_counts = {}
+                        for idx, row in df.iterrows():
+                            annotation_val = row.get(annotation_column)
+                            if pd.isna(annotation_val) or annotation_val == '':
+                                continue
+
+                            try:
+                                if isinstance(annotation_val, str):
+                                    try:
+                                        annotation_dict = json.loads(annotation_val)
+                                    except json.JSONDecodeError:
+                                        import ast
+                                        annotation_dict = ast.literal_eval(annotation_val)
+                                elif isinstance(annotation_val, dict):
+                                    annotation_dict = annotation_val
+                                else:
+                                    continue
+
+                                if key in annotation_dict:
+                                    val = annotation_dict[key]
+                                    if isinstance(val, list):
+                                        for v in val:
+                                            if v is not None and v != '':
+                                                v_str = str(v)
+                                                value_counts[v_str] = value_counts.get(v_str, 0) + 1
+                                    elif val is not None and val != '':
+                                        v_str = str(val)
+                                        value_counts[v_str] = value_counts.get(v_str, 0) + 1
+                            except:
+                                continue
+
+                        # Display values with counts
+                        sorted_values = sorted(values_set, key=lambda v: value_counts.get(v, 0), reverse=True)
+                        for val in sorted_values:
+                            count = value_counts.get(val, 0)
+                            percentage = (count / total_samples * 100) if total_samples > 0 else 0
+                            values_table.add_row(
+                                val,
+                                str(count),
+                                f"{percentage:.1f}%"
+                            )
+
+                        self.console.print(values_table)
+
+                        # Ask if user wants to exclude any values for this key
+                        exclude_for_key = Confirm.ask(
+                            f"[bold yellow]Exclude any values from '{key}'?[/bold yellow]",
+                            default=False
+                        )
+
+                        if exclude_for_key:
+                            self.console.print(f"[dim]Enter values to exclude (comma-separated), or type 'cancel' to skip[/dim]")
+                            exclude_input = Prompt.ask(
+                                f"[yellow]Values to exclude from '{key}'[/yellow]",
+                                default=""
+                            )
+
+                            if exclude_input.lower() != 'cancel' and exclude_input.strip():
+                                excluded_list = [v.strip() for v in exclude_input.split(',') if v.strip()]
+                                # Validate that excluded values exist
+                                valid_excluded = [v for v in excluded_list if v in values_set]
+                                invalid_excluded = [v for v in excluded_list if v not in values_set]
+
+                                if invalid_excluded:
+                                    self.console.print(f"[yellow]⚠️  Warning: These values don't exist: {', '.join(invalid_excluded)}[/yellow]")
+
+                                if valid_excluded:
+                                    excluded_values[key] = valid_excluded
+                                    self.console.print(f"[green]✓ Will exclude: {', '.join(valid_excluded)}[/green]")
+
+                    # Now filter the DataFrame based on excluded values
+                    if excluded_values:
+                        self.console.print(f"\n[bold cyan]🔄 Filtering dataset...[/bold cyan]")
+                        original_count = len(df)
+
+                        # Identify rows to remove
+                        for idx, row in df.iterrows():
+                            annotation_val = row.get(annotation_column)
+                            if pd.isna(annotation_val) or annotation_val == '':
+                                continue
+
+                            try:
+                                if isinstance(annotation_val, str):
+                                    try:
+                                        annotation_dict = json.loads(annotation_val)
+                                    except json.JSONDecodeError:
+                                        import ast
+                                        annotation_dict = ast.literal_eval(annotation_val)
+                                elif isinstance(annotation_val, dict):
+                                    annotation_dict = annotation_val
+                                else:
+                                    continue
+
+                                # Check if this row contains any excluded value
+                                should_exclude = False
+                                for key, excluded_vals in excluded_values.items():
+                                    if key in annotation_dict:
+                                        val = annotation_dict[key]
+                                        if isinstance(val, list):
+                                            # If any value in the list is excluded, exclude the row
+                                            if any(str(v) in excluded_vals for v in val):
+                                                should_exclude = True
+                                                break
+                                        elif val is not None and str(val) in excluded_vals:
+                                            should_exclude = True
+                                            break
+
+                                if should_exclude:
+                                    rows_to_remove.append(idx)
+                            except:
+                                continue
+
+                        # Remove rows from DataFrame
+                        if rows_to_remove:
+                            df = df.drop(rows_to_remove)
+                            df = df.reset_index(drop=True)
+                            filtered_count = len(df)
+                            removed_count = original_count - filtered_count
+
+                            self.console.print(f"[green]✓ Filtered dataset: {original_count} → {filtered_count} samples ({removed_count} removed)[/green]\n")
+
+                            # Recalculate all_keys_values with filtered data
+                            all_keys_values = {}
+                            total_samples = 0
+                            malformed_count = 0
+
+                            for idx, row in df.iterrows():
+                                annotation_val = row.get(annotation_column)
+                                if pd.isna(annotation_val) or annotation_val == '':
+                                    continue
+
+                                total_samples += 1
+                                try:
+                                    if isinstance(annotation_val, str):
+                                        try:
+                                            annotation_dict = json.loads(annotation_val)
+                                        except json.JSONDecodeError:
+                                            import ast
+                                            annotation_dict = ast.literal_eval(annotation_val)
+                                    elif isinstance(annotation_val, dict):
+                                        annotation_dict = annotation_val
+                                    else:
+                                        continue
+
+                                    # Extract keys and values (excluding the filtered ones)
+                                    for key, value in annotation_dict.items():
+                                        if key not in all_keys_values:
+                                            all_keys_values[key] = set()
+
+                                        if isinstance(value, list):
+                                            for v in value:
+                                                if v is not None and v != '':
+                                                    all_keys_values[key].add(str(v))
+                                        elif value is not None and value != '':
+                                            all_keys_values[key].add(str(value))
+
+                                except (json.JSONDecodeError, AttributeError, TypeError, ValueError, SyntaxError) as e:
+                                    malformed_count += 1
+                                    continue
+
+                            # Display updated summary
+                            self.console.print("[bold]📊 Updated Data Summary:[/bold]")
+                            summary_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                            summary_table.add_column("Key", style="yellow bold", width=25)
+                            summary_table.add_column("Values (After Filtering)", style="white", width=50)
+
+                            for key in sorted(all_keys_values.keys()):
+                                values_set = all_keys_values[key]
+                                num_values = len(values_set)
+                                sample_str = ', '.join([f"'{v}'" for v in sorted(values_set)[:5]])
+                                if num_values > 5:
+                                    sample_str += f" ... (+{num_values - 5} more)"
+
+                                # Show what was excluded
+                                if key in excluded_values:
+                                    excluded_str = f"[dim red](excluded: {', '.join(excluded_values[key])})[/dim red]"
+                                    summary_table.add_row(
+                                        f"{key}\n{excluded_str}",
+                                        f"[green]{num_values} values[/green]: {sample_str}"
+                                    )
+                                else:
+                                    summary_table.add_row(
+                                        key,
+                                        f"{num_values} values: {sample_str}"
+                                    )
+
+                            self.console.print(summary_table)
+                            self.console.print()
+                        else:
+                            self.console.print("[yellow]⚠️  No matching rows found to remove[/yellow]\n")
+                else:
+                    self.console.print("[dim]✓ No values excluded - using all data[/dim]\n")
+
             # Step 7: Training Strategy Selection (SIMPLIFIED)
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[bold cyan]  STEP 7:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
@@ -10034,6 +10358,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Run benchmark for each model
             benchmark_results = {}
 
+            # Create unified session ID for the entire benchmark run
+            import datetime
+            benchmark_session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
             # Run benchmark for each model
             for idx, model_id in enumerate(all_models_to_test, 1):
                 self.console.print(f"\n[bold yellow]{'═' * 70}[/bold yellow]")
@@ -10063,7 +10391,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'label_column': 'labels',
                         'training_strategy': bundle.strategy,
                         'output_dir': str(model_output_dir),
-                        'is_benchmark': True  # Flag to enable benchmark mode log structure
+                        'is_benchmark': True,  # Flag to enable benchmark mode log structure
+                        'session_id': benchmark_session_id  # Unified session ID for all models in benchmark
                     }
 
                     # Add language filtering for per-language models
@@ -10237,6 +10566,27 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             self.console.print(results_table)
 
+        # ======================== Consolidate Session CSVs ========================
+        # Create consolidated CSV files at session root
+        try:
+            from llm_tool.utils.benchmark_utils import consolidate_session_csvs
+
+            # Session directory is in training_logs/{session_id}
+            session_dir = Path("training_logs") / benchmark_session_id
+
+            if session_dir.exists():
+                self.console.print("\n[bold cyan]📊 Consolidating session metrics...[/bold cyan]")
+                consolidated_files = consolidate_session_csvs(session_dir, benchmark_session_id)
+
+                if consolidated_files:
+                    self.console.print("[green]✓ Created consolidated CSV files:[/green]")
+                    if 'training' in consolidated_files:
+                        self.console.print(f"  • Training metrics: {consolidated_files['training'].name}")
+                    if 'best' in consolidated_files:
+                        self.console.print(f"  • Best models: {consolidated_files['best'].name}")
+        except Exception as e:
+            self.console.print(f"[yellow]⚠ Warning: Could not consolidate CSVs: {e}[/yellow]")
+
         # ======================== STEP 7: Final Choice ========================
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
         self.console.print("[bold cyan]         🎯 STEP 7: Final Model Selection                       [/bold cyan]")
@@ -10349,6 +10699,110 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             table.add_row("Annotated rows", str(analysis.get("annotated_rows", "n/a")))
 
         self.console.print(table)
+
+    def _log_training_data_distributions(self, bundle: TrainingDataBundle) -> None:
+        """
+        Log comprehensive distribution information for ALL training datasets created.
+
+        This function is called AFTER all datasets are created (Step 6 completion)
+        and logs distribution details for EVERY file in the bundle:
+        - Train/val/test splits
+        - Label distributions
+        - Language distributions
+        - Imbalance warnings
+        - And more comprehensive metadata
+
+        Args:
+            bundle: TrainingDataBundle containing all created dataset files
+        """
+        import json
+
+        self.console.print("\n[dim]📊 Logging comprehensive training data distributions...[/dim]")
+
+        # Collect all dataset files (primary + training_files)
+        all_files = []
+        if bundle.primary_file:
+            # Use descriptive name based on strategy
+            primary_name = f"multilabel_combined" if bundle.strategy == 'multi-label' else "combined_dataset"
+            all_files.append((primary_name, bundle.primary_file))
+        for key, path in bundle.training_files.items():
+            all_files.append((key, path))
+
+        if not all_files:
+            self.logger.warning("No training data files found in bundle to log")
+            return
+
+        # Log distribution for each dataset file
+        datasets_logged = 0
+        for dataset_name, dataset_path in all_files:
+            try:
+                # Load JSONL file
+                records = []
+                with open(dataset_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.strip():
+                            records.append(json.loads(line))
+
+                if not records:
+                    self.logger.warning(f"Dataset {dataset_name} is empty: {dataset_path}")
+                    continue
+
+                # Log distribution (comprehensive metadata about this dataset)
+                # Note: At this point, data is not yet split into train/val/test
+                # The actual splitting happens during training
+                # Here we log the FULL dataset that will be split later
+                self.current_session_manager.log_distribution(
+                    dataset_name=dataset_name,
+                    train_samples=records,  # All samples at this point
+                    val_samples=[],  # Splitting happens during training
+                    test_samples=[],
+                    label_key=dataset_name,
+                    metadata={
+                        'file_path': str(dataset_path),
+                        'file_size_mb': round(dataset_path.stat().st_size / (1024 * 1024), 2),
+                        'num_records': len(records),
+                        'strategy': bundle.strategy,
+                        'training_approach': bundle.metadata.get('training_approach', ''),
+                        'text_column': bundle.text_column,
+                        'label_column': bundle.label_column,
+                        'source_file': bundle.metadata.get('source_file', ''),
+                        'categories': bundle.metadata.get('categories', []),
+                        'confirmed_languages': bundle.metadata.get('confirmed_languages', []),
+                        'split_config': bundle.metadata.get('split_config', {}),
+                    }
+                )
+                datasets_logged += 1
+
+            except Exception as e:
+                self.logger.warning(f"Could not log distribution for {dataset_name}: {e}")
+                continue
+
+        # Finalize session and generate comprehensive reports
+        try:
+            warnings_count, datasets_with_warnings = self.current_session_manager.finalize()
+
+            # Display summary to user
+            self.console.print(f"\n[green]✓ Training data distribution reports generated:[/green]")
+            self.console.print(f"  • [cyan]Session ID:[/cyan] {self.current_session_id}")
+            self.console.print(f"  • [cyan]Datasets logged:[/cyan] {datasets_logged}")
+            self.console.print(f"  • [cyan]Data Status:[/cyan] PRE-SPLIT (split will occur during training)")
+            self.console.print(f"\n  📋 [cyan]Reports:[/cyan]")
+            self.console.print(f"     - Quick overview:     {self.current_session_manager.logs_dir / 'quick_summary.csv'}")
+            self.console.print(f"     - Detailed breakdown: {self.current_session_manager.logs_dir / 'split_summary.csv'}")
+            self.console.print(f"     - Complete data:      {self.current_session_manager.logs_dir / 'distribution_report.json'}")
+            self.console.print(f"     - Session summary:    {self.current_session_manager.session_dir / 'SESSION_SUMMARY.txt'}")
+            self.console.print(f"\n  [dim]💡 Note: Data is currently PRE-SPLIT. The train/val/test split")
+            self.console.print(f"     will be applied during model training according to your configuration.[/dim]")
+
+            if warnings_count > 0:
+                self.console.print(f"\n[yellow]⚠️  {warnings_count} validation warning(s) detected across {datasets_with_warnings} dataset(s)[/yellow]")
+                self.console.print(f"[dim]  View details in: {self.current_session_manager.warnings_log}[/dim]")
+            else:
+                self.console.print(f"\n[green]✓ All data validation checks passed[/green]")
+
+        except Exception as e:
+            self.logger.warning(f"Could not finalize training data session: {e}")
+            self.console.print(f"[yellow]⚠️  Could not generate final reports: {e}[/yellow]")
 
     def _configure_data_splits(self, keys_to_train: List[str], all_keys_values: Dict[str, set],
                                training_approach: str, key_strategies: Dict[str, str],
@@ -14759,7 +15213,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'training_session': {
                 'timestamp': timestamp,
                 'tool_version': 'LLMTool v1.0',
-                'workflow': f'Training Studio - {mode.capitalize()}',
+                'workflow': f'Training Arena - {mode.capitalize()}',
                 'session_id': f'train_{timestamp}'
             },
             'dataset_config': {
@@ -17074,7 +17528,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'annotation_session': {
                     'timestamp': timestamp,
                     'tool_version': 'LLMTool v1.0',
-                    'workflow': 'LLM Annotation Studio - Smart Annotate'
+                    'workflow': 'The Annotator - Smart Annotate'
                 },
                 'data_source': {
                     'file_path': str(data_path),

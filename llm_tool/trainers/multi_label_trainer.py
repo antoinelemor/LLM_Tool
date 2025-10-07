@@ -591,7 +591,8 @@ class MultiLabelTrainer:
                               samples: List[MultiLabelSample],
                               train_ratio: float = 0.8,
                               val_ratio: float = 0.1,
-                              output_dir: Optional[str] = None) -> Dict[str, Dict[str, List[DataSample]]]:
+                              output_dir: Optional[str] = None,
+                              stratify_by_language: bool = False) -> Dict[str, Dict[str, List[DataSample]]]:
         """
         Prepare separate datasets for each label.
 
@@ -599,6 +600,9 @@ class MultiLabelTrainer:
             samples: List of MultiLabelSample objects
             train_ratio: Training set ratio
             val_ratio: Validation set ratio
+            output_dir: Optional directory for distribution reports
+            stratify_by_language: If True, split separately per language to ensure
+                                 minority classes exist in each language's val set
 
         Returns:
             Dictionary: label_name -> {'train': samples, 'val': samples, 'test': samples}
@@ -632,13 +636,54 @@ class MultiLabelTrainer:
             # Calculate test ratio (0 if we only want train/val)
             test_ratio = max(0, 1 - train_ratio - val_ratio)
 
-            train, val, test = DataUtil.prepare_splits(
-                label_samples,
-                train_ratio=train_ratio,
-                val_ratio=val_ratio,
-                test_ratio=test_ratio,
-                stratify_by_lang=self.config.train_by_language
-            )
+            if stratify_by_language:
+                # CRITICAL: Split separately per language to ensure each language's
+                # validation set contains minority classes
+                # This prevents the problem where all minority class samples for
+                # a specific language end up in train set
+
+                # Group samples by language
+                lang_groups = defaultdict(list)
+                for s in label_samples:
+                    lang = s.lang if isinstance(s.lang, str) else 'unknown'
+                    lang_groups[lang].append(s)
+
+                # Split each language group separately
+                train_all = []
+                val_all = []
+                test_all = []
+
+                for lang, lang_samples_list in lang_groups.items():
+                    if len(lang_samples_list) < 2:
+                        # Too few samples for this language, add to train
+                        train_all.extend(lang_samples_list)
+                        continue
+
+                    # Split this language's samples with stratification by label
+                    lang_train, lang_val, lang_test = DataUtil.prepare_splits(
+                        lang_samples_list,
+                        train_ratio=train_ratio,
+                        val_ratio=val_ratio,
+                        test_ratio=test_ratio,
+                        stratify_by_label=True,   # Ensure minority classes in val
+                        stratify_by_lang=False    # Already filtered by lang
+                    )
+
+                    train_all.extend(lang_train)
+                    val_all.extend(lang_val)
+                    test_all.extend(lang_test)
+
+                train, val, test = train_all, val_all, test_all
+            else:
+                # Standard split: stratify by label only (language filtering happens later)
+                train, val, test = DataUtil.prepare_splits(
+                    label_samples,
+                    train_ratio=train_ratio,
+                    val_ratio=val_ratio,
+                    test_ratio=test_ratio,
+                    stratify_by_label=True,  # CRITICAL: ensures minority classes in val set
+                    stratify_by_lang=False   # Don't stratify by language here (done later)
+                )
 
             split_datasets[label_name] = {
                 'train': train,
@@ -1202,11 +1247,6 @@ class MultiLabelTrainer:
                 self.logger.info(f"   Converted {len(mc_samples)} samples")
                 self.logger.info(f"   Class names: {class_names}")
 
-            # Split into train/val
-            split_idx = int(len(mc_samples) * train_ratio)
-            mc_train = mc_samples[:split_idx]
-            mc_val = mc_samples[split_idx:]
-
             # Determine language label
             unique_langs = set(s.lang for s in mc_samples if s.lang and isinstance(s.lang, str))
             if len(unique_langs) > 1:
@@ -1215,6 +1255,20 @@ class MultiLabelTrainer:
                 language_label = list(unique_langs)[0]
             else:
                 language_label = None
+
+            # Split into train/val with stratification to ensure all classes in both sets
+            # CRITICAL: Use stratified split to avoid minority classes missing from val set
+            test_ratio = max(0, 1 - train_ratio - val_ratio)
+            stratify_by_language = len(unique_langs) > 1  # Stratify per language if multilingual
+
+            mc_train, mc_val, mc_test = DataUtil.prepare_splits(
+                mc_samples,
+                train_ratio=train_ratio,
+                val_ratio=val_ratio,
+                test_ratio=test_ratio,
+                stratify_by_label=True,          # CRITICAL: ensures all classes in val
+                stratify_by_lang=stratify_by_language  # Stratify per language if needed
+            )
 
             # Train the multi-class model
             model_info = self.train_single_model(
@@ -1271,11 +1325,22 @@ class MultiLabelTrainer:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         reports_dir = os.path.join('training_logs', f"{timestamp}_distribution_reports")
 
+        # Detect if we have multiple languages in the dataset
+        # If yes, we need to stratify by language to ensure minority classes
+        # exist in validation set for EACH language (critical for per-language models)
+        unique_languages = set(s.lang for s in samples if s.lang and isinstance(s.lang, str))
+        stratify_by_language = len(unique_languages) > 1
+
+        if stratify_by_language and self.verbose:
+            self.logger.info(f"🌍 Multiple languages detected ({len(unique_languages)}): {sorted(unique_languages)}")
+            self.logger.info(f"   Stratifying splits per language to ensure minority classes in each language's validation set")
+
         label_datasets = self.prepare_label_datasets(
             samples,
             train_ratio,
             val_ratio,
-            output_dir=reports_dir
+            output_dir=reports_dir,
+            stratify_by_language=stratify_by_language  # CRITICAL: ensures minority classes per language
         )
 
         # organize training jobs
@@ -1372,6 +1437,18 @@ class MultiLabelTrainer:
 
         # save summary
         self._save_training_summary()
+
+        # Consolidate session CSVs at session root (for all training modes)
+        if session_id:
+            try:
+                from pathlib import Path
+                from llm_tool.utils.benchmark_utils import consolidate_session_csvs
+
+                session_dir = Path("training_logs") / session_id
+                if session_dir.exists():
+                    consolidate_session_csvs(session_dir, session_id)
+            except Exception as e:
+                self.logger.warning(f"Could not consolidate session CSVs: {e}")
 
         return trained_models
 

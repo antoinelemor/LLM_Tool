@@ -387,3 +387,149 @@ def compare_model_results(results: Dict[str, Dict]) -> pd.DataFrame:
     df.insert(0, 'rank', range(1, len(df) + 1))
 
     return df
+
+
+def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Path]:
+    """
+    Consolidate all CSV files from a training session into summary files.
+
+    Creates two consolidated CSV files at the session root:
+    - {session_id}_training_metrics.csv: All training metrics from all epochs
+    - {session_id}_best_models.csv: Best models from all categories
+
+    Args:
+        session_dir: Path to the session directory (e.g., training_logs/20251007_141900)
+        session_id: Session ID timestamp string
+
+    Returns:
+        Dict with paths to created files: {'training': Path, 'best': Path}
+    """
+    import glob
+    import os
+
+    # Find all training.csv and best.csv files recursively
+    training_csvs = list(session_dir.rglob("training.csv"))
+    best_csvs = list(session_dir.rglob("best.csv"))
+
+    consolidated_files = {}
+
+    # Consolidate training metrics
+    if training_csvs:
+        all_training_data = []
+
+        for csv_path in training_csvs:
+            try:
+                df = pd.read_csv(csv_path)
+
+                # Extract metadata from path
+                # Path structure: session_dir/[benchmark/]category/[language/][model/]training.csv
+                rel_path = csv_path.relative_to(session_dir)
+                parts = list(rel_path.parts[:-1])  # Exclude 'training.csv'
+
+                # Add path-based metadata
+                metadata = {}
+
+                # Check if benchmark mode
+                if parts and parts[0] == 'benchmark':
+                    metadata['mode'] = 'benchmark'
+                    parts = parts[1:]  # Remove 'benchmark' from parts
+                else:
+                    metadata['mode'] = 'normal'
+
+                # Extract category, language, model from remaining parts
+                if len(parts) >= 1:
+                    metadata['category'] = parts[0]
+                if len(parts) >= 2:
+                    metadata['language'] = parts[1]
+                if len(parts) >= 3:
+                    metadata['model'] = parts[2]
+
+                # Add metadata columns to dataframe
+                for key, value in metadata.items():
+                    df[key] = value
+
+                all_training_data.append(df)
+
+            except Exception as e:
+                logging.warning(f"Failed to read {csv_path}: {e}")
+                continue
+
+        if all_training_data:
+            # Combine all dataframes
+            consolidated_df = pd.concat(all_training_data, ignore_index=True)
+
+            # Reorder columns to put metadata first
+            metadata_cols = ['mode', 'category', 'language', 'model']
+            other_cols = [col for col in consolidated_df.columns if col not in metadata_cols]
+
+            # Only include metadata columns that exist
+            existing_metadata_cols = [col for col in metadata_cols if col in consolidated_df.columns]
+            consolidated_df = consolidated_df[existing_metadata_cols + other_cols]
+
+            # Save consolidated training metrics
+            training_output = session_dir / f"{session_id}_training_metrics.csv"
+            consolidated_df.to_csv(training_output, index=False)
+            consolidated_files['training'] = training_output
+            logging.info(f"Created consolidated training metrics: {training_output}")
+            logging.info(f"  • Total rows: {len(consolidated_df)}")
+
+    # Consolidate best models
+    if best_csvs:
+        all_best_data = []
+
+        for csv_path in best_csvs:
+            try:
+                df = pd.read_csv(csv_path)
+
+                # Extract metadata from path
+                rel_path = csv_path.relative_to(session_dir)
+                parts = list(rel_path.parts[:-1])  # Exclude 'best.csv'
+
+                # Add path-based metadata
+                metadata = {}
+
+                # Check if benchmark mode
+                if parts and parts[0] == 'benchmark':
+                    metadata['mode'] = 'benchmark'
+                    parts = parts[1:]
+                else:
+                    metadata['mode'] = 'normal'
+
+                # Extract category, language, model from remaining parts
+                if len(parts) >= 1:
+                    metadata['category'] = parts[0]
+                if len(parts) >= 2:
+                    metadata['language'] = parts[1]
+                if len(parts) >= 3:
+                    metadata['model'] = parts[2]
+
+                # Add metadata columns
+                for key, value in metadata.items():
+                    df[key] = value
+
+                all_best_data.append(df)
+
+            except Exception as e:
+                logging.warning(f"Failed to read {csv_path}: {e}")
+                continue
+
+        if all_best_data:
+            # Combine all dataframes
+            consolidated_df = pd.concat(all_best_data, ignore_index=True)
+
+            # Reorder columns to put metadata first
+            metadata_cols = ['mode', 'category', 'language', 'model']
+            other_cols = [col for col in consolidated_df.columns if col not in metadata_cols]
+
+            # Only include metadata columns that exist
+            existing_metadata_cols = [col for col in metadata_cols if col in consolidated_df.columns]
+            consolidated_df = consolidated_df[existing_metadata_cols + other_cols]
+
+            # Save consolidated best models
+            best_output = session_dir / f"{session_id}_best_models.csv"
+            consolidated_df.to_csv(best_output, index=False)
+            consolidated_files['best'] = best_output
+            logging.info(f"Created consolidated best models: {best_output}")
+            logging.info(f"  • Total models: {len(consolidated_df)}")
+
+    return consolidated_files
