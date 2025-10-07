@@ -1160,6 +1160,22 @@ class ModelTrainer:
             if 'lang' in df.columns:
                 lang_col = df['lang'].values
 
+            # Filter by language if requested (for per-language training)
+            filter_by_language = config.get('filter_by_language')
+            if filter_by_language and lang_col is not None:
+                # Normalize language comparison (uppercase)
+                filter_lang = filter_by_language.upper()
+                lang_mask = np.array([str(lang).upper() == filter_lang for lang in lang_col])
+
+                # Apply filter
+                original_count = len(df)
+                df = df[lang_mask].reset_index(drop=True)
+                X = df[text_column].values
+                y = df[label_column].values
+                lang_col = df['lang'].values if 'lang' in df.columns else None
+
+                self.logger.info(f"Filtered data for language {filter_lang}: {len(df)}/{original_count} samples")
+
             # Extract split ratios from split_config or use defaults
             split_config = config.get('split_config')
             category_name = config.get('category_name')
@@ -1219,9 +1235,14 @@ class ModelTrainer:
             # Prepare samples for MultiLabelTrainer
             train_samples = []
             for i in range(len(X_train)):
+                # Handle labels: keep dicts and lists as-is, wrap other types in list
+                labels = y_train[i]
+                if not isinstance(labels, (list, dict)):
+                    labels = [labels]
+
                 sample = {
                     'text': X_train[i],
-                    'labels': y_train[i] if isinstance(y_train[i], list) else [y_train[i]]
+                    'labels': labels
                 }
                 if lang_train is not None:
                     sample['lang'] = lang_train[i]
@@ -1229,9 +1250,14 @@ class ModelTrainer:
 
             val_samples = []
             for i in range(len(X_val)):
+                # Handle labels: keep dicts and lists as-is, wrap other types in list
+                labels = y_val[i]
+                if not isinstance(labels, (list, dict)):
+                    labels = [labels]
+
                 sample = {
                     'text': X_val[i],
-                    'labels': y_val[i] if isinstance(y_val[i], list) else [y_val[i]]
+                    'labels': labels
                 }
                 if lang_val is not None:
                     sample['lang'] = lang_val[i]
@@ -1263,8 +1289,12 @@ class ModelTrainer:
                 # Handle both dict and list formats for labels
                 labels_raw = s.get('labels', {})
                 if isinstance(labels_raw, list):
-                    # Convert list to dict: ['label1', 'label2'] -> {'label1': 1, 'label2': 1}
-                    labels = {label: 1 for label in labels_raw if label}
+                    # Check if list contains a single dict (wrapped dict case from benchmark)
+                    if len(labels_raw) == 1 and isinstance(labels_raw[0], dict):
+                        labels = labels_raw[0]
+                    else:
+                        # Convert list to dict: ['label1', 'label2'] -> {'label1': 1, 'label2': 1}
+                        labels = {label: 1 for label in labels_raw if label and isinstance(label, str)}
                 else:
                     labels = labels_raw
 
@@ -1294,7 +1324,9 @@ class ModelTrainer:
                 auto_split=False,
                 output_dir=config.get('output_dir', 'models/best_model'),
                 multiclass_groups=multiclass_groups,  # Pass detected or provided groups
-                confirmed_languages=config.get('confirmed_languages')  # Pass all detected languages
+                confirmed_languages=config.get('confirmed_languages'),  # Pass all detected languages
+                is_benchmark=config.get('is_benchmark', False),  # Pass benchmark flag
+                model_name_for_logging=config.get('model_name')  # Pass model name for logging
             )
 
             # Aggregate results
@@ -1305,12 +1337,24 @@ class ModelTrainer:
                 self.logger.info(f"Multi-label training complete!")
                 self.logger.info(f"Models trained: {len(trained_models)}/{len(trained_models)}")
 
+                # Extract per-category metrics for detailed reporting (especially for benchmark)
+                category_metrics = {}
+                for model_name, model_info in trained_models.items():
+                    category_metrics[model_name] = {
+                        'f1_macro': model_info.performance_metrics.get('f1_macro', 0),
+                        'accuracy': model_info.performance_metrics.get('accuracy', 0),
+                        'precision': model_info.performance_metrics.get('precision', 0),
+                        'recall': model_info.performance_metrics.get('recall', 0),
+                        'model_path': model_info.model_path
+                    }
+
                 results = {
                     'f1_macro': avg_f1,
                     'accuracy': avg_acc,
                     'model_path': config.get('output_dir', 'models/best_model'),
                     'training_time': 0,
-                    'trained_models': {k: v.model_path for k, v in trained_models.items()}
+                    'trained_models': {k: v.model_path for k, v in trained_models.items()},
+                    'category_metrics': category_metrics  # NEW: Detailed metrics per category
                 }
             else:
                 results = {

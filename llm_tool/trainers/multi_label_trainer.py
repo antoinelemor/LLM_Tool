@@ -816,7 +816,9 @@ class MultiLabelTrainer:
                          language: Optional[str] = None,
                          num_labels: int = 2,
                          class_names: Optional[List[str]] = None,
-                         session_id: Optional[str] = None) -> ModelInfo:
+                         session_id: Optional[str] = None,
+                         is_benchmark: bool = False,
+                         model_name_for_logging: Optional[str] = None) -> ModelInfo:
         """
         Train a single model for one label.
 
@@ -944,7 +946,9 @@ class MultiLabelTrainer:
             label_key=label_key,  # Pass the parsed key (e.g., 'themes', 'sentiment')
             label_value=label_value,  # Pass the parsed value (e.g., 'transportation', 'positive')
             language=language,  # Pass the language (e.g., 'EN', 'FR', 'MULTI')
-            session_id=session_id
+            session_id=session_id,
+            is_benchmark=is_benchmark,  # Benchmark mode flag
+            model_name_for_logging=model_name_for_logging  # Model name for benchmark logging
             # NOTE: num_labels and class_names are already set on model object (lines 808-812)
         )
 
@@ -1001,7 +1005,9 @@ class MultiLabelTrainer:
              output_dir: Optional[str] = None,
              multiclass_groups: Optional[Dict[str, List[str]]] = None,
              confirmed_languages: Optional[List[str]] = None,
-             session_id: Optional[str] = None) -> Dict[str, ModelInfo]:
+             session_id: Optional[str] = None,
+             is_benchmark: bool = False,
+             model_name_for_logging: Optional[str] = None) -> Dict[str, ModelInfo]:
         """
         Main training method with automatic data handling.
 
@@ -1106,7 +1112,8 @@ class MultiLabelTrainer:
         actual_val_ratio = len(val_samples) / len(all_samples)
 
         # Use train_all_models with the calculated ratios
-        return self.train_all_models(all_samples, actual_train_ratio, actual_val_ratio, session_id=session_id)
+        return self.train_all_models(all_samples, actual_train_ratio, actual_val_ratio, session_id=session_id,
+                                    is_benchmark=is_benchmark, model_name_for_logging=model_name_for_logging)
 
     def _convert_to_samples(self, data: List[Dict]) -> List[MultiLabelSample]:
         """Convert list of dicts to MultiLabelSample objects."""
@@ -1160,7 +1167,9 @@ class MultiLabelTrainer:
                                  samples: List[MultiLabelSample],
                                  train_ratio: float = 0.8,
                                  val_ratio: float = 0.1,
-                                 session_id: Optional[str] = None) -> Dict[str, ModelInfo]:
+                                 session_id: Optional[str] = None,
+                                 is_benchmark: bool = False,
+                                 model_name_for_logging: Optional[str] = None) -> Dict[str, ModelInfo]:
         """
         Train multi-class models for detected groups.
 
@@ -1215,7 +1224,9 @@ class MultiLabelTrainer:
                 language=language_label,
                 num_labels=len(class_names),
                 class_names=class_names,
-                session_id=session_id
+                session_id=session_id,
+                is_benchmark=is_benchmark,
+                model_name_for_logging=model_name_for_logging
             )
 
             trained_models[model_info.model_name] = model_info
@@ -1229,7 +1240,9 @@ class MultiLabelTrainer:
                         samples: List[MultiLabelSample],
                         train_ratio: float = 0.8,
                         val_ratio: float = 0.1,
-                        session_id: Optional[str] = None) -> Dict[str, ModelInfo]:
+                        session_id: Optional[str] = None,
+                        is_benchmark: bool = False,
+                        model_name_for_logging: Optional[str] = None) -> Dict[str, ModelInfo]:
         """
         Train all models for all labels.
 
@@ -1248,7 +1261,8 @@ class MultiLabelTrainer:
                 self.logger.info(f"Groups: {self.config.multiclass_groups}")
 
             # Train multi-class models
-            return self._train_multiclass_models(samples, train_ratio, val_ratio, session_id=session_id)
+            return self._train_multiclass_models(samples, train_ratio, val_ratio, session_id=session_id,
+                                                is_benchmark=is_benchmark, model_name_for_logging=model_name_for_logging)
 
         # Otherwise, continue with standard multi-label (one-vs-all) training
         # prepare datasets
@@ -1285,7 +1299,9 @@ class MultiLabelTrainer:
                         'train_samples': lang_samples,
                         'val_samples': lang_val,
                         'language': lang,
-                        'session_id': session_id
+                        'session_id': session_id,
+                        'is_benchmark': is_benchmark,
+                        'model_name_for_logging': model_name_for_logging
                     })
             else:
                 # single model for all languages
@@ -1306,7 +1322,9 @@ class MultiLabelTrainer:
                     'train_samples': datasets['train'],
                     'val_samples': datasets['val'],
                     'language': language_label,
-                    'session_id': session_id
+                    'session_id': session_id,
+                    'is_benchmark': is_benchmark,
+                    'model_name_for_logging': model_name_for_logging
                 })
 
         if self.verbose:
@@ -1326,7 +1344,9 @@ class MultiLabelTrainer:
                         job['train_samples'],
                         job['val_samples'],
                         job['language'],
-                        session_id=job.get('session_id')
+                        session_id=job.get('session_id'),
+                        is_benchmark=job.get('is_benchmark', False),
+                        model_name_for_logging=job.get('model_name_for_logging')
                     )
                     futures.append(future)
 
@@ -1342,7 +1362,9 @@ class MultiLabelTrainer:
                     job['train_samples'],
                     job['val_samples'],
                     job['language'],
-                    session_id=job.get('session_id')
+                    session_id=job.get('session_id'),
+                    is_benchmark=job.get('is_benchmark', False),
+                    model_name_for_logging=job.get('model_name_for_logging')
                 )
                 trained_models[model_info.model_name] = model_info
 

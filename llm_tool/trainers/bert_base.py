@@ -843,7 +843,9 @@ class BertBase(BertABC):
             label_value: Optional[str] = None,  # Multi-label: specific value (e.g., 'transportation', 'positive')
             language: Optional[str] = None,  # Language of the data being trained (e.g., 'EN', 'FR')
             class_names: Optional[List[str]] = None,  # Multi-class: list of class names (e.g., ['natural_sciences', 'no', 'social_sciences'])
-            session_id: Optional[str] = None  # Session timestamp for organizing logs by session
+            session_id: Optional[str] = None,  # Session timestamp for organizing logs by session
+            is_benchmark: bool = False,  # Whether this is benchmark mode (adds benchmark folder to path)
+            model_name_for_logging: Optional[str] = None  # Model name for benchmark logging (e.g., 'bert-base-uncased')
     ) -> Tuple[Any, Any, Any, Any]:
         """
         Train, evaluate, and (optionally) save a BERT model. This method also logs training and validation
@@ -923,9 +925,13 @@ class BertBase(BertABC):
         # Reset reinforced learning flag at the start of each training session
         self._reinforced_already_triggered = False
 
-        # NEW STRUCTURE: training_logs/{session_timestamp}/{category}/
+        # NEW STRUCTURE:
+        # Normal mode:    training_logs/{session_id}/{category}/
+        # Benchmark mode: training_logs/{session_id}/benchmark/{category}/{language}/{model}/
         # session_timestamp: Date and time of the training session (e.g., 20251007_103025)
         # category: The label/category being trained (e.g., specific_themes, sentiment)
+        # language: Language code (e.g., EN, FR, MULTI) - only in benchmark mode
+        # model: Model identifier (e.g., bert-base-uncased) - only in benchmark mode
 
         # Create or use session ID (timestamp)
         if session_id is None:
@@ -944,9 +950,27 @@ class BertBase(BertABC):
         # Clean category name
         category_name = category_name.replace("/", "_").replace(" ", "_")
 
-        # Build directory structure: training_logs/{session_id}/{category}/
+        # Build directory structure based on mode
         session_dir = os.path.join(metrics_output_dir, session_id)
-        category_dir = os.path.join(session_dir, category_name)
+
+        if is_benchmark:
+            # Benchmark mode: add benchmark, category, language, and model folders
+            benchmark_dir = os.path.join(session_dir, "benchmark")
+            category_dir = os.path.join(benchmark_dir, category_name)
+
+            # Add language folder if language is specified
+            if language:
+                lang_clean = language.upper().replace("/", "_").replace(" ", "_")
+                category_dir = os.path.join(category_dir, lang_clean)
+
+            # Add model folder if model name is specified
+            if model_name_for_logging:
+                model_clean = model_name_for_logging.replace("/", "_").replace(" ", "_")
+                category_dir = os.path.join(category_dir, model_clean)
+        else:
+            # Normal mode: just session_id/category
+            category_dir = os.path.join(session_dir, category_name)
+
         os.makedirs(category_dir, exist_ok=True)
 
         # CSV files are now general (contain all models for this category)
@@ -1794,12 +1818,8 @@ class BertBase(BertABC):
                     # No new best model this epoch, but still update display to show current epoch timing
                     live.update(display.create_panel())
 
-                # Print epoch summary for visibility (in case Live display doesn't update properly)
-                epoch_summary = f"Epoch {i_epoch+1}/{n_epochs} - Loss: {avg_train_loss:.4f}/{avg_val_loss:.4f} (train/val) - F1: {macro_f1:.4f} - Accuracy: {accuracy:.4f}"
-                if language_metrics:
-                    lang_f1s = [f"{lang}:{m['macro_f1']:.3f}" for lang, m in sorted(language_metrics.items())]
-                    epoch_summary += f" - Per-lang F1: {', '.join(lang_f1s)}"
-                print(f"\n{epoch_summary}")
+                # Epoch summary removed - Rich Live display is sufficient
+                # (keeping print() was pushing the Rich table down on every epoch)
 
             # End of normal training (after all epochs) - display final summary
             display.current_phase = "Training Complete"
@@ -1807,8 +1827,8 @@ class BertBase(BertABC):
             live.update(display.create_panel())
 
             # Save language performance history if available
-            if track_languages and language_performance_history:
-                language_metrics_json = os.path.join(model_dir, "language_performance.json")
+            if track_languages and language_performance_history and best_model_path:
+                language_metrics_json = os.path.join(best_model_path, "language_performance.json")
                 with open(language_metrics_json, 'w', encoding='utf-8') as f:
                     json.dump(language_performance_history, f, indent=2, ensure_ascii=False)
 
@@ -1926,7 +1946,7 @@ class BertBase(BertABC):
                     live.update(display.create_panel(), refresh=True)
                     time.sleep(0.2)  # Brief pause for clean visual transition
 
-                    # Prepare reinforced training setup - model_dir already exists
+                    # Prepare reinforced training setup
                     # Use per-model naming for reinforced metrics
                     reinforced_metrics_csv = training_metrics_csv.replace('_training.csv', '_reinforced.csv').replace('training.csv', 'reinforced.csv')
 
@@ -2392,8 +2412,8 @@ class BertBase(BertABC):
                     live.update(display.create_panel(), refresh=True)
                     time.sleep(0.15)  # Brief pause for visual clarity
 
-            if track_languages and language_performance_history:
-                history_path = os.path.join(model_dir, "language_metrics_history.json")
+            if track_languages and language_performance_history and best_model_path:
+                history_path = os.path.join(best_model_path, "language_metrics_history.json")
                 try:
                     with open(history_path, "w", encoding="utf-8") as history_file:
                         json.dump(language_performance_history, history_file, indent=2, ensure_ascii=False)

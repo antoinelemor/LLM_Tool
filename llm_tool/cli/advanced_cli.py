@@ -7691,45 +7691,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         Now supports all formats with smart detection and recommendations.
         """
 
-        # Step 1: Dataset Source Selection
+        # Step 1: Explain format options with Rich table
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 1:[/bold cyan] [bold white]Dataset Source Selection[/bold white]")
-        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[dim]Choose where your training data will come from.[/dim]\n")
-
-        self.console.print("[bold]📚 Dataset Source Options:[/bold]")
-        self.console.print("  [cyan]build[/cyan]    - Build training dataset from annotated data (CSV/JSON/Excel/Parquet)")
-        self.console.print("  [cyan]existing[/cyan] - Use pre-prepared training dataset (already in correct format)")
-        self.console.print("  [cyan]back[/cyan]     - Return to previous menu")
-
-        source = Prompt.ask(
-            "\nDataset source",
-            choices=["build", "existing", "cancel", "back"],
-            default="build",
-        )
-
-        if source == "cancel" or source == "back":
-            return None
-
-        if source == "existing":
-            dataset_path = Path(self._prompt_file_path("Existing dataset path"))
-            text_column = Prompt.ask("Text column", default="text")
-            label_column = Prompt.ask("Label column", default="label")
-            mode = Prompt.ask("Training strategy", choices=["single-label", "multi-label", "back"], default="single-label")
-            if mode == "back":
-                return None
-            request = TrainingDataRequest(
-                input_path=dataset_path,
-                format="prepared",
-                text_column=text_column,
-                label_column=label_column,
-                mode=mode,
-            )
-            return builder.build(request)
-
-        # Step 2: Explain format options with Rich table
-        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 2:[/bold cyan] [bold white]Dataset Format Selection[/bold white]")
+        self.console.print("[bold cyan]  STEP 1:[/bold cyan] [bold white]Dataset Format Selection[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Choose the format that matches your annotated data structure.[/dim]\n")
 
@@ -7782,9 +7746,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return None
 
         if format_choice == "llm-json":
-            # Step 1: Dataset Selection
+            # Step 2: Dataset Selection
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold cyan]  STEP 1:[/bold cyan] [bold white]Dataset Selection[/bold white]")
+            self.console.print("[bold cyan]  STEP 2:[/bold cyan] [bold white]Dataset Selection[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[dim]Select your annotated dataset file to prepare for training.[/dim]\n")
 
@@ -7849,9 +7813,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             self.console.print(f"[green]✓ Selected: {csv_path.name} ({csv_path.suffix[1:]})[/green]\n")
 
-            # Step 2: File Structure Analysis
+            # Step 3: File Structure Analysis
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold cyan]  STEP 2:[/bold cyan] [bold white]Analyzing Dataset Structure[/bold white]")
+            self.console.print("[bold cyan]  STEP 3:[/bold cyan] [bold white]Analyzing Dataset Structure[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[dim]🔍 Analyzing columns, detecting types, and extracting samples...[/dim]")
             analysis = DataDetector.analyze_file_intelligently(csv_path)
@@ -7862,9 +7826,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 for issue in analysis['issues']:
                     self.console.print(f"  • {issue}")
 
-            # Step 3: Column Selection
+            # Step 4: Column Selection
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold cyan]  Step 3:[/bold cyan] [bold white]Column Selection[/bold white]")
+            self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Column Selection[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[bold]💡 What You Need to Select:[/bold]")
             self.console.print("   [cyan]• Text Column[/cyan]     - Contains the text data to train on (input for predictions)")
@@ -8054,9 +8018,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Store stats for later use in model selection (no user choice yet)
             # User will choose strategy in model selection step
 
-            # Step 4: Language Detection and Text Analysis (using sophisticated universal system)
+            # Step 5: Language Detection and Text Analysis (using sophisticated universal system)
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Language Detection[/bold white]")
+            self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Language Detection[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[dim]Analyzing languages to recommend the best model.[/dim]\n")
 
@@ -8406,9 +8370,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Model selection will be done later when training mode is selected
             # Store languages for later use
 
-            # Step 5: Annotation Data Preview
+            # Step 6: Annotation Data Preview
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
+            self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[dim]🔍 Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
 
@@ -8491,9 +8455,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             else:
                 self.console.print("[yellow]⚠️  No valid annotation data found[/yellow]\n")
 
-            # Step 6: Training Strategy Selection (SIMPLIFIED)
+            # Step 7: Training Strategy Selection (SIMPLIFIED)
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
+            self.console.print("[bold cyan]  STEP 7:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
             # Extract annotation keys and values from data
@@ -8885,9 +8849,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             else:
                 mode = "single-label"  # multi-class uses single-label infrastructure
 
-            # Step 7: Additional Columns (ID, Language)
+            # Step 8: Additional Columns (ID, Language)
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold cyan]  STEP 7:[/bold cyan] [bold white]Additional Columns (Optional)[/bold white]")
+            self.console.print("[bold cyan]  STEP 8:[/bold cyan] [bold white]Additional Columns (Optional)[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[dim]Optional: Select ID and language columns if available in your dataset.[/dim]\n")
 
@@ -8920,19 +8884,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print(f"[red]✗ Column '{id_column_input}' not found in dataset![/red]")
                     self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
-            # Language column handling - check if already processed in Step 4
+            # Language column handling - check if already processed in Step 5
             # Skip if we already did language detection (either with column or auto-detection)
             language_already_processed = 'lang_column' in locals() and confirmed_languages
 
             if language_already_processed:
-                # Language was already handled in Step 4
+                # Language was already handled in Step 5
                 if lang_column:
-                    self.console.print(f"\n[green]✓ Language column from Step 4: '{lang_column}'[/green]")
+                    self.console.print(f"\n[green]✓ Language column from Step 5: '{lang_column}'[/green]")
                 else:
-                    self.console.print(f"\n[green]✓ Languages detected in Step 4: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                    self.console.print(f"\n[green]✓ Languages detected in Step 5: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
                     self.console.print(f"[dim]  (Using automatic language detection - no specific column)[/dim]")
             elif analysis['language_column_candidates']:
-                # Language column detected but Step 4 was skipped - ask user
+                # Language column detected but Step 5 was skipped - ask user
                 lang_column_candidate = analysis['language_column_candidates'][0]
                 self.console.print(f"\n[green]✓ Language column detected: '{lang_column_candidate}'[/green]")
                 if all_columns:
@@ -9454,6 +9418,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     else:
                         selected_model = model_input
 
+                    # Validate model exists (check in MODEL_METADATA or HuggingFace format)
+                    if selected_model not in MODEL_METADATA and '/' not in selected_model:
+                        self.console.print(f"[yellow]⚠️  Model '{selected_model}' not found in metadata[/yellow]")
+                        # Ask if they want to use it anyway
+                        use_anyway = Confirm.ask(
+                            f"[yellow]Use '{selected_model}' anyway? (may fail if invalid)[/yellow]",
+                            default=False
+                        )
+                        if not use_anyway:
+                            continue  # Ask for selection again
+
                     lang_models.append(selected_model)
                     self.console.print(f"[green]✓ Added: {selected_model}[/green]")
 
@@ -9551,6 +9526,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         selected_model = default_model
                 else:
                     selected_model = model_input
+
+                # Validate model exists (check in MODEL_METADATA or HuggingFace format)
+                if selected_model not in MODEL_METADATA and '/' not in selected_model:
+                    self.console.print(f"[yellow]⚠️  Model '{selected_model}' not found in metadata[/yellow]")
+                    # Ask if they want to use it anyway
+                    use_anyway = Confirm.ask(
+                        f"[yellow]Use '{selected_model}' anyway? (may fail if invalid)[/yellow]",
+                        default=False
+                    )
+                    if not use_anyway:
+                        continue  # Ask for selection again
 
                 # Check for duplicates
                 if selected_model in selected_models_benchmark:
@@ -9943,11 +9929,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ======================== STEP 5: Execute Benchmark ========================
         self.console.print("\n[bold]STEP 5: Running Benchmark[/bold]\n")
 
-        # Collect all models to test
+        # Collect all models to test (with language mapping if train_by_language)
         all_models_to_test = []
+        model_to_language_map = {}  # Track which language each model should use
+
         if train_by_language:
-            for models in models_by_language_benchmark.values():
-                all_models_to_test.extend(models)
+            for lang, models in models_by_language_benchmark.items():
+                for model in models:
+                    all_models_to_test.append(model)
+                    model_to_language_map[model] = lang  # Remember this model is for this language
         else:
             all_models_to_test = selected_models_benchmark
 
@@ -10004,10 +9994,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     if not filtered_annotation:
                         continue
 
+                    # Transform to multi-label format: list of "key_value" strings
+                    # E.g., {'sentiment': 'positive', 'theme': 'politics'} → ['sentiment_positive', 'theme_politics']
+                    label_list = []
+                    for key, value in filtered_annotation.items():
+                        if isinstance(value, str) and value:
+                            # Combine key and value into single label string
+                            label_list.append(f"{key}_{value}")
+                        elif isinstance(value, list):
+                            # Handle list values (shouldn't happen in this flow, but be defensive)
+                            for v in value:
+                                if isinstance(v, str) and v:
+                                    label_list.append(f"{key}_{v}")
+
+                    if not label_list:
+                        continue
+
                     # Create row
                     benchmark_row = {
                         'text': row[bundle.text_column],
-                        'labels': list(filtered_annotation.values())[0] if len(filtered_annotation) == 1 else filtered_annotation
+                        'labels': label_list  # Always a list of label strings
                     }
 
                     # Add language if available
@@ -10056,8 +10062,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'text_column': 'text',
                         'label_column': 'labels',
                         'training_strategy': bundle.strategy,
-                        'output_dir': str(model_output_dir)
+                        'output_dir': str(model_output_dir),
+                        'is_benchmark': True  # Flag to enable benchmark mode log structure
                     }
+
+                    # Add language filtering for per-language models
+                    if model_id in model_to_language_map:
+                        # This is a language-specific model - only train on its language
+                        model_lang = model_to_language_map[model_id]
+                        train_params['confirmed_languages'] = [model_lang]
+                        train_params['filter_by_language'] = model_lang  # Filter data to only this language
+                    elif hasattr(bundle, 'metadata') and bundle.metadata.get('confirmed_languages'):
+                        # Multilingual model - use all languages
+                        train_params['confirmed_languages'] = bundle.metadata['confirmed_languages']
 
                     # Add reinforced learning params if enabled
                     if enable_benchmark_rl:
@@ -10072,10 +10089,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     benchmark_results[model_id] = result
 
                     self.console.print(f"\n[green]✓ Training Complete[/green]")
-                    self.console.print(f"  • F1-Score: [bold green]{result['best_f1_macro']:.3f}[/bold green]")
-                    self.console.print(f"  • Accuracy: [bold green]{result['accuracy']:.3f}[/bold green]")
+                    self.console.print(f"  • Overall F1-Score: [bold green]{result.get('f1_macro', result.get('best_f1_macro', 0)):.3f}[/bold green]")
+                    self.console.print(f"  • Overall Accuracy: [bold green]{result.get('accuracy', 0):.3f}[/bold green]")
                     if 'training_time' in result:
                         self.console.print(f"  • Time: [cyan]{result['training_time']:.1f}s[/cyan]")
+
+                    # Display per-category scores if available (multi-label benchmark)
+                    if 'trained_models' in result and result['trained_models']:
+                        self.console.print(f"\n  [dim]Per-Category Scores:[/dim]")
+                        # Get category details from model trainer
+                        # trained_models is a dict of {model_name: model_path} but we need metrics
+                        # This will be enhanced in the results display section
 
                 except Exception as e:
                     self.console.print(f"\n[red]❌ Error during training: {str(e)}[/red]")
@@ -10092,37 +10116,126 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("[bold cyan]         📊 STEP 6: BENCHMARK RESULTS                           [/bold cyan]")
         self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
-        # Create comparison DataFrame
-        comparison_df = compare_model_results(benchmark_results)
+        # Check if we have multi-category results
+        has_category_details = any('category_metrics' in result and result['category_metrics']
+                                   for result in benchmark_results.values())
 
-        # Display results
-        results_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
-        results_table.add_column("Rank", style="yellow", width=6)
-        results_table.add_column("Model", style="cyan", width=45)
-        results_table.add_column("F1-Score", style="green", width=10)
-        results_table.add_column("Accuracy", style="green", width=10)
-        results_table.add_column("Time (s)", style="blue", width=10)
+        if has_category_details and selected_benchmark_categories:
+            # Display detailed per-category results
+            self.console.print("[bold]Overall Rankings:[/bold]\n")
 
-        for _, row in comparison_df.iterrows():
-            # Add emoji for top 3
-            if row['rank'] == 1:
-                rank_str = "🥇 1"
-            elif row['rank'] == 2:
-                rank_str = "🥈 2"
-            elif row['rank'] == 3:
-                rank_str = "🥉 3"
-            else:
-                rank_str = f"   {row['rank']}"
+            # Create comparison DataFrame
+            comparison_df = compare_model_results(benchmark_results)
 
-            results_table.add_row(
-                rank_str,
-                row['model'],
-                f"{row['f1_macro']:.3f}",
-                f"{row['accuracy']:.3f}",
-                f"{row['training_time']:.1f}"
-            )
+            # Overall results table
+            results_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+            results_table.add_column("Rank", style="yellow", width=6)
+            results_table.add_column("Model", style="cyan", width=35)
+            results_table.add_column("Avg F1", style="green", width=10)
+            results_table.add_column("Avg Acc", style="green", width=10)
+            results_table.add_column("Time (s)", style="blue", width=10)
 
-        self.console.print(results_table)
+            for _, row in comparison_df.iterrows():
+                # Add emoji for top 3
+                if row['rank'] == 1:
+                    rank_str = "🥇 1"
+                elif row['rank'] == 2:
+                    rank_str = "🥈 2"
+                elif row['rank'] == 3:
+                    rank_str = "🥉 3"
+                else:
+                    rank_str = f"   {row['rank']}"
+
+                results_table.add_row(
+                    rank_str,
+                    row['model'],
+                    f"{row['f1_macro']:.3f}",
+                    f"{row['accuracy']:.3f}",
+                    f"{row['training_time']:.1f}"
+                )
+
+            self.console.print(results_table)
+
+            # Per-category breakdown
+            self.console.print(f"\n[bold]Performance by Category:[/bold]\n")
+
+            for category in selected_benchmark_categories:
+                self.console.print(f"[bold cyan]Category: {category}[/bold cyan]")
+
+                cat_table = Table(show_header=True, header_style="bold yellow", border_style="blue", box=box.SIMPLE)
+                cat_table.add_column("Model", style="cyan", width=35)
+                cat_table.add_column("F1-Score", style="green", width=12)
+                cat_table.add_column("Accuracy", style="green", width=12)
+                cat_table.add_column("Precision", style="blue", width=12)
+                cat_table.add_column("Recall", style="blue", width=12)
+
+                # Collect scores for this category across all models
+                category_scores = []
+                for model_id, result in benchmark_results.items():
+                    if 'category_metrics' in result:
+                        # Find the model that corresponds to this category
+                        for model_name, metrics in result['category_metrics'].items():
+                            # Check if this model is for the current category
+                            # Model names typically include category: "sentiment_simple_EN" or similar
+                            if category.lower() in model_name.lower():
+                                category_scores.append({
+                                    'model': model_id,
+                                    'f1': metrics.get('f1_macro', 0),
+                                    'accuracy': metrics.get('accuracy', 0),
+                                    'precision': metrics.get('precision', 0),
+                                    'recall': metrics.get('recall', 0)
+                                })
+                                break
+
+                # Sort by F1 score
+                category_scores.sort(key=lambda x: x['f1'], reverse=True)
+
+                # Display
+                for score_data in category_scores:
+                    cat_table.add_row(
+                        score_data['model'],
+                        f"{score_data['f1']:.3f}",
+                        f"{score_data['accuracy']:.3f}",
+                        f"{score_data['precision']:.3f}",
+                        f"{score_data['recall']:.3f}"
+                    )
+
+                self.console.print(cat_table)
+                self.console.print()  # Empty line between categories
+
+        else:
+            # Simple display for single-category or no details available
+            # Create comparison DataFrame
+            comparison_df = compare_model_results(benchmark_results)
+
+            # Display results
+            results_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+            results_table.add_column("Rank", style="yellow", width=6)
+            results_table.add_column("Model", style="cyan", width=45)
+            results_table.add_column("F1-Score", style="green", width=10)
+            results_table.add_column("Accuracy", style="green", width=10)
+            results_table.add_column("Time (s)", style="blue", width=10)
+
+            for _, row in comparison_df.iterrows():
+                # Add emoji for top 3
+                if row['rank'] == 1:
+                    rank_str = "🥇 1"
+                elif row['rank'] == 2:
+                    rank_str = "🥈 2"
+                elif row['rank'] == 3:
+                    rank_str = "🥉 3"
+                else:
+                    rank_str = f"   {row['rank']}"
+
+                results_table.add_row(
+                    rank_str,
+                    row['model'],
+                    f"{row['f1_macro']:.3f}",
+                    f"{row['accuracy']:.3f}",
+                    f"{row['training_time']:.1f}"
+                )
+
+            self.console.print(results_table)
 
         # ======================== STEP 7: Final Choice ========================
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
@@ -10298,7 +10411,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             use_test_set_default = False
         else:
             self.console.print("[dim]✓ Your dataset is large enough to benefit from a separate test set.[/dim]\n")
-            use_test_set_default = True
+            use_test_set_default = False
 
         use_test_set = Confirm.ask(
             "[bold yellow]Keep a separate test set for final evaluation?[/bold yellow]",
@@ -10371,15 +10484,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("[dim]Ratios must sum to 1.0[/dim]\n")
 
             train_ratio = FloatPrompt.ask("  Training ratio", default=0.7)
-            validation_ratio = FloatPrompt.ask("  Validation ratio", default=0.2)
-            test_ratio = FloatPrompt.ask("  Test ratio", default=0.1)
+            # Calculate remaining ratio for val + test
+            remaining_ratio = 1.0 - train_ratio
+            # Default: split remaining evenly between val and test (but favor validation slightly)
+            default_val = min(0.2, remaining_ratio * 0.67)
+            default_test = remaining_ratio - default_val
+
+            validation_ratio = FloatPrompt.ask("  Validation ratio", default=default_val)
+            # Update test default based on what's left
+            remaining_for_test = 1.0 - train_ratio - validation_ratio
+            test_ratio = FloatPrompt.ask("  Test ratio", default=max(0.0, remaining_for_test))
 
         else:
             self.console.print("\n[bold]📈 Configure Split Ratios (Train / Validation)[/bold]\n")
             self.console.print("[dim]Ratios must sum to 1.0. Validation will be used for training evaluation.[/dim]\n")
 
             train_ratio = FloatPrompt.ask("  Training ratio", default=0.8)
-            validation_ratio = FloatPrompt.ask("  Validation ratio", default=0.2)
+            # Calculate default validation as remaining ratio
+            default_validation = 1.0 - train_ratio
+            validation_ratio = FloatPrompt.ask("  Validation ratio", default=default_validation)
             test_ratio = 0.0
 
         # Validate and normalize
@@ -10415,11 +10538,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if use_test_set:
             default_train = FloatPrompt.ask("  Default train ratio", default=0.7)
-            default_validation = FloatPrompt.ask("  Default validation ratio", default=0.2)
-            default_test = FloatPrompt.ask("  Default test ratio", default=0.1)
+            # Calculate remaining for val + test
+            remaining = 1.0 - default_train
+            default_val_calc = min(0.2, remaining * 0.67)
+            default_test_calc = remaining - default_val_calc
+
+            default_validation = FloatPrompt.ask("  Default validation ratio", default=default_val_calc)
+            remaining_for_test = 1.0 - default_train - default_validation
+            default_test = FloatPrompt.ask("  Default test ratio", default=max(0.0, remaining_for_test))
         else:
             default_train = FloatPrompt.ask("  Default train ratio", default=0.8)
-            default_validation = FloatPrompt.ask("  Default validation ratio", default=0.2)
+            default_val_calc = 1.0 - default_train
+            default_validation = FloatPrompt.ask("  Default validation ratio", default=default_val_calc)
             default_test = 0.0
 
         # Validate defaults
@@ -10589,10 +10719,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         try:
             train = FloatPrompt.ask("      Train ratio", default=default_train)
-            validation = FloatPrompt.ask("      Validation ratio", default=default_validation)
+
+            # Calculate dynamic default for validation based on entered train ratio
+            remaining = 1.0 - train
+            if use_test_set:
+                # Split remaining between val and test
+                dynamic_val_default = min(default_validation, remaining * 0.67)
+            else:
+                # All remaining goes to validation
+                dynamic_val_default = remaining
+
+            validation = FloatPrompt.ask("      Validation ratio", default=dynamic_val_default)
 
             if use_test_set:
-                test = FloatPrompt.ask("      Test ratio", default=default_test)
+                # Calculate remaining for test
+                remaining_for_test = 1.0 - train - validation
+                test = FloatPrompt.ask("      Test ratio", default=max(0.0, remaining_for_test))
             else:
                 test = 0.0
 
@@ -10809,98 +10951,116 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self.console.print()
 
-        # Determine recommended strategy based on percentage (intelligent)
-        if pct_exceeding_512 < 10:
-            recommended_strategy = "truncate"
-            rec_reason = f"Only {pct_exceeding_512:.1f}% exceed 512 tokens - splitting long documents will preserve all information"
-        elif pct_exceeding_512 < 25:
-            recommended_strategy = "truncate"
-            rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - splitting is recommended, or consider long models for better context"
-        elif pct_exceeding_512 < 40:
-            recommended_strategy = "long_models"
-            rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - long models recommended to preserve document context"
+        # Check if there are ANY documents exceeding 512 tokens
+        if pct_exceeding_512 == 0.0:
+            # No documents exceed 512 tokens - no strategy needed!
+            self.console.print("[bold green]✓ Perfect! All documents fit within 512 tokens[/bold green]")
+            self.console.print("[dim]No special handling needed - you can use any standard BERT model.[/dim]\n")
+
+            self.console.print("[bold cyan]📊 Why this matters:[/bold cyan]")
+            self.console.print(f"  • [green]Maximum document length:[/green] {token_max:.0f} tokens (well below 512 limit)")
+            self.console.print(f"  • [green]Mean document length:[/green] {token_mean:.0f} tokens")
+            self.console.print(f"  • [green]95th percentile:[/green] {token_p95:.0f} tokens")
+            self.console.print("  • [green]All data will be used[/green] without chunking or truncation")
+            self.console.print("  • [green]Fastest training[/green] with standard models (BERT, RoBERTa, CamemBERT, etc.)\n")
+
+            # Set default flags - no special handling needed
+            prefers_long_models = False
+            exclude_long_texts = False
+            split_long_texts = False
         else:
-            recommended_strategy = "long_models"
-            rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - long models strongly recommended"
-
-        # Present 3 strategies
-        self.console.print("[bold yellow]⚠️  Standard BERT models have a 512 token limit[/bold yellow]")
-        self.console.print("[dim]You need to choose how to handle longer documents:[/dim]\n")
-
-        strategy_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
-        strategy_table.add_column("Strategy", style="cyan bold", width=18)
-        strategy_table.add_column("Description", style="white", width=70)
-
-        truncate_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "truncate" else ""
-        exclude_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "exclude" else ""
-        long_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "long_models" else ""
-
-        # Calculate how many extra samples we'd get from splitting
-        estimated_extra_samples = 0
-        if docs_exceeding_512 > 0:
-            # Estimate based on average tokens for long docs
-            estimated_extra_samples = int(docs_exceeding_512 * 1.5)  # Conservative estimate
-            extra_info = f"Creates ~{estimated_extra_samples:,} additional training samples from long documents"
-        else:
-            extra_info = "No documents exceed 512 tokens"
-
-        strategy_table.add_row(
-            "1. Split/Chunk" + truncate_mark,
-            "✂️  Split long documents into 512-token chunks (with overlap)\n"
-            f"• [green]Each chunk keeps the same label[/green] → More training data!\n"
-            f"• Example: 1024-token doc → 2 samples (tokens 0-512, tokens 256-768)\n"
-            f"• {extra_info}\n"
-            f"• Fastest training (~5-10 min)\n"
-            f"• Works with all standard models (BERT, RoBERTa, CamemBERT, etc.)\n"
-            f"• [bold]No information loss[/bold] - all text is used"
-        )
-        strategy_table.add_row(
-            "2. Exclude" + exclude_mark,
-            f"🗑️  Remove documents exceeding 512 tokens entirely\n"
-            f"• Would exclude {docs_exceeding_512:,} documents ({pct_exceeding_512:.1f}% of dataset)\n"
-            f"• [red]Reduces training data significantly[/red]\n"
-            f"• Model won't learn from long documents\n"
-            f"• Only use if long documents are outliers/noise"
-        )
-        strategy_table.add_row(
-            "3. Long Models" + long_mark,
-            "🔬 Use long-document models (up to 4096 tokens)\n"
-            "• Preserves full document context in single sample\n"
-            "• Better for tasks requiring full document understanding\n"
-            "• Slower training (~15-30 min) and inference\n"
-            "• Models: Longformer, BigBird, Long-T5, XLM-RoBERTa-Longformer"
-        )
-
-        self.console.print(strategy_table)
-        self.console.print()
-
-        self.console.print(f"[bold yellow]💡 Smart Recommendation:[/bold yellow] [cyan]{rec_reason}[/cyan]\n")
-
-        # Ask user to choose
-        strategy_choice = Prompt.ask(
-            "[bold yellow]Choose strategy[/bold yellow]",
-            choices=["1", "2", "3", "split", "chunk", "exclude", "long", "long_models"],
-            default="1" if recommended_strategy == "truncate" else ("2" if recommended_strategy == "exclude" else "3")
-        )
-
-        # Map choice to boolean flags
-        # Initialize all flags
-        prefers_long_models = False
-        exclude_long_texts = False
-        split_long_texts = False
-
-        if strategy_choice in ["1", "split", "chunk", "truncate"]:
-            split_long_texts = True
-            if docs_exceeding_512 > 0:
-                self.console.print(f"[green]✓ Strategy: Split long documents into chunks (creates ~{estimated_extra_samples:,} extra samples)[/green]\n")
+            # Determine recommended strategy based on percentage (intelligent)
+            if pct_exceeding_512 < 10:
+                recommended_strategy = "truncate"
+                rec_reason = f"Only {pct_exceeding_512:.1f}% exceed 512 tokens - splitting long documents will preserve all information"
+            elif pct_exceeding_512 < 25:
+                recommended_strategy = "truncate"
+                rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - splitting is recommended, or consider long models for better context"
+            elif pct_exceeding_512 < 40:
+                recommended_strategy = "long_models"
+                rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - long models recommended to preserve document context"
             else:
-                self.console.print("[green]✓ Strategy: Split long documents (if any) into chunks[/green]\n")
-        elif strategy_choice in ["2", "exclude"]:
-            exclude_long_texts = True
-            self.console.print(f"[yellow]✓ Strategy: Exclude {docs_exceeding_512:,} documents >512 tokens ({pct_exceeding_512:.1f}% of dataset)[/yellow]\n")
-        else:  # "3", "long", or "long_models"
-            prefers_long_models = True
-            self.console.print("[green]✓ Strategy: Use long-document models (up to 4096 tokens)[/green]\n")
+                recommended_strategy = "long_models"
+                rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - long models strongly recommended"
+
+            # Present 3 strategies
+            self.console.print("[bold yellow]⚠️  Standard BERT models have a 512 token limit[/bold yellow]")
+            self.console.print("[dim]You need to choose how to handle longer documents:[/dim]\n")
+
+            strategy_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+            strategy_table.add_column("Strategy", style="cyan bold", width=18)
+            strategy_table.add_column("Description", style="white", width=70)
+
+            truncate_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "truncate" else ""
+            exclude_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "exclude" else ""
+            long_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "long_models" else ""
+
+            # Calculate how many extra samples we'd get from splitting
+            estimated_extra_samples = 0
+            if docs_exceeding_512 > 0:
+                # Estimate based on average tokens for long docs
+                estimated_extra_samples = int(docs_exceeding_512 * 1.5)  # Conservative estimate
+                extra_info = f"Creates ~{estimated_extra_samples:,} additional training samples from long documents"
+            else:
+                extra_info = "No documents exceed 512 tokens"
+
+            strategy_table.add_row(
+                "1. Split/Chunk" + truncate_mark,
+                "✂️  Split long documents into 512-token chunks (with overlap)\n"
+                f"• [green]Each chunk keeps the same label[/green] → More training data!\n"
+                f"• Example: 1024-token doc → 2 samples (tokens 0-512, tokens 256-768)\n"
+                f"• {extra_info}\n"
+                f"• Fastest training (~5-10 min)\n"
+                f"• Works with all standard models (BERT, RoBERTa, CamemBERT, etc.)\n"
+                f"• [bold]No information loss[/bold] - all text is used"
+            )
+            strategy_table.add_row(
+                "2. Exclude" + exclude_mark,
+                f"🗑️  Remove documents exceeding 512 tokens entirely\n"
+                f"• Would exclude {docs_exceeding_512:,} documents ({pct_exceeding_512:.1f}% of dataset)\n"
+                f"• [red]Reduces training data significantly[/red]\n"
+                f"• Model won't learn from long documents\n"
+                f"• Only use if long documents are outliers/noise"
+            )
+            strategy_table.add_row(
+                "3. Long Models" + long_mark,
+                "🔬 Use long-document models (up to 4096 tokens)\n"
+                "• Preserves full document context in single sample\n"
+                "• Better for tasks requiring full document understanding\n"
+                "• Slower training (~15-30 min) and inference\n"
+                "• Models: Longformer, BigBird, Long-T5, XLM-RoBERTa-Longformer"
+            )
+
+            self.console.print(strategy_table)
+            self.console.print()
+
+            self.console.print(f"[bold yellow]💡 Smart Recommendation:[/bold yellow] [cyan]{rec_reason}[/cyan]\n")
+
+            # Ask user to choose
+            strategy_choice = Prompt.ask(
+                "[bold yellow]Choose strategy[/bold yellow]",
+                choices=["1", "2", "3", "split", "chunk", "exclude", "long", "long_models"],
+                default="1" if recommended_strategy == "truncate" else ("2" if recommended_strategy == "exclude" else "3")
+            )
+
+            # Map choice to boolean flags
+            # Initialize all flags
+            prefers_long_models = False
+            exclude_long_texts = False
+            split_long_texts = False
+
+            if strategy_choice in ["1", "split", "chunk", "truncate"]:
+                split_long_texts = True
+                if docs_exceeding_512 > 0:
+                    self.console.print(f"[green]✓ Strategy: Split long documents into chunks (creates ~{estimated_extra_samples:,} extra samples)[/green]\n")
+                else:
+                    self.console.print("[green]✓ Strategy: Split long documents (if any) into chunks[/green]\n")
+            elif strategy_choice in ["2", "exclude"]:
+                exclude_long_texts = True
+                self.console.print(f"[yellow]✓ Strategy: Exclude {docs_exceeding_512:,} documents >512 tokens ({pct_exceeding_512:.1f}% of dataset)[/yellow]\n")
+            else:  # "3", "long", or "long_models"
+                prefers_long_models = True
+                self.console.print("[green]✓ Strategy: Use long-document models (up to 4096 tokens)[/green]\n")
 
         # Store choice in text_length_stats for later use
         text_length_stats['user_prefers_long_models'] = prefers_long_models
