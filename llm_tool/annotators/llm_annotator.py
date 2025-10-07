@@ -90,6 +90,7 @@ from ..annotators.api_clients import create_api_client
 from ..annotators.prompt_manager import PromptManager
 from ..annotators.json_cleaner import JSONCleaner, clean_json_output
 from ..config.settings import Settings
+from ..utils.data_filter_logger import get_filter_logger
 
 # Try to import local model support
 try:
@@ -330,20 +331,46 @@ class LLMAnnotator:
         resume = config.get('resume', False)
 
         # Filter data for annotation
+        filter_logger = get_filter_logger()
         if resume and annotation_column in data.columns:
+            data_before_filter = data.copy()
             data_to_annotate = data[data[annotation_column].isna()].copy()
+
+            # Log already-annotated rows that are being skipped
+            if len(data_to_annotate) < len(data_before_filter):
+                filter_logger.log_dataframe_filtering(
+                    df_before=data_before_filter,
+                    df_after=data_to_annotate,
+                    reason="already_annotated",
+                    location="llm_annotator._annotate_data.resume_mode",
+                    text_column=text_columns[0] if text_columns else None,
+                    log_filtered_samples=3
+                )
+
             self.logger.info(f"Resuming annotation: {len(data_to_annotate)} rows to process")
         else:
             data_to_annotate = data.copy()
 
         annotation_limit = config.get('annotation_sample_size') or config.get('annotation_limit')
         if annotation_limit and len(data_to_annotate) > annotation_limit:
+            data_before_limit = data_to_annotate.copy()
             strategy = config.get('annotation_sampling_strategy', 'head')
             sample_seed = config.get('annotation_sample_seed', 42)
             if strategy == 'random':
                 data_to_annotate = data_to_annotate.sample(annotation_limit, random_state=sample_seed)
             else:
                 data_to_annotate = data_to_annotate.head(annotation_limit)
+
+            # Log filtered rows
+            filter_logger.log_dataframe_filtering(
+                df_before=data_before_limit,
+                df_after=data_to_annotate,
+                reason=f"annotation_limit_{strategy}",
+                location="llm_annotator._annotate_data.sampling",
+                text_column=text_columns[0] if text_columns else None,
+                log_filtered_samples=3
+            )
+
             self.logger.info(
                 "Limiting annotation to %s rows using '%s' sampling strategy",
                 len(data_to_annotate),

@@ -127,6 +127,7 @@ except ImportError:
 from ..config.settings import Settings
 from ..pipelines.pipeline_controller import PipelineController
 from ..utils.language_detector import LanguageDetector
+from ..utils.data_filter_logger import get_filter_logger
 from ..annotators.json_cleaner import extract_expected_keys
 from ..annotators.prompt_wizard import SocialSciencePromptWizard, create_llm_client_for_wizard
 from ..trainers.model_trainer import ModelTrainer, BenchmarkConfig
@@ -854,17 +855,47 @@ class DataDetector:
 
                 # Check for annotation columns
                 if any(candidate in col_lower for candidate in annotation_candidates):
-                    result['annotation_column_candidates'].append({
-                        'name': col,
-                        'match_type': 'name_pattern'
-                    })
+                    # CRITICAL: Exclude ID columns even if they match annotation pattern
+                    # e.g., 'llm_annotation_id' is NOT an annotation, it's an ID
+                    is_id_column = (
+                        col_lower.endswith('_id') or
+                        col_lower.endswith('id') or
+                        col_lower.startswith('id_') or
+                        'identifier' in col_lower or
+                        col_lower in ['id']
+                    )
+
+                    if is_id_column:
+                        # This is an ID column, not actual annotations - skip it
+                        continue
+
+                    # Check if this column contains JSON data (real annotations)
+                    is_json_column = False
+                    sample_values = df[col].dropna().head(5)
+                    for val in sample_values:
+                        if isinstance(val, str) and (val.strip().startswith('{') or val.strip().startswith('[')):
+                            is_json_column = True
+                            break
+                        elif isinstance(val, dict) or isinstance(val, list):
+                            is_json_column = True
+                            break
+
                     # Check if annotations are valid (not empty)
                     non_empty = df[col].notna().sum()
                     empty = df[col].isna().sum()
+
+                    result['annotation_column_candidates'].append({
+                        'name': col,
+                        'match_type': 'name_pattern',
+                        'is_json': is_json_column,
+                        'priority': 2 if is_json_column else 1  # JSON columns get higher priority
+                    })
+
                     result['annotation_stats'][col] = {
                         'non_empty': int(non_empty),
                         'empty': int(empty),
-                        'fill_rate': float(non_empty / len(df)) if len(df) > 0 else 0
+                        'fill_rate': float(non_empty / len(df)) if len(df) > 0 else 0,
+                        'is_json': is_json_column
                     }
                     if non_empty > 0:
                         result['has_valid_annotations'] = True
@@ -895,6 +926,9 @@ class DataDetector:
 
             # Sort text candidates by length (longer is likely main text)
             result['text_column_candidates'].sort(key=lambda x: x['avg_length'], reverse=True)
+
+            # Sort annotation candidates by priority (JSON columns first)
+            result['annotation_column_candidates'].sort(key=lambda x: x.get('priority', 0), reverse=True)
 
             # Validation checks
             if not result['text_column_candidates']:
@@ -4336,7 +4370,7 @@ class AdvancedCLI:
 
             # Training mode selection
             training_modes = {
-                "quick": "Quick training (2 epochs, fast)",
+                "quick": "Quick training (10 epochs, fast)",
                 "benchmark": "Benchmark mode (compare models)",
                 "custom": "Custom configuration"
             }
@@ -4353,7 +4387,7 @@ class AdvancedCLI:
 
             # Epochs
             if train_mode == "quick":
-                epochs = 2
+                epochs = 10
             elif train_mode == "benchmark":
                 epochs = 3
             else:
@@ -4470,6 +4504,8 @@ class AdvancedCLI:
                     from collections import Counter
 
                     # Check if we have at least 2 instances per class for stratification
+                    from ..utils.data_filter_logger import get_filter_logger
+
                     stratify_col = None
                     if not is_multi_label:
                         label_counts = Counter(train_df['label'])
@@ -4478,20 +4514,38 @@ class AdvancedCLI:
                         if min_count < 2:
                             # Find which classes have insufficient instances
                             insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
-                            self.console.print(f"[yellow]⚠️  Dataset has class(es) with only 1 instance: {insufficient_classes}[/yellow]")
 
-                            # Ask user if they want to remove these classes or proceed
-                            remove_classes = Prompt.ask(
-                                f"Remove class(es) with insufficient instances?",
-                                choices=["y", "n"],
-                                default="y"
+                            self.console.print(f"\n[yellow]⚠️  Found {len(insufficient_classes)} label(s) with insufficient samples:[/yellow]")
+                            for cls in insufficient_classes:
+                                count = label_counts[cls]
+                                self.console.print(f"  • [red]'{cls}'[/red]: {count} sample(s) - need at least 2")
+
+                            self.console.print(f"\n[bold]What would you like to do?[/bold]")
+                            self.console.print(f"  [cyan]1.[/cyan] [green]Remove[/green] these {len(insufficient_classes)} value(s) and continue")
+                            self.console.print(f"  [cyan]2.[/cyan] [red]Cancel[/red] training\n")
+
+                            remove_labels = Confirm.ask(
+                                f"[bold yellow]Remove insufficient labels and continue?[/bold yellow]",
+                                default=True
                             )
 
-                            if remove_classes.lower() == 'y':
+                            if remove_labels:
                                 # Filter out samples with insufficient classes
-                                original_count = len(train_df)
+                                filter_logger = get_filter_logger()
+                                df_before = train_df.copy()
                                 train_df = train_df[~train_df['label'].isin(insufficient_classes)]
-                                self.console.print(f"[dim]Removed {original_count - len(train_df)} samples from classes: {insufficient_classes}[/dim]")
+
+                                # Log filtered data
+                                filter_logger.log_dataframe_filtering(
+                                    df_before=df_before,
+                                    df_after=train_df,
+                                    reason="insufficient_samples_per_class",
+                                    location="advanced_cli.train_single_model",
+                                    text_column='text' if 'text' in train_df.columns else None,
+                                    log_filtered_samples=5
+                                )
+
+                                self.console.print(f"\n[green]✓ Removed {len(df_before) - len(train_df)} sample(s)[/green]")
 
                                 # Recompute label counts
                                 label_counts = Counter(train_df['label'])
@@ -4503,7 +4557,8 @@ class AdvancedCLI:
 
                                 stratify_col = train_df['label']
                             else:
-                                self.console.print(f"[yellow]Proceeding without stratification (may reduce quality)[/yellow]")
+                                self.console.print(f"[red]Training cancelled by user[/red]")
+                                return
                         else:
                             stratify_col = train_df['label']
 
@@ -5351,7 +5406,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             table.add_column("Use Case", style="green", width=45)
 
             table.add_row(
-                "Quick", "3", "32", "5e-5", "2",
+                "Quick", "10", "32", "5e-5", "2",
                 "Quick test of a Facebook posts dataset (500 ex.)"
             )
             table.add_row(
@@ -5379,7 +5434,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         """Get training configuration preset"""
         presets = {
             "quick": {
-                "epochs": 3,
+                "epochs": 10,
                 "batch_size": 32,
                 "learning_rate": 5e-5,
                 "warmup_ratio": 0.1,
@@ -6226,7 +6281,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         modes_table.add_row(
             "quick",
-            "Fast training with default settings (2 epochs)\n✓ Best for quick prototyping and testing",
+            "Fast training with default settings (10 epochs)\n✓ Best for quick prototyping and testing",
             "~5-10 minutes"
         )
         modes_table.add_row(
@@ -6325,61 +6380,104 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             Whether this is a resume (True) or fresh start (False)
         """
         from datetime import datetime
+        from rich.prompt import Confirm
 
-        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-        self.console.print("[bold cyan]           ✅ Training Configuration Summary                     [/bold cyan]")
-        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+        # STEP 1: Collect mode-specific parameters BEFORE showing config summary
+        quick_params = None
+        if mode == "quick" and not is_resume:
+            quick_params = self._collect_quick_mode_parameters(bundle, preloaded_config)
+            if quick_params is None:
+                # User cancelled
+                self.console.print("[yellow]Training cancelled by user.[/yellow]")
+                return
 
-        # Create configuration table
-        config_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
-        config_table.add_column("Parameter", style="cyan bold", width=25)
-        config_table.add_column("Value", style="white", width=60)
+        # STEP 2: Show configuration summary with modification loop
+        while True:
+            self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+            self.console.print("[bold cyan]           ✅ Training Configuration Summary                     [/bold cyan]")
+            self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
-        # Dataset information
-        config_table.add_row("📊 Dataset", str(bundle.primary_file.name) if bundle.primary_file else "—")
-        config_table.add_row("📝 Format", bundle.strategy)
-        config_table.add_row("📖 Text Column", bundle.text_column)
-        config_table.add_row("🏷️  Label Column", bundle.label_column)
+            # Create configuration table
+            config_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+            config_table.add_column("Parameter", style="cyan bold", width=25)
+            config_table.add_column("Value", style="white", width=60)
 
-        if bundle.metadata.get('confirmed_languages'):
-            langs = ', '.join([l.upper() for l in bundle.metadata['confirmed_languages']])
-            config_table.add_row("🌍 Languages", langs)
+            # Dataset information
+            config_table.add_row("📊 Dataset", str(bundle.primary_file.name) if bundle.primary_file else "—")
+            config_table.add_row("📝 Format", bundle.strategy)
+            config_table.add_row("📖 Text Column", bundle.text_column)
+            config_table.add_row("🏷️  Label Column", bundle.label_column)
 
-        # Model information
-        if hasattr(bundle, 'recommended_model') and bundle.recommended_model:
-            config_table.add_row("🤖 Recommended Model", bundle.recommended_model)
+            if bundle.metadata.get('confirmed_languages'):
+                langs = ', '.join([l.upper() for l in bundle.metadata['confirmed_languages']])
+                config_table.add_row("🌍 Languages", langs)
 
-        # Training mode
-        mode_descriptions = {
-            "quick": "⚡ Quick Start - Fast training with defaults",
-            "benchmark": "📊 Benchmark - Test multiple models",
-            "custom": "⚙️  Custom - Full parameter control",
-            "distributed": "🔄 Distributed - Parallel multi-label ⚠️  (NOT RECOMMENDED - Untested)"
-        }
-        config_table.add_row("🎯 Training Mode", mode_descriptions.get(mode, mode))
+            # Training mode
+            mode_descriptions = {
+                "quick": "⚡ Quick Start - Fast training with defaults",
+                "benchmark": "📊 Benchmark - Test multiple models",
+                "custom": "⚙️  Custom - Full parameter control",
+                "distributed": "🔄 Distributed - Parallel multi-label ⚠️  (NOT RECOMMENDED - Untested)"
+            }
+            config_table.add_row("🎯 Training Mode", mode_descriptions.get(mode, mode))
 
-        # Mode-specific parameters
-        if mode == "quick":
-            config_table.add_row("⏱️  Epochs", "Will be asked (default: 10)")
-            config_table.add_row("📦 Batch Size", "16 (default)")
-        elif mode == "benchmark":
-            config_table.add_row("🔬 Models to Test", "5-7 (intelligent selection)")
-            config_table.add_row("⏱️  Epochs per Model", "Will be asked (default: 10)")
-        elif mode == "distributed":
-            num_labels = len(bundle.metadata.get('categories', []))
-            config_table.add_row("🔢 Models to Train", f"{num_labels} (one per label)")
+            # Mode-specific parameters
+            if mode == "quick" and quick_params:
+                # Check if per-language models were selected
+                if quick_params.get('models_by_language'):
+                    # Show each language's model
+                    models_display = []
+                    for lang, model in sorted(quick_params['models_by_language'].items()):
+                        models_display.append(f"{lang}: {model}")
+                    config_table.add_row("🤖 Selected Models", "\n".join(models_display))
+                else:
+                    # Single model for all languages
+                    config_table.add_row("🤖 Selected Model", quick_params['model_name'])
 
-        # Statistics
-        if bundle.metadata.get('text_length_stats'):
-            stats = bundle.metadata['text_length_stats']
-            avg_len = stats.get('avg_chars', stats.get('avg_length', 0))
-            config_table.add_row("📏 Avg Text Length", f"{avg_len:.0f} characters")
+                config_table.add_row("🎓 Reinforced Learning", "Yes" if quick_params['reinforced_learning'] else "No")
+                config_table.add_row("⏱️  Epochs", str(quick_params['epochs']))
+                config_table.add_row("📦 Batch Size", "16 (default)")
+            elif mode == "quick":
+                config_table.add_row("⏱️  Epochs", "Will be asked (default: 10)")
+                config_table.add_row("📦 Batch Size", "16 (default)")
+            elif mode == "benchmark":
+                config_table.add_row("🔬 Models to Test", "5-7 (intelligent selection)")
+                config_table.add_row("⏱️  Epochs per Model", "Will be asked (default: 10)")
+            elif mode == "distributed":
+                num_labels = len(bundle.metadata.get('categories', []))
+                config_table.add_row("🔢 Models to Train", f"{num_labels} (one per label)")
 
-        self.console.print(config_table)
-        self.console.print()
+            # Statistics
+            if bundle.metadata.get('text_length_stats'):
+                stats = bundle.metadata['text_length_stats']
+                avg_len = stats.get('avg_chars', stats.get('avg_length', 0))
+                config_table.add_row("📏 Avg Text Length", f"{avg_len:.0f} characters")
 
-        # NEW: Ask to save metadata (unless resuming)
-        save_metadata = True  # Default to True for reproducibility
+            self.console.print(config_table)
+            self.console.print()
+
+            # Ask for confirmation
+            confirm = Confirm.ask(
+                "\n[bold yellow]Confirm these parameters?[/bold yellow]",
+                default=True
+            )
+
+            if confirm:
+                break
+            else:
+                # User wants to modify - re-collect parameters for quick mode
+                if mode == "quick":
+                    self.console.print("\n[cyan]Let's modify the parameters...[/cyan]\n")
+                    quick_params = self._collect_quick_mode_parameters(bundle, quick_params)
+                    if quick_params is None:
+                        self.console.print("[yellow]Training cancelled by user.[/yellow]")
+                        return
+                else:
+                    self.console.print("[yellow]Modification not available for this mode. Training cancelled.[/yellow]")
+                    return
+
+        # STEP 3: Ask to save metadata (unless resuming)
+        save_metadata = True
         metadata_path = None
 
         if not is_resume:
@@ -6402,13 +6500,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 default=True
             )
 
-        # Ask for confirmation
-        confirm = Confirm.ask(
-            "\n[bold yellow]🚀 Start training with these parameters?[/bold yellow]",
+        # STEP 4: Start training
+        confirm_start = Confirm.ask(
+            "\n[bold yellow]🚀 Start training now?[/bold yellow]",
             default=True
         )
 
-        if not confirm:
+        if not confirm_start:
             self.console.print("[yellow]Training cancelled by user.[/yellow]")
             return
 
@@ -6419,15 +6517,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'training_mode': mode,
 
             # Common hyperparameters
-            'selected_model': preloaded_config.get('selected_model') if preloaded_config else None,
-            'epochs': preloaded_config.get('epochs') if preloaded_config else None,
+            'selected_model': preloaded_config.get('selected_model') if preloaded_config else (quick_params['model_name'] if quick_params else None),
+            'epochs': preloaded_config.get('epochs') if preloaded_config else (quick_params['epochs'] if quick_params else None),
             'batch_size': preloaded_config.get('batch_size') if preloaded_config else 16,
             'learning_rate': preloaded_config.get('learning_rate') if preloaded_config else 2e-5,
             'early_stopping': True,
             'recommended_model': bundle.recommended_model if hasattr(bundle, 'recommended_model') else None,
 
             # Advanced training options (will be filled by each mode)
-            'use_reinforcement': preloaded_config.get('use_reinforcement') if preloaded_config else True,
+            'use_reinforcement': preloaded_config.get('use_reinforcement') if preloaded_config else (quick_params['reinforced_learning'] if quick_params else True),
             'reinforced_epochs': preloaded_config.get('reinforced_epochs') if preloaded_config else 10,
             'validation_split': preloaded_config.get('validation_split') if preloaded_config else 0.2,
             'test_split': preloaded_config.get('test_split') if preloaded_config else 0.1,
@@ -6439,8 +6537,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'benchmark_category': None,  # Will be filled if multi-class → binary
 
             # Quick-specific parameters (filled if mode=='quick')
-            'quick_model_name': None,  # Will be filled by quick mode
-            'quick_epochs': None,  # Will be filled by quick mode
+            'quick_model_name': quick_params['model_name'] if quick_params else None,
+            'quick_epochs': quick_params['epochs'] if quick_params else None,
 
             # Custom-specific parameters (filled if mode=='custom')
             'custom_config': None,  # Will be filled by custom mode
@@ -6485,7 +6583,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 training_result = self._training_studio_run_distributed(bundle, model_config)
                 runtime_params = training_result.get('runtime_params', {}) if training_result else {}
             elif mode == "quick":
-                training_result = self._training_studio_run_quick(bundle, model_config)
+                training_result = self._training_studio_run_quick(bundle, model_config, quick_params)
                 runtime_params = training_result.get('runtime_params', {}) if training_result else {}
             elif mode == "benchmark":
                 training_result = self._training_studio_run_benchmark(bundle, model_config)
@@ -7207,21 +7305,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         )
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
-        # Check if long-document models are needed
-        requires_long_document_model = text_length_stats.get('requires_long_model', False)
-        if requires_long_document_model:
-            use_long_model = Confirm.ask(
-                "[bold cyan]Would you like to see long-document model recommendations?[/bold cyan]",
-                default=True
-            )
-            if use_long_model:
-                text_length_stats['user_prefers_long_models'] = True
-                self.console.print("[green]✓ Long-document models will be prioritized in recommendations[/green]")
-            else:
-                text_length_stats['user_prefers_long_models'] = False
-                self.console.print("[yellow]Standard models will be used (texts will be truncated to 512 tokens)[/yellow]")
-        else:
-            text_length_stats['user_prefers_long_models'] = False
+        # Store stats for later use in model selection (no user choice yet)
+        # User will choose strategy in model selection step
 
         # Step 5: Label/Category Column Selection with Category Analysis
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -7760,13 +7845,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(all_columns_table)
 
                 # Now show AI suggestions
-                self.console.print("\n[bold]🔍 AI Suggestions (based on analysis):[/bold]")
-                self.console.print("[dim]The system recommends these columns, but you can choose ANY column from the table above.[/dim]\n")
+                self.console.print("\n[bold]💡 Helpful Suggestions[/bold] [dim](not required - you choose)[/dim]")
+                self.console.print("[dim]These are suggestions based on column names and content analysis.[/dim]")
+                self.console.print("[dim]You are free to select ANY column from the table above.[/dim]\n")
 
                 suggestions_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.SIMPLE)
                 suggestions_table.add_column("Purpose", style="yellow bold", width=20)
-                suggestions_table.add_column("Suggested Column", style="green bold", width=25)
-                suggestions_table.add_column("Reason", style="white", width=45)
+                suggestions_table.add_column("Top Suggestion", style="green bold", width=25)
+                suggestions_table.add_column("Why This Column?", style="white", width=45)
 
                 # Text column row
                 if analysis['text_column_candidates']:
@@ -7777,34 +7863,55 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     suggestions_table.add_row(
                         "📝 Text Data",
                         best_text,
-                        f"Avg length {avg_len:.0f} chars (for model input)"
+                        f"Contains text (avg {avg_len:.0f} chars)"
                     )
                 else:
-                    suggestions_table.add_row("📝 Text Data", "—", "⚠️  No suggestion - choose manually")
+                    suggestions_table.add_row("📝 Text Data", "—", "⚠️  No automatic suggestion")
 
                 # Annotation column row
                 annotation_column_default = "annotation"
+                has_annotation_alternatives = False
                 if analysis['annotation_column_candidates']:
                     best_annotation = analysis['annotation_column_candidates'][0]['name']
                     annotation_column_default = best_annotation
                     stats = analysis['annotation_stats'].get(best_annotation, {})
                     fill_rate = stats.get('fill_rate', 0)
+                    is_json = stats.get('is_json', False)
+
                     if fill_rate > 0:
+                        # Build reason text
+                        reason_parts = []
+                        if is_json:
+                            reason_parts.append("Contains JSON annotations")
+                        else:
+                            reason_parts.append("Contains labels/categories")
+                        reason_parts.append(f"{fill_rate*100:.1f}% filled")
+
                         suggestions_table.add_row(
                             "🏷️  Annotations",
                             best_annotation,
-                            f"{fill_rate*100:.1f}% filled (training labels)"
+                            ", ".join(reason_parts)
                         )
+
+                        # Mark if there are alternatives
+                        if len(analysis['annotation_column_candidates']) > 1:
+                            has_annotation_alternatives = True
                     else:
                         suggestions_table.add_row(
                             "🏷️  Annotations",
                             best_annotation,
-                            "[red]⚠️  EMPTY - cannot use[/red]"
+                            "[red]⚠️  Column is EMPTY - cannot use[/red]"
                         )
                 else:
-                    suggestions_table.add_row("🏷️  Annotations", "—", "⚠️  No suggestion - choose manually")
+                    suggestions_table.add_row("🏷️  Annotations", "—", "⚠️  No automatic suggestion")
 
                 self.console.print(suggestions_table)
+
+                # Show alternatives AFTER the table
+                if has_annotation_alternatives:
+                    alternatives = [c['name'] for c in analysis['annotation_column_candidates'][1:3]]
+                    self.console.print(f"[dim]   Other annotation options: {', '.join(alternatives)}[/dim]")
+
                 self.console.print()
             else:
                 # Fallback if no columns detected
@@ -7824,9 +7931,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     else:
                         self.console.print(f"[red]⚠️  Suggested annotation column '{best_annotation}' is EMPTY - cannot be used for training![/red]")
 
-            self.console.print("[bold yellow]📝 Make Your Selection:[/bold yellow]")
-            self.console.print("[dim]   → Press [bold]Enter[/bold] to accept the AI suggestion[/dim]")
-            self.console.print("[dim]   → Or type any column name from the complete list above[/dim]\n")
+            self.console.print("[bold yellow]📝 Your Turn - Select Columns:[/bold yellow]")
+            self.console.print("[dim]   → Press [bold]Enter[/bold] to use the suggested column[/dim]")
+            self.console.print("[dim]   → Or type ANY column name from the table above[/dim]")
+            self.console.print("[dim]   → The suggestions are helpful, but not mandatory![/dim]\n")
 
             # Ask for text column with validation
             while True:
@@ -7859,21 +7967,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             )
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
-            # Check if long-document models are needed
-            requires_long_document_model = text_length_stats.get('requires_long_model', False)
-            if requires_long_document_model:
-                use_long_model = Confirm.ask(
-                    "[bold cyan]Would you like to see long-document model recommendations?[/bold cyan]",
-                    default=True
-                )
-                if use_long_model:
-                    text_length_stats['user_prefers_long_models'] = True
-                    self.console.print("[green]✓ Long-document models will be prioritized in recommendations[/green]")
-                else:
-                    text_length_stats['user_prefers_long_models'] = False
-                    self.console.print("[yellow]Standard models will be used (texts will be truncated to 512 tokens)[/yellow]")
-            else:
-                text_length_stats['user_prefers_long_models'] = False
+            # Store stats for later use in model selection (no user choice yet)
+            # User will choose strategy in model selection step
 
             # Step 4: Language Detection and Text Analysis (using sophisticated universal system)
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -8312,14 +8407,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             else:
                 self.console.print("[yellow]⚠️  No valid annotation data found[/yellow]\n")
 
-            # Step 6: Training Strategy Selection
+            # Step 6: Training Strategy Selection (SIMPLIFIED)
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold]📚 Choose How to Train Your Models:[/bold]")
-            self.console.print("[dim]This determines whether one text can have one label or multiple labels.[/dim]\n")
 
-            # Parse real data to extract actual keys and values
+            # Extract annotation keys and values from data
             annotation_keys_found = analysis.get('annotation_keys_found', set())
             sample_annotation = analysis.get('sample_data', {}).get(annotation_column, [])
             real_example_data = None
@@ -8334,275 +8427,234 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 except:
                     pass
 
-            # Single-label explanation with REAL examples
-            self.console.print("  [cyan]single-label[/cyan] - Each text has ONE category per key (mutually exclusive)")
-            self.console.print("                     [dim]Use this when a text can only belong to one category[/dim]")
+            # Show sample annotation for context
             if real_example_data:
-                # Find a single-value key to use as example
-                single_val_key = None
-                single_val = None
-                for key, val in real_example_data.items():
-                    if val is not None and not isinstance(val, list):
-                        single_val_key = key
-                        single_val = val
-                        break
-                if single_val_key:
-                    self.console.print(f"                     [bold]Example from YOUR data:[/bold] {single_val_key} → '{single_val}'")
-                    self.console.print(f"                     [dim]→ Train 1 model for '{single_val_key}' that predicts ONE value[/dim]")
-                else:
-                    self.console.print("                     Example: sentiment → 'positive' OR 'negative'")
-            else:
-                self.console.print("                     Example: sentiment → 'positive' OR 'negative'")
-
-            # Show detected keys
-            if annotation_keys_found:
-                keys_str = ', '.join(sorted(annotation_keys_found))
-                self.console.print(f"                     [dim]Detected keys in your data: {keys_str}[/dim]")
-
-            # Multi-label explanation with REAL examples
-            self.console.print("\n  [cyan]multi-label[/cyan]  - Train ONE binary classifier per key to detect ALL its values")
-            self.console.print("                     [dim]Use this when a text can have multiple categories[/dim]")
-            if real_example_data and annotation_keys_found:
-                # Build real examples from actual data
-                self.console.print("                     [bold]Based on YOUR data:[/bold]")
-                model_count = 0
-                for key in sorted(annotation_keys_found):
-                    val = real_example_data.get(key)
-                    if val is not None:
-                        model_count += 1
-                        if isinstance(val, list):
-                            if val:
-                                val_str = ', '.join([f"'{v}'" for v in val[:3]])
-                                if len(val) > 3:
-                                    val_str += f", ... ({len(val)} total)"
-                                self.console.print(f"                       • Model {model_count}: '{key}' → can detect [{val_str}]")
-                            else:
-                                self.console.print(f"                       • Model {model_count}: '{key}' → (empty list)")
-                        else:
-                            self.console.print(f"                       • Model {model_count}: '{key}' → can detect '{val}'")
-                if model_count > 0:
-                    self.console.print(f"                     [dim]→ Will train {model_count} separate models total[/dim]")
-            else:
-                self.console.print("                     Example: If key='themes' → 1 model detects all theme values")
-                self.console.print("                              If key='sentiment' → 1 model detects all sentiment values")
-
-            # Show full JSON example for clarity
-            if real_example_data:
-                self.console.print(f"\n[dim]📄 Complete example from your data:[/dim]")
+                self.console.print("[bold]📄 Example annotation from your data:[/bold]")
                 example_str = json.dumps(real_example_data, ensure_ascii=False, indent=2)
-                self.console.print(f"[dim]{example_str}[/dim]")
+                self.console.print(f"[dim]{example_str}[/dim]\n")
 
-            mode = Prompt.ask("Target dataset", choices=["single-label", "multi-label", "back"], default="single-label")
-            if mode == "back":
-                return None
+            # Initialize
+            detected_keys = []
+            annotation_keys = None
+            mode = "single-label"  # Will be derived from choice
+            training_approach = "multi-class"  # Default
 
-            # Explain label strategies with REAL examples
-            self.console.print("\n[bold]🏷️  Label Strategy Options:[/bold]")
-            self.console.print("[dim]This determines how label NAMES will be formatted in the training data[/dim]")
-            self.console.print("\n  [cyan]key_value[/cyan]  - Label names include key prefix (prevents conflicts)")
+            # Step 6a: Show all annotation keys and their values
+            if all_keys_values:
+                detected_keys = sorted(all_keys_values.keys())
+                self.console.print(f"[bold]📝 Annotation Keys Detected in Your Data:[/bold]\n")
 
-            # Generate real examples for key_value
-            if real_example_data:
-                real_kv_examples = []
-                for key, val in real_example_data.items():
-                    if val is not None:
-                        if isinstance(val, list) and val:
-                            real_kv_examples.append(f"'{key}_{val[0]}'")
-                        elif not isinstance(val, list):
-                            real_kv_examples.append(f"'{key}_{val}'")
-                if real_kv_examples:
-                    examples_str = ', '.join(real_kv_examples[:3])
-                    self.console.print(f"                    [bold]From YOUR data:[/bold] {examples_str}")
+                # Show all keys and their values
+                for key in detected_keys:
+                    num_values = len(all_keys_values[key])
+                    values_preview = ', '.join([f"'{v}'" for v in sorted(all_keys_values[key])[:5]])
+                    if num_values > 5:
+                        values_preview += f" ... (+{num_values-5} more)"
+                    self.console.print(f"  • [cyan]{key}[/cyan] ({num_values} values): {values_preview}")
+
+                self.console.print("\n[dim]Options:[/dim]")
+                self.console.print(f"  • [cyan]Leave blank[/cyan] → Use ALL {len(detected_keys)} keys with ALL their values")
+                self.console.print(f"  • [cyan]Enter specific keys[/cyan] → Use only selected keys with ALL their values")
+                if detected_keys:
+                    self.console.print(f"    Example: '{detected_keys[0]}' → Use only {detected_keys[0]} key\n")
+            elif analysis.get('annotation_keys_found'):
+                detected_keys = sorted(analysis['annotation_keys_found'])
+                self.console.print(f"\n[green]✓ Detected keys: {', '.join(detected_keys)}[/green]")
+                self.console.print("[dim]Leave blank to use all keys, or specify which ones to include[/dim]\n")
+
+            # Step 6b: Ask which keys to include
+            keys_input = Prompt.ask("[bold yellow]Annotation keys to include[/bold yellow] (comma separated, or BLANK for ALL)", default="")
+            annotation_keys = [key.strip() for key in keys_input.split(",") if key.strip()] or None
+
+            # Step 6c: Ask multi-class vs one-vs-all (ALWAYS, not just for single key)
+            # Determine which keys will be trained
+            keys_to_train = annotation_keys if annotation_keys else detected_keys
+
+            # Calculate total number of models for each approach
+            total_values_count = 0
+            for key in keys_to_train:
+                if key in all_keys_values:
+                    total_values_count += len(all_keys_values[key])
+
+            num_keys = len(keys_to_train)
+
+            # ALWAYS ask the training approach question, even for binary classification
+            # User may want one-vs-all even with 2 values
+            if True:  # Always ask
+                self.console.print(f"\n[bold cyan]🎯 Training Approach[/bold cyan]\n")
+
+                if annotation_keys and len(annotation_keys) == 1:
+                    # Single key selected
+                    selected_key = annotation_keys[0]
+                    num_unique_values = len(all_keys_values[selected_key])
+                    values_list = sorted(all_keys_values[selected_key])
+                    values_str = ', '.join([f"'{v}'" for v in values_list[:5]])
+                    if num_unique_values > 5:
+                        values_str += f" ... (+{num_unique_values-5} more)"
+
+                    self.console.print(f"[bold]Selected:[/bold] '{selected_key}' ({num_unique_values} values)")
+                    self.console.print(f"[dim]Values: {values_str}[/dim]\n")
                 else:
-                    self.console.print("                    Example: 'themes_transportation', 'sentiment_positive'")
-            else:
-                self.console.print("                    Example: 'themes_transportation', 'sentiment_positive'")
+                    # Multiple keys or ALL
+                    self.console.print(f"[bold]Selected:[/bold] {'ALL' if not annotation_keys else len(annotation_keys)} keys ({num_keys} total)")
+                    self.console.print(f"[dim]Total unique values across all keys: {total_values_count}[/dim]\n")
 
-            self.console.print("\n  [cyan]value_only[/cyan] - Label names are just values (simpler but may conflict)")
+                # Create comparison table
+                approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                approach_table.add_column("Approach", style="cyan bold", width=18)
+                approach_table.add_column("What It Does", style="white", width=60)
 
-            # Generate real examples for value_only
-            if real_example_data:
-                real_vo_examples = []
-                for key, val in real_example_data.items():
-                    if val is not None:
-                        if isinstance(val, list) and val:
-                            real_vo_examples.append(f"'{val[0]}'")
-                        elif not isinstance(val, list):
-                            real_vo_examples.append(f"'{val}'")
-                if real_vo_examples:
-                    examples_str = ', '.join(real_vo_examples[:3])
-                    self.console.print(f"                    [bold]From YOUR data:[/bold] {examples_str}")
+                if annotation_keys and len(annotation_keys) == 1:
+                    # Single key - simple explanation
+                    selected_key = annotation_keys[0]
+                    num_unique_values = len(all_keys_values[selected_key])
+                    values_list = sorted(all_keys_values[selected_key])
+
+                    approach_table.add_row(
+                        "multi-class",
+                        f"🎯 Trains ONE model for '{selected_key}'\n\n"
+                        f"• Chooses between all {num_unique_values} values\n"
+                        f"• Example: '{values_list[0]}' vs '{values_list[1]}' vs ...\n"
+                        f"• Predicts exactly ONE value per text\n"
+                        f"• [bold green]Total: 1 model[/bold green]\n\n"
+                        "[bold cyan]Best for:[/bold cyan] Mutually exclusive categories"
+                    )
+                    approach_table.add_row(
+                        "one-vs-all",
+                        f"⚡ Trains {num_unique_values} binary models for '{selected_key}'\n\n"
+                        f"• Model 1: '{values_list[0]}' vs NOT '{values_list[0]}'\n"
+                        f"• Model 2: '{values_list[1]}' vs NOT '{values_list[1]}'\n"
+                        f"• ... (one model per value)\n"
+                        f"• [bold yellow]Total: {num_unique_values} models[/bold yellow]\n\n"
+                        "[bold cyan]Best for:[/bold cyan] Imbalanced data, multiple labels per text"
+                    )
                 else:
-                    self.console.print("                    Example: 'transportation', 'positive'")
-            else:
-                self.console.print("                    Example: 'transportation', 'positive'")
+                    # Multiple keys or ALL
+                    approach_table.add_row(
+                        "multi-class",
+                        f"🎯 Trains ONE model PER KEY\n\n"
+                        f"• {num_keys} models total (one per key)\n"
+                        f"• Each model predicts ALL values for its key\n"
+                        f"• Example: Model for 'affiliation' → predicts 'left' or 'right'\n"
+                        f"• [bold green]Total: {num_keys} models[/bold green]\n\n"
+                        "[bold cyan]Best for:[/bold cyan] Standard multi-category classification"
+                    )
+                    approach_table.add_row(
+                        "one-vs-all",
+                        f"⚡ Trains ONE model PER VALUE (across all keys)\n\n"
+                        f"• {total_values_count} models total (one per value)\n"
+                        f"• Each model: 'value X' vs NOT 'value X'\n"
+                        f"• Example: Separate models for 'affiliation_left', 'affiliation_right', 'themes_health', etc.\n"
+                        f"• [bold yellow]Total: {total_values_count} models[/bold yellow]\n\n"
+                        "[bold cyan]Best for:[/bold cyan] When texts can have 0 or multiple labels"
+                    )
 
-            label_strategy = Prompt.ask("Label strategy", choices=["key_value", "value_only", "back"], default="key_value")
+                self.console.print(approach_table)
+                self.console.print()
+
+                training_approach = Prompt.ask(
+                    "[bold yellow]Training approach[/bold yellow]",
+                    choices=["multi-class", "one-vs-all", "back"],
+                    default="multi-class"
+                )
+
+                if training_approach == "back":
+                    return None
+
+            # Step 6d: Label naming strategy
+            self.console.print("\n[bold]🏷️  Label Naming Strategy:[/bold]")
+            self.console.print("[dim]This determines how label names appear in your training files and model predictions.[/dim]\n")
+
+            # Generate examples based on SELECTED keys (not random example data)
+            # Build concrete transformation examples
+            transformation_examples = []
+            for key in keys_to_train[:2]:  # Show 2 examples for clarity
+                if key in all_keys_values:
+                    values = sorted(all_keys_values[key])[:2]  # First 2 values
+                    if values:
+                        for val in values:
+                            transformation_examples.append({
+                                'key': key,
+                                'value': val,
+                                'key_value': f"{key}_{val}",
+                                'value_only': val
+                            })
+
+            # Create comparison table
+            strategy_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+            strategy_table.add_column("Strategy", style="cyan bold", width=15)
+            strategy_table.add_column("Format", style="white", width=25)
+            strategy_table.add_column("When to Use", style="white", width=40)
+
+            # Build key_value example string
+            if transformation_examples:
+                kv_format_examples = [f"'{ex['key_value']}'" for ex in transformation_examples[:3]]
+                kv_format = f"key_value\nExample: {', '.join(kv_format_examples)}"
+            else:
+                kv_format = "key_value\nExample: 'sentiment_positive'"
+
+            # Build value_only example string
+            if transformation_examples:
+                vo_format_examples = [f"'{ex['value_only']}'" for ex in transformation_examples[:3]]
+                vo_format = f"value_only\nExample: {', '.join(vo_format_examples)}"
+            else:
+                vo_format = "value_only\nExample: 'positive'"
+
+            strategy_table.add_row(
+                "key_value",
+                "Includes key prefix\n[dim](key_value)[/dim]",
+                "✓ Training [bold]multiple keys[/bold]\n"
+                "✓ Values might overlap between keys\n"
+                "✓ [green]Recommended for most cases[/green]"
+            )
+
+            strategy_table.add_row(
+                "value_only",
+                "Only the value\n[dim](no prefix)[/dim]",
+                "✓ Training [bold]single key only[/bold]\n"
+                "✓ Values are unique across dataset\n"
+                "⚠️  [yellow]Can cause conflicts with multiple keys[/yellow]"
+            )
+
+            self.console.print(strategy_table)
+            self.console.print()
+
+            # Show concrete transformation if we have examples
+            if transformation_examples:
+                self.console.print("[bold]📋 How Your Data Will Be Transformed:[/bold]\n")
+
+                transform_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.SIMPLE)
+                transform_table.add_column("Original (key → value)", style="cyan", width=35)
+                transform_table.add_column("key_value format", style="green", width=25)
+                transform_table.add_column("value_only format", style="yellow", width=20)
+
+                for ex in transformation_examples[:4]:  # Show max 4 examples
+                    transform_table.add_row(
+                        f"{ex['key']} → {ex['value']}",
+                        ex['key_value'],
+                        ex['value_only']
+                    )
+
+                self.console.print(transform_table)
+                self.console.print()
+
+            # Show warning if multiple keys and value_only
+            if len(keys_to_train) > 1:
+                self.console.print("[bold yellow]💡 Recommendation:[/bold yellow]")
+                self.console.print(f"[dim]You selected {len(keys_to_train)} keys. Use [bold cyan]key_value[/bold cyan] to avoid label conflicts.")
+                self.console.print(f"[dim]Example: If both 'affiliation' and 'gender' have value 'no', they would conflict with [yellow]value_only[/yellow].[/dim]\n")
+            else:
+                self.console.print("[dim]💡 With a single key, both strategies work fine. [cyan]key_value[/cyan] is still recommended for consistency.[/dim]\n")
+
+            label_strategy = Prompt.ask("Label naming strategy", choices=["key_value", "value_only", "back"], default="key_value")
             if label_strategy == "back":
                 return None
 
-            # For multi-label CSV-JSON: ask which keys to use (one model per key)
-            annotation_keys = None
-            detected_keys = []  # Initialize to empty list
-
-            if mode == "multi-label":
-                self.console.print("\n[bold yellow]📋 Multi-label mode:[/bold yellow] One model will be trained per annotation key")
-                self.console.print("[dim]This means training SEPARATE BINARY classifiers for each category type[/dim]")
-
-                # Use comprehensive all_keys_values data collected earlier
-                if all_keys_values:
-                    detected_keys = sorted(all_keys_values.keys())
-                    self.console.print(f"\n[green]✓ Detected annotation keys in your data: {', '.join(detected_keys)}[/green]")
-
-                    self.console.print("\n[bold]What this means (with YOUR data):[/bold]")
-                    for key in detected_keys:
-                        num_values = len(all_keys_values[key])
-                        values_preview = ', '.join([f"'{v}'" for v in sorted(all_keys_values[key])[:3]])
-                        if num_values > 3:
-                            values_preview += f" ... (+{num_values-3} more)"
-                        self.console.print(f"  • [cyan]{key}[/cyan] ({num_values} unique values) → {values_preview}")
-
-                    # Build real example from detected keys
-                    if len(detected_keys) >= 2:
-                        example_keys = ', '.join(detected_keys[:2])
-                        self.console.print(f"\n[bold]Example:[/bold] Selecting '{example_keys}' → {min(2, len(detected_keys))} models trained")
-                        for idx, key in enumerate(detected_keys[:2], 1):
-                            sample_val = sorted(all_keys_values[key])[0] if all_keys_values[key] else "value"
-                            self.console.print(f"  Model {idx}: Trains '{key}_{sample_val}' vs NOT '{key}_{sample_val}' (and all other {key} values)")
-                elif analysis.get('annotation_keys_found'):
-                    detected_keys = sorted(analysis['annotation_keys_found'])
-                    self.console.print(f"\n[green]✓ Detected annotation keys in your data: {', '.join(detected_keys)}[/green]")
-                else:
-                    detected_keys = []
-                    self.console.print("Example: If you select 'themes,sentiment' → 2 models (one for themes, one for sentiment)")
-
-                # Show selection guidance with all available options
-                if detected_keys:
-                    self.console.print("\n[bold cyan]📝 Select which annotation keys to train:[/bold cyan]")
-                    self.console.print(f"[bold]Available keys:[/bold] {', '.join(detected_keys)}")
-                    self.console.print("\n[dim]Options:[/dim]")
-                    self.console.print(f"  • [cyan]Leave blank[/cyan] → Train ALL {len(detected_keys)} models (one per key)")
-                    self.console.print(f"  • [cyan]Enter specific keys[/cyan] → Train only selected models")
-                    if detected_keys:
-                        self.console.print(f"    Example: '{detected_keys[0]}' → Train only 1 model for {detected_keys[0]}")
-                    if len(detected_keys) >= 2:
-                        self.console.print(f"    Example: '{detected_keys[0]},{detected_keys[1]}' → Train 2 models")
-
-                keys_input = Prompt.ask("\nAnnotation keys (comma-separated, or BLANK for ALL)", default="")
-                annotation_keys = [key.strip() for key in keys_input.split(",") if key.strip()] or None
-
-                # Check if we need to ask about training approach for multi-label with single key
-                training_approach = "multi-label"  # Default
-                if annotation_keys and len(annotation_keys) == 1:
-                    # Single key selected - check if it has multiple values
-                    selected_key = annotation_keys[0]
-                    if selected_key in all_keys_values:
-                        num_unique_values = len(all_keys_values[selected_key])
-
-                        if num_unique_values > 2:
-                            self.console.print(f"\n[bold cyan]🎯 Training Approach for '{selected_key}' ({num_unique_values} values)[/bold cyan]\n")
-                            self.console.print("[dim]Since this key has multiple values, choose how to train:[/dim]\n")
-
-                            approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
-                            approach_table.add_column("Approach", style="cyan bold", width=18)
-                            approach_table.add_column("Description", style="white", width=60)
-
-                            approach_table.add_row(
-                                "multi-label",
-                                f"🏷️  ONE model detecting all {num_unique_values} values\n"
-                                "✓ Faster training (1 model only)\n"
-                                "✓ Can predict multiple values simultaneously\n"
-                                "✓ Best for: when samples can have multiple values"
-                            )
-                            approach_table.add_row(
-                                "one-vs-all",
-                                f"⚡ {num_unique_values} binary models (one per value)\n"
-                                "✓ Each model: 'Value X' vs 'NOT Value X'\n"
-                                "✓ Better for: mutually exclusive values or value-specific tuning\n"
-                                "✓ Longer training but more flexible"
-                            )
-
-                            self.console.print(approach_table)
-                            self.console.print()
-
-                            training_approach = Prompt.ask(
-                                "[bold yellow]Training approach[/bold yellow]",
-                                choices=["multi-label", "one-vs-all", "back"],
-                                default="multi-label"
-                            )
-
-                            if training_approach == "back":
-                                return None
+            # Derive mode based on approach
+            if training_approach == "one-vs-all":
+                mode = "multi-label"  # one-vs-all uses multi-label infrastructure
             else:
-                # For single-label mode - use comprehensive data
-                if all_keys_values:
-                    detected_keys = sorted(all_keys_values.keys())
-                    self.console.print(f"\n[bold cyan]📝 Single-Label Mode - Select Keys/Values:[/bold cyan]")
-
-                    # Show all keys and their values
-                    for key in detected_keys:
-                        num_values = len(all_keys_values[key])
-                        values_preview = ', '.join([f"'{v}'" for v in sorted(all_keys_values[key])[:5]])
-                        if num_values > 5:
-                            values_preview += f" ... (+{num_values-5} more)"
-                        self.console.print(f"  • [cyan]{key}[/cyan] ({num_values} values): {values_preview}")
-
-                    self.console.print("\n[dim]Options:[/dim]")
-                    self.console.print(f"  • [cyan]Leave blank[/cyan] → Use ALL {len(detected_keys)} keys with ALL their values")
-                    self.console.print(f"  • [cyan]Enter specific keys[/cyan] → Use only selected keys with ALL their values")
-                    self.console.print(f"    Example: '{detected_keys[0]}' → Use only {detected_keys[0]} key")
-                elif analysis.get('annotation_keys_found'):
-                    detected_keys = sorted(analysis['annotation_keys_found'])
-                    self.console.print(f"\n[dim]Note: Your data has keys: {', '.join(detected_keys)}[/dim]")
-                    self.console.print("[dim]Leave blank to use all keys, or specify which ones to include[/dim]")
-                else:
-                    detected_keys = []
-
-                keys_input = Prompt.ask("\nAnnotation keys to include (comma separated, leave blank for all)", default="")
-                annotation_keys = [key.strip() for key in keys_input.split(",") if key.strip()] or None
-
-                # Check if we need to ask about training approach (multi-class vs one-vs-all)
-                training_approach = "multi-class"  # Default
-                if annotation_keys and len(annotation_keys) == 1:
-                    # Single key selected - check if it has multiple values
-                    selected_key = annotation_keys[0]
-                    if selected_key in all_keys_values:
-                        num_unique_values = len(all_keys_values[selected_key])
-
-                        if num_unique_values > 2:
-                            self.console.print(f"\n[bold cyan]🎯 Training Approach for '{selected_key}' ({num_unique_values} values)[/bold cyan]\n")
-                            self.console.print("[dim]Since this key has multiple values, choose how to train:[/dim]\n")
-
-                            approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
-                            approach_table.add_column("Approach", style="cyan bold", width=18)
-                            approach_table.add_column("Description", style="white", width=60)
-
-                            approach_table.add_row(
-                                "multi-class",
-                                f"🎯 ONE model predicting among {num_unique_values} values\n"
-                                "✓ Faster training (1 model only)\n"
-                                "✓ Model learns relationships between values\n"
-                                "✓ Best for: general classification with balanced data"
-                            )
-                            approach_table.add_row(
-                                "one-vs-all",
-                                f"⚡ {num_unique_values} binary models (one per value)\n"
-                                "✓ Each model: 'Value X' vs 'NOT Value X'\n"
-                                "✓ Better for: imbalanced data or value-specific tuning\n"
-                                "✓ Longer training but more flexible"
-                            )
-
-                            self.console.print(approach_table)
-                            self.console.print()
-
-                            training_approach = Prompt.ask(
-                                "[bold yellow]Training approach[/bold yellow]",
-                                choices=["multi-class", "one-vs-all", "back"],
-                                default="multi-class"
-                            )
-
-                            if training_approach == "back":
-                                return None
+                mode = "single-label"  # multi-class uses single-label infrastructure
 
             # Step 7: Additional Columns (ID, Language)
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -8763,7 +8815,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             if mode == "back":
                 return None
 
-            # If single-label with multiple categories, ask about training approach
+            # If single-label, ALWAYS ask about training approach (even for binary/2 classes)
             training_approach = "multi-class"  # Default
             if mode == "single-label":
                 # Count unique labels
@@ -8772,40 +8824,43 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 label_column = selection['label_column']
                 num_unique_labels = df[label_column].nunique()
 
-                if num_unique_labels > 2:
-                    self.console.print(f"\n[bold cyan]🎯 Training Approach for {num_unique_labels} Categories[/bold cyan]\n")
-                    self.console.print("[dim]Since you have multiple categories, choose how to train:[/dim]\n")
+                # Always ask, even for binary classification (user may want one-vs-all)
+                self.console.print(f"\n[bold cyan]🎯 Training Approach for {num_unique_labels} Categories[/bold cyan]\n")
+                if num_unique_labels == 2:
+                    self.console.print("[dim]Even with 2 categories, you can choose between multi-class or one-vs-all:[/dim]\n")
+                else:
+                    self.console.print("[dim]Choose how to train with multiple categories:[/dim]\n")
 
-                    approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
-                    approach_table.add_column("Approach", style="cyan bold", width=18)
-                    approach_table.add_column("Description", style="white", width=60)
+                approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                approach_table.add_column("Approach", style="cyan bold", width=18)
+                approach_table.add_column("Description", style="white", width=60)
 
-                    approach_table.add_row(
-                        "multi-class",
-                        f"🎯 ONE model predicting among {num_unique_labels} categories\n"
-                        "✓ Faster training (1 model only)\n"
-                        "✓ Model learns relationships between categories\n"
-                        "✓ Best for: general classification with balanced data"
-                    )
-                    approach_table.add_row(
-                        "one-vs-all",
-                        f"⚡ {num_unique_labels} binary models (one per category)\n"
-                        "✓ Each model: 'Category X' vs 'NOT Category X'\n"
-                        "✓ Better for: imbalanced data or category-specific tuning\n"
-                        "✓ Longer training but more flexible"
-                    )
+                approach_table.add_row(
+                    "multi-class",
+                    f"🎯 ONE model predicting among {num_unique_labels} categories\n"
+                    "✓ Faster training (1 model only)\n"
+                    "✓ Model learns relationships between categories\n"
+                    "✓ Best for: general classification with balanced data"
+                )
+                approach_table.add_row(
+                    "one-vs-all",
+                    f"⚡ {num_unique_labels} binary models (one per category)\n"
+                    "✓ Each model: 'Category X' vs 'NOT Category X'\n"
+                    "✓ Better for: imbalanced data or category-specific tuning\n"
+                    "✓ Longer training but more flexible"
+                )
 
-                    self.console.print(approach_table)
-                    self.console.print()
+                self.console.print(approach_table)
+                self.console.print()
 
-                    training_approach = Prompt.ask(
-                        "[bold yellow]Training approach[/bold yellow]",
-                        choices=["multi-class", "one-vs-all", "back"],
-                        default="multi-class"
-                    )
+                training_approach = Prompt.ask(
+                    "[bold yellow]Training approach[/bold yellow]",
+                    choices=["multi-class", "one-vs-all", "back"],
+                    default="multi-class"
+                )
 
-                    if training_approach == "back":
-                        return None
+                if training_approach == "back":
+                    return None
 
             # If one-vs-all, convert to multi-label format (one binary file per category)
             if training_approach == "one-vs-all":
@@ -8962,55 +9017,292 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self.console.print(table)
 
-    def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
+    def _collect_quick_mode_parameters(self, bundle: TrainingDataBundle, preloaded_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
-        Quick training mode - simple and fast with sensible defaults.
+        Collect parameters for quick mode training (STEP 1 of new flow).
 
-        Args:
-            bundle: Training data bundle
-            model_config: Model configuration dict (will be updated with runtime params)
-
-        Returns:
-            dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
+        Returns dict with keys: model_name, reinforced_learning, epochs
+        Returns None if user cancels
         """
-        self.console.print("\n[bold]Quick training[/bold] - using sensible defaults.")
+        from rich.prompt import Prompt, IntPrompt, Confirm
+        from llm_tool.utils.model_display import get_recommended_models, display_all_models
+        from rich.table import Table
+        from rich import box
 
-        # Intelligent model selection like in benchmark mode
-        # Get languages from metadata (confirmed_languages has priority)
+        # STEP 1A: Token Length Strategy Selection
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           📏 STEP 1: Token Length Strategy                    [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        # Get languages from metadata
         languages = set()
         if hasattr(bundle, 'metadata') and bundle.metadata:
             languages = bundle.metadata.get('confirmed_languages', bundle.metadata.get('languages', set()))
         if not languages and hasattr(bundle, 'languages') and bundle.languages:
             languages = set([lang.upper() for lang in bundle.languages])
-
-        # Convert to uppercase set
         if languages:
             languages = set([str(lang).upper() for lang in languages])
 
-        # CRITICAL: Get text_length_stats from bundle metadata
+        # Get text length stats
         text_length_stats = bundle.metadata.get('text_length_stats', {}) if hasattr(bundle, 'metadata') else {}
-
-        # DEBUG: Print what we got
-        self.logger.debug(f"[QUICK MODE DEBUG] text_length_stats keys: {list(text_length_stats.keys())}")
-        self.logger.debug(f"[QUICK MODE DEBUG] token_mean: {text_length_stats.get('token_mean')}")
-        self.logger.debug(f"[QUICK MODE DEBUG] user_prefers_long_models: {text_length_stats.get('user_prefers_long_models')}")
-
-        # Use REAL text length stats - prefer token-based, fallback to chars
         if text_length_stats.get('token_mean'):
             text_length_avg = text_length_stats['token_mean']
-            self.logger.debug(f"[QUICK MODE DEBUG] Using token_mean: {text_length_avg}")
         elif text_length_stats.get('char_mean'):
             text_length_avg = text_length_stats['char_mean']
-            self.logger.debug(f"[QUICK MODE DEBUG] Using char_mean: {text_length_avg}")
         else:
-            text_length_avg = getattr(bundle, 'text_length_avg', 158)  # Last resort default
-            self.logger.debug(f"[QUICK MODE DEBUG] Using fallback: {text_length_avg}")
+            text_length_avg = getattr(bundle, 'text_length_avg', 158)
 
-        prefers_long_models = text_length_stats.get('user_prefers_long_models', False)
         requires_long_model = text_length_stats.get('requires_long_model', False)
 
-        # Determine model strategy
+        # Get distribution data to calculate percentage exceeding 512 tokens
+        distribution = text_length_stats.get('distribution', {})
+
+        # Calculate percentage exceeding 512 tokens
+        # Handle different possible structures of distribution
+        total_docs = 0
+        docs_exceeding_512 = 0
+        pct_exceeding_512 = 0
+
+        if distribution and isinstance(distribution, dict):
+            # Try to extract counts - distribution might be nested
+            try:
+                # Check if values are integers (direct counts)
+                if all(isinstance(v, (int, float)) for v in distribution.values()):
+                    total_docs = sum(distribution.values())
+                    docs_exceeding_512 = distribution.get('long', 0) + distribution.get('very_long', 0)
+                    pct_exceeding_512 = (docs_exceeding_512 / total_docs * 100) if total_docs > 0 else 0
+                else:
+                    # Distribution might have nested structure - try to extract counts
+                    for key, value in distribution.items():
+                        if isinstance(value, dict) and 'count' in value:
+                            total_docs += value['count']
+                            if key in ['long', 'very_long']:
+                                docs_exceeding_512 += value['count']
+                    pct_exceeding_512 = (docs_exceeding_512 / total_docs * 100) if total_docs > 0 else 0
+            except (TypeError, KeyError, AttributeError):
+                # Fallback to percentage-based calculation
+                pass
+
+        # If we couldn't calculate from distribution, try direct percentage fields
+        if pct_exceeding_512 == 0 and total_docs == 0:
+            if 'pct_long' in text_length_stats and 'pct_very_long' in text_length_stats:
+                pct_exceeding_512 = text_length_stats.get('pct_long', 0) + text_length_stats.get('pct_very_long', 0)
+                # Estimate docs count if we have the total
+                if 'total_docs' in text_length_stats:
+                    total_docs = text_length_stats['total_docs']
+                    docs_exceeding_512 = int(total_docs * pct_exceeding_512 / 100)
+
+        # Show token length summary
+        self.console.print("[bold]📊 Your Dataset Token Analysis:[/bold]\n")
+
+        stats_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.SIMPLE)
+        stats_table.add_column("Metric", style="cyan", width=30)
+        stats_table.add_column("Value", style="white", width=25)
+
+        # Use actual values from text_length_stats
+        token_mean = text_length_stats.get('token_mean', text_length_stats.get('avg_tokens', 0))
+        token_median = text_length_stats.get('token_median', text_length_stats.get('median_tokens', 0))
+        token_p95 = text_length_stats.get('token_p95', text_length_stats.get('p95_tokens', 0))
+        token_max = text_length_stats.get('token_max', text_length_stats.get('max_tokens', 0))
+
+        stats_table.add_row("Mean tokens per document", f"{token_mean:.0f}")
+        stats_table.add_row("Median tokens", f"{token_median:.0f}")
+        stats_table.add_row("95th percentile", f"{token_p95:.0f}")
+        stats_table.add_row("Maximum tokens", f"{token_max:.0f}")
+        stats_table.add_row("[bold]% exceeding 512 tokens[/bold]", f"[bold yellow]{pct_exceeding_512:.1f}%[/bold yellow]")
+
+        # Show distribution if available
+        if distribution and total_docs > 0:
+            self.console.print(stats_table)
+            self.console.print()
+
+            self.console.print("[bold]📈 Token Length Distribution:[/bold]\n")
+            dist_table = Table(show_header=True, header_style="bold magenta", border_style="blue", box=box.SIMPLE)
+            dist_table.add_column("Category", style="cyan", width=20)
+            dist_table.add_column("Token Range", style="white", width=20)
+            dist_table.add_column("Count", style="green", width=12, justify="right")
+            dist_table.add_column("Percentage", style="yellow", width=12, justify="right")
+
+            # Extract counts - handle both dict and int values
+            def get_count(category_data):
+                if isinstance(category_data, dict):
+                    return category_data.get('count', 0)
+                elif isinstance(category_data, (int, float)):
+                    return int(category_data)
+                return 0
+
+            short_count = get_count(distribution.get('short', 0))
+            medium_count = get_count(distribution.get('medium', 0))
+            long_count = get_count(distribution.get('long', 0))
+            very_long_count = get_count(distribution.get('very_long', 0))
+
+            dist_table.add_row("Short", "< 128 tokens", f"{short_count:,}", f"{short_count/total_docs*100:.1f}%")
+            dist_table.add_row("Medium", "128-511 tokens", f"{medium_count:,}", f"{medium_count/total_docs*100:.1f}%")
+            dist_table.add_row("[yellow]Long[/yellow]", "[yellow]512-1023 tokens[/yellow]", f"[yellow]{long_count:,}[/yellow]", f"[yellow]{long_count/total_docs*100:.1f}%[/yellow]")
+            dist_table.add_row("[red]Very Long[/red]", "[red]≥ 1024 tokens[/red]", f"[red]{very_long_count:,}[/red]", f"[red]{very_long_count/total_docs*100:.1f}%[/red]")
+
+            self.console.print(dist_table)
+        else:
+            self.console.print(stats_table)
+
+        self.console.print()
+
+        # Determine recommended strategy based on percentage (intelligent)
+        if pct_exceeding_512 < 10:
+            recommended_strategy = "truncate"
+            rec_reason = f"Only {pct_exceeding_512:.1f}% exceed 512 tokens - splitting long documents will preserve all information"
+        elif pct_exceeding_512 < 25:
+            recommended_strategy = "truncate"
+            rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - splitting is recommended, or consider long models for better context"
+        elif pct_exceeding_512 < 40:
+            recommended_strategy = "long_models"
+            rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - long models recommended to preserve document context"
+        else:
+            recommended_strategy = "long_models"
+            rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - long models strongly recommended"
+
+        # Present 3 strategies
+        self.console.print("[bold yellow]⚠️  Standard BERT models have a 512 token limit[/bold yellow]")
+        self.console.print("[dim]You need to choose how to handle longer documents:[/dim]\n")
+
+        strategy_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+        strategy_table.add_column("Strategy", style="cyan bold", width=18)
+        strategy_table.add_column("Description", style="white", width=70)
+
+        truncate_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "truncate" else ""
+        exclude_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "exclude" else ""
+        long_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "long_models" else ""
+
+        # Calculate how many extra samples we'd get from splitting
+        estimated_extra_samples = 0
+        if docs_exceeding_512 > 0:
+            # Estimate based on average tokens for long docs
+            estimated_extra_samples = int(docs_exceeding_512 * 1.5)  # Conservative estimate
+            extra_info = f"Creates ~{estimated_extra_samples:,} additional training samples from long documents"
+        else:
+            extra_info = "No documents exceed 512 tokens"
+
+        strategy_table.add_row(
+            "1. Split/Chunk" + truncate_mark,
+            "✂️  Split long documents into 512-token chunks (with overlap)\n"
+            f"• [green]Each chunk keeps the same label[/green] → More training data!\n"
+            f"• Example: 1024-token doc → 2 samples (tokens 0-512, tokens 256-768)\n"
+            f"• {extra_info}\n"
+            f"• Fastest training (~5-10 min)\n"
+            f"• Works with all standard models (BERT, RoBERTa, CamemBERT, etc.)\n"
+            f"• [bold]No information loss[/bold] - all text is used"
+        )
+        strategy_table.add_row(
+            "2. Exclude" + exclude_mark,
+            f"🗑️  Remove documents exceeding 512 tokens entirely\n"
+            f"• Would exclude {docs_exceeding_512:,} documents ({pct_exceeding_512:.1f}% of dataset)\n"
+            f"• [red]Reduces training data significantly[/red]\n"
+            f"• Model won't learn from long documents\n"
+            f"• Only use if long documents are outliers/noise"
+        )
+        strategy_table.add_row(
+            "3. Long Models" + long_mark,
+            "🔬 Use long-document models (up to 4096 tokens)\n"
+            "• Preserves full document context in single sample\n"
+            "• Better for tasks requiring full document understanding\n"
+            "• Slower training (~15-30 min) and inference\n"
+            "• Models: Longformer, BigBird, Long-T5, XLM-RoBERTa-Longformer"
+        )
+
+        self.console.print(strategy_table)
+        self.console.print()
+
+        self.console.print(f"[bold yellow]💡 Smart Recommendation:[/bold yellow] [cyan]{rec_reason}[/cyan]\n")
+
+        # Ask user to choose
+        strategy_choice = Prompt.ask(
+            "[bold yellow]Choose strategy[/bold yellow]",
+            choices=["1", "2", "3", "split", "chunk", "exclude", "long", "long_models"],
+            default="1" if recommended_strategy == "truncate" else ("2" if recommended_strategy == "exclude" else "3")
+        )
+
+        # Map choice to boolean flags
+        # Initialize all flags
+        prefers_long_models = False
+        exclude_long_texts = False
+        split_long_texts = False
+
+        if strategy_choice in ["1", "split", "chunk", "truncate"]:
+            split_long_texts = True
+            if docs_exceeding_512 > 0:
+                self.console.print(f"[green]✓ Strategy: Split long documents into chunks (creates ~{estimated_extra_samples:,} extra samples)[/green]\n")
+            else:
+                self.console.print("[green]✓ Strategy: Split long documents (if any) into chunks[/green]\n")
+        elif strategy_choice in ["2", "exclude"]:
+            exclude_long_texts = True
+            self.console.print(f"[yellow]✓ Strategy: Exclude {docs_exceeding_512:,} documents >512 tokens ({pct_exceeding_512:.1f}% of dataset)[/yellow]\n")
+        else:  # "3", "long", or "long_models"
+            prefers_long_models = True
+            self.console.print("[green]✓ Strategy: Use long-document models (up to 4096 tokens)[/green]\n")
+
+        # Store choice in text_length_stats for later use
+        text_length_stats['user_prefers_long_models'] = prefers_long_models
+        text_length_stats['exclude_long_texts'] = exclude_long_texts
+        text_length_stats['split_long_texts'] = split_long_texts
+
+        # STEP 2A: Multilingual Strategy (if multiple languages detected)
+        train_by_language = False
         if len(languages) > 1:
+            self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+            self.console.print("[bold cyan]           🌍 STEP 2A: Multilingual Strategy                   [/bold cyan]")
+            self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+            self.console.print(f"[bold]Your dataset contains multiple languages:[/bold] {', '.join(sorted(languages))}\n")
+
+            strategy_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+            strategy_table.add_column("Approach", style="cyan bold", width=25)
+            strategy_table.add_column("Description", style="white", width=70)
+
+            strategy_table.add_row(
+                "1. Multilingual Model",
+                "🌐 Train ONE model that handles all languages\n"
+                f"• Works across {', '.join(sorted(languages))} without distinction\n"
+                "• Faster: Single training run\n"
+                "• Good for: Cross-lingual tasks, similar performance needed across languages\n"
+                "• Models: XLM-RoBERTa, mBERT, mT5, etc.\n"
+                "• [green]Recommended if[/green]: Languages are balanced in dataset"
+            )
+            strategy_table.add_row(
+                "2. One Model per Language",
+                "🎯 Train SEPARATE specialized models for each language\n"
+                f"• {len(languages)} models total: one for each language\n"
+                f"• Each model specialized for its language (e.g., CamemBERT for FR, BERT for EN)\n"
+                "• Better performance: Language-specific models often outperform multilingual\n"
+                "• Longer training: Multiple training runs\n"
+                f"• You'll select a model for each language: {', '.join(sorted(languages))}\n"
+                "• [green]Recommended if[/green]: Best possible performance is priority"
+            )
+
+            self.console.print(strategy_table)
+            self.console.print()
+
+            multilingual_choice = Prompt.ask(
+                "[bold yellow]Choose approach[/bold yellow]",
+                choices=["1", "2", "multilingual", "per-language", "per_language"],
+                default="2"  # Recommend per-language for better performance
+            )
+
+            if multilingual_choice in ["2", "per-language", "per_language"]:
+                train_by_language = True
+                self.console.print(f"\n[green]✓ Will train {len(languages)} specialized models (one per language)[/green]\n")
+            else:
+                train_by_language = False
+                self.console.print("\n[green]✓ Will train 1 multilingual model[/green]\n")
+
+        # STEP 2B: Model Selection
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           🤖 STEP 2B: Model Selection                         [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        # Get model strategy
+        if train_by_language:
+            model_strategy = "per-language"
+        elif len(languages) > 1:
             model_strategy = "multilingual"
         elif 'FR' in languages:
             model_strategy = "fr"
@@ -9019,80 +9311,420 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         else:
             model_strategy = "multilingual"
 
-        # Get recommended model from bundle if available
-        recommended_model = getattr(bundle, 'recommended_model', None)
+        # Import model utilities
+        from llm_tool.utils.model_display import get_recommended_models, MODEL_METADATA
 
-        # Get intelligent model recommendations using the same function as benchmark mode
-        self.console.print("\n[bold cyan]🎯 Recommended Models for Your Data:[/bold cyan]")
+        # Initialize models_by_language dict
+        models_by_language = {}
 
-        # Display context including long-document needs
-        context_parts = []
-        if languages:
-            context_parts.append(f"{', '.join(languages)} dataset")
+        # Handle per-language model selection
+        if train_by_language:
+            # Select one model for each language
+            for lang in sorted(languages):
+                self.console.print(f"\n[bold yellow]{'─'*60}[/bold yellow]")
+                self.console.print(f"[bold yellow]🎯 Selecting model for {lang} texts[/bold yellow]")
+                self.console.print(f"[bold yellow]{'─'*60}[/bold yellow]\n")
+
+                # Get recommendations for this specific language
+                lang_recommended = get_recommended_models(
+                    languages={lang},  # Use set, not list
+                    avg_text_length=text_length_avg,
+                    requires_long_model=prefers_long_models,
+                    top_n=10
+                )
+
+                if lang_recommended:
+                    # Show top 10 models for this language
+                    self.console.print(f"[bold cyan]🎯 Top 10 Recommended Models for {lang}:[/bold cyan]\n")
+
+                    models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                    models_table.add_column("#", style="yellow", width=3)
+                    models_table.add_column("Model ID", style="cyan", width=45)
+                    models_table.add_column("Languages", style="green", width=15)
+                    models_table.add_column("Max Tokens", style="blue", width=11)
+                    models_table.add_column("Size", style="magenta", width=10)
+                    models_table.add_column("Description", style="white", width=45)
+
+                    for idx, model_id in enumerate(lang_recommended[:10], 1):
+                        meta = MODEL_METADATA.get(model_id, {})
+                        langs = ', '.join(meta.get('languages', ['?']))
+                        max_len = str(meta.get('max_length', '?'))
+                        size = meta.get('size', '?')
+                        desc = meta.get('description', '')[:43]
+
+                        models_table.add_row(str(idx), model_id, langs, max_len, size, desc)
+
+                    self.console.print(models_table)
+                    default_model = lang_recommended[0]
+                else:
+                    # Fallback defaults by language
+                    if lang == 'FR':
+                        default_model = 'camembert-base'
+                    elif lang == 'EN':
+                        default_model = 'bert-base-uncased'
+                    else:
+                        default_model = 'xlm-roberta-base'
+
+                # Offer to display all models
+                self.console.print(f"\n[dim]💡 Selection Options:[/dim]")
+                self.console.print(f"[dim]  • Enter [cyan]1-10[/cyan] to select from Top 10 recommendations[/dim]")
+                self.console.print(f"[dim]  • Enter [cyan]'all'[/cyan] to see ALL {len(MODEL_METADATA)} available models[/dim]")
+                self.console.print(f"[dim]  • Enter any [cyan]HuggingFace model ID[/cyan] directly[/dim]")
+
+                model_input = Prompt.ask(f"\n[bold yellow]Model for {lang}[/bold yellow]", default=default_model)
+
+                # Check if user wants to see all models
+                if model_input.lower() == 'all':
+                    # Show ALL models with complete characteristics
+                    self.console.print(f"\n[bold cyan]📚 ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
+
+                    all_models_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+                    all_models_table.add_column("#", style="yellow", width=4)
+                    all_models_table.add_column("Model ID", style="cyan", width=40)
+                    all_models_table.add_column("Languages", style="green", width=15)
+                    all_models_table.add_column("Max Tokens", style="blue", width=11)
+                    all_models_table.add_column("Size", style="magenta", width=10)
+                    all_models_table.add_column("Description", style="white", width=50)
+
+                    # Sort models: recommended first, then by relevance
+                    all_model_ids = list(MODEL_METADATA.keys())
+                    sorted_model_ids = []
+                    for model_id in lang_recommended:
+                        if model_id in all_model_ids:
+                            sorted_model_ids.append(model_id)
+                    for model_id in all_model_ids:
+                        if model_id not in sorted_model_ids:
+                            sorted_model_ids.append(model_id)
+
+                    for idx, model_id in enumerate(sorted_model_ids, 1):
+                        meta = MODEL_METADATA.get(model_id, {})
+                        langs = ', '.join(meta.get('languages', ['?']))
+                        max_len = str(meta.get('max_length', '?'))
+                        size = meta.get('size', '?')
+                        desc = meta.get('description', '')[:48]
+
+                        # Highlight recommended models
+                        if lang_recommended and model_id in lang_recommended[:10]:
+                            all_models_table.add_row(
+                                f"[bold green]{idx}[/bold green]",
+                                f"[bold green]{model_id}[/bold green]",
+                                langs,
+                                max_len,
+                                size,
+                                desc
+                            )
+                        else:
+                            all_models_table.add_row(str(idx), model_id, langs, max_len, size, desc)
+
+                    self.console.print(all_models_table)
+
+                    self.console.print(f"\n[dim]💡 [bold green]Green models[/bold green] are in your Top 10 recommendations for {lang}[/dim]")
+                    self.console.print(f"\n[bold yellow]Select a model for {lang}:[/bold yellow]")
+                    self.console.print(f"[dim]  • Enter the # number from the table[/dim]")
+                    self.console.print(f"[dim]  • Or enter the model ID directly[/dim]")
+
+                    model_input_after_all = Prompt.ask(f"\nModel for {lang}", default=default_model)
+
+                    if model_input_after_all.isdigit():
+                        idx = int(model_input_after_all) - 1
+                        if 0 <= idx < len(sorted_model_ids):
+                            lang_model = sorted_model_ids[idx]
+                            self.console.print(f"[green]✓ Selected for {lang}: {lang_model}[/green]")
+                        else:
+                            self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
+                            lang_model = default_model
+                    else:
+                        lang_model = model_input_after_all
+                elif model_input.isdigit():
+                    idx = int(model_input) - 1
+                    if lang_recommended and 0 <= idx < len(lang_recommended):
+                        lang_model = lang_recommended[idx]
+                        self.console.print(f"[green]✓ Selected for {lang}: {lang_model}[/green]")
+                    else:
+                        self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
+                        lang_model = default_model
+                else:
+                    lang_model = model_input
+
+                models_by_language[lang] = lang_model
+
+            # Show summary of selected models
+            self.console.print(f"\n[bold green]✓ Model Selection Complete:[/bold green]")
+            for lang, model in sorted(models_by_language.items()):
+                self.console.print(f"  • {lang}: [cyan]{model}[/cyan]")
+
+            # For compatibility with rest of code, use first model as primary
+            model_name = list(models_by_language.values())[0]
+
         else:
-            context_parts.append("multilingual dataset")
+            # Single model selection (multilingual or single language)
+            # Display context
+            strategy_desc = "Long-document models" if prefers_long_models else "Standard models (512 tokens max)"
 
-        if text_length_stats.get('token_mean'):
-            context_parts.append(f"avg {text_length_stats['token_mean']:.0f} tokens")
-        else:
-            context_parts.append(f"avg {text_length_avg:.0f} characters")
+            # Determine which languages to use for recommendations
+            # If multilingual strategy was chosen, only show multilingual models
+            if model_strategy == "multilingual" and len(languages) > 1:
+                # User chose multilingual model - only show multilingual models
+                languages_for_recommendation = {'MULTI'}
+            else:
+                # Per-language or single language - show language-specific models
+                languages_for_recommendation = languages
 
-        if requires_long_model:
-            context_parts.append("⚠ LONG DOCUMENTS (>512 tokens)")
+            # Get intelligent recommendations using utility function
+            recommended_models_list = get_recommended_models(
+                languages=languages_for_recommendation,
+                avg_text_length=text_length_avg,
+                requires_long_model=prefers_long_models,
+                top_n=10
+            )
 
-        self.console.print(f"[dim]Based on: {', '.join(context_parts)}[/dim]\n")
+            if recommended_models_list:
+                # Show top 10 with detailed characteristics
+                self.console.print("[bold cyan]🎯 Top 10 Recommended Models:[/bold cyan]\n")
 
-        # Get intelligent model recommendations using the same function as benchmark mode
-        # Pass user_prefers_long_models flag to boost long-document models when needed
-        if prefers_long_models or requires_long_model:
-            self.console.print("[yellow]📏 Prioritizing long-document models (handle up to 4096 tokens):[/yellow]")
+                models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                models_table.add_column("#", style="yellow", width=3)
+                models_table.add_column("Model ID", style="cyan", width=45)
+                models_table.add_column("Languages", style="green", width=15)
+                models_table.add_column("Max Tokens", style="blue", width=11)
+                models_table.add_column("Size", style="magenta", width=10)
+                models_table.add_column("Description", style="white", width=45)
 
-        selected_models, model_lang_map = self._get_intelligent_benchmark_models(
-            languages, text_length_avg, model_strategy, recommended_model, None,
-            user_prefers_long_models=(prefers_long_models or requires_long_model)
+                for idx, model_id in enumerate(recommended_models_list[:10], 1):
+                    meta = MODEL_METADATA.get(model_id, {})
+                    langs = ', '.join(meta.get('languages', ['?']))
+                    max_len = str(meta.get('max_length', '?'))
+                    size = meta.get('size', '?')
+                    desc = meta.get('description', '')[:43]
+
+                    models_table.add_row(str(idx), model_id, langs, max_len, size, desc)
+
+                self.console.print(models_table)
+                default_model = recommended_models_list[0]
+            else:
+                if 'FR' in languages:
+                    default_model = 'camembert-base'
+                elif 'EN' in languages:
+                    default_model = 'bert-base-uncased'
+                else:
+                    default_model = 'xlm-roberta-base'
+
+            # Use preloaded model if available
+            if preloaded_params and preloaded_params.get('model_name'):
+                default_model = preloaded_params['model_name']
+
+            # Offer to display all models
+            self.console.print(f"\n[dim]💡 Selection Options:[/dim]")
+            self.console.print(f"[dim]  • Enter [cyan]1-10[/cyan] to select from Top 10 recommendations[/dim]")
+            self.console.print(f"[dim]  • Enter [cyan]'all'[/cyan] to see ALL {len(MODEL_METADATA)} available models with complete characteristics[/dim]")
+            self.console.print(f"[dim]  • Enter any [cyan]HuggingFace model ID[/cyan] directly (e.g., 'bert-base-multilingual-cased')[/dim]")
+
+            model_input = Prompt.ask("\n[bold yellow]Model to train[/bold yellow]", default=default_model)
+
+            # Check if user wants to see all models
+            if model_input.lower() == 'all':
+                # Show ALL models with complete characteristics
+                self.console.print(f"\n[bold cyan]📚 ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
+
+                all_models_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+                all_models_table.add_column("#", style="yellow", width=4)
+                all_models_table.add_column("Model ID", style="cyan", width=40)
+                all_models_table.add_column("Languages", style="green", width=15)
+                all_models_table.add_column("Max Tokens", style="blue", width=11)
+                all_models_table.add_column("Size", style="magenta", width=10)
+                all_models_table.add_column("Description", style="white", width=50)
+
+                # Sort models: recommended first, then by relevance
+                all_model_ids = list(MODEL_METADATA.keys())
+                # Put recommended models at the top
+                sorted_model_ids = []
+                for model_id in recommended_models_list:
+                    if model_id in all_model_ids:
+                        sorted_model_ids.append(model_id)
+                # Add remaining models
+                for model_id in all_model_ids:
+                    if model_id not in sorted_model_ids:
+                        sorted_model_ids.append(model_id)
+
+                for idx, model_id in enumerate(sorted_model_ids, 1):
+                    meta = MODEL_METADATA.get(model_id, {})
+                    langs = ', '.join(meta.get('languages', ['?']))
+                    max_len = str(meta.get('max_length', '?'))
+                    size = meta.get('size', '?')
+                    desc = meta.get('description', '')[:48]
+
+                    # Highlight recommended models
+                    if model_id in recommended_models_list[:10]:
+                        all_models_table.add_row(
+                            f"[bold green]{idx}[/bold green]",
+                            f"[bold green]{model_id}[/bold green]",
+                            langs,
+                            max_len,
+                            size,
+                            desc
+                        )
+                    else:
+                        all_models_table.add_row(str(idx), model_id, langs, max_len, size, desc)
+
+                self.console.print(all_models_table)
+
+                self.console.print(f"\n[dim]💡 [bold green]Green models[/bold green] are in your Top 10 recommendations[/dim]")
+                self.console.print(f"\n[bold yellow]Select a model:[/bold yellow]")
+                self.console.print(f"[dim]  • Enter the # number from the table[/dim]")
+                self.console.print(f"[dim]  • Or enter the model ID directly[/dim]")
+
+                model_input_after_all = Prompt.ask("\nModel to train", default=default_model)
+
+                if model_input_after_all.isdigit():
+                    idx = int(model_input_after_all) - 1
+                    if 0 <= idx < len(sorted_model_ids):
+                        model_name = sorted_model_ids[idx]
+                        self.console.print(f"[green]✓ Selected: {model_name}[/green]")
+                    else:
+                        self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
+                        model_name = default_model
+                else:
+                    model_name = model_input_after_all
+            elif model_input.isdigit():
+                idx = int(model_input) - 1
+                if 0 <= idx < len(recommended_models_list):
+                    model_name = recommended_models_list[idx]
+                    self.console.print(f"[green]✓ Selected: {model_name}[/green]")
+                else:
+                    self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
+                    model_name = default_model
+            else:
+                model_name = model_input
+
+        # STEP 3: Reinforced Learning
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           🎓 STEP 3: Reinforced Learning                      [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        self.console.print("[bold]What is Reinforced Learning?[/bold]")
+        self.console.print("  • [cyan]Adaptive retraining[/cyan]: If model underperforms (F1 < threshold), additional training cycles activate")
+        self.console.print("  • [cyan]Oversampling[/cyan]: Uses WeightedRandomSampler to balance minority classes")
+        self.console.print("  • [cyan]Adaptive parameters[/cyan]: Automatically adjusts learning rate, batch size, and epochs")
+        self.console.print("  • [cyan]Class weights[/cyan]: Applies adaptive class weights to the loss function\n")
+
+        self.console.print("[bold yellow]⚠️  Activation Threshold:[/bold yellow]")
+        self.console.print("  • Triggered when: [red]F1-score < 0.70[/red] (macro-averaged across all classes)")
+        self.console.print("  • Calculation: F1 = 2 × (Precision × Recall) / (Precision + Recall)")
+        self.console.print("  • Applied to: Validation set performance after each epoch\n")
+
+        self.console.print("[bold red]Risks & Considerations:[/bold red]")
+        self.console.print("  • [yellow]Longer training time[/yellow] (can add 50-100% more time)")
+        self.console.print("  • [yellow]Potential overfitting[/yellow] if dataset is very small (<500 samples)")
+        self.console.print("  • [yellow]May not help[/yellow] if data quality or quantity is insufficient\n")
+
+        self.console.print("[yellow]Note:[/yellow] [dim]Compatible with ALL models (BERT, RoBERTa, DeBERTa, etc.)[/dim]\n")
+
+        # Use preloaded value if available
+        default_reinforced = preloaded_params.get('reinforced_learning', False) if preloaded_params else False
+
+        enable_reinforced_learning = Confirm.ask(
+            "[bold yellow]Enable reinforced learning?[/bold yellow]",
+            default=default_reinforced
         )
 
-        if selected_models:
-            self.console.print("[bold]Top 5 recommended models:[/bold]")
-            for idx, model in enumerate(selected_models[:5], 1):
-                lang_info = f" (for {model_lang_map[model].upper()} texts)" if model_lang_map.get(model) else " (multilingual)"
-                self.console.print(f"  {idx}. [cyan]{model}[/cyan]{lang_info}")
+        # STEP 4: Epochs
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           ⏱️  STEP 4: Training Epochs                           [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
-            default_model = selected_models[0]
+        self.console.print("[bold]What are Epochs?[/bold]")
+        self.console.print("  • [cyan]One epoch[/cyan] = One complete pass through your entire training dataset")
+        self.console.print("  • [cyan]More epochs[/cyan] = Model sees and learns from data more times")
+        self.console.print("  • [cyan]Typical range[/cyan]: 3-15 epochs for BERT-like models\n")
+
+        self.console.print("[bold]Guidelines:[/bold]")
+        self.console.print("  • [green]Small dataset (<1000 samples)[/green]: 10-15 epochs recommended")
+        self.console.print("  • [green]Medium dataset (1000-10000)[/green]: 5-10 epochs recommended")
+        self.console.print("  • [green]Large dataset (>10000)[/green]: 3-5 epochs recommended\n")
+
+        self.console.print("[bold green]💾 Automatic Best Model Checkpointing:[/bold green]")
+        self.console.print("  • [cyan]Don't worry about setting too many epochs![/cyan]")
+        self.console.print("  • The [bold]BEST model[/bold] is automatically saved during training")
+        self.console.print("  • System monitors [yellow]validation F1 score[/yellow] after each epoch")
+        self.console.print("  • Only the checkpoint with [bold green]highest F1[/bold green] is kept")
+        self.console.print("  • Early stopping prevents overfitting automatically\n")
+
+        self.console.print("[dim]💡 Example: You set 15 epochs, but best F1 was at epoch 8 → Model from epoch 8 is used[/dim]\n")
+
+        # Use preloaded value if available
+        default_epochs = preloaded_params.get('epochs', 10) if preloaded_params else 10
+
+        epochs = IntPrompt.ask("[bold yellow]Number of epochs[/bold yellow]", default=default_epochs)
+
+        # Prepare return dict
+        result = {
+            'model_name': model_name,
+            'reinforced_learning': enable_reinforced_learning,
+            'epochs': epochs
+        }
+
+        # Include models_by_language if training per-language
+        if train_by_language and models_by_language:
+            result['models_by_language'] = models_by_language
+            result['train_by_language'] = True
+
+        return result
+
+    def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], quick_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Quick training mode - simple and fast with sensible defaults.
+
+        Args:
+            bundle: Training data bundle
+            model_config: Model configuration dict (will be updated with runtime params)
+            quick_params: Pre-collected parameters (model_name, reinforced_learning, epochs)
+
+        Returns:
+            dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
+        """
+        self.console.print("\n[bold]Quick training[/bold] - using configured parameters.")
+
+        # Use parameters from quick_params (already collected before config summary)
+        if quick_params:
+            model_name = quick_params['model_name']
+            epochs = quick_params['epochs']
+            enable_reinforced_learning = quick_params['reinforced_learning']
+            models_by_language = quick_params.get('models_by_language', None)
+            train_by_language_flag = quick_params.get('train_by_language', False)
         else:
-            # Fallback to simple selection
-            if 'FR' in languages:
-                default_model = 'camembert-base'
-            elif 'EN' in languages:
-                default_model = 'bert-base-uncased'
-            else:
-                default_model = 'xlm-roberta-base'
+            # Fallback for legacy resume mode
+            model_name = model_config.get('quick_model_name', 'bert-base-uncased')
+            epochs = model_config.get('quick_epochs', 10)
+            enable_reinforced_learning = model_config.get('use_reinforcement', False)
+            models_by_language = None
+            train_by_language_flag = False
 
-        self.console.print(f"\n[dim]You can also enter any HuggingFace model ID[/dim]")
-        model_input = Prompt.ask("Model to train", default=default_model)
-
-        # Check if user entered a number (selecting from list)
-        if model_input.isdigit():
-            idx = int(model_input) - 1  # Convert to 0-based index
-            if 0 <= idx < len(selected_models):
-                model_name = selected_models[idx]
-                self.console.print(f"[green]✓ Selected: {model_name}[/green]")
-            else:
-                self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
-                model_name = default_model
-        else:
-            model_name = model_input
-
-        # Ask for number of epochs
-        from rich.prompt import IntPrompt
-        epochs = IntPrompt.ask("Number of epochs", default=10)
+        # Get languages from metadata (needed for training)
+        languages = set()
+        if hasattr(bundle, 'metadata') and bundle.metadata:
+            languages = bundle.metadata.get('confirmed_languages', bundle.metadata.get('languages', set()))
+        if not languages and hasattr(bundle, 'languages') and bundle.languages:
+            languages = set([lang.upper() for lang in bundle.languages])
+        if languages:
+            languages = set([str(lang).upper() for lang in languages])
 
         # Capture runtime parameters for full reproducibility
-        runtime_params = {
-            'quick_model_name': model_name,
-            'quick_epochs': epochs,
-            'actual_models_trained': [model_name]
-        }
+        if models_by_language:
+            # Per-language models selected
+            runtime_params = {
+                'quick_models_by_language': models_by_language,
+                'quick_epochs': epochs,
+                'reinforced_learning': enable_reinforced_learning,
+                'actual_models_trained': list(models_by_language.values())
+            }
+        else:
+            # Single model for all languages
+            runtime_params = {
+                'quick_model_name': model_name,
+                'quick_epochs': epochs,
+                'reinforced_learning': enable_reinforced_learning,
+                'actual_models_trained': [model_name]
+            }
 
         output_dir = self._training_studio_make_output_dir("training_studio_quick")
 
@@ -9165,15 +9797,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         training_config.model_name = model_name
         training_config.num_epochs = epochs
 
-        # Determine if we need to train by language (monolingual model + multiple languages)
-        is_multilingual = self._is_model_multilingual(model_name)
-        needs_language_training = not is_multilingual and len(languages) > 1
+        # Determine if we need to train by language
+        needs_language_training = False
 
-        if needs_language_training:
+        if models_by_language:
+            # User selected different models for each language
+            needs_language_training = True
             self.console.print(f"\n[yellow]🌍 Multi-language training enabled:[/yellow]")
-            self.console.print(f"[dim]The model '{model_name}' is language-specific, so separate models will be trained for each language:[/dim]")
-            for lang in sorted(languages):
-                self.console.print(f"  • {lang.upper()}")
+            self.console.print(f"[dim]Training with specialized models for each language:[/dim]")
+            for lang in sorted(models_by_language.keys()):
+                self.console.print(f"  • {lang.upper()}: {models_by_language[lang]}")
+        else:
+            # Single model - check if it's monolingual and we have multiple languages
+            is_multilingual = self._is_model_multilingual(model_name)
+            needs_language_training = not is_multilingual and len(languages) > 1
+
+            if needs_language_training:
+                self.console.print(f"\n[yellow]🌍 Multi-language training enabled:[/yellow]")
+                self.console.print(f"[dim]The model '{model_name}' is language-specific, so separate models will be trained for each language:[/dim]")
+                for lang in sorted(languages):
+                    self.console.print(f"  • {lang.upper()}")
 
         trainer = ModelTrainer(config=training_config)
 
@@ -9181,9 +9824,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         extra_config = {
             "model_name": model_name,
             "num_epochs": epochs,
+            "reinforced_learning": enable_reinforced_learning,  # CRITICAL: Pass reinforced learning setting
             "train_by_language": needs_language_training,
             "confirmed_languages": list(languages) if languages else None  # Pass all detected languages
         }
+
+        # Add models_by_language if user selected per-language models
+        if models_by_language:
+            extra_config["models_by_language"] = models_by_language
 
         # Add multiclass_groups if user opted for multi-class training
         if bundle.strategy == "multi-label" and multiclass_groups:
@@ -9251,15 +9899,24 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 import csv
                 temp_dir = Path(tempfile.mkdtemp(prefix="onevsall_"))
 
+                # Get filter logger for tracking
+                filter_logger = get_filter_logger()
+                location = "advanced_cli.one_vs_all_binary_dataset_creation"
+
                 for label_name in sorted(all_labels_set):
                     # Create binary CSV: text + label (0 or 1)
                     csv_path = temp_dir / f"binary_{label_name}.csv"
+
+                    # Track filtered items for this label
+                    filtered_empty_texts = []
+                    filtered_invalid_texts = []
+                    written_count = 0
 
                     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
                         writer = csv.DictWriter(csvfile, fieldnames=['text', 'label', 'language'])
                         writer.writeheader()
 
-                        for record in records:
+                        for idx, record in enumerate(records):
                             # Binary label: 1 if this label is present/True, 0 otherwise
                             labels_data = record.get('labels', {})
 
@@ -9279,12 +9936,24 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             else:
                                 label_value = 0
 
-                            # CRITICAL: Ensure text is a valid non-empty string
+                            # CRITICAL: Validate text is a valid non-empty string
                             text_raw = record.get('text', '')
                             if not isinstance(text_raw, str):
+                                # Log invalid type
+                                filtered_invalid_texts.append({
+                                    'index': idx,
+                                    'type': type(text_raw).__name__,
+                                    'value': str(text_raw)[:100] if text_raw else 'None'
+                                })
                                 text_raw = str(text_raw) if text_raw else ''
+
                             # Skip empty texts
                             if not text_raw.strip():
+                                filtered_empty_texts.append({
+                                    'index': idx,
+                                    'id': record.get('id', 'unknown'),
+                                    'text_length': len(text_raw)
+                                })
                                 continue
 
                             # Ensure language is a string
@@ -9298,9 +9967,32 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                 'language': lang_raw
                             }
                             writer.writerow(row)
+                            written_count += 1
+
+                    # Log filtered items
+                    if filtered_empty_texts:
+                        filter_logger.log_filtered_batch(
+                            items=[f"Record {f['index']} (id: {f['id']})" for f in filtered_empty_texts],
+                            reason="empty_text",
+                            location=f"{location}.{label_name}",
+                            indices=[f['index'] for f in filtered_empty_texts]
+                        )
+
+                    if filtered_invalid_texts:
+                        filter_logger.log_filtered_batch(
+                            items=[f"Record {f['index']}: {f['type']}" for f in filtered_invalid_texts],
+                            reason="invalid_text_type",
+                            location=f"{location}.{label_name}",
+                            indices=[f['index'] for f in filtered_invalid_texts]
+                        )
 
                     category_files[label_name] = csv_path
-                    self.console.print(f"[dim]  Created binary dataset for: {label_name}[/dim]")
+                    self.console.print(f"[dim]  Created binary dataset for: {label_name} ({written_count} samples)[/dim]")
+
+                    # Warn if too many filtered
+                    total_filtered = len(filtered_empty_texts) + len(filtered_invalid_texts)
+                    if total_filtered > 0:
+                        self.console.print(f"[yellow]    ⚠️  Filtered {total_filtered} invalid/empty texts[/yellow]")
 
                 self.console.print(f"[green]✓ Created {len(category_files)} binary datasets[/green]\n")
 
@@ -9321,11 +10013,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'label_column': 'label',
                         'model_name': model_name,
                         'num_epochs': epochs,
+                        'reinforced_learning': enable_reinforced_learning,  # CRITICAL: Pass reinforced learning setting
                         'output_dir': str(Path(output_dir) / f'model_{category_name}'),
                         'training_strategy': 'single-label',  # Binary classification
                         'category_name': category_name,  # For display in metrics
-                        'confirmed_languages': list(languages) if languages else None
+                        'confirmed_languages': list(languages) if languages else None,
+                        'train_by_language': needs_language_training
                     }
+
+                    # Add models_by_language if user selected per-language models
+                    if models_by_language:
+                        category_config["models_by_language"] = models_by_language
 
                     try:
                         category_result = trainer.train(category_config)
@@ -10445,15 +11143,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Create summary table with dynamic columns based on max_classes
             results_table = Table(show_header=True, header_style="bold magenta", border_style="cyan")
-            results_table.add_column("Label", style="cyan")
-            results_table.add_column("Model", style="white")
-            results_table.add_column("F1 Macro", justify="right", style="green")
+            results_table.add_column("Label", style="cyan", width=25)
+            results_table.add_column("Model", style="white", width=30)
+            results_table.add_column("F1 Macro", justify="right", style="green", width=10)
 
-            # Add columns for each class
+            # Add columns for each class with explicit widths for readability
             for i in range(max_classes):
-                results_table.add_column(f"F1 C{i}", justify="right", style="yellow")
-                results_table.add_column(f"P{i}", justify="right", style="dim")
-                results_table.add_column(f"R{i}", justify="right", style="dim")
+                results_table.add_column(f"F1 C{i}", justify="right", style="yellow", width=10)
+                results_table.add_column(f"P{i}", justify="right", style="dim", width=8)
+                results_table.add_column(f"R{i}", justify="right", style="dim", width=8)
 
             # Sort by label and F1 macro
             all_results.sort(key=lambda x: (x['label'], -x['f1_macro']))
@@ -10966,10 +11664,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if HAS_RICH and self.console:
             table = Table(title="Distributed training results", border_style="green")
-            table.add_column("Model", style="cyan")
-            table.add_column("Label", style="white")
-            table.add_column("Language", style="white")
-            table.add_column("Macro F1", justify="right")
+            table.add_column("Model", style="cyan", width=30)
+            table.add_column("Label", style="white", width=25)
+            table.add_column("Language", style="white", width=12)
+            table.add_column("Macro F1", justify="right", width=12)
 
             for model_name, info in sorted(models.items()):
                 metrics = info.performance_metrics or {}
@@ -10994,8 +11692,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def _training_studio_show_training_result(self, result: Dict[str, Any], bundle: TrainingDataBundle, title: str) -> None:
         table = Table(title=title, border_style="green")
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="white")
+        table.add_column("Metric", style="cyan", width=15)
+        table.add_column("Value", style="white", width=60)
 
         table.add_row("Model", str(result.get("best_model", "n/a")))
         table.add_row("Accuracy", f"{result.get('accuracy', 0.0):.4f}")
@@ -11009,9 +11707,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             per_label = metrics.get("per_label_results")
             if per_label:
                 detail_table = Table(title="Per-label performance", border_style="blue")
-                detail_table.add_column("Label")
-                detail_table.add_column("Accuracy")
-                detail_table.add_column("F1 macro")
+                detail_table.add_column("Label", width=30)
+                detail_table.add_column("Accuracy", width=12)
+                detail_table.add_column("F1 macro", width=12)
 
                 for label, stats in per_label.items():
                     if isinstance(stats, dict) and "error" not in stats:
@@ -11032,10 +11730,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return
 
         table = Table(title="Benchmark results", border_style="green")
-        table.add_column("#", style="cyan")
-        table.add_column("Model", style="white")
-        table.add_column("Accuracy", justify="right")
-        table.add_column("F1 macro", justify="right")
+        table.add_column("#", style="cyan", width=5)
+        table.add_column("Model", style="white", width=35)
+        table.add_column("Accuracy", justify="right", width=12)
+        table.add_column("F1 macro", justify="right", width=12)
 
         for idx, entry in enumerate(results, start=1):
             table.add_row(

@@ -35,6 +35,8 @@ from typing import Dict, List, Any, Optional, Tuple
 from collections import Counter
 import pandas as pd
 
+from .data_filter_logger import get_filter_logger
+
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +220,20 @@ class AnnotationToTrainingConverter:
                     break
 
         # Filter only annotated rows
+        filter_logger = get_filter_logger()
+        df_before_filter = df.copy()
         df = df[df[annotation_column].notna()].copy()
+
+        # Log filtered rows
+        if len(df) < len(df_before_filter):
+            filter_logger.log_dataframe_filtering(
+                df_before=df_before_filter,
+                df_after=df,
+                reason="missing_annotation",
+                location="annotation_to_training.create_single_label_datasets",
+                text_column=text_column,
+                log_filtered_samples=3
+            )
 
         if len(df) == 0:
             self.logger.error("No annotated rows to process")
@@ -229,12 +244,18 @@ class AnnotationToTrainingConverter:
         # Group data by annotation key
         for key in annotation_keys or self._get_all_keys(df, annotation_column):
             samples = []
+            filtered_items = []
 
             for idx, row in df.iterrows():
                 try:
                     # Ensure annotation is a string before parsing
                     annotation_value = row[annotation_column]
                     if not isinstance(annotation_value, str):
+                        filtered_items.append({
+                            'index': idx,
+                            'reason': 'non_string_annotation',
+                            'type': type(annotation_value).__name__
+                        })
                         continue
 
                     annotation = json.loads(annotation_value)
@@ -246,6 +267,11 @@ class AnnotationToTrainingConverter:
 
                     # Skip null values
                     if value is None:
+                        filtered_items.append({
+                            'index': idx,
+                            'reason': 'null_value',
+                            'key': key
+                        })
                         continue
 
                     # Create label based on strategy
@@ -284,7 +310,21 @@ class AnnotationToTrainingConverter:
 
                 except (json.JSONDecodeError, KeyError) as e:
                     self.logger.warning(f"Row {idx}: Failed to process - {e}")
+                    filtered_items.append({
+                        'index': idx,
+                        'reason': 'parse_error',
+                        'error': str(e)
+                    })
                     continue
+
+            # Log filtered items for this key
+            if filtered_items:
+                filter_logger.log_filtered_batch(
+                    items=[f"Row {f['index']}: {f['reason']}" for f in filtered_items],
+                    reason="annotation_processing_error",
+                    location=f"annotation_to_training.create_single_label_datasets.{key}",
+                    indices=[f['index'] for f in filtered_items]
+                )
 
             if samples:
                 output_file = output_dir / f"training_{key}.jsonl"
@@ -358,13 +398,27 @@ class AnnotationToTrainingConverter:
                     break
 
         # Filter only annotated rows
+        filter_logger = get_filter_logger()
+        df_before_filter = df.copy()
         df = df[df[annotation_column].notna()].copy()
+
+        # Log filtered rows
+        if len(df) < len(df_before_filter):
+            filter_logger.log_dataframe_filtering(
+                df_before=df_before_filter,
+                df_after=df,
+                reason="missing_annotation",
+                location="annotation_to_training.create_multi_label_dataset",
+                text_column=text_column,
+                log_filtered_samples=3
+            )
 
         if len(df) == 0:
             self.logger.error("No annotated rows to process")
             return None
 
         samples = []
+        filtered_items = []
         keys_to_use = annotation_keys or self._get_all_keys(df, annotation_column)
 
         for idx, row in df.iterrows():
@@ -373,6 +427,11 @@ class AnnotationToTrainingConverter:
 
                 # Skip empty or null annotations
                 if pd.isna(annotation_val) or annotation_val == '' or annotation_val == 'null':
+                    filtered_items.append({
+                        'index': idx,
+                        'reason': 'empty_or_null_annotation',
+                        'value': str(annotation_val)
+                    })
                     continue
 
                 # Try to parse JSON with robust error handling
@@ -385,6 +444,11 @@ class AnnotationToTrainingConverter:
                         annotation = annotation_val
                     else:
                         # Skip non-string, non-dict values
+                        filtered_items.append({
+                            'index': idx,
+                            'reason': 'invalid_annotation_type',
+                            'type': type(annotation_val).__name__
+                        })
                         continue
                 except json.JSONDecodeError as je:
                     # Try to parse as Python literal (handles single quotes with escapes)
@@ -400,9 +464,19 @@ class AnnotationToTrainingConverter:
                         except:
                             # If still fails, log and skip
                             self.logger.warning(f"Row {idx}: Malformed JSON - {str(je)[:100]}")
+                            filtered_items.append({
+                                'index': idx,
+                                'reason': 'malformed_json',
+                                'error': str(je)[:100]
+                            })
                             continue
 
                 if not annotation or not isinstance(annotation, dict):
+                    filtered_items.append({
+                        'index': idx,
+                        'reason': 'empty_or_invalid_annotation',
+                        'annotation': str(annotation)
+                    })
                     continue
 
                 # Collect all labels from specified keys as a FLAT list
@@ -456,7 +530,21 @@ class AnnotationToTrainingConverter:
 
             except (KeyError, AttributeError, TypeError, ValueError) as e:
                 self.logger.warning(f"Row {idx}: Failed to process - {e}")
+                filtered_items.append({
+                    'index': idx,
+                    'reason': 'processing_error',
+                    'error': str(e)
+                })
                 continue
+
+        # Log all filtered items
+        if filtered_items:
+            filter_logger.log_filtered_batch(
+                items=[f"Row {f['index']}: {f['reason']}" for f in filtered_items],
+                reason="annotation_processing_error",
+                location="annotation_to_training.create_multi_label_dataset",
+                indices=[f['index'] for f in filtered_items]
+            )
 
         if samples:
             output_path = Path(output_path)

@@ -120,14 +120,13 @@ class TrainingDisplay:
         self.is_reinforced = is_reinforced
         self.num_labels = num_labels
 
-        # Class names for display
+        # Class names for display (no truncation - let table handle width)
         if class_names:
-            # Multi-class: use provided class names
-            self.class_names = [name[:15] if len(name) > 15 else name for name in class_names]
+            # Multi-class: use provided class names as-is
+            self.class_names = class_names
         elif label_value and num_labels == 2:
             # Binary with label value: Class 0 = NOT_category, Class 1 = category
-            value_short = label_value[:15] if len(label_value) > 15 else label_value
-            self.class_names = [f"NOT_{value_short}", value_short]
+            self.class_names = [f"NOT_{label_value}", label_value]
         else:
             # Default: Class 0, Class 1, etc.
             self.class_names = [f"Class {i}" for i in range(num_labels)]
@@ -236,15 +235,25 @@ class TrainingDisplay:
     def create_metrics_table(self) -> Table:
         """Create table with all performance metrics."""
         table = Table(title="📈 Performance Metrics", box=box.ROUNDED, title_style="bold magenta")
-        table.add_column("Metric", style="cyan")
+        table.add_column("Metric", style="cyan", width=25)
+
+        # Calculate dynamic column width based on longest class name
+        # Min 15, max 35 to keep table readable
+        max_class_name_length = max([len(name) for name in self.class_names]) if self.class_names else 15
+        class_col_width = min(max(max_class_name_length + 2, 15), 35)
 
         # Add columns for each class
         colors = ["yellow", "green", "magenta", "blue", "red", "cyan"]
         for i, class_name in enumerate(self.class_names):
             color = colors[i % len(colors)]
-            table.add_column(class_name, justify="center", style=color)
+            # Use calculated width or allow wrapping for very long names
+            if len(class_name) > 35:
+                # For very long names, allow wrapping
+                table.add_column(class_name, justify="center", style=color, no_wrap=False, width=35)
+            else:
+                table.add_column(class_name, justify="center", style=color, width=class_col_width)
 
-        table.add_column("Overall", justify="center", style="bold white")
+        table.add_column("Overall", justify="center", style="bold white", width=10)
 
         # Losses - empty cells for class columns
         loss_row = ["Train Loss"] + [""] * self.num_labels + [f"{self.train_loss:.4f}"]
@@ -327,19 +336,34 @@ class TrainingDisplay:
             return None
 
         table = Table(title="🌍 Per-Language Performance", box=box.ROUNDED, title_style="bold magenta")
-        table.add_column("Language", style="cyan")
+        table.add_column("Language", style="cyan", width=15)
+
+        # Calculate dynamic column width based on longest class name
+        max_class_name_length = max([len(name) for name in self.class_names]) if self.class_names else 15
+        class_col_width = min(max(max_class_name_length + 2, 15), 35)
 
         # Add support columns for each class
-        for i in range(self.num_labels):
-            table.add_column(f"Sup {i}", justify="center")
+        colors = ["yellow", "green", "magenta", "blue", "red", "cyan"]
+        for i, class_name in enumerate(self.class_names):
+            color = colors[i % len(colors)]
+            col_header = f"Sup {class_name}"
+            if len(col_header) > 35:
+                table.add_column(col_header, justify="center", style=color, no_wrap=False, width=35)
+            else:
+                table.add_column(col_header, justify="center", style=color, width=class_col_width)
 
-        table.add_column("Accuracy", justify="center")
+        table.add_column("Accuracy", justify="center", width=10)
 
         # Add F1 columns for each class
-        for i in range(self.num_labels):
-            table.add_column(f"F1 C{i}", justify="center")
+        for i, class_name in enumerate(self.class_names):
+            color = colors[i % len(colors)]
+            col_header = f"F1 {class_name}"
+            if len(col_header) > 35:
+                table.add_column(col_header, justify="center", style=color, no_wrap=False, width=35)
+            else:
+                table.add_column(col_header, justify="center", style=color, width=class_col_width)
 
-        table.add_column("Macro F1", justify="center", style="bold")
+        table.add_column("Macro F1", justify="center", style="bold", width=10)
 
         for lang, metrics in sorted(self.language_metrics.items()):
             row = [lang]
@@ -1027,7 +1051,9 @@ class BertBase(BertABC):
                 writer.writerow(['# Language:', language if language else 'N/A'])
                 writer.writerow(['# Number of Classes:', num_labels])
                 if class_names:
-                    writer.writerow(['# Class Names:', ', '.join(class_names)])
+                    # Convert all class names to strings (in case they're numpy.int64 or other types)
+                    class_names_str = [str(name) for name in class_names]
+                    writer.writerow(['# Class Names:', ', '.join(class_names_str)])
                 writer.writerow([])  # Empty row separator
                 # Write column headers
                 writer.writerow(csv_headers)
@@ -1100,7 +1126,9 @@ class BertBase(BertABC):
                 writer.writerow(['# Language:', language if language else 'N/A'])
                 writer.writerow(['# Number of Classes:', num_labels])
                 if class_names:
-                    writer.writerow(['# Class Names:', ', '.join(class_names)])
+                    # Convert all class names to strings (in case they're numpy.int64 or other types)
+                    class_names_str = [str(name) for name in class_names]
+                    writer.writerow(['# Class Names:', ', '.join(class_names_str)])
                 writer.writerow([])  # Empty row separator
                 # Write column headers
                 writer.writerow(best_models_headers)

@@ -79,6 +79,7 @@ from .sota_models import (
     LongT5Base, LongT5TGlobalBase, get_model_class_for_name
 )
 from .multilingual_selector import MultilingualModelSelector
+from ..utils.data_filter_logger import get_filter_logger
 
 
 __all__ = [
@@ -490,6 +491,10 @@ class ModelTrainer:
 
         # Check if we have at least 2 instances per class for stratification
         from collections import Counter
+        from rich.prompt import Confirm
+        from rich.console import Console
+        from ..utils.data_filter_logger import get_filter_logger
+
         label_counts = Counter(y)
         min_count = min(label_counts.values())
 
@@ -499,13 +504,70 @@ class ModelTrainer:
             # Map back to original labels
             insufficient_labels = [sorted_labels[cls] for cls in insufficient_classes]
 
-            error_msg = (
-                f"Dataset has class(es) with only 1 instance: {insufficient_labels}\n"
-                f"Each class must have at least 2 instances for train/test split.\n"
-                f"Please remove these labels or add more samples."
+            # Display warning to user
+            console = Console()
+            console.print(f"\n[yellow]⚠️  Found {len(insufficient_labels)} label(s) with insufficient samples for training:[/yellow]")
+            for label in insufficient_labels:
+                # Find the class index for this label
+                label_idx = sorted_labels.index(label)
+                count = label_counts[label_idx]
+                console.print(f"  • [red]'{label}'[/red]: {count} sample(s) - need at least 2 for train/test split")
+
+            console.print(f"\n[bold]What would you like to do?[/bold]")
+            console.print(f"  [cyan]1.[/cyan] [green]Remove[/green] these {len(insufficient_labels)} value(s) and continue with remaining data")
+            console.print(f"  [cyan]2.[/cyan] [red]Cancel[/red] training to add more samples manually\n")
+
+            remove_labels = Confirm.ask(
+                f"[bold yellow]Remove insufficient labels and continue?[/bold yellow]",
+                default=True
             )
-            self.logger.error(error_msg)
-            raise ValueError(error_msg)
+
+            if remove_labels:
+                # Filter out insufficient labels
+                filter_logger = get_filter_logger()
+
+                # Find indices of samples with insufficient labels
+                mask = df[label_column].isin(insufficient_labels)
+                indices_to_remove = df[mask].index.tolist()
+
+                # Log filtered samples
+                if indices_to_remove:
+                    filter_logger.log_dataframe_filtering(
+                        df_before=df,
+                        df_after=df[~mask],
+                        reason="insufficient_samples_per_class",
+                        location="model_trainer.load_data",
+                        text_column=text_column,
+                        log_filtered_samples=min(5, len(indices_to_remove))
+                    )
+
+                    console.print(f"\n[green]✓ Removing {len(indices_to_remove)} sample(s) with insufficient labels:[/green]")
+                    for label in insufficient_labels:
+                        console.print(f"  • [dim]'{label}'[/dim]")
+
+                # Remove from dataframe
+                df = df[~mask].reset_index(drop=True)
+
+                # Update arrays
+                X = df[text_column].values
+                y = df[label_column].values
+                sorted_labels = sorted(np.unique(y))
+
+                # Update lang_col if present
+                if lang_col_name:
+                    lang_col = df[lang_col_name].values
+
+                # Recompute label_counts
+                label_counts = Counter(y)
+
+                console.print(f"[green]✓ Continuing with {len(df)} samples and {len(sorted_labels)} unique labels[/green]\n")
+            else:
+                error_msg = (
+                    f"Training cancelled by user.\n"
+                    f"Please add more samples for: {', '.join(insufficient_labels)}"
+                )
+                self.logger.error(error_msg)
+                raise ValueError(error_msg)
 
         # Check if we have enough samples for stratification
         n_samples = len(y)
@@ -600,13 +662,19 @@ class ModelTrainer:
             # This is a language-specific model - filter data
             self.logger.info(f"🌍 Model '{model_name}' targets {target_languages}. Filtering data...")
 
-            # Check if language column exists
+            # Check if language column exists (can be 'language' or 'lang')
+            lang_col = None
             if 'language' in train_df.columns:
+                lang_col = 'language'
+            elif 'lang' in train_df.columns:
+                lang_col = 'lang'
+
+            if lang_col:
                 # Filter all splits
                 train_df_original_size = len(train_df)
-                train_df = filter_data_by_language(train_df, target_languages, 'language')
-                val_df = filter_data_by_language(val_df, target_languages, 'language')
-                test_df = filter_data_by_language(test_df, target_languages, 'language')
+                train_df = filter_data_by_language(train_df, target_languages, lang_col)
+                val_df = filter_data_by_language(val_df, target_languages, lang_col)
+                test_df = filter_data_by_language(test_df, target_languages, lang_col)
 
                 self.logger.info(f"✓ Filtered: {train_df_original_size} → {len(train_df)} train samples")
 
@@ -615,7 +683,7 @@ class ModelTrainer:
                     self.logger.warning(f"⚠️  Very few training samples ({len(train_df)}) for {model_name} "
                                        f"targeting {target_languages}. Training may be unstable.")
             else:
-                self.logger.warning(f"⚠️  No 'language' column found. Cannot filter for {model_name}. "
+                self.logger.warning(f"⚠️  No 'language' or 'lang' column found. Cannot filter for {model_name}. "
                                    f"Training on ALL data (not recommended for monolingual models).")
         else:
             # Multilingual model - use all data
@@ -623,21 +691,48 @@ class ModelTrainer:
 
         # Prepare data - use the correct label column
         # CRITICAL: Filter out empty/invalid texts BEFORE processing
-        # Clean dataframes to remove rows with empty/NaN texts
-        initial_train_size = len(train_df)
+        # Get filter logger for tracking
+        filter_logger = get_filter_logger()
+        location = f"model_trainer.train_single_model({model_name})"
+
+        # Clean training dataframe
+        train_df_before = train_df.copy()
         train_df = train_df[train_df['text'].notna() & (train_df['text'].astype(str).str.strip() != '')]
-        if len(train_df) < initial_train_size:
-            self.logger.warning(f"Filtered out {initial_train_size - len(train_df)} empty texts from training set")
+        if len(train_df) < len(train_df_before):
+            filter_logger.log_dataframe_filtering(
+                df_before=train_df_before,
+                df_after=train_df,
+                reason="empty_or_nan_text",
+                location=location + ".train_set",
+                text_column='text',
+                log_filtered_samples=5
+            )
 
-        initial_val_size = len(val_df)
+        # Clean validation dataframe
+        val_df_before = val_df.copy()
         val_df = val_df[val_df['text'].notna() & (val_df['text'].astype(str).str.strip() != '')]
-        if len(val_df) < initial_val_size:
-            self.logger.warning(f"Filtered out {initial_val_size - len(val_df)} empty texts from validation set")
+        if len(val_df) < len(val_df_before):
+            filter_logger.log_dataframe_filtering(
+                df_before=val_df_before,
+                df_after=val_df,
+                reason="empty_or_nan_text",
+                location=location + ".validation_set",
+                text_column='text',
+                log_filtered_samples=5
+            )
 
-        initial_test_size = len(test_df)
+        # Clean test dataframe
+        test_df_before = test_df.copy()
         test_df = test_df[test_df['text'].notna() & (test_df['text'].astype(str).str.strip() != '')]
-        if len(test_df) < initial_test_size:
-            self.logger.warning(f"Filtered out {initial_test_size - len(test_df)} empty texts from test set")
+        if len(test_df) < len(test_df_before):
+            filter_logger.log_dataframe_filtering(
+                df_before=test_df_before,
+                df_after=test_df,
+                reason="empty_or_nan_text",
+                location=location + ".test_set",
+                text_column='text',
+                log_filtered_samples=5
+            )
 
         # Now extract texts as strings
         train_texts = train_df['text'].astype(str).str.strip().tolist()
@@ -727,6 +822,10 @@ class ModelTrainer:
                     label_key = parts[0]
                     label_value = parts[1]
 
+            # CRITICAL: Get class names from label encoder for display in metrics tables
+            # self.label_encoder.classes_ contains the actual label names in correct order
+            class_names_for_display = list(self.label_encoder.classes_) if hasattr(self, 'label_encoder') and self.label_encoder is not None else None
+
             # Train (using test_dataloader as validation for compatibility with bert_base)
             history = model_instance.run_training(
                 train_dataloader=train_dataloader,
@@ -739,7 +838,8 @@ class ModelTrainer:
                 label_key=label_key,      # Pass parsed label key
                 label_value=label_value,  # Pass parsed label value
                 track_languages=track_languages,  # CRITICAL: Enable language tracking
-                language_info=val_languages  # CRITICAL: Pass language info for validation set
+                language_info=val_languages,  # CRITICAL: Pass language info for validation set
+                class_names=class_names_for_display  # CRITICAL: Pass class names for table display
             )
 
             # Evaluate on test set
@@ -1115,27 +1215,157 @@ class ModelTrainer:
             all_labels = pd.concat([train_df['label'], val_df['label'], test_df['label']])
             num_labels = len(all_labels.unique())
 
-            # Use single-label training
-            results = self.train_single_model(
-                model_name=model_name,
-                train_df=train_df,
-                val_df=val_df,
-                test_df=test_df,
-                num_labels=num_labels,
-                output_dir=config.get('output_dir', 'models/best_model'),
-                label_column='label',  # load_data returns 'label' column
-                training_strategy=training_strategy,
-                category_name=config.get('category_name')  # Pass category name for display
-            )
+            # ==================== PER-LANGUAGE MODEL TRAINING ====================
+            # Check if we should train separate models per language
+            models_by_language = config.get('models_by_language')
 
-        return {
-            'best_model': model_name,
-            'best_f1_macro': results.get('f1', results.get('f1_macro', 0.0)),
-            'accuracy': results.get('accuracy', 0.0),
-            'model_path': results.get('model_path', ''),
-            'training_time': results.get('training_time', 0),
-            'metrics': results
-        }
+            if models_by_language:
+                # Train separate model for each language
+                self.logger.info(f"🌍 Training {len(models_by_language)} language-specific models")
+
+                # Check if language column exists (can be 'language' or 'lang')
+                lang_col_name = None
+                if 'language' in train_df.columns:
+                    lang_col_name = 'language'
+                    self.logger.info(f"✓ Found 'language' column for filtering")
+                elif 'lang' in train_df.columns:
+                    lang_col_name = 'lang'
+                    self.logger.info(f"✓ Found 'lang' column for filtering")
+
+                if not lang_col_name:
+                    self.logger.error("❌ Cannot train per-language models: No 'language' or 'lang' column found in data")
+                    raise ValueError("Per-language training requested but no language column found in data")
+
+                # Train a model for each language
+                language_results = {}
+                total_training_time = 0
+
+                for lang_code, lang_model in models_by_language.items():
+                    self.logger.info(f"\n🏋️  Training {lang_code} model: {lang_model}")
+
+                    # Filter data to this language only
+                    lang_code_upper = lang_code.upper()
+                    train_df_lang = train_df[train_df[lang_col_name].str.upper() == lang_code_upper].copy()
+                    val_df_lang = val_df[val_df[lang_col_name].str.upper() == lang_code_upper].copy()
+                    test_df_lang = test_df[test_df[lang_col_name].str.upper() == lang_code_upper].copy()
+
+                    self.logger.info(f"  • Filtered to {lang_code}: Train={len(train_df_lang)}, Val={len(val_df_lang)}, Test={len(test_df_lang)}")
+
+                    # Skip if insufficient data
+                    if len(train_df_lang) < 10:
+                        self.logger.warning(f"⚠️  Skipping {lang_code}: Insufficient training samples ({len(train_df_lang)})")
+                        continue
+
+                    # CRITICAL: Re-encode labels to ensure they are contiguous (0, 1, 2, ..., n-1)
+                    # After filtering by language, we may have gaps in label encoding
+                    # Example: Original labels [0, 1, 2] → After filtering EN: [0, 2] → Need to remap to [0, 1]
+                    all_labels_lang = pd.concat([train_df_lang['label'], val_df_lang['label'], test_df_lang['label']])
+                    unique_labels_lang = sorted(all_labels_lang.unique())
+
+                    # Create mapping from old labels to new contiguous labels
+                    label_mapping = {old_label: new_label for new_label, old_label in enumerate(unique_labels_lang)}
+                    self.logger.info(f"  • {lang_code} label remapping: {label_mapping}")
+
+                    # Apply remapping
+                    train_df_lang['label'] = train_df_lang['label'].map(label_mapping)
+                    val_df_lang['label'] = val_df_lang['label'].map(label_mapping)
+                    test_df_lang['label'] = test_df_lang['label'].map(label_mapping)
+
+                    num_labels_lang = len(unique_labels_lang)
+                    self.logger.info(f"  • {lang_code} has {num_labels_lang} unique label(s): {list(range(num_labels_lang))}")
+
+                    # Create language-specific output directory
+                    base_output_dir = config.get('output_dir', 'models/best_model')
+                    lang_output_dir = str(Path(base_output_dir) / f'model_{lang_code}')
+
+                    # Train model for this language
+                    try:
+                        lang_result = self.train_single_model(
+                            model_name=lang_model,
+                            train_df=train_df_lang,
+                            val_df=val_df_lang,
+                            test_df=test_df_lang,
+                            num_labels=num_labels_lang,  # Use language-specific num_labels
+                            output_dir=lang_output_dir,
+                            label_column='label',
+                            training_strategy=training_strategy,
+                            category_name=config.get('category_name')
+                        )
+
+                        language_results[lang_code] = {
+                            'model': lang_model,
+                            'accuracy': lang_result.best_accuracy,
+                            'f1_macro': lang_result.best_f1_macro,
+                            'f1_weighted': lang_result.best_f1_weighted,
+                            'model_path': lang_result.model_path,
+                            'training_time': lang_result.training_time,
+                            'samples_trained': len(train_df_lang)
+                        }
+                        total_training_time += lang_result.training_time
+
+                        self.logger.info(f"✓ {lang_code} model complete: Accuracy={lang_result.best_accuracy:.4f}, F1={lang_result.best_f1_macro:.4f}")
+
+                    except Exception as e:
+                        self.logger.error(f"❌ Failed to train {lang_code} model: {str(e)}")
+                        language_results[lang_code] = {'error': str(e)}
+
+                # Calculate aggregate metrics
+                successful_langs = [lang for lang, res in language_results.items() if 'error' not in res]
+                if successful_langs:
+                    avg_accuracy = np.mean([language_results[lang]['accuracy'] for lang in successful_langs])
+                    avg_f1 = np.mean([language_results[lang]['f1_macro'] for lang in successful_langs])
+
+                    self.logger.info(f"\n✅ Per-language training complete!")
+                    self.logger.info(f"   Models trained: {len(successful_langs)}/{len(models_by_language)}")
+                    self.logger.info(f"   Average accuracy: {avg_accuracy:.4f}")
+                    self.logger.info(f"   Average F1: {avg_f1:.4f}")
+
+                    # Return aggregated results
+                    results = {
+                        'accuracy': avg_accuracy,
+                        'f1_macro': avg_f1,
+                        'model_path': config.get('output_dir', 'models/best_model'),
+                        'training_time': total_training_time,
+                        'language_results': language_results,
+                        'models_trained': len(successful_langs)
+                    }
+                else:
+                    raise ValueError("All language-specific models failed to train")
+            else:
+                # Use single-label training with single model
+                results = self.train_single_model(
+                    model_name=model_name,
+                    train_df=train_df,
+                    val_df=val_df,
+                    test_df=test_df,
+                    num_labels=num_labels,
+                    output_dir=config.get('output_dir', 'models/best_model'),
+                    label_column='label',  # load_data returns 'label' column
+                    training_strategy=training_strategy,
+                    category_name=config.get('category_name')  # Pass category name for display
+                )
+
+        # Return results (handle both single-model and per-language cases)
+        if config.get('models_by_language'):
+            return {
+                'best_model': f"per_language_ensemble ({len(results.get('language_results', {}))} models)",
+                'best_f1_macro': results.get('f1_macro', 0.0),
+                'accuracy': results.get('accuracy', 0.0),
+                'model_path': results.get('model_path', ''),
+                'training_time': results.get('training_time', 0),
+                'metrics': results,
+                'models_by_language': config.get('models_by_language'),
+                'language_results': results.get('language_results', {})
+            }
+        else:
+            return {
+                'best_model': model_name,
+                'best_f1_macro': results.get('f1', results.get('f1_macro', 0.0)),
+                'accuracy': results.get('accuracy', 0.0),
+                'model_path': results.get('model_path', ''),
+                'training_time': results.get('training_time', 0),
+                'metrics': results
+            }
 
     async def train_async(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Async wrapper for training (for pipeline integration)"""

@@ -50,6 +50,8 @@ import pandas as pd
 from sklearn.metrics import cohen_kappa_score, accuracy_score, confusion_matrix
 from collections import Counter, defaultdict
 
+from ..utils.data_filter_logger import get_filter_logger
+
 
 @dataclass
 class ValidationConfig:
@@ -309,7 +311,20 @@ class AnnotationValidator:
         """Calculate inter-annotator agreement if multiple annotations exist"""
         if label1_column in df.columns and label2_column in df.columns:
             # Remove rows where either annotation is missing
+            filter_logger = get_filter_logger()
+            df_before_filter = df.copy()
             valid_df = df.dropna(subset=[label1_column, label2_column])
+
+            # Log filtered rows
+            if len(valid_df) < len(df_before_filter):
+                filter_logger.log_dataframe_filtering(
+                    df_before=df_before_filter,
+                    df_after=valid_df,
+                    reason="missing_labels_for_agreement",
+                    location="annotation_validator.calculate_agreement",
+                    text_column='text' if 'text' in df.columns else None,
+                    log_filtered_samples=3
+                )
 
             if len(valid_df) > 0:
                 # Calculate Cohen's Kappa

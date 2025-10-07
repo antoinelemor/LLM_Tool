@@ -325,6 +325,10 @@ class BenchmarkDatasetBuilder:
         """Create train/test splits with optional balancing."""
 
         # Check minimum samples
+        from rich.prompt import Confirm
+        from rich.console import Console
+        from ..utils.data_filter_logger import get_filter_logger
+
         label_counts = Counter(labels)
 
         # Check if we have at least 2 instances per class for stratification
@@ -332,13 +336,70 @@ class BenchmarkDatasetBuilder:
         if min_count < 2:
             # Find which classes have insufficient instances
             insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
-            error_msg = (
-                f"Dataset has class(es) with only 1 instance: {insufficient_classes}\n"
-                f"Each class must have at least 2 instances for train/test split.\n"
-                f"Please remove these labels or add more samples."
+
+            # Display warning to user
+            console = Console()
+            console.print(f"\n[yellow]⚠️  Found {len(insufficient_classes)} label(s) with insufficient samples:[/yellow]")
+            for cls in insufficient_classes:
+                count = label_counts[cls]
+                console.print(f"  • [red]Label {cls}[/red]: {count} sample(s) - need at least 2 for train/test split")
+
+            console.print(f"\n[bold]What would you like to do?[/bold]")
+            console.print(f"  [cyan]1.[/cyan] [green]Remove[/green] these {len(insufficient_classes)} label(s) and continue")
+            console.print(f"  [cyan]2.[/cyan] [red]Cancel[/red] to add more samples manually\n")
+
+            remove_labels = Confirm.ask(
+                f"[bold yellow]Remove insufficient labels and continue?[/bold yellow]",
+                default=True
             )
-            self.logger.error(error_msg)
-            raise ValueError(error_msg)
+
+            if remove_labels:
+                # Filter out samples with insufficient labels
+                filter_logger = get_filter_logger()
+
+                # Find indices to keep (NOT insufficient)
+                indices_to_keep = [i for i, label in enumerate(labels) if label not in insufficient_classes]
+                indices_to_remove = [i for i, label in enumerate(labels) if label in insufficient_classes]
+
+                # Log filtered samples
+                if indices_to_remove:
+                    # Create temporary dataframe for logging
+                    import pandas as pd
+                    temp_df_before = pd.DataFrame({
+                        'text': texts,
+                        'label': labels,
+                        'language': languages if languages else [None] * len(texts)
+                    })
+                    temp_df_after = temp_df_before.iloc[indices_to_keep]
+
+                    filter_logger.log_dataframe_filtering(
+                        df_before=temp_df_before,
+                        df_after=temp_df_after,
+                        reason="insufficient_samples_per_class",
+                        location=f"benchmark_dataset_builder._create_splits.{category if category else 'unknown'}",
+                        text_column='text',
+                        log_filtered_samples=min(5, len(indices_to_remove))
+                    )
+
+                    console.print(f"\n[green]✓ Removing {len(indices_to_remove)} sample(s) with insufficient labels[/green]")
+
+                # Filter arrays
+                texts = [texts[i] for i in indices_to_keep]
+                labels = [labels[i] for i in indices_to_keep]
+                if languages:
+                    languages = [languages[i] for i in indices_to_keep]
+
+                # Recompute label_counts
+                label_counts = Counter(labels)
+
+                console.print(f"[green]✓ Continuing with {len(texts)} samples and {len(set(labels))} unique labels[/green]\n")
+            else:
+                error_msg = (
+                    f"Benchmark cancelled by user.\n"
+                    f"Please add more samples for label(s): {insufficient_classes}"
+                )
+                self.logger.error(error_msg)
+                raise ValueError(error_msg)
 
         for label, count in label_counts.items():
             if count < self.min_samples_per_class:
