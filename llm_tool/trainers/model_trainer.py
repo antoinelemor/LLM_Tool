@@ -454,10 +454,10 @@ class ModelTrainer:
         if label_column not in df.columns:
             raise ValueError(f"Label column '{label_column}' not found in data")
 
-        # CRITICAL: Handle case where labels are in list format (from multi-label builder)
-        # If labels are lists, extract the first value (single-label should have one value per row)
-        if df[label_column].dtype == 'object' and isinstance(df[label_column].iloc[0], list):
-            self.logger.warning(f"Label column '{label_column}' contains lists. Extracting first value for single-label training.")
+        # Handle case where labels are in list format (legacy/compatibility)
+        # Multiclass files should have string labels, but handle lists for backward compatibility
+        if df[label_column].dtype == 'object' and len(df) > 0 and isinstance(df[label_column].iloc[0], list):
+            self.logger.info(f"Label column '{label_column}' contains lists. Extracting first value (multiclass expects strings).")
             df[label_column] = df[label_column].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else x)
 
         # Encode labels with custom ordering: NOT_* labels first (class 0), others later
@@ -843,8 +843,8 @@ class ModelTrainer:
             )
 
             # Evaluate on test set
-            test_predictions = model_instance.predict(test_dataloader)
-            test_probs = model_instance.predict(test_dataloader, proba=True)
+            test_predictions = model_instance.predict(test_dataloader, model_instance.model)
+            test_probs = model_instance.predict(test_dataloader, model_instance.model, proba=True)
 
             # Calculate metrics
             accuracy = accuracy_score(test_labels, test_predictions)
@@ -1540,6 +1540,8 @@ class ModelTrainer:
         )
 
         # Setup metrics output directory
+        # CRITICAL: Always use 'training_logs' as base directory for consistency across ALL training modes
+        # bert_base.py will automatically organize into: training_logs/{label_value}/{model_type}/
         metrics_dir = output_dir / 'metrics'
         metrics_dir.mkdir(exist_ok=True)
 
@@ -1554,15 +1556,16 @@ class ModelTrainer:
             n_epochs=self.config.num_epochs,
             lr=self.config.learning_rate,
             save_model_as=str(output_dir / 'model'),
-            metrics_output_dir=str(metrics_dir),
+            metrics_output_dir='training_logs',  # CRITICAL: Use standard base dir - bert_base.py creates subdirs
             track_languages=track_languages,
             language_info=val_language_info,  # CRITICAL: Pass language info for per-language metrics
-            reinforced_learning=self.config.reinforced_learning if hasattr(self.config, 'reinforced_learning') else False
+            reinforced_learning=self.config.reinforced_learning if hasattr(self.config, 'reinforced_learning') else False,
+            session_id=config.get('session_id')
         )
 
         # Evaluate on test set
-        test_predictions = model.predict(test_loader)
-        test_probs = model.predict(test_loader, proba=True)
+        test_predictions = model.predict(test_loader, model.model)
+        test_probs = model.predict(test_loader, model.model, proba=True)
 
         # Get language-specific metrics if available
         language_metrics = {}

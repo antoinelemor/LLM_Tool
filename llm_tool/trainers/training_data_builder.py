@@ -87,6 +87,7 @@ class TrainingDataRequest:
     value_column: Optional[str] = None
     id_column: Optional[str] = None
     lang_column: Optional[str] = None
+    key_strategies: Optional[Dict[str, str]] = None  # {key_name: 'multi-class' or 'one-vs-all'}
     output_dir: Optional[Path] = None
     output_format: str = "jsonl"
 
@@ -142,7 +143,152 @@ class TrainingDatasetBuilder:
         annotation_keys = request.annotation_keys or list(analysis.get("annotation_keys", {}).keys())
 
         if request.mode == "single-label":
-            # Single-label: create one consolidated file with one label per text
+            # CRITICAL: Hybrid/Custom mode support with key_strategies
+            # key_strategies = {key_name: 'multi-class' or 'one-vs-all'}
+            if request.key_strategies and len(annotation_keys) > 1:
+                LOGGER.info(f"Hybrid/Custom mode with {len(annotation_keys)} keys")
+
+                category_files: Dict[str, Path] = {}
+                multiclass_keys = []
+                onevsall_keys = []
+
+                # Separate keys by strategy
+                for key in annotation_keys:
+                    strategy = request.key_strategies.get(key, 'multi-class')
+                    if strategy == 'multi-class':
+                        multiclass_keys.append(key)
+                    else:
+                        onevsall_keys.append(key)
+
+                # Create files for multi-class keys (one file per key)
+                for key in multiclass_keys:
+                    key_output_file = dataset_dir / f"multiclass_{self._slugify(key)}_{suffix}.jsonl"
+                    key_path = self.converter.create_single_key_dataset(
+                        csv_path=str(request.input_path),
+                        output_path=str(key_output_file),
+                        text_column=request.text_column,
+                        annotation_column=request.annotation_column,
+                        annotation_key=key,
+                        label_strategy=request.label_strategy,
+                        id_column=request.id_column,
+                        lang_column=request.lang_column,
+                    )
+
+                    if key_path:
+                        category_files[key] = Path(key_path)
+                        LOGGER.info(f"Created multi-class file for key '{key}': {key_output_file}")
+
+                # Create files for one-vs-all keys (one file per value)
+                # We'll use the multi-label dataset with only those keys
+                if onevsall_keys:
+                    onevsall_multilabel_path = dataset_dir / f"onevsall_keys_{suffix}.jsonl"
+                    self.converter.create_multi_label_dataset(
+                        csv_path=str(request.input_path),
+                        output_path=str(onevsall_multilabel_path),
+                        text_column=request.text_column,
+                        annotation_column=request.annotation_column,
+                        annotation_keys=onevsall_keys,
+                        label_strategy=request.label_strategy,
+                        id_column=request.id_column,
+                        lang_column=request.lang_column,
+                    )
+                    category_files['onevsall_multilabel'] = onevsall_multilabel_path
+                    LOGGER.info(f"Created one-vs-all multilabel file for {len(onevsall_keys)} keys")
+
+                # Create a consolidated multi-label file for compatibility (optional)
+                multilabel_path = dataset_dir / f"multilabel_all_keys_{suffix}.jsonl"
+                self.converter.create_multi_label_dataset(
+                    csv_path=str(request.input_path),
+                    output_path=str(multilabel_path),
+                    text_column=request.text_column,
+                    annotation_column=request.annotation_column,
+                    annotation_keys=annotation_keys,
+                    label_strategy=request.label_strategy,
+                    id_column=request.id_column,
+                    lang_column=request.lang_column,
+                )
+
+                metadata.update({
+                    "labels_detected": annotation_keys,
+                    "num_keys": len(annotation_keys),
+                    "training_approach": "hybrid" if multiclass_keys and onevsall_keys else ("multi-class" if multiclass_keys else "one-vs-all"),
+                    "key_strategies": request.key_strategies,
+                    "multiclass_keys": multiclass_keys,
+                    "onevsall_keys": onevsall_keys,
+                    "files_per_key": {k: str(v) for k, v in category_files.items()},
+                })
+
+                # Return bundle with training_files (mixed: some per key, some multilabel)
+                return TrainingDataBundle(
+                    primary_file=multilabel_path,
+                    training_files={**category_files, "multilabel": multilabel_path},
+                    strategy="multi-label",  # Use multi-label infrastructure
+                    text_column="text",
+                    label_column="labels",
+                    metadata=metadata,
+                )
+
+            # CRITICAL FIX: Multi-class training with multiple keys (legacy: all keys same strategy)
+            # When user selects "all keys" + "multi-class" → train ONE model PER KEY
+            # Each key gets its own file with only its values
+            elif len(annotation_keys) > 1:
+                LOGGER.info(f"Multi-class mode with {len(annotation_keys)} keys - creating one file per key")
+
+                # Create ONE file per key (not per value)
+                category_files: Dict[str, Path] = {}
+
+                for key in annotation_keys:
+                    # Create single-label dataset for this key only
+                    key_output_file = dataset_dir / f"multiclass_{self._slugify(key)}_{suffix}.jsonl"
+                    key_path = self.converter.create_single_key_dataset(
+                        csv_path=str(request.input_path),
+                        output_path=str(key_output_file),
+                        text_column=request.text_column,
+                        annotation_column=request.annotation_column,
+                        annotation_key=key,  # Only this key
+                        label_strategy=request.label_strategy,
+                        id_column=request.id_column,
+                        lang_column=request.lang_column,
+                    )
+
+                    if key_path:
+                        category_files[key] = Path(key_path)
+                        LOGGER.info(f"Created file for key '{key}': {key_output_file}")
+
+                if not category_files:
+                    raise RuntimeError("Failed to create any key-specific datasets")
+
+                # Create a consolidated multi-label file for compatibility (optional)
+                multilabel_path = dataset_dir / f"multilabel_all_keys_{suffix}.jsonl"
+                self.converter.create_multi_label_dataset(
+                    csv_path=str(request.input_path),
+                    output_path=str(multilabel_path),
+                    text_column=request.text_column,
+                    annotation_column=request.annotation_column,
+                    annotation_keys=annotation_keys,
+                    label_strategy=request.label_strategy,
+                    id_column=request.id_column,
+                    lang_column=request.lang_column,
+                )
+
+                metadata.update({
+                    "labels_detected": annotation_keys,
+                    "num_keys": len(annotation_keys),
+                    "training_approach": "multi-class",
+                    "files_per_key": {k: str(v) for k, v in category_files.items()},
+                })
+
+                # Return bundle with training_files (one per key) and primary multilabel file
+                return TrainingDataBundle(
+                    primary_file=multilabel_path,
+                    training_files={**category_files, "multilabel": multilabel_path},
+                    strategy="multi-label",  # Use multi-label infrastructure with multiclass_groups
+                    text_column="text",
+                    label_column="labels",
+                    metadata=metadata,
+                )
+
+            # Single key: create one consolidated file with all values of that key
             output_file = dataset_dir / f"singlelabel_dataset_{suffix}.jsonl"
             path = self.converter.create_multi_label_dataset(
                 csv_path=str(request.input_path),
@@ -171,8 +317,8 @@ class TrainingDatasetBuilder:
                 metadata=metadata,
             )
 
-        # Multi-label mode: create ONE consolidated file with all labels
-        # This will be used with MultiLabelTrainer which trains one model per key automatically
+        # Multi-label mode (one-vs-all): create ONE consolidated file with all labels
+        # This will be used with MultiLabelTrainer which trains one model per VALUE
         output_file = dataset_dir / f"multilabel_dataset_{suffix}.jsonl"
         path = self.converter.create_multi_label_dataset(
             csv_path=str(request.input_path),

@@ -912,6 +912,69 @@ class DataDetector:
                     if lang_counts:
                         result['languages_detected'] = lang_counts
 
+            # IMPROVED: Detect JSON annotation columns by content (even if name doesn't match patterns)
+            # This catches columns like "gemma3" that contain JSON annotations
+            detected_annotation_names = {c['name'] for c in result['annotation_column_candidates']}
+            for col in df.columns:
+                # Skip if already detected as annotation column
+                if col in detected_annotation_names:
+                    continue
+
+                # Skip text columns (likely not annotations)
+                if col in [c['name'] for c in result['text_column_candidates']]:
+                    continue
+
+                # Skip ID columns
+                col_lower = col.lower()
+                is_id_column = (
+                    col_lower.endswith('_id') or
+                    col_lower.endswith('id') or
+                    col_lower.startswith('id_') or
+                    'identifier' in col_lower or
+                    col_lower in ['id']
+                )
+                if is_id_column:
+                    continue
+
+                # Check if this column contains JSON data
+                is_json_column = False
+                sample_values = df[col].dropna().head(10)  # Check more samples
+                json_count = 0
+
+                for val in sample_values:
+                    if isinstance(val, str) and (val.strip().startswith('{') or val.strip().startswith('[')):
+                        try:
+                            json.loads(val)
+                            json_count += 1
+                        except:
+                            pass
+                    elif isinstance(val, dict) or isinstance(val, list):
+                        json_count += 1
+
+                # If majority of samples are JSON, this is likely an annotation column
+                if json_count >= len(sample_values) * 0.7 and len(sample_values) > 0:  # 70% threshold
+                    is_json_column = True
+
+                    # Add as annotation candidate with high priority
+                    non_empty = df[col].notna().sum()
+                    empty = df[col].isna().sum()
+
+                    result['annotation_column_candidates'].append({
+                        'name': col,
+                        'match_type': 'json_content',  # Different match type
+                        'is_json': True,
+                        'priority': 3  # Highest priority for JSON detected by content
+                    })
+
+                    result['annotation_stats'][col] = {
+                        'non_empty': int(non_empty),
+                        'empty': int(empty),
+                        'fill_rate': float(non_empty / len(df)) if len(df) > 0 else 0,
+                        'is_json': True
+                    }
+                    if non_empty > 0:
+                        result['has_valid_annotations'] = True
+
             # If no text candidates found by name, find by heuristics
             if not result['text_column_candidates']:
                 for col in df.columns:
@@ -6434,7 +6497,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     # Single model for all languages
                     config_table.add_row("🤖 Selected Model", quick_params['model_name'])
 
-                config_table.add_row("🎓 Reinforced Learning", "Yes" if quick_params['reinforced_learning'] else "No")
+                # Reinforced learning display
+                if quick_params['reinforced_learning']:
+                    rl_details = (
+                        f"Yes\n"
+                        f"  • F1 Threshold: {quick_params.get('rl_f1_threshold', 0.70):.2f}\n"
+                        f"  • Oversample: {quick_params.get('rl_oversample_factor', 2.0):.1f}×\n"
+                        f"  • Loss Weight: {quick_params.get('rl_class_weight_factor', 2.0):.1f}×"
+                    )
+                    config_table.add_row("🎓 Reinforced Learning", rl_details)
+                else:
+                    config_table.add_row("🎓 Reinforced Learning", "No")
+
                 config_table.add_row("⏱️  Epochs", str(quick_params['epochs']))
                 config_table.add_row("📦 Batch Size", "16 (default)")
             elif mode == "quick":
@@ -6576,20 +6650,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Execute the selected training mode
         self.console.print("\n[green]✓ Starting training...[/green]\n")
 
+        # Create session ID for this training session (shared across all models)
+        from datetime import datetime
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.console.print(f"[dim]Session ID: {session_id}[/dim]\n")
+
         training_result = None
         runtime_params = {}  # Will store actual parameters used during training
         try:
             if mode == "distributed":
-                training_result = self._training_studio_run_distributed(bundle, model_config)
+                training_result = self._training_studio_run_distributed(bundle, model_config, session_id)
                 runtime_params = training_result.get('runtime_params', {}) if training_result else {}
             elif mode == "quick":
-                training_result = self._training_studio_run_quick(bundle, model_config, quick_params)
+                training_result = self._training_studio_run_quick(bundle, model_config, quick_params, session_id)
                 runtime_params = training_result.get('runtime_params', {}) if training_result else {}
             elif mode == "benchmark":
-                training_result = self._training_studio_run_benchmark(bundle, model_config)
+                training_result = self._training_studio_run_benchmark(bundle, model_config, session_id)
                 runtime_params = training_result.get('runtime_params', {}) if training_result else {}
             else:
-                training_result = self._training_studio_run_custom(bundle, model_config)
+                training_result = self._training_studio_run_custom(bundle, model_config, session_id)
                 runtime_params = training_result.get('runtime_params', {}) if training_result else {}
 
             # Update POST-TRAINING metadata with COMPLETE information
@@ -7872,17 +7951,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 annotation_column_default = "annotation"
                 has_annotation_alternatives = False
                 if analysis['annotation_column_candidates']:
-                    best_annotation = analysis['annotation_column_candidates'][0]['name']
+                    best_annotation_info = analysis['annotation_column_candidates'][0]
+                    best_annotation = best_annotation_info['name']
                     annotation_column_default = best_annotation
                     stats = analysis['annotation_stats'].get(best_annotation, {})
                     fill_rate = stats.get('fill_rate', 0)
                     is_json = stats.get('is_json', False)
+                    match_type = best_annotation_info.get('match_type', 'name_pattern')
 
                     if fill_rate > 0:
                         # Build reason text
                         reason_parts = []
                         if is_json:
-                            reason_parts.append("Contains JSON annotations")
+                            if match_type == 'json_content':
+                                reason_parts.append("Auto-detected JSON annotations")
+                            else:
+                                reason_parts.append("Contains JSON annotations")
                         else:
                             reason_parts.append("Contains labels/categories")
                         reason_parts.append(f"{fill_rate*100:.1f}% filled")
@@ -8529,24 +8613,61 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         "[bold cyan]Best for:[/bold cyan] Imbalanced data, multiple labels per text"
                     )
                 else:
-                    # Multiple keys or ALL
+                    # Multiple keys or ALL - offer hybrid and custom modes
+                    # Analyze keys to determine hybrid strategy
+                    keys_small = []  # ≤5 values
+                    keys_large = []  # >5 values
+                    for key in keys_to_train:
+                        num_values = len(all_keys_values[key])
+                        if num_values <= 5:
+                            keys_small.append((key, num_values))
+                        else:
+                            keys_large.append((key, num_values))
+
+                    hybrid_multiclass_count = len(keys_small)
+                    hybrid_onevsall_count = sum(num_vals for _, num_vals in keys_large)
+                    total_hybrid_models = hybrid_multiclass_count + hybrid_onevsall_count
+
                     approach_table.add_row(
                         "multi-class",
-                        f"🎯 Trains ONE model PER KEY\n\n"
-                        f"• {num_keys} models total (one per key)\n"
-                        f"• Each model predicts ALL values for its key\n"
-                        f"• Example: Model for 'affiliation' → predicts 'left' or 'right'\n"
-                        f"• [bold green]Total: {num_keys} models[/bold green]\n\n"
-                        "[bold cyan]Best for:[/bold cyan] Standard multi-category classification"
+                        f"🎯 Trains ONE model PER KEY (not per value)\n\n"
+                        f"• {num_keys} models total (one per annotation key)\n"
+                        f"• Each model learns ALL values of ITS key\n"
+                        f"• Example: One model for 'political_party' learns BQ, CAQ, CPC, etc.\n"
+                        f"• Example: Another model for 'sentiment' learns positive, negative, neutral\n"
+                        f"• [bold green]Total: {num_keys} models (one per key)[/bold green]\n\n"
+                        "[bold cyan]Best for:[/bold cyan] Standard classification with mutually exclusive categories per key"
                     )
                     approach_table.add_row(
                         "one-vs-all",
-                        f"⚡ Trains ONE model PER VALUE (across all keys)\n\n"
-                        f"• {total_values_count} models total (one per value)\n"
+                        f"⚡ Trains ONE model PER VALUE (not per key)\n\n"
+                        f"• {total_values_count} binary models total (one per unique value)\n"
                         f"• Each model: 'value X' vs NOT 'value X'\n"
-                        f"• Example: Separate models for 'affiliation_left', 'affiliation_right', 'themes_health', etc.\n"
-                        f"• [bold yellow]Total: {total_values_count} models[/bold yellow]\n\n"
-                        "[bold cyan]Best for:[/bold cyan] When texts can have 0 or multiple labels"
+                        f"• Example: Separate model for 'political_party_BQ' (binary: BQ or not)\n"
+                        f"• Example: Separate model for 'sentiment_positive' (binary: positive or not)\n"
+                        f"• [bold yellow]Total: {total_values_count} models (one per value)[/bold yellow]\n\n"
+                        "[bold cyan]Best for:[/bold cyan] Imbalanced data, or when texts can have multiple labels"
+                    )
+                    approach_table.add_row(
+                        "hybrid",
+                        f"🔀 SMART: Adapts strategy PER KEY based on number of values\n\n"
+                        f"• Automatic strategy selection (threshold: 5 values):\n"
+                        f"  - Keys with ≤5 values → Multi-class (1 model per key)\n"
+                        f"  - Keys with >5 values → One-vs-all (1 model per value)\n"
+                        f"• For your data:\n"
+                        f"  - {hybrid_multiclass_count} keys use multi-class ({', '.join([k for k, _ in keys_small[:3]])}{'...' if len(keys_small) > 3 else ''})\n"
+                        f"  - {len(keys_large)} keys use one-vs-all ({', '.join([k for k, _ in keys_large[:3]])}{'...' if len(keys_large) > 3 else ''})\n"
+                        f"• [bold magenta]Total: {total_hybrid_models} models[/bold magenta]\n\n"
+                        "[bold cyan]Best for:[/bold cyan] Mixed dataset with both simple and complex keys (RECOMMENDED)"
+                    )
+                    approach_table.add_row(
+                        "custom",
+                        f"⚙️  CUSTOM: You choose the strategy for EACH key individually\n\n"
+                        f"• You'll be asked for each of the {num_keys} keys\n"
+                        f"• Choose multi-class or one-vs-all per key\n"
+                        f"• Example: multi-class for 'sentiment', one-vs-all for 'themes'\n"
+                        f"• [bold blue]Total: Variable (depends on your choices)[/bold blue]\n\n"
+                        "[bold cyan]Best for:[/bold cyan] Advanced users who want fine-grained control"
                     )
 
                 self.console.print(approach_table)
@@ -8554,12 +8675,79 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 training_approach = Prompt.ask(
                     "[bold yellow]Training approach[/bold yellow]",
-                    choices=["multi-class", "one-vs-all", "back"],
-                    default="multi-class"
+                    choices=["multi-class", "one-vs-all", "hybrid", "custom", "back"],
+                    default="hybrid"
                 )
 
                 if training_approach == "back":
                     return None
+
+                # Store per-key strategy decisions
+                key_strategies = {}  # {key_name: 'multi-class' or 'one-vs-all'}
+
+                if training_approach == "hybrid":
+                    # Automatic: ≤5 values = multi-class, >5 values = one-vs-all
+                    self.console.print("\n[bold cyan]📊 Hybrid Strategy Assignment:[/bold cyan]\n")
+                    for key in keys_to_train:
+                        num_values = len(all_keys_values[key])
+                        if num_values <= 5:
+                            key_strategies[key] = 'multi-class'
+                            self.console.print(f"  • [green]{key}[/green] ({num_values} values) → [bold]multi-class[/bold] (1 model)")
+                        else:
+                            key_strategies[key] = 'one-vs-all'
+                            self.console.print(f"  • [yellow]{key}[/yellow] ({num_values} values) → [bold]one-vs-all[/bold] ({num_values} models)")
+
+                    self.console.print(f"\n[dim]Total models: {total_hybrid_models}[/dim]\n")
+
+                elif training_approach == "custom":
+                    # User chooses per key
+                    self.console.print("\n[bold cyan]⚙️  Custom Strategy Selection:[/bold cyan]")
+                    self.console.print("[dim]Choose the training strategy for each key individually.[/dim]\n")
+
+                    total_custom_models = 0
+                    for key in keys_to_train:
+                        num_values = len(all_keys_values[key])
+                        values_preview = ', '.join([f"'{v}'" for v in sorted(all_keys_values[key])[:3]])
+                        if num_values > 3:
+                            values_preview += f" ... (+{num_values-3} more)"
+
+                        self.console.print(f"[bold]{key}[/bold] ({num_values} values)")
+                        self.console.print(f"[dim]  Values: {values_preview}[/dim]")
+                        self.console.print(f"  • [green]multi-class[/green]: 1 model learns all {num_values} values")
+                        self.console.print(f"  • [yellow]one-vs-all[/yellow]: {num_values} binary models (one per value)")
+
+                        key_choice = Prompt.ask(
+                            f"  Strategy for '{key}'",
+                            choices=["multi-class", "one-vs-all", "m", "o"],
+                            default="multi-class" if num_values <= 5 else "one-vs-all"
+                        )
+
+                        # Normalize shortcuts
+                        if key_choice == "m":
+                            key_choice = "multi-class"
+                        elif key_choice == "o":
+                            key_choice = "one-vs-all"
+
+                        key_strategies[key] = key_choice
+
+                        if key_choice == "multi-class":
+                            total_custom_models += 1
+                            self.console.print(f"  ✓ Will train [green]1 model[/green] for {key}\n")
+                        else:
+                            total_custom_models += num_values
+                            self.console.print(f"  ✓ Will train [yellow]{num_values} models[/yellow] for {key}\n")
+
+                    self.console.print(f"[bold cyan]Total models to train: {total_custom_models}[/bold cyan]\n")
+
+                elif training_approach == "multi-class":
+                    # All keys use multi-class
+                    for key in keys_to_train:
+                        key_strategies[key] = 'multi-class'
+
+                elif training_approach == "one-vs-all":
+                    # All keys use one-vs-all
+                    for key in keys_to_train:
+                        key_strategies[key] = 'one-vs-all'
 
             # Step 6d: Label naming strategy
             self.console.print("\n[bold]🏷️  Label Naming Strategy:[/bold]")
@@ -8716,7 +8904,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print(f"[red]✗ Column '{override_lang}' not found in dataset![/red]")
                     self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
-            # Handle one-vs-all training approach (both single-label and multi-label modes)
+            # Handle training approach with key_strategies support
             if 'training_approach' in locals() and training_approach == "one-vs-all":
                 # Convert to multi-label format for one-vs-all training
                 request = TrainingDataRequest(
@@ -8729,6 +8917,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     mode="multi-label",  # Use multi-label to trigger one-vs-all training
                     id_column=id_column or None,
                     lang_column=lang_column or None,
+                    key_strategies={k: 'one-vs-all' for k in (annotation_keys or [])} if 'key_strategies' not in locals() else None
                 )
                 bundle = builder.build(request)
 
@@ -8737,7 +8926,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     bundle.metadata['training_approach'] = 'one-vs-all'
                     bundle.metadata['original_strategy'] = 'single-label'
             else:
-                # Standard mode
+                # Standard mode (can be multi-class, hybrid, or custom)
+                # Pass key_strategies if available (from hybrid/custom mode)
                 request = TrainingDataRequest(
                     input_path=csv_path,
                     format="llm_json",
@@ -8748,6 +8938,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     mode=mode,
                     id_column=id_column or None,
                     lang_column=lang_column or None,
+                    key_strategies=key_strategies if 'key_strategies' in locals() else None
                 )
                 bundle = builder.build(request)
 
@@ -8760,6 +8951,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 # Save training approach if user made a choice (multi-label/one-vs-all)
                 if 'training_approach' in locals() and training_approach:
                     bundle.metadata['training_approach'] = training_approach
+                # Store annotation keys (categories) for benchmark mode
+                # Use keys_to_train (which contains all keys when user selects ALL)
+                if 'keys_to_train' in locals() and keys_to_train:
+                    bundle.metadata['categories'] = keys_to_train
+                elif 'annotation_keys' in locals() and annotation_keys:
+                    bundle.metadata['categories'] = annotation_keys
+                # Store source file and annotation column for benchmark mode
+                bundle.metadata['source_file'] = str(csv_path)
+                bundle.metadata['annotation_column'] = annotation_column
                 # Text length stats for intelligent model selection later
                 # ONLY calculate if not already done (avoid duplicate analysis)
                 if 'text_length_stats' in locals() and text_length_stats:
@@ -8995,12 +9195,900 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("[dim]Supported formats: llm-json, category-csv[/dim]\n")
         return None
 
+    def _run_benchmark_mode(
+        self,
+        bundle: TrainingDataBundle,
+        languages: set,
+        train_by_language: bool,
+        text_length_avg: float,
+        prefers_long_models: bool
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Execute complete benchmark mode workflow.
+
+        Steps:
+        1. Multi-model selection (≥2 per language or ≥2 multilingual)
+        2. Class imbalance analysis
+        3. Category selection
+        4. Benchmark execution (quick training 3-5 epochs)
+        5. Results display and ranking
+        6. Final model selection
+
+        Args:
+            bundle: Training data bundle
+            languages: Set of detected languages
+            train_by_language: Whether training per-language
+            text_length_avg: Average text length
+            prefers_long_models: Whether long models preferred
+
+        Returns:
+            Dict with selected models or None to stop
+        """
+        from llm_tool.utils.model_display import get_recommended_models, MODEL_METADATA
+        from llm_tool.utils.benchmark_utils import (
+            analyze_categories_imbalance,
+            select_benchmark_categories,
+            format_imbalance_summary,
+            create_benchmark_dataset,
+            compare_model_results
+        )
+        from llm_tool.trainers.model_trainer import ModelTrainer, TrainingConfig
+        from rich.prompt import IntPrompt
+        import tempfile
+        from pathlib import Path
+        import json
+
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           🎯 BENCHMARK MODE - Model Comparison                [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        # Load original source file from bundle metadata (not the transformed JSONL)
+        source_file = bundle.metadata.get('source_file')
+        if not source_file:
+            self.console.print("[red]❌ Cannot run benchmark: source file not found in bundle metadata[/red]")
+            self.console.print("[dim]Bundle metadata keys:[/dim] " + ", ".join(bundle.metadata.keys()))
+            return None
+
+        source_path = Path(source_file)
+        if not source_path.exists():
+            self.console.print(f"[red]❌ Source file not found: {source_path}[/red]")
+            return None
+
+        # Get annotation column from metadata
+        annotation_column = bundle.metadata.get('annotation_column')
+        if not annotation_column:
+            self.console.print("[red]❌ Annotation column not found in bundle metadata[/red]")
+            return None
+
+        # Load data based on file format
+        try:
+            file_ext = source_path.suffix.lower()
+            if file_ext == '.csv':
+                original_dataframe = pd.read_csv(source_path)
+            elif file_ext in ['.xlsx', '.xls']:
+                original_dataframe = pd.read_excel(source_path)
+            elif file_ext == '.parquet':
+                original_dataframe = pd.read_parquet(source_path)
+            elif file_ext in ['.json', '.jsonl']:
+                original_dataframe = pd.read_json(source_path, lines=(file_ext == '.jsonl'))
+            else:
+                self.console.print(f"[red]❌ Unsupported file format: {file_ext}[/red]")
+                return None
+        except Exception as e:
+            self.console.print(f"[red]❌ Error loading data: {e}[/red]")
+            return None
+
+        self.logger.debug(f"Loaded source file: {source_path}")
+        self.logger.debug(f"Using annotation column: {annotation_column}")
+
+        # ======================== STEP 1: Multi-Model Selection ========================
+        self.console.print("[bold]STEP 1: Select Models to Benchmark[/bold]\n")
+
+        selected_models_benchmark = []
+        models_by_language_benchmark = {}
+
+        if train_by_language:
+            # Select multiple models per language
+            self.console.print(f"[yellow]You'll select at least 2 models for each language: {', '.join(sorted(languages))}[/yellow]\n")
+
+            for lang in sorted(languages):
+                self.console.print(f"\n[bold yellow]{'─'*60}[/bold yellow]")
+                self.console.print(f"[bold yellow]🎯 Selecting models for {lang} texts[/bold yellow]")
+                self.console.print(f"[bold yellow]{'─'*60}[/bold yellow]\n")
+
+                lang_models = []
+
+                # Get recommendations
+                lang_recommended = get_recommended_models(
+                    languages={lang},
+                    avg_text_length=text_length_avg,
+                    requires_long_model=prefers_long_models,
+                    top_n=10
+                )
+
+                while True:
+                    # Show models
+                    if lang_recommended:
+                        self.console.print(f"[bold cyan]🎯 Top 10 Recommended Models for {lang}:[/bold cyan]\n")
+
+                        models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                        models_table.add_column("#", style="yellow", width=3)
+                        models_table.add_column("Model ID", style="cyan", width=45)
+                        models_table.add_column("Languages", style="green", width=15)
+                        models_table.add_column("Size", style="magenta", width=10)
+
+                        for idx, model_id in enumerate(lang_recommended[:10], 1):
+                            meta = MODEL_METADATA.get(model_id, {})
+                            langs = ', '.join(meta.get('languages', ['?']))
+                            size = meta.get('size', '?')
+                            models_table.add_row(str(idx), model_id, langs, size)
+
+                        self.console.print(models_table)
+                        default_model = lang_recommended[0] if not lang_models else lang_recommended[0]
+                    else:
+                        default_model = 'bert-base-uncased'
+
+                    if lang_models:
+                        self.console.print(f"\n[green]✓ Already selected {len(lang_models)} model(s) for {lang}:[/green]")
+                        for m in lang_models:
+                            self.console.print(f"  • {m}")
+
+                    model_input = Prompt.ask(
+                        f"\n[bold yellow]{'Add' if lang_models else 'Select'} model #{len(lang_models)+1} for {lang}[/bold yellow]",
+                        default=default_model
+                    )
+
+                    # Parse selection
+                    if model_input.isdigit():
+                        idx = int(model_input) - 1
+                        if lang_recommended and 0 <= idx < len(lang_recommended):
+                            selected_model = lang_recommended[idx]
+                        else:
+                            selected_model = default_model
+                    else:
+                        selected_model = model_input
+
+                    lang_models.append(selected_model)
+                    self.console.print(f"[green]✓ Added: {selected_model}[/green]")
+
+                    # Ask to add more (require at least 2)
+                    if len(lang_models) >= 2:
+                        add_more = Confirm.ask(
+                            f"\n[cyan]Add another model for {lang}? (Current: {len(lang_models)})[/cyan]",
+                            default=False
+                        )
+                        if not add_more:
+                            break
+                    else:
+                        self.console.print(f"[yellow]⚠️  At least 2 models required. Please select one more.[/yellow]")
+
+                models_by_language_benchmark[lang] = lang_models
+                self.console.print(f"\n[green]✓ {len(lang_models)} models selected for {lang}[/green]")
+
+        else:
+            # Select multiple multilingual or single-language models
+            self.console.print("[yellow]Select at least 2 models to benchmark[/yellow]\n")
+
+            # Determine recommendation language
+            if len(languages) > 1:
+                languages_for_recommendation = {'MULTI'}
+            else:
+                languages_for_recommendation = languages
+
+            recommended_models_list = get_recommended_models(
+                languages=languages_for_recommendation,
+                avg_text_length=text_length_avg,
+                requires_long_model=prefers_long_models,
+                top_n=10
+            )
+
+            while True:
+                # Show models
+                if recommended_models_list:
+                    self.console.print("[bold cyan]🎯 Top 10 Recommended Models:[/bold cyan]\n")
+
+                    models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                    models_table.add_column("#", style="yellow", width=3)
+                    models_table.add_column("Model ID", style="cyan", width=45)
+                    models_table.add_column("Languages", style="green", width=15)
+                    models_table.add_column("Size", style="magenta", width=10)
+
+                    for idx, model_id in enumerate(recommended_models_list[:10], 1):
+                        meta = MODEL_METADATA.get(model_id, {})
+                        langs = ', '.join(meta.get('languages', ['?']))
+                        size = meta.get('size', '?')
+                        models_table.add_row(str(idx), model_id, langs, size)
+
+                    self.console.print(models_table)
+
+                if selected_models_benchmark:
+                    self.console.print(f"\n[green]✓ Already selected {len(selected_models_benchmark)} model(s):[/green]")
+                    for m in selected_models_benchmark:
+                        self.console.print(f"  • {m}")
+
+                default_model = recommended_models_list[0] if recommended_models_list and not selected_models_benchmark else (recommended_models_list[1] if recommended_models_list and len(recommended_models_list) > 1 else 'bert-base-uncased')
+
+                model_input = Prompt.ask(
+                    f"\n[bold yellow]{'Add' if selected_models_benchmark else 'Select'} model #{len(selected_models_benchmark)+1}[/bold yellow]",
+                    default=default_model
+                )
+
+                # Parse selection
+                if model_input.isdigit():
+                    idx = int(model_input) - 1
+                    if recommended_models_list and 0 <= idx < len(recommended_models_list):
+                        selected_model = recommended_models_list[idx]
+                    else:
+                        selected_model = default_model
+                else:
+                    selected_model = model_input
+
+                # Check for duplicates
+                if selected_model in selected_models_benchmark:
+                    self.console.print(f"[yellow]⚠️  Model '{selected_model}' is already selected. Please choose a different model.[/yellow]")
+                    continue
+
+                selected_models_benchmark.append(selected_model)
+                self.console.print(f"[green]✓ Added: {selected_model}[/green]")
+
+                # Ask to add more (require at least 2)
+                if len(selected_models_benchmark) >= 2:
+                    add_more = Confirm.ask(
+                        f"\n[cyan]Add another model? (Current: {len(selected_models_benchmark)})[/cyan]",
+                        default=False
+                    )
+                    if not add_more:
+                        break
+                else:
+                    self.console.print(f"[yellow]⚠️  At least 2 models required. Please select one more.[/yellow]")
+
+        # Deduplicate models and track changes
+        if train_by_language:
+            for lang in models_by_language_benchmark:
+                original_count = len(models_by_language_benchmark[lang])
+                # Remove duplicates while preserving order
+                models_by_language_benchmark[lang] = list(dict.fromkeys(models_by_language_benchmark[lang]))
+                deduped_count = len(models_by_language_benchmark[lang])
+                if deduped_count < original_count:
+                    self.console.print(f"\n[dim]  • {lang}: Removed {original_count - deduped_count} duplicate(s), {deduped_count} unique model(s) remaining[/dim]")
+        else:
+            original_count = len(selected_models_benchmark)
+            selected_models_benchmark = list(dict.fromkeys(selected_models_benchmark))
+            deduped_count = len(selected_models_benchmark)
+            if deduped_count < original_count:
+                self.console.print(f"\n[dim]  • Removed {original_count - deduped_count} duplicate(s), {deduped_count} unique model(s) remaining[/dim]")
+
+        # Summary
+        self.console.print("\n[bold green]✓ Model Selection Complete[/bold green]")
+        if train_by_language:
+            total_models = sum(len(models) for models in models_by_language_benchmark.values())
+            for lang, models in sorted(models_by_language_benchmark.items()):
+                self.console.print(f"  • {lang}: [cyan]{len(models)} model(s)[/cyan]")
+                for m in models:
+                    self.console.print(f"    - {m}")
+            if total_models < 2:
+                self.console.print(f"\n[red]❌ Only {total_models} unique model(s) - benchmark requires at least 2 different models[/red]")
+                return None
+        else:
+            self.console.print(f"  • [cyan]{len(selected_models_benchmark)} unique model(s)[/cyan]")
+            for m in selected_models_benchmark:
+                self.console.print(f"    - {m}")
+            if len(selected_models_benchmark) < 2:
+                self.console.print(f"\n[red]❌ Only {len(selected_models_benchmark)} unique model(s) - benchmark requires at least 2 different models[/red]")
+                return None
+
+        # ======================== STEP 2: Reinforced Learning Strategy ========================
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]      🧠 STEP 2: Reinforced Learning Strategy (Benchmark)      [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        self.console.print("[bold]What is Reinforced Learning?[/bold]")
+        self.console.print("  • [cyan]Adaptive training technique[/cyan] that activates when a model underperforms")
+        self.console.print("  • [cyan]Detects poor F1 scores[/cyan] and applies corrective techniques automatically")
+        self.console.print("  • [cyan]Specifically designed[/cyan] to address [yellow]class imbalance[/yellow] problems\n")
+
+        self.console.print("[bold]🔧 Techniques Applied:[/bold]")
+        self.console.print("  • [cyan]Minority class oversampling[/cyan]: Duplicates underrepresented samples")
+        self.console.print("  • [cyan]Adaptive parameters[/cyan]: Automatically adjusts learning rate, batch size, and epochs")
+        self.console.print("  • [cyan]Loss correction[/cyan]: Applies class weights to the cross-entropy loss function\n")
+
+        self.console.print("[bold yellow]⚠️  Default Settings (Configurable):[/bold yellow]")
+        self.console.print("  • [yellow]F1 Threshold[/yellow]: 0.70 - Triggers reinforced learning when F1 < threshold")
+        self.console.print("  • [yellow]Oversampling Factor[/yellow]: 2.0 - Minority class appears 2× more in training")
+        self.console.print("  • [yellow]Loss Weight Factor[/yellow]: 2.0 - Minority class errors weighted 2× higher\n")
+
+        self.console.print("[bold]📊 What These Parameters Do:[/bold]")
+        self.console.print("  • [green]F1 Threshold[/green]: Lower = More aggressive (activates earlier)")
+        self.console.print("    Example: 0.50 → Triggers when model performs poorly")
+        self.console.print("    Example: 0.80 → Triggers only for high-performing models")
+        self.console.print("  • [green]Oversampling Factor[/green]: How many times to duplicate minority samples")
+        self.console.print("    Example: 3.0 → Minority class appears 3× in each epoch")
+        self.console.print("  • [green]Loss Weight Factor[/green]: Penalty multiplier for minority class errors")
+        self.console.print("    Example: 3.0 → Model penalized 3× more for missing minority samples\n")
+
+        self.console.print("[bold red]Risks & Considerations:[/bold red]")
+        self.console.print("  • [yellow]Longer training time[/yellow] (can add 50-100% more time)")
+        self.console.print("  • [yellow]Potential overfitting[/yellow] if dataset is very small (<500 samples)")
+        self.console.print("  • [yellow]May not help[/yellow] if data quality or quantity is insufficient")
+        self.console.print("  • [yellow]High oversampling[/yellow] (>5.0) can cause memorization of minority class\n")
+
+        self.console.print("[yellow]Note:[/yellow] [dim]Compatible with ALL models (BERT, RoBERTa, DeBERTa, etc.)[/dim]\n")
+
+        enable_benchmark_rl = Confirm.ask(
+            "[bold yellow]Enable reinforced learning?[/bold yellow]",
+            default=False
+        )
+
+        # Default reinforced learning parameters
+        rl_f1_threshold = 0.70
+        rl_oversample_factor = 2.0
+        rl_class_weight_factor = 2.0
+
+        if enable_benchmark_rl:
+            # Ask if user wants to configure parameters
+            configure_rl = Confirm.ask(
+                "\n[bold cyan]Configure reinforced learning parameters manually?[/bold cyan]\n"
+                "[dim](Choose 'n' to use recommended defaults)[/dim]",
+                default=False
+            )
+
+            if configure_rl:
+                self.console.print("\n[bold green]⚙️  Manual Configuration[/bold green]\n")
+
+                # F1 Threshold
+                self.console.print("[bold]1️⃣  F1 Activation Threshold[/bold]")
+                self.console.print("   [dim]When F1-score drops below this value, reinforced learning activates[/dim]")
+                self.console.print("   • Recommended: [green]0.70[/green] (moderate)")
+                self.console.print("   • Conservative: [yellow]0.50[/yellow] (only very poor models)")
+                self.console.print("   • Aggressive: [yellow]0.85[/yellow] (triggers early)\n")
+
+                f1_input = Prompt.ask(
+                    "F1 threshold",
+                    default="0.70"
+                )
+                try:
+                    rl_f1_threshold = float(f1_input)
+                    if rl_f1_threshold < 0 or rl_f1_threshold > 1:
+                        self.console.print("[yellow]⚠️  F1 must be between 0 and 1. Using default 0.70[/yellow]")
+                        rl_f1_threshold = 0.70
+                except ValueError:
+                    self.console.print("[yellow]⚠️  Invalid input. Using default 0.70[/yellow]")
+                    rl_f1_threshold = 0.70
+
+                # Oversampling Factor
+                self.console.print("\n[bold]2️⃣  Minority Class Oversampling Factor[/bold]")
+                self.console.print("   [dim]How many times to duplicate minority class samples during training[/dim]")
+                self.console.print("   • Recommended: [green]2.0[/green] (doubles minority samples)")
+                self.console.print("   • Light: [yellow]1.5[/yellow] (50% increase)")
+                self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× minority samples)")
+                self.console.print("   • [red]⚠️  Values > 5.0 risk overfitting[/red]\n")
+
+                oversample_input = Prompt.ask(
+                    "Oversampling factor",
+                    default="2.0"
+                )
+                try:
+                    rl_oversample_factor = float(oversample_input)
+                    if rl_oversample_factor < 1.0:
+                        self.console.print("[yellow]⚠️  Factor must be ≥ 1.0. Using default 2.0[/yellow]")
+                        rl_oversample_factor = 2.0
+                    elif rl_oversample_factor > 5.0:
+                        self.console.print("[yellow]⚠️  Warning: High values (>5.0) may cause overfitting[/yellow]")
+                except ValueError:
+                    self.console.print("[yellow]⚠️  Invalid input. Using default 2.0[/yellow]")
+                    rl_oversample_factor = 2.0
+
+                # Class Weight Factor
+                self.console.print("\n[bold]3️⃣  Cross-Entropy Loss Weight Factor[/bold]")
+                self.console.print("   [dim]Penalty multiplier for misclassifying minority class samples[/dim]")
+                self.console.print("   • Recommended: [green]2.0[/green] (2× penalty for minority errors)")
+                self.console.print("   • Light: [yellow]1.5[/yellow] (50% higher penalty)")
+                self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× penalty)")
+                self.console.print("   • [red]⚠️  Values > 5.0 may destabilize training[/red]\n")
+
+                weight_input = Prompt.ask(
+                    "Loss weight factor",
+                    default="2.0"
+                )
+                try:
+                    rl_class_weight_factor = float(weight_input)
+                    if rl_class_weight_factor < 1.0:
+                        self.console.print("[yellow]⚠️  Factor must be ≥ 1.0. Using default 2.0[/yellow]")
+                        rl_class_weight_factor = 2.0
+                    elif rl_class_weight_factor > 5.0:
+                        self.console.print("[yellow]⚠️  Warning: High values (>5.0) may destabilize training[/yellow]")
+                except ValueError:
+                    self.console.print("[yellow]⚠️  Invalid input. Using default 2.0[/yellow]")
+                    rl_class_weight_factor = 2.0
+
+                # Summary
+                self.console.print("\n[bold green]✓ Reinforced Learning Configuration:[/bold green]")
+                self.console.print(f"  • F1 Threshold: [cyan]{rl_f1_threshold:.2f}[/cyan]")
+                self.console.print(f"  • Oversampling Factor: [cyan]{rl_oversample_factor:.1f}×[/cyan]")
+                self.console.print(f"  • Loss Weight Factor: [cyan]{rl_class_weight_factor:.1f}×[/cyan]\n")
+            else:
+                self.console.print("\n[green]✓ Using recommended defaults (F1=0.70, Oversample=2.0×, Weight=2.0×)[/green]\n")
+
+        # ======================== STEP 3: Training Epochs ========================
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           ⏱️  STEP 3: Training Epochs (Benchmark)              [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        self.console.print("[bold]What are Epochs?[/bold]")
+        self.console.print("  • [cyan]One epoch[/cyan] = One complete pass through your entire training dataset")
+        self.console.print("  • [cyan]More epochs[/cyan] = Model sees and learns from data more times")
+        self.console.print("  • [cyan]Typical range[/cyan]: 3-15 epochs for BERT-like models\n")
+
+        self.console.print("[bold]Guidelines:[/bold]")
+        self.console.print("  • [green]Small dataset (<1000 samples)[/green]: 10-15 epochs recommended")
+        self.console.print("  • [green]Medium dataset (1000-10000)[/green]: 5-10 epochs recommended")
+        self.console.print("  • [green]Large dataset (>10000)[/green]: 3-5 epochs recommended\n")
+
+        self.console.print("[bold green]💾 Automatic Best Model Checkpointing:[/bold green]")
+        self.console.print("  • [cyan]Don't worry about setting too many epochs![/cyan]")
+        self.console.print("  • The [bold]BEST model[/bold] is automatically saved during training")
+        self.console.print("  • System monitors [yellow]validation F1 score[/yellow] after each epoch")
+        self.console.print("  • Only the checkpoint with [bold green]highest F1[/bold green] is kept")
+        self.console.print("  • Early stopping prevents overfitting automatically\n")
+
+        self.console.print("[dim]💡 Example: You set 15 epochs, but best F1 was at epoch 8 → Model from epoch 8 is used[/dim]\n")
+
+        benchmark_epochs = IntPrompt.ask("[bold yellow]Number of epochs[/bold yellow]", default=10)
+
+        # Store RL params
+        benchmark_rl_params = {
+            'f1_threshold': rl_f1_threshold,
+            'oversample_factor': rl_oversample_factor,
+            'class_weight_factor': rl_class_weight_factor
+        }
+
+        # ======================== STEP 4: Category Selection ========================
+        self.console.print("\n[bold]STEP 4: Select Categories for Benchmark[/bold]\n")
+        self.console.print("[dim]Analyzing training data structure...[/dim]\n")
+
+        import json
+
+        # First, check bundle metadata for categories (for multi-class approach)
+        metadata_categories = []
+        if hasattr(bundle, 'metadata') and bundle.metadata:
+            metadata_categories = bundle.metadata.get('categories', [])
+            if metadata_categories:
+                self.console.print(f"[cyan]✓ Found {len(metadata_categories)} categories from training configuration[/cyan]")
+                for cat in metadata_categories[:10]:  # Show first 10
+                    self.console.print(f"  • {cat}")
+                if len(metadata_categories) > 10:
+                    self.console.print(f"  ... and {len(metadata_categories) - 10} more")
+                self.console.print()
+
+        # If no metadata categories, analyze the actual data
+        if not metadata_categories:
+            self.console.print("[dim]No categories in metadata, analyzing annotations...[/dim]\n")
+
+            unique_categories = set()
+            for idx, row in original_dataframe.iterrows():
+                annotation = row[annotation_column]
+
+                # Parse if string
+                if isinstance(annotation, str):
+                    try:
+                        annotation = json.loads(annotation)
+                    except:
+                        continue
+
+                if isinstance(annotation, dict):
+                    unique_categories.update(annotation.keys())
+
+            metadata_categories = list(unique_categories)
+
+            if metadata_categories:
+                self.console.print(f"[cyan]✓ Found {len(metadata_categories)} unique categor{'y' if len(metadata_categories) == 1 else 'ies'} in annotations[/cyan]\n")
+
+        num_categories_in_data = len(metadata_categories)
+
+        if num_categories_in_data == 0:
+            self.console.print("[red]❌ No categories found in training data[/red]")
+            self.console.print("[yellow]This may indicate an issue with the data conversion.[/yellow]")
+            self.console.print("[dim]Benchmark requires category information for analysis.[/dim]\n")
+            return None
+
+        selected_benchmark_categories = []
+
+        if num_categories_in_data == 1:
+            # Only one category: Use the full dataset, no category selection needed
+            self.console.print(f"[green]Single category detected: {metadata_categories[0]}[/green]")
+            self.console.print(f"[dim]Benchmarking on full dataset (no filtering needed)[/dim]\n")
+
+            # No category filtering needed
+            selected_benchmark_categories = None  # Signal to use full dataset
+
+        else:
+            # Multiple categories: Analyze and select representative ones
+            self.console.print(f"[yellow]Multiple categories detected ({num_categories_in_data} total)[/yellow]")
+            self.console.print("[dim]Performing class imbalance analysis to suggest representative categories...[/dim]\n")
+
+            # Analyze categories
+            imbalance_analysis = analyze_categories_imbalance(
+                data=original_dataframe,
+                annotation_column=annotation_column
+            )
+
+            if not imbalance_analysis:
+                self.console.print("[red]❌ No categories found in annotations[/red]")
+                return None
+
+            # Select suggested categories
+            suggested_categories = select_benchmark_categories(imbalance_analysis, num_categories=3)
+
+            # Display analysis
+            self.console.print("[bold cyan]📊 Class Imbalance Analysis[/bold cyan]\n")
+
+            categories_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+            categories_table.add_column("Category", style="yellow", width=30)
+            categories_table.add_column("Profile", style="cyan", width=15)
+            categories_table.add_column("Metrics", style="white", width=70)
+
+            for profile, profile_cats in suggested_categories.items():
+                for cat in profile_cats:
+                    if cat in imbalance_analysis:
+                        metrics = imbalance_analysis[cat]
+                        categories_table.add_row(
+                            cat,
+                            profile.capitalize(),
+                            format_imbalance_summary(metrics)
+                        )
+
+            self.console.print(categories_table)
+
+            # Collect all suggested
+            all_suggested = []
+            for cats in suggested_categories.values():
+                all_suggested.extend(cats)
+
+            # User choice
+            self.console.print("\n[bold]Select categories for benchmark:[/bold]")
+            self.console.print("  • Press [cyan]ENTER[/cyan] to use all suggested categories")
+            self.console.print("  • Or enter [cyan]category names[/cyan] (comma-separated)")
+            self.console.print("  • Or enter [cyan]'all'[/cyan] to see all available categories\n")
+
+            choice = Prompt.ask("Categories", default="suggested")
+
+            if choice in ["suggested", ""]:
+                selected_benchmark_categories = all_suggested
+            elif choice == "all":
+                # Show all categories
+                self.console.print("\n[bold cyan]All Available Categories:[/bold cyan]\n")
+
+                all_cats_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+                all_cats_table.add_column("#", style="yellow", width=3)
+                all_cats_table.add_column("Category", style="cyan", width=30)
+                all_cats_table.add_column("Classes", style="green", width=8)
+                all_cats_table.add_column("Samples", style="blue", width=8)
+                all_cats_table.add_column("Imbalance", style="white", width=15)
+
+                sorted_cats = sorted(imbalance_analysis.items(), key=lambda x: x[1]['total_samples'], reverse=True)
+
+                for idx, (cat, metrics) in enumerate(sorted_cats, 1):
+                    ratio = metrics.get('imbalance_ratio', 1.0)
+                    imb_level = "Balanced" if ratio < 2 else "Moderate" if ratio < 5 else "Imbalanced"
+
+                    all_cats_table.add_row(
+                        str(idx),
+                        cat,
+                        str(metrics.get('num_classes', 0)),
+                        str(metrics.get('total_samples', 0)),
+                        f"{imb_level} ({ratio:.1f}:1)"
+                    )
+
+                self.console.print(all_cats_table)
+
+                self.console.print("\n[yellow]Enter category names or numbers (comma-separated):[/yellow]")
+                selection = Prompt.ask("Selection")
+
+                # Parse selection
+                selected_benchmark_categories = []
+                for item in selection.split(','):
+                    item = item.strip()
+                    if item.isdigit():
+                        idx = int(item) - 1
+                        if 0 <= idx < len(sorted_cats):
+                            selected_benchmark_categories.append(sorted_cats[idx][0])
+                    else:
+                        if item in imbalance_analysis:
+                            selected_benchmark_categories.append(item)
+            else:
+                selected_benchmark_categories = [c.strip() for c in choice.split(',')]
+
+            if not selected_benchmark_categories:
+                self.console.print("[red]❌ No categories selected[/red]")
+                return None
+
+            self.console.print(f"\n[green]✓ Selected {len(selected_benchmark_categories)} categories:[/green]")
+            for cat in selected_benchmark_categories:
+                if cat in imbalance_analysis:
+                    metrics = imbalance_analysis[cat]
+                    self.console.print(f"  • {cat} ({metrics['total_samples']} samples, {metrics['num_classes']} classes)")
+
+        # ======================== STEP 5: Execute Benchmark ========================
+        self.console.print("\n[bold]STEP 5: Running Benchmark[/bold]\n")
+
+        # Collect all models to test
+        all_models_to_test = []
+        if train_by_language:
+            for models in models_by_language_benchmark.values():
+                all_models_to_test.extend(models)
+        else:
+            all_models_to_test = selected_models_benchmark
+
+        self.console.print(f"  • Models to test: [cyan]{len(all_models_to_test)}[/cyan]")
+        if selected_benchmark_categories is not None:
+            self.console.print(f"  • Categories: [cyan]{len(selected_benchmark_categories)}[/cyan]")
+        else:
+            self.console.print(f"  • Dataset: [cyan]Full training dataset[/cyan]")
+        self.console.print(f"  • Epochs per model: [cyan]{benchmark_epochs}[/cyan]")
+        if enable_benchmark_rl:
+            self.console.print(f"  • Reinforced learning: [cyan]Enabled[/cyan] (F1 < {benchmark_rl_params.get('f1_threshold', 0.70):.2f})")
+        self.console.print(f"  • Estimated time: [yellow]~{len(all_models_to_test) * benchmark_epochs // 2} minutes[/yellow]\n")
+
+        proceed = Confirm.ask("[bold yellow]Proceed with benchmark?[/bold yellow]", default=True)
+        if not proceed:
+            return None
+
+        # Prepare benchmark dataset
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # For single-label, use the bundle's primary file directly
+            # For multi-label with category filtering, create filtered dataset
+            if selected_benchmark_categories is None:
+                # Single-label: Use existing training file
+                benchmark_file = bundle.primary_file
+                self.console.print(f"[green]✓ Using full training dataset: {bundle.primary_file.name}[/green]\n")
+            else:
+                # Multi-label: Create filtered dataset
+                self.console.print("\n[dim]Creating filtered benchmark dataset...[/dim]")
+                benchmark_file = Path(tmpdir) / "benchmark_data.jsonl"
+
+                # Create filtered dataset
+                import json
+                benchmark_rows = []
+
+                for idx, row in original_dataframe.iterrows():
+                    annotation = row[annotation_column]
+
+                    # Parse if string
+                    if isinstance(annotation, str):
+                        try:
+                            annotation = json.loads(annotation)
+                        except:
+                            continue
+
+                    if not isinstance(annotation, dict):
+                        continue
+
+                    # Filter to selected categories
+                    filtered_annotation = {
+                        k: v for k, v in annotation.items()
+                        if k in selected_benchmark_categories
+                    }
+
+                    if not filtered_annotation:
+                        continue
+
+                    # Create row
+                    benchmark_row = {
+                        'text': row[bundle.text_column],
+                        'labels': list(filtered_annotation.values())[0] if len(filtered_annotation) == 1 else filtered_annotation
+                    }
+
+                    # Add language if available
+                    for lang_col in ['language', 'lang']:
+                        if lang_col in row.index:
+                            benchmark_row['lang'] = row[lang_col]
+                            break
+
+                    benchmark_rows.append(benchmark_row)
+
+                # Save as JSONL
+                with open(benchmark_file, 'w', encoding='utf-8') as f:
+                    for row in benchmark_rows:
+                        f.write(json.dumps(row, ensure_ascii=False) + '\n')
+
+                self.console.print(f"[green]✓ Benchmark dataset created: {len(benchmark_rows)} samples[/green]\n")
+
+            # Run benchmark for each model
+            benchmark_results = {}
+
+            # Run benchmark for each model
+            for idx, model_id in enumerate(all_models_to_test, 1):
+                self.console.print(f"\n[bold yellow]{'═' * 70}[/bold yellow]")
+                self.console.print(f"[bold yellow]🔬 Testing Model {idx}/{len(all_models_to_test)}: {model_id}[/bold yellow]")
+                self.console.print(f"[bold yellow]{'═' * 70}[/bold yellow]\n")
+
+                try:
+                    # Create temp output dir
+                    model_output_dir = Path(tmpdir) / f"model_{idx}"
+                    model_output_dir.mkdir(exist_ok=True)
+
+                    # Train configuration
+                    config = TrainingConfig()
+                    config.num_epochs = benchmark_epochs
+                    config.batch_size = 16
+                    config.early_stopping_patience = max(2, benchmark_epochs // 5)
+                    config.output_dir = str(model_output_dir)
+
+                    trainer = ModelTrainer(config=config)
+
+                    # Prepare training params
+                    train_params = {
+                        'input_file': str(benchmark_file),
+                        'model_name': model_id,
+                        'num_epochs': benchmark_epochs,
+                        'text_column': 'text',
+                        'label_column': 'labels',
+                        'training_strategy': bundle.strategy,
+                        'output_dir': str(model_output_dir)
+                    }
+
+                    # Add reinforced learning params if enabled
+                    if enable_benchmark_rl:
+                        train_params['reinforced_learning'] = True
+                        train_params['rl_f1_threshold'] = benchmark_rl_params.get('f1_threshold', 0.70)
+                        train_params['rl_oversample_factor'] = benchmark_rl_params.get('oversample_factor', 2.0)
+                        train_params['rl_class_weight_factor'] = benchmark_rl_params.get('class_weight_factor', 2.0)
+
+                    # Train
+                    result = trainer.train(train_params)
+
+                    benchmark_results[model_id] = result
+
+                    self.console.print(f"\n[green]✓ Training Complete[/green]")
+                    self.console.print(f"  • F1-Score: [bold green]{result['best_f1_macro']:.3f}[/bold green]")
+                    self.console.print(f"  • Accuracy: [bold green]{result['accuracy']:.3f}[/bold green]")
+                    if 'training_time' in result:
+                        self.console.print(f"  • Time: [cyan]{result['training_time']:.1f}s[/cyan]")
+
+                except Exception as e:
+                    self.console.print(f"\n[red]❌ Error during training: {str(e)}[/red]")
+                    # Add placeholder result
+                    benchmark_results[model_id] = {
+                        'best_f1_macro': 0.0,
+                        'accuracy': 0.0,
+                        'training_time': 0,
+                        'error': str(e)
+                    }
+
+        # ======================== STEP 6: Display Results ========================
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]         📊 STEP 6: BENCHMARK RESULTS                           [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        # Create comparison DataFrame
+        comparison_df = compare_model_results(benchmark_results)
+
+        # Display results
+        results_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+        results_table.add_column("Rank", style="yellow", width=6)
+        results_table.add_column("Model", style="cyan", width=45)
+        results_table.add_column("F1-Score", style="green", width=10)
+        results_table.add_column("Accuracy", style="green", width=10)
+        results_table.add_column("Time (s)", style="blue", width=10)
+
+        for _, row in comparison_df.iterrows():
+            # Add emoji for top 3
+            if row['rank'] == 1:
+                rank_str = "🥇 1"
+            elif row['rank'] == 2:
+                rank_str = "🥈 2"
+            elif row['rank'] == 3:
+                rank_str = "🥉 3"
+            else:
+                rank_str = f"   {row['rank']}"
+
+            results_table.add_row(
+                rank_str,
+                row['model'],
+                f"{row['f1_macro']:.3f}",
+                f"{row['accuracy']:.3f}",
+                f"{row['training_time']:.1f}"
+            )
+
+        self.console.print(results_table)
+
+        # ======================== STEP 7: Final Choice ========================
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]         🎯 STEP 7: Final Model Selection                       [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        self.console.print("[bold]Based on benchmark results, you can:[/bold]")
+        self.console.print("  [cyan]1.[/cyan] [bold]Use top-ranked model(s)[/bold] (recommended)")
+        self.console.print("  [cyan]2.[/cyan] Manually select model(s)")
+        self.console.print("  [cyan]3.[/cyan] Stop here (benchmark only, no full training)\n")
+
+        choice = Prompt.ask(
+            "[bold yellow]What would you like to do?[/bold yellow]",
+            choices=["1", "2", "3", "top", "manual", "stop"],
+            default="1"
+        )
+
+        if choice in ["3", "stop"]:
+            self.console.print("\n[green]✓ Benchmark complete. Exiting without full training.[/green]")
+            return None
+
+        # Select final models
+        final_model_name = None
+        final_models_by_language = None
+
+        if choice in ["1", "top"]:
+            self.console.print("\n[bold green]✓ Using top-ranked model(s)[/bold green]")
+
+            if train_by_language:
+                # Select best model per language
+                final_models_by_language = {}
+                for lang in languages:
+                    lang_models = models_by_language_benchmark[lang]
+                    # Find best model for this language
+                    lang_results = {m: benchmark_results[m] for m in lang_models}
+                    best_model = max(lang_results, key=lambda m: lang_results[m].get('best_f1_macro', 0))
+                    final_models_by_language[lang] = best_model
+                    self.console.print(f"  • {lang}: [cyan]{best_model}[/cyan] (F1: {benchmark_results[best_model]['best_f1_macro']:.3f})")
+            else:
+                # Take best model overall
+                final_model_name = comparison_df.iloc[0]['model']
+                self.console.print(f"  • Selected: [cyan]{final_model_name}[/cyan] (F1: {comparison_df.iloc[0]['f1_macro']:.3f})")
+
+        elif choice in ["2", "manual"]:
+            self.console.print("\n[bold]Manual Selection:[/bold]")
+
+            if train_by_language:
+                final_models_by_language = {}
+                for lang in sorted(languages):
+                    lang_models = models_by_language_benchmark[lang]
+
+                    self.console.print(f"\n[yellow]Models for {lang}:[/yellow]")
+                    for idx, model in enumerate(lang_models, 1):
+                        result = benchmark_results[model]
+                        self.console.print(f"  {idx}. {model} (F1: {result.get('best_f1_macro', 0):.3f})")
+
+                    choice_idx = IntPrompt.ask(f"Select model for {lang}", default=1)
+                    idx_adj = choice_idx - 1
+                    if 0 <= idx_adj < len(lang_models):
+                        final_models_by_language[lang] = lang_models[idx_adj]
+                    else:
+                        final_models_by_language[lang] = lang_models[0]
+
+                    self.console.print(f"  [green]✓ {lang}: {final_models_by_language[lang]}[/green]")
+            else:
+                self.console.print("\n[yellow]Available models:[/yellow]")
+                for idx, model in enumerate(selected_models_benchmark, 1):
+                    result = benchmark_results[model]
+                    self.console.print(f"  {idx}. {model} (F1: {result.get('best_f1_macro', 0):.3f})")
+
+                choice_idx = IntPrompt.ask("Select model", default=1)
+                idx_adj = choice_idx - 1
+                if 0 <= idx_adj < len(selected_models_benchmark):
+                    final_model_name = selected_models_benchmark[idx_adj]
+                else:
+                    final_model_name = selected_models_benchmark[0]
+
+                self.console.print(f"  [green]✓ Selected: {final_model_name}[/green]")
+
+        # Return results
+        result = {}
+        if final_model_name:
+            result['model_name'] = final_model_name
+        if final_models_by_language:
+            result['models_by_language'] = final_models_by_language
+            result['train_by_language'] = True
+
+        return result
+
     def _training_studio_render_bundle_summary(self, bundle: TrainingDataBundle) -> None:
         table = Table(title="Dataset Summary", border_style="green")
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="white")
 
-        table.add_row("Strategy", bundle.strategy)
+        # Use training_approach from metadata if available, otherwise fallback to bundle.strategy
+        training_approach = bundle.metadata.get('training_approach') if hasattr(bundle, 'metadata') else None
+        strategy_display = training_approach if training_approach else bundle.strategy
+        table.add_row("Strategy", strategy_display)
         table.add_row("Primary file", str(bundle.primary_file) if bundle.primary_file else "—")
         table.add_row("Text column", bundle.text_column)
         table.add_row("Label column", bundle.label_column)
@@ -9299,26 +10387,82 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("[bold cyan]           🤖 STEP 2B: Model Selection                         [/bold cyan]")
         self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
-        # Get model strategy
-        if train_by_language:
-            model_strategy = "per-language"
-        elif len(languages) > 1:
-            model_strategy = "multilingual"
-        elif 'FR' in languages:
-            model_strategy = "fr"
-        elif 'EN' in languages:
-            model_strategy = "en"
-        else:
-            model_strategy = "multilingual"
-
         # Import model utilities
         from llm_tool.utils.model_display import get_recommended_models, MODEL_METADATA
 
-        # Initialize models_by_language dict
-        models_by_language = {}
+        # ASK ABOUT BENCHMARK MODE
+        self.console.print("[bold]🎯 Benchmark Mode[/bold]")
+        self.console.print("  • [cyan]Compare multiple models[/cyan] before full training")
+        self.console.print("  • [cyan]Test on selected categories[/cyan] with class imbalance analysis")
+        self.console.print("  • [cyan]See which models perform best[/cyan] on your specific data")
+        self.console.print("  • [cyan]Make informed model selection[/cyan] based on real performance\n")
 
+        self.console.print("[yellow]Requirements:[/yellow]")
+        self.console.print("  • Must select at least [bold]2 models[/bold] per language (or 2+ multilingual models)")
+        self.console.print("  • Benchmark runs quick training (3-5 epochs) on subset of data")
+        self.console.print("  • Takes ~5-15 min depending on models selected\n")
+
+        enable_benchmark = Confirm.ask(
+            "[bold yellow]Enable benchmark mode to compare models?[/bold yellow]",
+            default=False
+        )
+
+        # ============ BENCHMARK MODE INTEGRATION ============
+        if enable_benchmark:
+            # Run benchmark mode workflow
+            benchmark_result = self._run_benchmark_mode(
+                bundle=bundle,
+                languages=languages,
+                train_by_language=train_by_language,
+                text_length_avg=text_length_avg,
+                prefers_long_models=prefers_long_models
+            )
+
+            if benchmark_result is None:
+                # User chose to stop
+                return None
+
+            # Extract selected models from benchmark result
+            model_name = benchmark_result.get('model_name')
+            models_by_language = benchmark_result.get('models_by_language', {})
+
+            # Ensure model_name is set for compatibility
+            if not model_name and models_by_language:
+                # Per-language mode: use first model as primary for compatibility
+                model_name = list(models_by_language.values())[0]
+
+            # Show summary of benchmark-selected models
+            if train_by_language and models_by_language:
+                self.console.print(f"\n[bold green]✓ Models Selected from Benchmark:[/bold green]")
+                for lang, model in sorted(models_by_language.items()):
+                    self.console.print(f"  • {lang}: [cyan]{model}[/cyan]")
+            elif model_name:
+                self.console.print(f"\n[bold green]✓ Model Selected from Benchmark:[/bold green]")
+                self.console.print(f"  • [cyan]{model_name}[/cyan]")
+
+            # Continue to rest of flow (epochs, reinforced learning, etc.)
+            # with the models selected from benchmark
+        else:
+            # Normal flow: manual model selection
+
+            # Get model strategy
+            if train_by_language:
+                model_strategy = "per-language"
+            elif len(languages) > 1:
+                model_strategy = "multilingual"
+            elif 'FR' in languages:
+                model_strategy = "fr"
+            elif 'EN' in languages:
+                model_strategy = "en"
+            else:
+                model_strategy = "multilingual"
+
+            # Initialize models_by_language dict
+            models_by_language = {}
+
+        # ============ MODEL SELECTION (normal flow when benchmark disabled) ============
         # Handle per-language model selection
-        if train_by_language:
+        if train_by_language and not enable_benchmark:
             # Select one model for each language
             for lang in sorted(languages):
                 self.console.print(f"\n[bold yellow]{'─'*60}[/bold yellow]")
@@ -9456,7 +10600,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # For compatibility with rest of code, use first model as primary
             model_name = list(models_by_language.values())[0]
 
-        else:
+        elif not enable_benchmark:
             # Single model selection (multilingual or single language)
             # Display context
             strategy_desc = "Long-document models" if prefers_long_models else "Standard models (512 tokens max)"
@@ -9603,19 +10747,29 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self.console.print("[bold]What is Reinforced Learning?[/bold]")
         self.console.print("  • [cyan]Adaptive retraining[/cyan]: If model underperforms (F1 < threshold), additional training cycles activate")
-        self.console.print("  • [cyan]Oversampling[/cyan]: Uses WeightedRandomSampler to balance minority classes")
+        self.console.print("  • [cyan]Minority class oversampling[/cyan]: Duplicates minority class samples during training")
         self.console.print("  • [cyan]Adaptive parameters[/cyan]: Automatically adjusts learning rate, batch size, and epochs")
-        self.console.print("  • [cyan]Class weights[/cyan]: Applies adaptive class weights to the loss function\n")
+        self.console.print("  • [cyan]Loss correction[/cyan]: Applies class weights to the cross-entropy loss function\n")
 
-        self.console.print("[bold yellow]⚠️  Activation Threshold:[/bold yellow]")
-        self.console.print("  • Triggered when: [red]F1-score < 0.70[/red] (macro-averaged across all classes)")
-        self.console.print("  • Calculation: F1 = 2 × (Precision × Recall) / (Precision + Recall)")
-        self.console.print("  • Applied to: Validation set performance after each epoch\n")
+        self.console.print("[bold yellow]⚠️  Default Settings (Configurable):[/bold yellow]")
+        self.console.print("  • [yellow]F1 Threshold[/yellow]: 0.70 - Triggers reinforced learning when F1 < threshold")
+        self.console.print("  • [yellow]Oversampling Factor[/yellow]: 2.0 - Minority class appears 2× more in training")
+        self.console.print("  • [yellow]Loss Weight Factor[/yellow]: 2.0 - Minority class errors weighted 2× higher\n")
+
+        self.console.print("[bold]📊 What These Parameters Do:[/bold]")
+        self.console.print("  • [green]F1 Threshold[/green]: Lower = More aggressive (activates earlier)")
+        self.console.print("    Example: 0.50 → Triggers when model performs poorly")
+        self.console.print("    Example: 0.80 → Triggers only for high-performing models")
+        self.console.print("  • [green]Oversampling Factor[/green]: How many times to duplicate minority samples")
+        self.console.print("    Example: 3.0 → Minority class appears 3× in each epoch")
+        self.console.print("  • [green]Loss Weight Factor[/green]: Penalty multiplier for minority class errors")
+        self.console.print("    Example: 3.0 → Model penalized 3× more for missing minority samples\n")
 
         self.console.print("[bold red]Risks & Considerations:[/bold red]")
         self.console.print("  • [yellow]Longer training time[/yellow] (can add 50-100% more time)")
         self.console.print("  • [yellow]Potential overfitting[/yellow] if dataset is very small (<500 samples)")
-        self.console.print("  • [yellow]May not help[/yellow] if data quality or quantity is insufficient\n")
+        self.console.print("  • [yellow]May not help[/yellow] if data quality or quantity is insufficient")
+        self.console.print("  • [yellow]High oversampling[/yellow] (>5.0) can cause memorization of minority class\n")
 
         self.console.print("[yellow]Note:[/yellow] [dim]Compatible with ALL models (BERT, RoBERTa, DeBERTa, etc.)[/dim]\n")
 
@@ -9626,6 +10780,96 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             "[bold yellow]Enable reinforced learning?[/bold yellow]",
             default=default_reinforced
         )
+
+        # Default reinforced learning parameters
+        rl_f1_threshold = 0.70
+        rl_oversample_factor = 2.0
+        rl_class_weight_factor = 2.0
+
+        if enable_reinforced_learning:
+            # Ask if user wants to configure parameters
+            configure_rl = Confirm.ask(
+                "\n[bold cyan]Configure reinforced learning parameters manually?[/bold cyan]\n"
+                "[dim](Choose 'n' to use recommended defaults)[/dim]",
+                default=False
+            )
+
+            if configure_rl:
+                self.console.print("\n[bold green]⚙️  Manual Configuration[/bold green]\n")
+
+                # F1 Threshold
+                self.console.print("[bold]1️⃣  F1 Activation Threshold[/bold]")
+                self.console.print("   [dim]When F1-score drops below this value, reinforced learning activates[/dim]")
+                self.console.print("   • Recommended: [green]0.70[/green] (moderate)")
+                self.console.print("   • Conservative: [yellow]0.50[/yellow] (only very poor models)")
+                self.console.print("   • Aggressive: [yellow]0.85[/yellow] (triggers early)\n")
+
+                f1_input = Prompt.ask(
+                    "F1 threshold",
+                    default="0.70"
+                )
+                try:
+                    rl_f1_threshold = float(f1_input)
+                    if rl_f1_threshold < 0 or rl_f1_threshold > 1:
+                        self.console.print("[yellow]⚠️  F1 must be between 0 and 1. Using default 0.70[/yellow]")
+                        rl_f1_threshold = 0.70
+                except ValueError:
+                    self.console.print("[yellow]⚠️  Invalid input. Using default 0.70[/yellow]")
+                    rl_f1_threshold = 0.70
+
+                # Oversampling Factor
+                self.console.print("\n[bold]2️⃣  Minority Class Oversampling Factor[/bold]")
+                self.console.print("   [dim]How many times to duplicate minority class samples during training[/dim]")
+                self.console.print("   • Recommended: [green]2.0[/green] (doubles minority samples)")
+                self.console.print("   • Light: [yellow]1.5[/yellow] (50% increase)")
+                self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× minority samples)")
+                self.console.print("   • [red]⚠️  Values > 5.0 risk overfitting[/red]\n")
+
+                oversample_input = Prompt.ask(
+                    "Oversampling factor",
+                    default="2.0"
+                )
+                try:
+                    rl_oversample_factor = float(oversample_input)
+                    if rl_oversample_factor < 1.0:
+                        self.console.print("[yellow]⚠️  Factor must be ≥ 1.0. Using default 2.0[/yellow]")
+                        rl_oversample_factor = 2.0
+                    elif rl_oversample_factor > 5.0:
+                        self.console.print("[yellow]⚠️  Warning: High values (>5.0) may cause overfitting[/yellow]")
+                except ValueError:
+                    self.console.print("[yellow]⚠️  Invalid input. Using default 2.0[/yellow]")
+                    rl_oversample_factor = 2.0
+
+                # Class Weight Factor
+                self.console.print("\n[bold]3️⃣  Cross-Entropy Loss Weight Factor[/bold]")
+                self.console.print("   [dim]Penalty multiplier for misclassifying minority class samples[/dim]")
+                self.console.print("   • Recommended: [green]2.0[/green] (2× penalty for minority errors)")
+                self.console.print("   • Light: [yellow]1.5[/yellow] (50% higher penalty)")
+                self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× penalty)")
+                self.console.print("   • [red]⚠️  Values > 5.0 may destabilize training[/red]\n")
+
+                weight_input = Prompt.ask(
+                    "Loss weight factor",
+                    default="2.0"
+                )
+                try:
+                    rl_class_weight_factor = float(weight_input)
+                    if rl_class_weight_factor < 1.0:
+                        self.console.print("[yellow]⚠️  Factor must be ≥ 1.0. Using default 2.0[/yellow]")
+                        rl_class_weight_factor = 2.0
+                    elif rl_class_weight_factor > 5.0:
+                        self.console.print("[yellow]⚠️  Warning: High values (>5.0) may destabilize training[/yellow]")
+                except ValueError:
+                    self.console.print("[yellow]⚠️  Invalid input. Using default 2.0[/yellow]")
+                    rl_class_weight_factor = 2.0
+
+                # Summary
+                self.console.print("\n[bold green]✓ Reinforced Learning Configuration:[/bold green]")
+                self.console.print(f"  • F1 Threshold: [cyan]{rl_f1_threshold:.2f}[/cyan]")
+                self.console.print(f"  • Oversampling Factor: [cyan]{rl_oversample_factor:.1f}×[/cyan]")
+                self.console.print(f"  • Loss Weight Factor: [cyan]{rl_class_weight_factor:.1f}×[/cyan]\n")
+            else:
+                self.console.print("\n[green]✓ Using recommended defaults (F1=0.70, Oversample=2.0×, Weight=2.0×)[/green]\n")
 
         # STEP 4: Epochs
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
@@ -9660,7 +10904,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         result = {
             'model_name': model_name,
             'reinforced_learning': enable_reinforced_learning,
-            'epochs': epochs
+            'epochs': epochs,
+            # Reinforced learning parameters
+            'rl_f1_threshold': rl_f1_threshold,
+            'rl_oversample_factor': rl_oversample_factor,
+            'rl_class_weight_factor': rl_class_weight_factor
         }
 
         # Include models_by_language if training per-language
@@ -9670,7 +10918,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         return result
 
-    def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], quick_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], quick_params: Optional[Dict[str, Any]] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Quick training mode - simple and fast with sensible defaults.
 
@@ -9678,6 +10926,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             bundle: Training data bundle
             model_config: Model configuration dict (will be updated with runtime params)
             quick_params: Pre-collected parameters (model_name, reinforced_learning, epochs)
+            session_id: Session timestamp for organizing logs by session
 
         Returns:
             dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
@@ -9759,7 +11008,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             use_multiclass_training = False
 
             if multiclass_groups:
-                if training_approach_from_metadata == 'multi-label':
+                if training_approach_from_metadata == 'multi-class':
                     # User already chose multi-class during dataset building
                     use_multiclass_training = True
                     self.console.print("\n[green]✓ Using multi-class training (from dataset configuration)[/green]\n")
@@ -9768,6 +11017,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     use_multiclass_training = False
                     multiclass_groups = None
                     self.console.print("\n[yellow]✓ Using one-vs-all training (from dataset configuration)[/yellow]\n")
+                elif training_approach_from_metadata in ['hybrid', 'custom']:
+                    # User already chose hybrid/custom - will be handled later in dedicated section
+                    use_multiclass_training = False
+                    multiclass_groups = None
+                    self.console.print(f"\n[cyan]✓ Using {training_approach_from_metadata} training (from dataset configuration)[/cyan]\n")
                 else:
                     # No previous choice - ask user
                     self.console.print("\n[yellow]ℹ️  Detected multi-class classification:[/yellow]")
@@ -10018,7 +11272,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'training_strategy': 'single-label',  # Binary classification
                         'category_name': category_name,  # For display in metrics
                         'confirmed_languages': list(languages) if languages else None,
-                        'train_by_language': needs_language_training
+                        'train_by_language': needs_language_training,
+                        'session_id': session_id
                     }
 
                     # Add models_by_language if user selected per-language models
@@ -10068,9 +11323,187 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'best_f1': None,
                     'error': 'No category files'
                 }
+        elif training_approach_from_metadata in ['hybrid', 'custom'] and hasattr(bundle, 'training_files') and bundle.training_files:
+            # Hybrid/Custom training: mix of multi-class and one-vs-all per key
+            multiclass_keys = bundle.metadata.get('multiclass_keys', [])
+            onevsall_keys = bundle.metadata.get('onevsall_keys', [])
+
+            self.console.print(f"\n[cyan]🔀 Hybrid/Custom training:[/cyan]")
+            self.console.print(f"  • {len(multiclass_keys)} keys with multi-class strategy")
+            self.console.print(f"  • {len(onevsall_keys)} keys with one-vs-all strategy\n")
+
+            results_per_key = {}
+
+            # Train multi-class keys (one model per key)
+            key_files = {k: v for k, v in bundle.training_files.items() if k in multiclass_keys}
+            for key_name, key_file_path in key_files.items():
+                self.console.print(f"\n[bold]Training multi-class model for '{key_name}'[/bold] ({key_file_path.name})")
+
+                key_config = {
+                    'input_file': str(key_file_path),
+                    'model_name': model_name,
+                    'num_epochs': epochs,
+                    'output_dir': str(output_dir / f"key_{key_name}"),
+                    'text_column': bundle.text_column,
+                    'label_column': bundle.label_column,
+                    'training_strategy': 'single-label',
+                    'category_name': key_name,
+                    'reinforced_learning': enable_reinforced_learning,
+                    'session_id': session_id
+                }
+
+                if models_by_language:
+                    key_config["models_by_language"] = models_by_language
+
+                try:
+                    key_result = trainer.train(key_config)
+                    results_per_key[key_name] = key_result
+                    self.console.print(f"[green]✓ Completed {key_name}: Accuracy={key_result.get('accuracy', 0):.4f}, F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
+                except Exception as exc:
+                    self.console.print(f"[red]✗ Failed to train {key_name}: {exc}[/red]")
+                    self.logger.exception(f"Training failed for {key_name}", exc_info=exc)
+                    results_per_key[key_name] = {'error': str(exc)}
+
+            # Train one-vs-all keys (using MultiLabelTrainer with multiclass_groups detection)
+            if onevsall_keys and 'onevsall_multilabel' in bundle.training_files:
+                onevsall_file = bundle.training_files['onevsall_multilabel']
+                self.console.print(f"\n[bold yellow]Training one-vs-all models for {len(onevsall_keys)} keys[/bold yellow]")
+
+                # Use multi-label trainer for one-vs-all
+                onevsall_config = {
+                    'input_file': str(onevsall_file),
+                    'model_name': model_name,
+                    'num_epochs': epochs,
+                    'output_dir': str(output_dir / "onevsall"),
+                    'text_column': bundle.text_column,
+                    'label_column': bundle.label_column,
+                    'multiclass_groups': None,  # Force one-vs-all
+                    'reinforced_learning': enable_reinforced_learning,
+                    'session_id': session_id
+                }
+
+                if models_by_language:
+                    onevsall_config["models_by_language"] = models_by_language
+
+                try:
+                    onevsall_result = trainer.train(onevsall_config)
+                    results_per_key['onevsall_combined'] = onevsall_result
+                    self.console.print(f"[green]✓ Completed one-vs-all models[/green]")
+                except Exception as exc:
+                    self.console.print(f"[red]✗ Failed to train one-vs-all models: {exc}[/red]")
+                    self.logger.exception(f"One-vs-all training failed", exc_info=exc)
+                    results_per_key['onevsall_combined'] = {'error': str(exc)}
+
+            # Aggregate results
+            successful_results = [r for r in results_per_key.values() if 'error' not in r]
+            if successful_results:
+                avg_accuracy = sum(r.get('accuracy', 0) for r in successful_results) / len(successful_results)
+                avg_f1 = sum(r.get('best_f1_macro', 0) for r in successful_results) / len(successful_results)
+
+                result = {
+                    'best_model': model_name,
+                    'accuracy': avg_accuracy,
+                    'best_f1_macro': avg_f1,
+                    'model_path': str(output_dir),
+                    'training_time': sum(r.get('training_time', 0) for r in successful_results),
+                    'models_trained': len(successful_results),
+                    'training_approach': training_approach_from_metadata,
+                    'per_key_results': results_per_key
+                }
+            else:
+                self.console.print("[red]All trainings failed[/red]")
+                return {
+                    'runtime_params': runtime_params,
+                    'models_trained': [],
+                    'best_model': None,
+                    'best_f1': None,
+                    'error': 'All trainings failed'
+                }
+        elif training_approach_from_metadata == 'multi-class' and hasattr(bundle, 'training_files') and bundle.training_files:
+            # Multi-class training with multiple keys: train ONE model PER KEY
+            # Extract the key files (exclude 'multilabel' key)
+            key_files = {k: v for k, v in bundle.training_files.items() if k != 'multilabel'}
+
+            if key_files:
+                self.console.print(f"\n[cyan]🎯 Multi-class training: {len(key_files)} models (one per key)[/cyan]\n")
+
+                results_per_key = {}
+
+                for key_name, key_file_path in key_files.items():
+                    self.console.print(f"\n[bold]Training model for key '{key_name}'[/bold] ({key_file_path.name})")
+
+                    # Create config for this key
+                    key_config = {
+                        'input_file': str(key_file_path),
+                        'model_name': model_name,
+                        'num_epochs': epochs,
+                        'output_dir': str(output_dir / f"key_{key_name}"),
+                        'text_column': bundle.text_column,
+                        'label_column': bundle.label_column,
+                        'training_strategy': 'single-label',  # Each key file is single-label
+                        'category_name': key_name,
+                        'reinforced_learning': enable_reinforced_learning,
+                        'session_id': session_id
+                    }
+
+                    # Add models_by_language if user selected per-language models
+                    if models_by_language:
+                        key_config["models_by_language"] = models_by_language
+
+                    try:
+                        key_result = trainer.train(key_config)
+                        results_per_key[key_name] = key_result
+                        self.console.print(f"[green]✓ Completed {key_name}: Accuracy={key_result.get('accuracy', 0):.4f}, F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
+                    except Exception as exc:
+                        self.console.print(f"[red]✗ Failed to train {key_name}: {exc}[/red]")
+                        self.logger.exception(f"Training failed for {key_name}", exc_info=exc)
+                        results_per_key[key_name] = {'error': str(exc)}
+
+                # Aggregate results
+                successful_results = [r for r in results_per_key.values() if 'error' not in r]
+                if successful_results:
+                    avg_accuracy = sum(r.get('accuracy', 0) for r in successful_results) / len(successful_results)
+                    avg_f1 = sum(r.get('best_f1_macro', 0) for r in successful_results) / len(successful_results)
+
+                    result = {
+                        'best_model': model_name,
+                        'accuracy': avg_accuracy,
+                        'best_f1_macro': avg_f1,
+                        'model_path': str(output_dir),
+                        'training_time': sum(r.get('training_time', 0) for r in successful_results),
+                        'models_trained': len(successful_results),
+                        'total_keys': len(key_files),
+                        'per_key_results': results_per_key,
+                        'training_approach': 'multi-class'
+                    }
+                else:
+                    self.console.print("[red]All key trainings failed[/red]")
+                    return {
+                        'runtime_params': runtime_params,
+                        'models_trained': [],
+                        'best_model': None,
+                        'best_f1': None,
+                        'error': 'All key trainings failed'
+                    }
+            else:
+                self.console.print("[yellow]⚠️  No key files found, falling back to standard multi-label training[/yellow]")
+                # Fall through to standard training
+                result = trainer.train({
+                    'input_file': str(bundle.primary_file),
+                    'model_name': model_name,
+                    'num_epochs': epochs,
+                    'output_dir': str(output_dir),
+                    'text_column': bundle.text_column,
+                    'label_column': bundle.label_column,
+                    'multiclass_groups': multiclass_groups,
+                    'reinforced_learning': enable_reinforced_learning,
+                    'session_id': session_id,
+                    **extra_config
+                })
         else:
             # Standard training (multi-class or multi-label)
             config = bundle.to_trainer_config(output_dir, extra_config)
+            config['session_id'] = session_id
 
             try:
                 result = trainer.train(config)
@@ -10095,13 +11528,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'best_f1': result.get('best_f1') or result.get('f1_macro')
         }
 
-    def _training_studio_run_benchmark(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
+    def _training_studio_run_benchmark(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Benchmark training mode - test multiple models on same dataset.
 
         Args:
             bundle: Training data bundle
             model_config: Model configuration dict (will be updated with runtime params)
+            session_id: Session timestamp for organizing logs by session
 
         Returns:
             dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
@@ -10111,7 +11545,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Handle multi-label benchmarking separately
         if bundle.strategy == "multi-label":
-            return self._training_studio_run_benchmark_multilabel(bundle, model_config)
+            return self._training_studio_run_benchmark_multilabel(bundle, model_config, session_id)
 
         try:
             dataset_path, text_column, label_column = self._training_studio_resolve_benchmark_dataset(bundle)
@@ -10501,6 +11935,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     label_key=label_column,
                     label_value=category_name,  # Pass the selected category name for proper display
                     language=train_language,
+                    session_id=session_id,
                 )
 
                 # Extract metrics
@@ -10580,7 +12015,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'best_f1': None
             }
 
-    def _training_studio_run_benchmark_multilabel(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
+    def _training_studio_run_benchmark_multilabel(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
         """Benchmark multiple models on a multi-label dataset"""
         from rich.table import Table
         from rich import box
@@ -11076,6 +12511,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         label_value=None if num_classes > 2 else label_name,
                         language=train_language,
                         class_names=value_names if num_classes > 2 else None,
+                        session_id=session_id,
                     )
 
                     # Extract metrics
@@ -11280,13 +12716,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'best_f1': None
             }
 
-    def _training_studio_run_custom(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
+    def _training_studio_run_custom(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Custom training mode - full control over hyperparameters.
 
         Args:
             bundle: Training data bundle
             model_config: Model configuration dict (will be updated with runtime params)
+            session_id: Session timestamp for organizing logs by session
 
         Returns:
             dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
@@ -11334,6 +12771,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         }
 
         config = bundle.to_trainer_config(output_dir, extra)
+        config['session_id'] = session_id
 
         try:
             result = trainer.train(config)
@@ -11358,13 +12796,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'best_f1': result.get('best_f1') or result.get('f1_macro')
         }
 
-    def _training_studio_run_distributed(self, bundle: TrainingDataBundle, model_config: Dict[str, Any]) -> Dict[str, Any]:
+    def _training_studio_run_distributed(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Distributed training mode - parallel multi-label training.
 
         Args:
             bundle: Training data bundle
             model_config: Model configuration dict (will be updated with runtime params)
+            session_id: Session timestamp for organizing logs by session
 
         Returns:
             dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'

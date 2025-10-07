@@ -842,7 +842,8 @@ class BertBase(BertABC):
             label_key: Optional[str] = None,  # Multi-label: key being trained (e.g., 'themes', 'sentiment')
             label_value: Optional[str] = None,  # Multi-label: specific value (e.g., 'transportation', 'positive')
             language: Optional[str] = None,  # Language of the data being trained (e.g., 'EN', 'FR')
-            class_names: Optional[List[str]] = None  # Multi-class: list of class names (e.g., ['natural_sciences', 'no', 'social_sciences'])
+            class_names: Optional[List[str]] = None,  # Multi-class: list of class names (e.g., ['natural_sciences', 'no', 'social_sciences'])
+            session_id: Optional[str] = None  # Session timestamp for organizing logs by session
     ) -> Tuple[Any, Any, Any, Any]:
         """
         Train, evaluate, and (optionally) save a BERT model. This method also logs training and validation
@@ -922,41 +923,35 @@ class BertBase(BertABC):
         # Reset reinforced learning flag at the start of each training session
         self._reinforced_already_triggered = False
 
-        # Create organized directory structure: training_logs/{label_name}/{model_type}/
-        # Use label_value (specific category like "Health") in priority, fallback to label_key (column name)
-        model_type = self.model_name if hasattr(self, 'model_name') else self.__class__.__name__
-        model_type = model_type.replace("/", "_").replace(" ", "_")
+        # NEW STRUCTURE: training_logs/{session_timestamp}/{category}/
+        # session_timestamp: Date and time of the training session (e.g., 20251007_103025)
+        # category: The label/category being trained (e.g., specific_themes, sentiment)
 
-        # Build directory path based on label
-        # Priority: label_value > label_key > flat structure
+        # Create or use session ID (timestamp)
+        if session_id is None:
+            import datetime
+            session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Determine category name
+        # Priority: label_value > label_key > "default"
         if label_value:
-            # Use specific label value (e.g., "Health", "Transportation")
-            label_dir = os.path.join(metrics_output_dir, label_value)
-            model_dir = os.path.join(label_dir, model_type)
+            category_name = label_value
         elif label_key:
-            # Fallback to label_key if no label_value (multi-label case)
-            label_dir = os.path.join(metrics_output_dir, label_key)
-            model_dir = os.path.join(label_dir, model_type)
+            category_name = label_key
         else:
-            # Fallback to flat structure if no label information
-            model_dir = os.path.join(metrics_output_dir, model_type)
+            category_name = "default"
 
-        os.makedirs(model_dir, exist_ok=True)
+        # Clean category name
+        category_name = category_name.replace("/", "_").replace(" ", "_")
 
-        # Create log file names
-        log_file_parts = []
-        if model_identifier:
-            log_file_parts.append(model_identifier)
-        if label_value:
-            log_file_parts.append(label_value)
+        # Build directory structure: training_logs/{session_id}/{category}/
+        session_dir = os.path.join(metrics_output_dir, session_id)
+        category_dir = os.path.join(session_dir, category_name)
+        os.makedirs(category_dir, exist_ok=True)
 
-        if log_file_parts:
-            log_file_base = "_".join(log_file_parts).replace("/", "_").replace(" ", "_")
-            training_metrics_csv = os.path.join(model_dir, f"{log_file_base}_training.csv")
-            best_models_csv = os.path.join(model_dir, f"{log_file_base}_best.csv")
-        else:
-            training_metrics_csv = os.path.join(model_dir, "training.csv")
-            best_models_csv = os.path.join(model_dir, "best.csv")
+        # CSV files are now general (contain all models for this category)
+        training_metrics_csv = os.path.join(category_dir, "training.csv")
+        best_models_csv = os.path.join(category_dir, "best.csv")
 
         # Note: best_models.csv headers will be written after num_labels is determined
         # This is deferred until after we collect test labels (line ~860)
@@ -1795,6 +1790,13 @@ class BertBase(BertABC):
                     # No new best model this epoch, but still update display to show current epoch timing
                     live.update(display.create_panel())
 
+                # Print epoch summary for visibility (in case Live display doesn't update properly)
+                epoch_summary = f"Epoch {i_epoch+1}/{n_epochs} - Loss: {avg_train_loss:.4f}/{avg_val_loss:.4f} (train/val) - F1: {macro_f1:.4f} - Accuracy: {accuracy:.4f}"
+                if language_metrics:
+                    lang_f1s = [f"{lang}:{m['macro_f1']:.3f}" for lang, m in sorted(language_metrics.items())]
+                    epoch_summary += f" - Per-lang F1: {', '.join(lang_f1s)}"
+                print(f"\n{epoch_summary}")
+
             # End of normal training (after all epochs) - display final summary
             display.current_phase = "Training Complete"
             display.total_time = time.time() - training_start_time
@@ -2406,10 +2408,26 @@ class BertBase(BertABC):
             self.last_training_summary = scores_dict
             self.last_saved_model_path = best_model_path
 
+            # CRITICAL FIX: Load and store best model for downstream use
+            # This allows model_trainer.py to access the trained model via model_instance.model
+            if best_model_path and os.path.exists(best_model_path):
+                # Load the best model from disk (the one with highest F1)
+                self.model = self.load_model(best_model_path)
+                self.model.to(self.device)
+            else:
+                # Fallback: use current model in memory (last epoch)
+                self.model = model
+
             # Return the expected 3-tuple for backward compatibility
             return best_metric_val, best_model_path, best_scores
 
         # Return the expected 3-tuple even when best_scores is None
+        # CRITICAL FIX: Store model even when best_scores is None
+        if best_model_path and os.path.exists(best_model_path):
+            self.model = self.load_model(best_model_path)
+            self.model.to(self.device)
+        else:
+            self.model = model
         return best_metric_val, best_model_path, best_scores
 
     def predict(
