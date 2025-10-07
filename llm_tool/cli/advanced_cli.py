@@ -6468,9 +6468,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Show dataset summary
         self._training_studio_render_bundle_summary(bundle)
 
-        # Log comprehensive training data distributions for ALL created datasets
-        if hasattr(self, 'current_session_manager') and self.current_session_manager:
-            self._log_training_data_distributions(bundle)
+        # Note: Comprehensive logging will be done AFTER training/benchmark
+        # to include complete information about what was used for what
 
         # Now ask for training mode
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
@@ -6788,6 +6787,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print(f"\n[green]✅ Training metadata updated with complete parameters[/green]\n")
                 except Exception as e:
                     self.logger.error(f"Failed to update metadata: {e}")
+
+            # Generate comprehensive training data logs AFTER training/benchmark completion
+            # This ensures we capture complete information about benchmark vs normal training
+            if hasattr(self, 'current_session_manager') and self.current_session_manager:
+                try:
+                    training_context = {
+                        'mode': mode,
+                        'training_result': training_result,
+                        'runtime_params': runtime_params,
+                        'models_trained': training_result.get('models_trained', []) if training_result else [],
+                        'benchmark_results': training_result.get('benchmark_results') if training_result and mode == 'benchmark' else None,
+                    }
+                    self._log_training_data_distributions(bundle, training_context=training_context)
+                except Exception as e:
+                    self.logger.warning(f"Could not generate comprehensive training logs: {e}")
 
         except Exception as e:
             # Update metadata with failure status
@@ -8658,16 +8672,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     # Now filter the DataFrame based on excluded values
                     if excluded_values:
-                        self.console.print(f"\n[bold cyan]🔄 Filtering dataset...[/bold cyan]")
-                        original_count = len(df)
+                        self.console.print(f"\n[bold cyan]🔄 Filtering labels from dataset...[/bold cyan]")
+                        self.console.print(f"[dim]Note: Removing excluded labels from samples, not the samples themselves.[/dim]\n")
 
-                        # Identify rows to remove
+                        original_count = len(df)
+                        labels_removed_count = 0
+                        samples_modified = 0
+
+                        # Filter labels from each row (NOT remove rows)
                         for idx, row in df.iterrows():
                             annotation_val = row.get(annotation_column)
                             if pd.isna(annotation_val) or annotation_val == '':
                                 continue
 
                             try:
+                                # Parse annotation
                                 if isinstance(annotation_val, str):
                                     try:
                                         annotation_dict = json.loads(annotation_val)
@@ -8675,37 +8694,94 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                         import ast
                                         annotation_dict = ast.literal_eval(annotation_val)
                                 elif isinstance(annotation_val, dict):
-                                    annotation_dict = annotation_val
+                                    annotation_dict = annotation_dict.copy()
                                 else:
                                     continue
 
-                                # Check if this row contains any excluded value
-                                should_exclude = False
+                                # Remove excluded values from annotation (NOT the row)
+                                modified = False
                                 for key, excluded_vals in excluded_values.items():
                                     if key in annotation_dict:
                                         val = annotation_dict[key]
-                                        if isinstance(val, list):
-                                            # If any value in the list is excluded, exclude the row
-                                            if any(str(v) in excluded_vals for v in val):
-                                                should_exclude = True
-                                                break
-                                        elif val is not None and str(val) in excluded_vals:
-                                            should_exclude = True
-                                            break
 
-                                if should_exclude:
-                                    rows_to_remove.append(idx)
-                            except:
+                                        if isinstance(val, list):
+                                            # Remove excluded values from list
+                                            original_list = val.copy()
+                                            val = [v for v in val if str(v) not in excluded_vals]
+                                            if len(val) != len(original_list):
+                                                modified = True
+                                                labels_removed_count += len(original_list) - len(val)
+                                            annotation_dict[key] = val if val else None
+
+                                        elif val is not None and str(val) in excluded_vals:
+                                            # Replace excluded value with None
+                                            annotation_dict[key] = None
+                                            modified = True
+                                            labels_removed_count += 1
+
+                                # Update the annotation in the DataFrame
+                                if modified:
+                                    samples_modified += 1
+                                    # Convert back to JSON string if it was originally a string
+                                    if isinstance(row[annotation_column], str):
+                                        df.at[idx, annotation_column] = json.dumps(annotation_dict)
+                                    else:
+                                        df.at[idx, annotation_column] = annotation_dict
+
+                            except Exception as e:
+                                self.logger.warning(f"Error filtering row {idx}: {e}")
                                 continue
 
-                        # Remove rows from DataFrame
-                        if rows_to_remove:
-                            df = df.drop(rows_to_remove)
-                            df = df.reset_index(drop=True)
-                            filtered_count = len(df)
-                            removed_count = original_count - filtered_count
+                        # Only remove rows that have NO valid labels left (all keys are None/empty)
+                        if samples_modified > 0:
+                            rows_to_remove_empty = []
+                            for idx, row in df.iterrows():
+                                annotation_val = row.get(annotation_column)
+                                if pd.isna(annotation_val) or annotation_val == '':
+                                    continue
 
-                            self.console.print(f"[green]✓ Filtered dataset: {original_count} → {filtered_count} samples ({removed_count} removed)[/green]\n")
+                                try:
+                                    if isinstance(annotation_val, str):
+                                        annotation_dict = json.loads(annotation_val)
+                                    elif isinstance(annotation_val, dict):
+                                        annotation_dict = annotation_val
+                                    else:
+                                        continue
+
+                                    # Check if ALL keys are None or empty
+                                    has_any_valid_label = False
+                                    for key, val in annotation_dict.items():
+                                        if val is not None and val != '' and val != []:
+                                            # Special check for "null" string
+                                            if isinstance(val, str) and val.lower() == 'null':
+                                                continue
+                                            has_any_valid_label = True
+                                            break
+
+                                    if not has_any_valid_label:
+                                        rows_to_remove_empty.append(idx)
+
+                                except:
+                                    continue
+
+                            # Remove completely empty rows
+                            if rows_to_remove_empty:
+                                df = df.drop(rows_to_remove_empty)
+                                df = df.reset_index(drop=True)
+                                removed_count = len(rows_to_remove_empty)
+                                self.console.print(f"[yellow]⚠️  {removed_count} sample(s) removed (no valid labels remaining)[/yellow]")
+                            else:
+                                removed_count = 0
+
+                            filtered_count = len(df)
+
+                            self.console.print(f"[green]✓ Label filtering complete:[/green]")
+                            self.console.print(f"  • [cyan]Samples kept:[/cyan] {original_count} → {filtered_count}")
+                            self.console.print(f"  • [cyan]Samples modified:[/cyan] {samples_modified}")
+                            self.console.print(f"  • [cyan]Labels removed:[/cyan] {labels_removed_count}")
+                            if removed_count > 0:
+                                self.console.print(f"  • [yellow]Samples removed (empty):[/yellow] {removed_count}")
+                            self.console.print()
 
                             # Recalculate all_keys_values with filtered data
                             all_keys_values = {}
@@ -10700,24 +10776,35 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self.console.print(table)
 
-    def _log_training_data_distributions(self, bundle: TrainingDataBundle) -> None:
+    def _log_training_data_distributions(self, bundle: TrainingDataBundle, training_context: Optional[Dict[str, Any]] = None) -> None:
         """
         Log comprehensive distribution information for ALL training datasets created.
 
-        This function is called AFTER all datasets are created (Step 6 completion)
-        and logs distribution details for EVERY file in the bundle:
+        This function is called AFTER training/benchmark completion and logs:
+        - ALL datasets created (multiclass, onevsall, multilabel)
+        - What was used for benchmark vs normal training
         - Train/val/test splits
         - Label distributions
         - Language distributions
         - Imbalance warnings
-        - And more comprehensive metadata
+        - Complete training context (mode, models, results)
 
         Args:
             bundle: TrainingDataBundle containing all created dataset files
+            training_context: Optional dict with training/benchmark information:
+                - mode: Training mode (quick, benchmark, custom, distributed)
+                - training_result: Results from training
+                - runtime_params: Runtime parameters used
+                - models_trained: List of models that were trained
+                - benchmark_results: Results if benchmark mode was used
         """
         import json
 
-        self.console.print("\n[dim]📊 Logging comprehensive training data distributions...[/dim]")
+        if training_context:
+            self.console.print(f"\n[bold cyan]📊 Generating comprehensive training session report...[/bold cyan]")
+            self.console.print(f"[dim]Mode: {training_context.get('mode', 'unknown')} | Models: {len(training_context.get('models_trained', []))}[/dim]")
+        else:
+            self.console.print("\n[dim]📊 Logging comprehensive training data distributions...[/dim]")
 
         # Collect all dataset files (primary + training_files)
         all_files = []
@@ -10747,29 +10834,38 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.logger.warning(f"Dataset {dataset_name} is empty: {dataset_path}")
                     continue
 
-                # Log distribution (comprehensive metadata about this dataset)
-                # Note: At this point, data is not yet split into train/val/test
-                # The actual splitting happens during training
-                # Here we log the FULL dataset that will be split later
+                # Build comprehensive metadata including training context
+                dataset_metadata = {
+                    'file_path': str(dataset_path),
+                    'file_size_mb': round(dataset_path.stat().st_size / (1024 * 1024), 2),
+                    'num_records': len(records),
+                    'strategy': bundle.strategy,
+                    'training_approach': bundle.metadata.get('training_approach', ''),
+                    'text_column': bundle.text_column,
+                    'label_column': bundle.label_column,
+                    'source_file': bundle.metadata.get('source_file', ''),
+                    'categories': bundle.metadata.get('categories', []),
+                    'confirmed_languages': bundle.metadata.get('confirmed_languages', []),
+                    'split_config': bundle.metadata.get('split_config', {}),
+                }
+
+                # Add training context if provided (mode, benchmark info, etc.)
+                if training_context:
+                    dataset_metadata.update({
+                        'training_mode': training_context.get('mode'),
+                        'models_trained': training_context.get('models_trained', []),
+                        'was_used_in_benchmark': training_context.get('mode') == 'benchmark',
+                        'benchmark_results': training_context.get('benchmark_results') if training_context.get('mode') == 'benchmark' else None,
+                    })
+
+                # Log distribution with complete metadata
                 self.current_session_manager.log_distribution(
                     dataset_name=dataset_name,
-                    train_samples=records,  # All samples at this point
+                    train_samples=records,  # All samples (split happens during training)
                     val_samples=[],  # Splitting happens during training
                     test_samples=[],
                     label_key=dataset_name,
-                    metadata={
-                        'file_path': str(dataset_path),
-                        'file_size_mb': round(dataset_path.stat().st_size / (1024 * 1024), 2),
-                        'num_records': len(records),
-                        'strategy': bundle.strategy,
-                        'training_approach': bundle.metadata.get('training_approach', ''),
-                        'text_column': bundle.text_column,
-                        'label_column': bundle.label_column,
-                        'source_file': bundle.metadata.get('source_file', ''),
-                        'categories': bundle.metadata.get('categories', []),
-                        'confirmed_languages': bundle.metadata.get('confirmed_languages', []),
-                        'split_config': bundle.metadata.get('split_config', {}),
-                    }
+                    metadata=dataset_metadata
                 )
                 datasets_logged += 1
 
@@ -10779,20 +10875,34 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Finalize session and generate comprehensive reports
         try:
-            warnings_count, datasets_with_warnings = self.current_session_manager.finalize()
+            warnings_count, datasets_with_warnings = self.current_session_manager.finalize(training_context=training_context)
 
             # Display summary to user
-            self.console.print(f"\n[green]✓ Training data distribution reports generated:[/green]")
-            self.console.print(f"  • [cyan]Session ID:[/cyan] {self.current_session_id}")
-            self.console.print(f"  • [cyan]Datasets logged:[/cyan] {datasets_logged}")
-            self.console.print(f"  • [cyan]Data Status:[/cyan] PRE-SPLIT (split will occur during training)")
+            if training_context:
+                self.console.print(f"\n[green]✓ Complete training session report generated:[/green]")
+                self.console.print(f"  • [cyan]Session ID:[/cyan] {self.current_session_id}")
+                self.console.print(f"  • [cyan]Training Mode:[/cyan] {training_context.get('mode', 'unknown')}")
+                self.console.print(f"  • [cyan]Datasets logged:[/cyan] {datasets_logged}")
+                self.console.print(f"  • [cyan]Models trained:[/cyan] {len(training_context.get('models_trained', []))}")
+                if training_context.get('mode') == 'benchmark':
+                    self.console.print(f"  • [cyan]Benchmark:[/cyan] Results included in reports")
+            else:
+                self.console.print(f"\n[green]✓ Training data distribution reports generated:[/green]")
+                self.console.print(f"  • [cyan]Session ID:[/cyan] {self.current_session_id}")
+                self.console.print(f"  • [cyan]Datasets logged:[/cyan] {datasets_logged}")
+
             self.console.print(f"\n  📋 [cyan]Reports:[/cyan]")
+            self.console.print(f"     - Model Catalog:      {self.current_session_manager.logs_dir / 'model_catalog.csv'} ← ALL models with full details")
+            self.console.print(f"     - Session Summary:    {self.current_session_manager.session_dir / 'SESSION_SUMMARY.txt'} ← Complete overview")
             self.console.print(f"     - Quick overview:     {self.current_session_manager.logs_dir / 'quick_summary.csv'}")
             self.console.print(f"     - Detailed breakdown: {self.current_session_manager.logs_dir / 'split_summary.csv'}")
             self.console.print(f"     - Complete data:      {self.current_session_manager.logs_dir / 'distribution_report.json'}")
-            self.console.print(f"     - Session summary:    {self.current_session_manager.session_dir / 'SESSION_SUMMARY.txt'}")
-            self.console.print(f"\n  [dim]💡 Note: Data is currently PRE-SPLIT. The train/val/test split")
-            self.console.print(f"     will be applied during model training according to your configuration.[/dim]")
+
+            if training_context:
+                self.console.print(f"\n  [dim]💡 Reports include complete training context: mode, models trained, and benchmark results.[/dim]")
+            else:
+                self.console.print(f"\n  [dim]💡 Note: Data is currently PRE-SPLIT. The train/val/test split\n"
+                                 f"     will be applied during model training according to your configuration.[/dim]")
 
             if warnings_count > 0:
                 self.console.print(f"\n[yellow]⚠️  {warnings_count} validation warning(s) detected across {datasets_with_warnings} dataset(s)[/yellow]")

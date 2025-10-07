@@ -325,9 +325,11 @@ class TrainingDatasetBuilder:
                 "output_file": str(output_file),
             })
 
+            # CRITICAL: Use multi-label strategy because create_multi_label_dataset produces
+            # labels as lists (e.g., ["sentiment_neutral"]), which requires multi-label code path
             return TrainingDataBundle(
                 primary_file=Path(path),
-                strategy="single-label",
+                strategy="multi-label",  # FIXED: was "single-label" but data format is multi-label (labels in lists)
                 text_column="text",
                 label_column="labels",
                 metadata=metadata,

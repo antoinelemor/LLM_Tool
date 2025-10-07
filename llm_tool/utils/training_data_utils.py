@@ -352,6 +352,153 @@ class TrainingDataSessionManager:
 
         logger.info(f"Distribution report saved: {report_path}")
 
+    def save_model_catalog_csv(self):
+        """
+        Save comprehensive model catalog CSV listing ALL models to be trained.
+
+        For multi-class datasets: Creates 1 entry
+        For one-vs-all/multilabel datasets: Creates N entries (one per label value)
+
+        This ensures complete traceability of every model that will be trained.
+        """
+        catalog_rows = []
+        model_id = 1
+
+        for dataset_name, data in self.distribution_data.items():
+            metadata = data.get('metadata', {})
+            split_config = metadata.get('split_config', {})
+            strategy = metadata.get('strategy', '')
+            training_approach = metadata.get('training_approach', '')
+
+            # Extract split configuration
+            custom_splits = split_config.get('custom_splits', {})
+            defaults = split_config.get('defaults', {'train': 0.8, 'val': 0.2, 'test': 0.0})
+
+            if dataset_name in custom_splits:
+                split_ratio = custom_splits[dataset_name]
+            else:
+                split_ratio = defaults
+
+            train_ratio = split_ratio.get('train', 0.8)
+            val_ratio = split_ratio.get('val', 0.2)
+            test_ratio = split_ratio.get('test', 0.0)
+
+            # Get dataset info
+            total = data['total_samples']
+            num_classes = data['num_classes']
+            train_dist = data.get('train_distribution', {})
+            imbalance = data.get('imbalance_metrics', {})
+            warnings = data.get('warnings', [])
+            split_indicator = "CUSTOM" if dataset_name in custom_splits else "DEFAULT"
+
+            # Detect if this is a one-vs-all or multilabel dataset
+            # These should be expanded into individual binary classifiers
+            is_multilabel_collection = ('multilabel' in dataset_name.lower() or
+                                       'onevsall' in dataset_name.lower())
+
+            if is_multilabel_collection and num_classes > 10:
+                # This is a collection of binary classifiers - expand it
+                # Each "class" in the distribution represents a unique label combination
+                # that will be used to train a binary classifier
+
+                # Parse the label combinations to extract individual labels
+                import ast
+                all_labels = set()
+                for class_key in train_dist.keys():
+                    if class_key == '()':
+                        continue
+                    try:
+                        # Parse as Python literal (tuple)
+                        parsed = ast.literal_eval(str(class_key))
+                        if isinstance(parsed, tuple):
+                            all_labels.update(parsed)
+                        else:
+                            all_labels.add(str(parsed))
+                    except:
+                        # If parsing fails, treat as single label
+                        if class_key:
+                            all_labels.add(str(class_key))
+
+                # Create one model entry per unique label
+                for label in sorted(all_labels):
+                    if label and label != '()':
+                        # Calculate approximate samples for this binary classifier
+                        # In one-vs-all, each binary model uses all samples
+                        train_proj = int(total * train_ratio)
+                        val_proj = int(total * val_ratio)
+                        test_proj = int(total * test_ratio)
+
+                        catalog_rows.append({
+                            'model_id': model_id,
+                            'model_name': f"{dataset_name}_{label}",
+                            'base_dataset': dataset_name,
+                            'type': 'binary (one-vs-all)',
+                            'target_label': label,
+                            'num_classes': 2,
+                            'classes': f"{label}, not-{label}",
+                            'split_config': split_indicator,
+                            'train_ratio': f"{train_ratio*100:.1f}%",
+                            'val_ratio': f"{val_ratio*100:.1f}%",
+                            'test_ratio': f"{test_ratio*100:.1f}%",
+                            'total_samples': total,
+                            'train_samples_projected': train_proj,
+                            'val_samples_projected': val_proj,
+                            'test_samples_projected': test_proj,
+                            'imbalance_ratio': 'varies',
+                            'num_warnings': len(warnings),
+                            'warnings_summary': '',
+                            'file_size_mb': round(metadata.get('file_size_mb', 0) / len(all_labels), 2),
+                            'strategy': strategy,
+                            'training_approach': training_approach,
+                        })
+                        model_id += 1
+            else:
+                # Multi-class model - create single entry
+                train_proj = int(total * train_ratio)
+                val_proj = int(total * val_ratio)
+                test_proj = int(total * test_ratio)
+
+                classes_list = sorted([str(k) for k in train_dist.keys()])
+                classes_str = ', '.join(classes_list[:5])
+                if len(classes_list) > 5:
+                    classes_str += f" ... (+{len(classes_list)-5} more)"
+
+                imbalance_ratio = imbalance.get('imbalance_ratio', 1.0)
+                warnings_str = '; '.join(warnings[:3]) if warnings else ''
+                if len(warnings) > 3:
+                    warnings_str += f' (+{len(warnings)-3} more)'
+
+                catalog_rows.append({
+                    'model_id': model_id,
+                    'model_name': dataset_name,
+                    'base_dataset': dataset_name,
+                    'type': 'multi-class',
+                    'target_label': 'N/A',
+                    'num_classes': num_classes,
+                    'classes': classes_str,
+                    'split_config': split_indicator,
+                    'train_ratio': f"{train_ratio*100:.1f}%",
+                    'val_ratio': f"{val_ratio*100:.1f}%",
+                    'test_ratio': f"{test_ratio*100:.1f}%",
+                    'total_samples': total,
+                    'train_samples_projected': train_proj,
+                    'val_samples_projected': val_proj,
+                    'test_samples_projected': test_proj,
+                    'imbalance_ratio': round(imbalance_ratio, 2),
+                    'num_warnings': len(warnings),
+                    'warnings_summary': warnings_str,
+                    'file_size_mb': round(metadata.get('file_size_mb', 0), 2),
+                    'strategy': strategy,
+                    'training_approach': training_approach,
+                })
+                model_id += 1
+
+        if catalog_rows:
+            df = pd.DataFrame(catalog_rows)
+            catalog_path = self.logs_dir / "model_catalog.csv"
+            df.to_csv(catalog_path, index=False)
+            logger.info(f"Model catalog saved to {catalog_path} with {len(catalog_rows)} models")
+
     def save_split_summary_csv(self):
         """Save comprehensive split summary as CSV with detailed statistics."""
         rows = []
@@ -526,14 +673,23 @@ class TrainingDataSessionManager:
             }
         }
 
-    def finalize(self):
-        """Finalize session: save all reports and logs."""
+    def finalize(self, training_context: Optional[Dict[str, Any]] = None):
+        """
+        Finalize session: save all reports and logs.
+
+        Args:
+            training_context: Optional training/benchmark context information
+        """
         self.save_distribution_report()
+        self.save_model_catalog_csv()
         self.save_split_summary_csv()
 
         # Create session summary file
         summary_path = self.session_dir / "SESSION_SUMMARY.txt"
         summary = self._generate_summary()
+
+        # Store training context for use in report generation
+        self.training_context = training_context
 
         # Extract configuration metadata from first dataset
         config_metadata = {}
@@ -627,6 +783,124 @@ class TrainingDataSessionManager:
 
             f.write("\n")
 
+            # Models to be trained section
+            f.write("🎯 MODELS TO BE TRAINED\n")
+            f.write("─" * 80 + "\n")
+
+            # Load model catalog for detailed listing
+            catalog_path = self.logs_dir / "model_catalog.csv"
+            if catalog_path.exists():
+                import pandas as pd
+                catalog_df = pd.read_csv(catalog_path)
+
+                # Count models by type from catalog
+                multiclass_count = len(catalog_df[catalog_df['type'] == 'multi-class'])
+                binary_count = len(catalog_df[catalog_df['type'] == 'binary (one-vs-all)'])
+                total_models = len(catalog_df)
+
+                f.write(f"  Total Models:          {total_models}\n")
+                f.write(f"    - Multi-class:       {multiclass_count} model(s)\n")
+                f.write(f"    - Binary (1-vs-all): {binary_count} model(s)\n\n")
+
+                # List multi-class models
+                multiclass_df = catalog_df[catalog_df['type'] == 'multi-class']
+                if len(multiclass_df) > 0:
+                    f.write(f"  📊 MULTI-CLASS MODELS ({len(multiclass_df)} models)\n")
+                    f.write(f"  {'-' * 76}\n\n")
+
+                    for idx, row in multiclass_df.iterrows():
+                        f.write(f"    Model #{row['model_id']}: {row['model_name']}\n")
+                        f.write(f"      Type:              {row['type']}\n")
+                        f.write(f"      Classes:           {row['num_classes']} ({row['classes']})\n")
+                        f.write(f"      Split Ratio:       {row['train_ratio']} / {row['val_ratio']} / {row['test_ratio']}")
+                        if row['split_config'] == 'CUSTOM':
+                            f.write(" ← CUSTOM\n")
+                        else:
+                            f.write("\n")
+                        f.write(f"      Samples (projected):\n")
+                        f.write(f"        - Train:         {row['train_samples_projected']:,}\n")
+                        f.write(f"        - Validation:    {row['val_samples_projected']:,}\n")
+                        f.write(f"        - Test:          {row['test_samples_projected']:,}\n")
+                        f.write(f"      Imbalance Ratio:   {row['imbalance_ratio']}:1\n")
+                        if row['num_warnings'] > 0:
+                            f.write(f"      ⚠️  Warnings:        {row['num_warnings']} ({row['warnings_summary'][:80]}...)\n")
+                        f.write("\n")
+
+                # List binary (one-vs-all) models
+                binary_df = catalog_df[catalog_df['type'] == 'binary (one-vs-all)']
+                if len(binary_df) > 0:
+                    f.write(f"\n  ⚡ BINARY (ONE-VS-ALL) MODELS ({len(binary_df)} models)\n")
+                    f.write(f"  {'-' * 76}\n\n")
+
+                    # Group by base_dataset
+                    for base_dataset in binary_df['base_dataset'].unique():
+                        group_df = binary_df[binary_df['base_dataset'] == base_dataset]
+                        f.write(f"    {base_dataset} ({len(group_df)} binary classifiers)\n\n")
+
+                        # Show first 10 models, then summarize
+                        max_to_show = 10
+                        for idx, row in group_df.head(max_to_show).iterrows():
+                            f.write(f"      Model #{row['model_id']}: {row['target_label']}\n")
+                            f.write(f"        Classes:         {row['classes']}\n")
+                            f.write(f"        Split Ratio:     {row['train_ratio']} / {row['val_ratio']} / {row['test_ratio']}")
+                            if row['split_config'] == 'CUSTOM':
+                                f.write(" ← CUSTOM\n")
+                            else:
+                                f.write("\n")
+                            f.write(f"        Train/Val/Test:  {row['train_samples_projected']:,} / {row['val_samples_projected']:,} / {row['test_samples_projected']:,}\n")
+                            f.write("\n")
+
+                        if len(group_df) > max_to_show:
+                            f.write(f"      ... and {len(group_df) - max_to_show} more binary classifiers\n")
+                            f.write(f"      (See model_catalog.csv for complete list)\n\n")
+
+                f.write(f"  💡 Complete list: model_catalog.csv ({total_models} models with full details)\n\n")
+            else:
+                # Fallback if catalog doesn't exist yet
+                total_models = len(self.distribution_data)
+                f.write(f"  Total Datasets:        {total_models}\n")
+                f.write(f"  ⚠️  Model catalog not yet generated\n\n")
+
+            f.write("\n")
+
+            # Training Execution Summary (if training context provided)
+            if self.training_context:
+                f.write("🎓 TRAINING EXECUTION SUMMARY\n")
+                f.write("─" * 80 + "\n")
+
+                mode = self.training_context.get('mode', 'unknown')
+                models_trained = self.training_context.get('models_trained', [])
+
+                f.write(f"  Training Mode:         {mode.upper()}\n")
+                f.write(f"  Models Trained:        {len(models_trained)}\n")
+
+                if models_trained:
+                    f.write(f"\n  Trained Models:\n")
+                    for i, model in enumerate(models_trained[:10], 1):
+                        f.write(f"    {i}. {model}\n")
+                    if len(models_trained) > 10:
+                        f.write(f"    ... and {len(models_trained) - 10} more\n")
+
+                # Benchmark-specific information
+                if mode == 'benchmark':
+                    f.write(f"\n  Benchmark Mode:        ACTIVE\n")
+                    benchmark_results = self.training_context.get('benchmark_results')
+                    if benchmark_results:
+                        f.write(f"  Benchmark Results:     Included in reports\n")
+                        f.write(f"  Purpose:               Model comparison and selection\n")
+
+                    f.write(f"\n  💡 Benchmark datasets are used for model comparison only.\n")
+                    f.write(f"     Final training may use different data splits or configurations.\n")
+
+                # Runtime parameters
+                runtime_params = self.training_context.get('runtime_params', {})
+                if runtime_params:
+                    f.write(f"\n  Runtime Parameters:\n")
+                    for key, value in list(runtime_params.items())[:5]:
+                        f.write(f"    {key}: {value}\n")
+
+                f.write("\n")
+
             # Individual Dataset Details
             if self.distribution_data:
                 f.write("📁 INDIVIDUAL DATASETS\n")
@@ -672,9 +946,16 @@ class TrainingDataSessionManager:
             f.write(f"  Training Data:         {self.datasets_dir}/\n")
             f.write(f"  Logs & Reports:        {self.logs_dir}/\n")
             f.write(f"\n  Reports:\n")
-            f.write(f"    - Quick Summary:     quick_summary.csv (overview table)\n")
-            f.write(f"    - Split Details:     split_summary.csv (detailed breakdown)\n")
-            f.write(f"    - Distribution:      distribution_report.json (complete data)\n")
+
+            # Check if catalog exists to show model count
+            if catalog_path.exists():
+                f.write(f"    - Model Catalog:     model_catalog.csv (ALL {total_models} models - PRIMARY REPORT)\n")
+            else:
+                f.write(f"    - Model Catalog:     model_catalog.csv (PRIMARY REPORT)\n")
+
+            f.write(f"    - Quick Summary:     quick_summary.csv (dataset overview)\n")
+            f.write(f"    - Split Details:     split_summary.csv (detailed class breakdown)\n")
+            f.write(f"    - Distribution:      distribution_report.json (complete raw data)\n")
             f.write(f"    - Warnings Log:      validation_warnings.log (quality issues)\n")
 
             f.write("\n")

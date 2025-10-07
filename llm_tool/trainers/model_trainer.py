@@ -470,13 +470,25 @@ class ModelTrainer:
 
         # Handle case where labels are in list format (legacy/compatibility)
         # Multiclass files should have string labels, but handle lists for backward compatibility
-        if df[label_column].dtype == 'object' and len(df) > 0 and isinstance(df[label_column].iloc[0], list):
-            self.logger.info(f"Label column '{label_column}' contains lists. Extracting first value (multiclass expects strings).")
-            df[label_column] = df[label_column].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else x)
+        if df[label_column].dtype == 'object' and len(df) > 0:
+            # Check if any value is a list
+            first_val = df[label_column].iloc[0]
+            if isinstance(first_val, list):
+                self.logger.info(f"Label column '{label_column}' contains lists. Extracting first value (multiclass expects strings).")
+                df[label_column] = df[label_column].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else x)
 
         # Encode labels with custom ordering: NOT_* labels first (class 0), others later
         # CRITICAL FIX: LabelEncoder always re-sorts internally, so we need manual mapping
-        unique_labels = df[label_column].unique()
+        try:
+            unique_labels = df[label_column].unique()
+        except TypeError as e:
+            # If unique() fails due to unhashable type, convert all values to strings
+            if 'unhashable type' in str(e):
+                self.logger.warning(f"Label column contains unhashable types (likely lists). Converting to strings.")
+                df[label_column] = df[label_column].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else str(x))
+                unique_labels = df[label_column].unique()
+            else:
+                raise
         sorted_labels = sorted(unique_labels, key=lambda x: (not str(x).startswith('NOT_'), str(x)))
 
         # Create manual label mapping to ensure NOT_* = 0, others = 1+
@@ -1284,8 +1296,10 @@ class ModelTrainer:
 
             # Detect multi-class groups
             from llm_tool.trainers.multi_label_trainer import MultiLabelSample
-            ml_samples = []
-            for s in train_samples + val_samples:
+
+            # Convert train samples to MultiLabelSample with dict labels
+            ml_train_samples = []
+            for s in train_samples:
                 # Handle both dict and list formats for labels
                 labels_raw = s.get('labels', {})
                 if isinstance(labels_raw, list):
@@ -1298,13 +1312,39 @@ class ModelTrainer:
                 else:
                     labels = labels_raw
 
-                ml_samples.append(MultiLabelSample(
+                ml_train_samples.append(MultiLabelSample(
                     text=s['text'],
                     labels=labels,
                     id=s.get('id'),
                     lang=s.get('lang'),
                     metadata=s.get('metadata')
                 ))
+
+            # Convert val samples to MultiLabelSample with dict labels
+            ml_val_samples = []
+            for s in val_samples:
+                # Handle both dict and list formats for labels
+                labels_raw = s.get('labels', {})
+                if isinstance(labels_raw, list):
+                    # Check if list contains a single dict (wrapped dict case from benchmark)
+                    if len(labels_raw) == 1 and isinstance(labels_raw[0], dict):
+                        labels = labels_raw[0]
+                    else:
+                        # Convert list to dict: ['label1', 'label2'] -> {'label1': 1, 'label2': 1}
+                        labels = {label: 1 for label in labels_raw if label and isinstance(label, str)}
+                else:
+                    labels = labels_raw
+
+                ml_val_samples.append(MultiLabelSample(
+                    text=s['text'],
+                    labels=labels,
+                    id=s.get('id'),
+                    lang=s.get('lang'),
+                    metadata=s.get('metadata')
+                ))
+
+            # Combine for multiclass group detection
+            ml_samples = ml_train_samples + ml_val_samples
 
             # Use multiclass_groups from config if provided, otherwise detect
             multiclass_groups = config.get('multiclass_groups')
@@ -1317,10 +1357,10 @@ class ModelTrainer:
                         value_names = [lbl[len(group_name)+1:] if lbl.startswith(group_name+'_') else lbl for lbl in labels]
                         self.logger.info(f"  • {group_name}: {', '.join(value_names)}")
 
-            # Train models
+            # Train models - CRITICAL: Pass converted samples with dict labels, not original samples
             trained_models = ml_trainer.train(
-                train_samples=train_samples,
-                val_samples=val_samples,
+                train_samples=ml_train_samples,
+                val_samples=ml_val_samples,
                 auto_split=False,
                 output_dir=config.get('output_dir', 'models/best_model'),
                 multiclass_groups=multiclass_groups,  # Pass detected or provided groups
