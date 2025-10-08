@@ -177,6 +177,53 @@ dev = [
     "jupyter>=1.0.0",
     "notebook>=7.0.0",
 ]
+all = [
+    # Additional LLM providers
+    "anthropic>=0.18.0",
+    "google-generativeai>=0.3.0",
+    "llama-cpp-python>=0.2.0",
+    # Annotation platforms
+    "label-studio>=1.20.0",
+    "label-studio-sdk>=2.0.0",
+    # Alternative language detection
+    "langdetect>=1.0.9",
+    "fasttext>=0.9.2",
+    "fasttext-wheel>=0.9.2",
+    # Advanced ML features
+    "sentence-transformers>=2.2.0",
+    "imbalanced-learn>=0.11.0",
+    # Visualization
+    "seaborn>=0.12.0",
+    "matplotlib>=3.6.0",
+    # Optimization
+    "optuna>=3.3.0",
+    # MLOps
+    "mlflow>=2.8.0",
+    "wandb>=0.15.0",
+    "tensorboard>=2.13.0",
+    # Web serving
+    "fastapi>=0.103.0",
+    "uvicorn>=0.23.0",
+    "gradio>=3.45.0",
+    # Databases
+    "redis>=5.0.0",
+    "pymongo>=4.5.0",
+    # Distributed computing
+    "ray>=2.6.0",
+    "dask[complete]>=2023.8.0",
+    # Development tools
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.7.0",
+    "flake8>=6.1.0",
+    "mypy>=1.5.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.3.0",
+    "ipykernel>=6.25.0",
+    "jupyter>=1.0.0",
+    "notebook>=7.0.0",
+]
 
 [project.scripts]
 llm-tool = "llm_tool.__main__:main"
