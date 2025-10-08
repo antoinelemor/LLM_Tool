@@ -47,6 +47,96 @@ import torch
 import logging
 
 
+# ==================== TYPE CONVERSION UTILITIES ====================
+# These utilities ensure numpy types are converted to Python native types
+# to prevent issues with downstream processing (e.g., "object of type 'numpy.int64' has no len()")
+
+def safe_convert_label(label: Any) -> Union[int, str]:
+    """
+    Safely convert a single label from numpy types to Python native types.
+
+    Args:
+        label: Label to convert (can be numpy.int64, int, str, etc.)
+
+    Returns:
+        Python native int or str
+
+    Examples:
+        >>> safe_convert_label(np.int64(5))
+        5
+        >>> safe_convert_label("positive")
+        "positive"
+    """
+    if isinstance(label, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+        return int(label)
+    elif isinstance(label, (np.floating, np.float64, np.float32)):
+        return float(label)
+    elif isinstance(label, np.str_):
+        return str(label)
+    elif isinstance(label, (int, float, str)):
+        return label
+    else:
+        # Fallback: try to convert to string
+        return str(label)
+
+
+def safe_convert_labels(labels: List[Any]) -> List[Union[int, str]]:
+    """
+    Safely convert a list of labels from numpy types to Python native types.
+
+    Args:
+        labels: List of labels to convert
+
+    Returns:
+        List of Python native ints or strs
+
+    Examples:
+        >>> safe_convert_labels([np.int64(1), np.int64(0), np.int64(1)])
+        [1, 0, 1]
+    """
+    return [safe_convert_label(label) for label in labels]
+
+
+def safe_tolist(data: Any, column_name: Optional[str] = None) -> List[Any]:
+    """
+    Safely convert pandas Series or numpy arrays to Python lists with native types.
+
+    This function handles the common pattern of:
+    - df['column'].tolist() → returns numpy types
+    - Converting numpy types to Python native types
+
+    Args:
+        data: pandas Series, numpy array, or any iterable
+        column_name: Optional column name for better error messages
+
+    Returns:
+        List with Python native types (int, str, float)
+
+    Examples:
+        >>> import pandas as pd
+        >>> df = pd.DataFrame({'labels': [1, 0, 1]})
+        >>> safe_tolist(df['labels'])
+        [1, 0, 1]  # Python ints, not numpy.int64
+    """
+    try:
+        # Convert to list first
+        if hasattr(data, 'tolist'):
+            result = data.tolist()
+        elif hasattr(data, '__iter__'):
+            result = list(data)
+        else:
+            result = [data]
+
+        # Convert any numpy types to Python native types
+        return safe_convert_labels(result)
+    except Exception as e:
+        col_info = f" for column '{column_name}'" if column_name else ""
+        raise ValueError(f"Failed to convert data{col_info} to list: {e}")
+
+
+# ==================== END TYPE CONVERSION UTILITIES ====================
+
+
 @dataclass
 class DataSample:
     """Represents a single data sample with metadata."""

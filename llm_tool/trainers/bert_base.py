@@ -705,7 +705,8 @@ class BertBase(BertABC):
             dataset = TensorDataset(inputs_tensors, masks_tensors)
             return dataset, None
 
-        label_names = np.unique(labels)
+        # CRITICAL: Convert to Python list to avoid numpy array issues
+        label_names = np.unique(labels).tolist()
 
         # CRITICAL FIX: Ensure NOT_* labels get index 0, others get higher indices
         # This matches the display convention: Class 0 = NOT_category, Class 1 = category
@@ -752,6 +753,12 @@ class BertBase(BertABC):
         dataloader: torch.utils.data.DataLoader
             A PyTorch DataLoader with input_ids, attention_masks, and labels (if provided).
         """
+        # CRITICAL FIX: Convert numpy types to Python native types
+        # This prevents issues with numpy.int64 objects in downstream processing
+        if labels is not None:
+            from .data_utils import safe_convert_labels
+            labels = safe_convert_labels(labels)
+
         inputs, masks = self._prepare_inputs(
             sequences,
             add_special_tokens=add_special_tokens,
@@ -858,7 +865,8 @@ class BertBase(BertABC):
 
             # Calculate variance penalty if we have multiple languages
             if len(f1_class1_by_lang) > 1:
-                mean_f1 = np.mean(f1_class1_by_lang)
+                # CRITICAL: Convert to Python float to avoid numpy scalar issues
+                mean_f1 = float(np.mean(f1_class1_by_lang))
                 std_f1 = np.std(f1_class1_by_lang)
 
                 # High variance = unbalanced performance across languages
@@ -925,6 +933,9 @@ class BertBase(BertABC):
             f1_1_rescue_threshold: float = 0.0,
             model_identifier: Optional[str] = None,
             reinforced_f1_threshold: float = 0.7,  # Nouveau paramètre pour le seuil de déclenchement
+            rl_f1_threshold: float = 0.7,  # Alias for reinforced_f1_threshold for consistency with multi_label_trainer
+            rl_oversample_factor: float = 2.0,  # Oversampling factor for reinforced learning
+            rl_class_weight_factor: float = 2.0,  # Class weight factor for reinforced learning
             label_key: Optional[str] = None,  # Multi-label: key being trained (e.g., 'themes', 'sentiment')
             label_value: Optional[str] = None,  # Multi-label: specific value (e.g., 'transportation', 'positive')
             language: Optional[str] = None,  # Language of the data being trained (e.g., 'EN', 'FR')
@@ -1018,6 +1029,11 @@ class BertBase(BertABC):
         # Reset reinforced learning flag at the start of each training session
         self._reinforced_already_triggered = False
 
+        # Use rl_f1_threshold if provided (consistency with multi_label_trainer parameter naming)
+        # Priority: rl_f1_threshold > reinforced_f1_threshold
+        if rl_f1_threshold != 0.7:  # Non-default value provided
+            reinforced_f1_threshold = rl_f1_threshold
+
         # Store global progress tracking parameters for display updates
         self.global_total_models = global_total_models
         self.global_current_model = global_current_model
@@ -1025,6 +1041,39 @@ class BertBase(BertABC):
         self.global_max_epochs = global_max_epochs
         self.global_completed_epochs = global_completed_epochs
         self.global_start_time = global_start_time
+
+        # CRITICAL DEBUG: Log all parameter types at entry to run_training
+        self.logger.debug("=" * 80)
+        self.logger.debug("run_training ENTRY - Parameter type check:")
+        self.logger.debug(f"  n_epochs: type={type(n_epochs)}, value={n_epochs}")
+        self.logger.debug(f"  lr: type={type(lr)}, value={lr}")
+        self.logger.debug(f"  reinforced_epochs: type={type(reinforced_epochs)}, value={reinforced_epochs}")
+        self.logger.debug(f"  n_epochs_reinforced: type={type(n_epochs_reinforced)}, value={n_epochs_reinforced}")
+        self.logger.debug(f"  reinforced_learning: type={type(reinforced_learning)}, value={reinforced_learning}")
+        self.logger.debug(f"  session_id: type={type(session_id)}, value={session_id}")
+        self.logger.debug(f"  global_total_models: type={type(global_total_models)}, value={global_total_models}")
+        self.logger.debug(f"  global_current_model: type={type(global_current_model)}, value={global_current_model}")
+        self.logger.debug(f"  global_total_epochs: type={type(global_total_epochs)}, value={global_total_epochs}")
+        self.logger.debug(f"  global_max_epochs: type={type(global_max_epochs)}, value={global_max_epochs}")
+        self.logger.debug(f"  global_completed_epochs: type={type(global_completed_epochs)}, value={global_completed_epochs}")
+        self.logger.debug(f"  global_start_time: type={type(global_start_time)}, value={global_start_time}")
+
+        # Check ALL parameters for numpy types
+        import numpy as np
+        params_to_check = {
+            'n_epochs': n_epochs,
+            'n_epochs_reinforced': n_epochs_reinforced,
+            'reinforced_epochs': reinforced_epochs,
+            'global_total_models': global_total_models,
+            'global_current_model': global_current_model,
+            'global_total_epochs': global_total_epochs,
+            'global_max_epochs': global_max_epochs,
+            'global_completed_epochs': global_completed_epochs
+        }
+        for key, value in params_to_check.items():
+            if value is not None and isinstance(value, (np.integer, np.floating, np.ndarray)):
+                self.logger.warning(f"  ⚠️ NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
+        self.logger.debug("=" * 80)
 
         # NEW STRUCTURE:
         # Normal mode:    logs/training_arena/{session_id}/training_metrics/{category}/
@@ -1035,8 +1084,9 @@ class BertBase(BertABC):
         # model: Model identifier (e.g., bert-base-uncased) - only in benchmark mode
 
         # Create or use session ID (timestamp)
+        # CRITICAL: Always use "training_session_" prefix for consistency with benchmarking
         if session_id is None:
-            session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            session_id = datetime.datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
 
         # Determine category name
         # Priority: label_value > label_key > "default"
@@ -1121,7 +1171,8 @@ class BertBase(BertABC):
             num_labels = self.num_labels
         else:
             # Binary mode or not set: infer from data (backward compatibility)
-            num_labels_from_data = np.unique(test_labels).size
+            # CRITICAL: Convert to Python int to avoid numpy scalar issues
+            num_labels_from_data = int(np.unique(test_labels).size)
             # Ensure we have at least 2 labels for binary classification
             # This fixes the issue when all samples in test have the same label
             if num_labels_from_data < 2:
@@ -1492,7 +1543,8 @@ class BertBase(BertABC):
                 preds = np.argmax(logits_complete, axis=1).flatten()
 
                 # Get actual unique classes present in predictions and labels
-                unique_classes = np.unique(np.concatenate([test_labels, preds]))
+                # CRITICAL: Convert to Python list to avoid numpy array issues
+                unique_classes = np.unique(np.concatenate([test_labels, preds])).tolist()
 
                 # Force classification_report to include all labels (0 to num_labels-1)
                 # This prevents missing metrics when a class has no predictions
@@ -1651,7 +1703,8 @@ class BertBase(BertABC):
                     # Calculate language variance for F1 class 1
                     f1_class1_values = [m['f1_1'] for m in language_metrics.values() if m['support_1'] >= 3]
                     if len(f1_class1_values) > 1:
-                        mean_f1 = np.mean(f1_class1_values)
+                        # CRITICAL: Convert to Python float to avoid numpy scalar issues
+                        mean_f1 = float(np.mean(f1_class1_values))
                         std_f1 = np.std(f1_class1_values)
                         display.language_variance = (std_f1 / mean_f1) if mean_f1 > 0 else 0
 
@@ -1784,7 +1837,8 @@ class BertBase(BertABC):
 
                         if len(f1_class1_values) > 1:
                             # Calculate coefficient of variation (std / mean) as a measure of imbalance
-                            mean_f1_class1 = np.mean(f1_class1_values)
+                            # CRITICAL: Convert to Python float to avoid numpy scalar issues
+                            mean_f1_class1 = float(np.mean(f1_class1_values))
                             std_f1_class1 = np.std(f1_class1_values)
 
                             # Avoid division by zero
@@ -2069,10 +2123,41 @@ class BertBase(BertABC):
                 best_f1_scores = best_scores[2]  # (f1_0, f1_1, ...)
                 best_support = best_scores[3]    # (support_0, support_1, ...)
 
+                # CRITICAL DEBUG: Log best_f1_scores type to diagnose numpy.int64 has no len() error
+                self.logger.debug(f"REINFORCED LEARNING CHECK:")
+                self.logger.debug(f"  best_scores type: {type(best_scores)}")
+                self.logger.debug(f"  best_f1_scores type: {type(best_f1_scores)}, value: {best_f1_scores}")
+                self.logger.debug(f"  best_precision type: {type(best_precision)}, value: {best_precision}")
+                self.logger.debug(f"  best_recall type: {type(best_recall)}, value: {best_recall}")
+                self.logger.debug(f"  best_support type: {type(best_support)}, value: {best_support}")
+
+                # CRITICAL: Convert numpy arrays to ensure they are iterable
+                import numpy as np
+                if isinstance(best_f1_scores, (np.integer, np.floating)):
+                    # Scalar - wrap in list
+                    self.logger.warning(f"⚠️ best_f1_scores is a scalar {type(best_f1_scores)}: {best_f1_scores}")
+                    best_f1_scores = [float(best_f1_scores)]
+                    best_precision = [float(best_precision)]
+                    best_recall = [float(best_recall)]
+                    best_support = [int(best_support)]
+                elif hasattr(best_f1_scores, 'tolist'):
+                    # Numpy array - convert to list for safety
+                    self.logger.debug(f"Converting numpy arrays to lists for safety")
+                    best_f1_scores = best_f1_scores.tolist()
+                    best_precision = best_precision.tolist()
+                    best_recall = best_recall.tolist()
+                    best_support = best_support.tolist()
+
                 # Handle binary vs multi-class
                 if num_labels == 2:
                     # Binary classification
-                    if len(best_f1_scores) >= 2:
+                    try:
+                        f1_scores_len = len(best_f1_scores)
+                    except TypeError as e:
+                        self.logger.error(f"❌ ERROR: Cannot get len() of best_f1_scores: type={type(best_f1_scores)}, value={best_f1_scores}")
+                        raise TypeError(f"Cannot get len() of best_f1_scores: type={type(best_f1_scores)}, value={best_f1_scores}") from e
+
+                    if f1_scores_len >= 2:
                         best_f1_0 = best_f1_scores[0]
                         best_f1_1 = best_f1_scores[1]
                         best_support_0 = int(best_support[0])
@@ -2684,8 +2769,9 @@ class BertBase(BertABC):
                 'recall': best_scores[1].tolist() if hasattr(best_scores[1], 'tolist') else best_scores[1],
                 'f1': best_scores[2].tolist() if hasattr(best_scores[2], 'tolist') else best_scores[2],
                 'support': best_scores[3].tolist() if hasattr(best_scores[3], 'tolist') else best_scores[3],
-                'f1_macro': np.mean(best_scores[2]) if best_scores[2] is not None else 0,  # CRITICAL: Use f1_macro not macro_f1 for consistency
-                'macro_f1': np.mean(best_scores[2]) if best_scores[2] is not None else 0,  # Keep backward compatibility
+                # CRITICAL: Convert np.mean results to Python floats to avoid numpy scalar issues
+                'f1_macro': float(np.mean(best_scores[2])) if best_scores[2] is not None else 0.0,  # CRITICAL: Use f1_macro not macro_f1 for consistency
+                'macro_f1': float(np.mean(best_scores[2])) if best_scores[2] is not None else 0.0,  # Keep backward compatibility
                 'accuracy': np.sum([p * s for p, s in zip(best_scores[0], best_scores[3])]) / np.sum(best_scores[3]) if best_scores[3] is not None else 0,
                 'f1_0': best_scores[2][0] if len(best_scores[2]) > 0 else 0,
                 'f1_1': best_scores[2][1] if len(best_scores[2]) > 1 else 0,

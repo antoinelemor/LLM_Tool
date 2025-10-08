@@ -80,6 +80,7 @@ from .sota_models import (
 )
 from .multilingual_selector import MultilingualModelSelector
 from ..utils.data_filter_logger import get_filter_logger
+from .data_utils import safe_tolist, safe_convert_labels
 
 
 __all__ = [
@@ -489,7 +490,8 @@ class ModelTrainer:
                 unique_labels = df[label_column].unique()
             else:
                 raise
-        sorted_labels = sorted(unique_labels, key=lambda x: (not str(x).startswith('NOT_'), str(x)))
+        # CRITICAL: Convert to Python list to avoid numpy array issues
+        sorted_labels = sorted(unique_labels.tolist(), key=lambda x: (not str(x).startswith('NOT_'), str(x)))
 
         # Create manual label mapping to ensure NOT_* = 0, others = 1+
         label_to_id = {label: idx for idx, label in enumerate(sorted_labels)}
@@ -577,7 +579,8 @@ class ModelTrainer:
                 # Update arrays
                 X = df[text_column].values
                 y = df[label_column].values
-                sorted_labels = sorted(np.unique(y))
+                # CRITICAL: Convert to Python list to avoid numpy array issues
+                sorted_labels = sorted(np.unique(y).tolist())
 
                 # Update lang_col if present
                 if lang_col_name:
@@ -642,7 +645,8 @@ class ModelTrainer:
 
         # Check if we have enough samples for stratification
         n_samples = len(y)
-        n_classes = len(np.unique(y))
+        # CRITICAL: Convert to Python int to avoid numpy scalar issues
+        n_classes = int(len(np.unique(y)))
         test_samples = int(n_samples * test_split) if test_split > 0 else 0
         val_samples = int(n_samples * validation_split)
 
@@ -719,12 +723,18 @@ class ModelTrainer:
                           label_column: str = 'label',
                           training_strategy: str = 'single-label',
                           category_name: Optional[str] = None,
+                          session_id: Optional[str] = None,
                           global_total_models: Optional[int] = None,
                           global_current_model: Optional[int] = None,
                           global_total_epochs: Optional[int] = None,
                           global_max_epochs: Optional[int] = None,
                           global_completed_epochs: Optional[int] = None,
-                          global_start_time: Optional[float] = None) -> TrainingResult:
+                          global_start_time: Optional[float] = None,
+                          reinforced_learning: bool = False,
+                          reinforced_epochs: Optional[int] = None,
+                          rl_f1_threshold: float = 0.7,
+                          rl_oversample_factor: float = 2.0,
+                          rl_class_weight_factor: float = 2.0) -> TrainingResult:
         """Train a single model"""
         from tqdm import tqdm
         print(f"\n🏋️  Training model: {model_name}")
@@ -822,13 +832,13 @@ class ModelTrainer:
 
         # Now extract texts as strings
         train_texts = train_df['text'].astype(str).str.strip().tolist()
-        # CRITICAL FIX: Convert labels to Python native types (int or str)
+        # CRITICAL FIX: Convert labels to Python native types (int or str) using safe_tolist
         # This prevents issues with numpy.int64 objects in downstream processing
-        train_labels = [int(x) if isinstance(x, (np.integer, np.int64)) else x for x in train_df[label_column].tolist()]
+        train_labels = safe_tolist(train_df[label_column], column_name=label_column)
         val_texts = val_df['text'].astype(str).str.strip().tolist()
-        val_labels = [int(x) if isinstance(x, (np.integer, np.int64)) else x for x in val_df[label_column].tolist()]
+        val_labels = safe_tolist(val_df[label_column], column_name=label_column)
         test_texts = test_df['text'].astype(str).str.strip().tolist()
-        test_labels = [int(x) if isinstance(x, (np.integer, np.int64)) else x for x in test_df[label_column].tolist()]
+        test_labels = safe_tolist(test_df[label_column], column_name=label_column)
 
         self.logger.info(f"Final dataset sizes - Train: {len(train_texts)}, Val: {len(val_texts)}, Test: {len(test_texts)}")
 
@@ -840,15 +850,15 @@ class ModelTrainer:
 
         # Check for language column (both 'language' and 'lang' for compatibility)
         if 'language' in train_df.columns:
-            train_languages = train_df['language'].tolist()
-            val_languages = val_df['language'].tolist()
-            test_languages = test_df['language'].tolist()
+            train_languages = safe_tolist(train_df['language'], column_name='language')
+            val_languages = safe_tolist(val_df['language'], column_name='language')
+            test_languages = safe_tolist(test_df['language'], column_name='language')
             track_languages = True
             self.logger.info(f"✓ Found 'language' column. Will track per-language metrics.")
         elif 'lang' in train_df.columns:
-            train_languages = train_df['lang'].tolist()
-            val_languages = val_df['lang'].tolist()
-            test_languages = test_df['lang'].tolist()
+            train_languages = safe_tolist(train_df['lang'], column_name='lang')
+            val_languages = safe_tolist(val_df['lang'], column_name='lang')
+            test_languages = safe_tolist(test_df['lang'], column_name='lang')
             track_languages = True
             self.logger.info(f"✓ Found 'lang' column. Will track per-language metrics.")
 
@@ -937,6 +947,28 @@ class ModelTrainer:
             global_max_epochs = int(global_max_epochs) if global_max_epochs is not None else None
             global_completed_epochs = int(global_completed_epochs) if global_completed_epochs is not None else None
 
+            # CRITICAL DEBUG: Log all parameter types before calling run_training
+            import numpy as np
+            self.logger.debug("=" * 80)
+            self.logger.debug("BEFORE run_training (train_single_model) - Parameter type check:")
+            self.logger.debug(f"  n_epochs: type={type(self.config.num_epochs)}, value={self.config.num_epochs}")
+            self.logger.debug(f"  lr: type={type(self.config.learning_rate)}, value={self.config.learning_rate}")
+            self.logger.debug(f"  reinforced_epochs: type={type(reinforced_epochs)}, value={reinforced_epochs}")
+            self.logger.debug(f"  reinforced_learning: type={type(reinforced_learning)}, value={reinforced_learning}")
+            self.logger.debug(f"  session_id: type={type(session_id)}, value={session_id}")
+            self.logger.debug(f"  global_total_models: type={type(global_total_models)}, value={global_total_models}")
+            self.logger.debug(f"  global_current_model: type={type(global_current_model)}, value={global_current_model}")
+            self.logger.debug(f"  global_total_epochs: type={type(global_total_epochs)}, value={global_total_epochs}")
+            self.logger.debug(f"  global_max_epochs: type={type(global_max_epochs)}, value={global_max_epochs}")
+            self.logger.debug(f"  global_completed_epochs: type={type(global_completed_epochs)}, value={global_completed_epochs}")
+            self.logger.debug(f"  global_start_time: type={type(global_start_time)}, value={global_start_time}")
+
+            # Check ALL locals for numpy types
+            for key, value in locals().items():
+                if isinstance(value, (np.integer, np.floating, np.ndarray)):
+                    self.logger.warning(f"  ⚠️ NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
+            self.logger.debug("=" * 80)
+
             best_metric, best_model_path, best_scores = model_instance.run_training(
                 train_dataloader=train_dataloader,
                 test_dataloader=val_dataloader,  # bert_base expects test_dataloader for validation
@@ -950,12 +982,17 @@ class ModelTrainer:
                 track_languages=track_languages,  # CRITICAL: Enable language tracking
                 language_info=val_languages,  # CRITICAL: Pass language info for validation set
                 class_names=class_names_for_display,  # CRITICAL: Pass class names for table display
+                session_id=session_id,  # CRITICAL: Unified session ID for all runs
                 global_total_models=global_total_models,
                 global_current_model=global_current_model,
                 global_total_epochs=global_total_epochs,
                 global_max_epochs=global_max_epochs,
                 global_completed_epochs=global_completed_epochs,
-                global_start_time=global_start_time
+                global_start_time=global_start_time,
+                reinforced_learning=reinforced_learning,
+                reinforced_epochs=reinforced_epochs,
+                reinforced_f1_threshold=rl_f1_threshold,
+                # Add other RL params if needed
             )
 
             # Log final model path
@@ -1004,11 +1041,12 @@ class ModelTrainer:
                 else:
                     # Fallback: extract from numpy tuple if summary not available
                     if best_scores is not None and len(best_scores) >= 4:
-                        accuracy = np.sum([p * s for p, s in zip(best_scores[0], best_scores[3])]) / np.sum(best_scores[3]) if best_scores[3] is not None and np.sum(best_scores[3]) > 0 else 0
-                        precision = np.mean(best_scores[0]) if best_scores[0] is not None else 0
-                        recall = np.mean(best_scores[1]) if best_scores[1] is not None else 0
-                        f1_weighted = np.mean(best_scores[2]) if best_scores[2] is not None else 0
-                        f1_macro = np.mean(best_scores[2]) if best_scores[2] is not None else 0
+                        # CRITICAL: Convert all np results to Python floats to avoid numpy scalar issues
+                        accuracy = float(np.sum([p * s for p, s in zip(best_scores[0], best_scores[3])]) / np.sum(best_scores[3])) if best_scores[3] is not None and np.sum(best_scores[3]) > 0 else 0.0
+                        precision = float(np.mean(best_scores[0])) if best_scores[0] is not None else 0.0
+                        recall = float(np.mean(best_scores[1])) if best_scores[1] is not None else 0.0
+                        f1_weighted = float(np.mean(best_scores[2])) if best_scores[2] is not None else 0.0
+                        f1_macro = float(np.mean(best_scores[2])) if best_scores[2] is not None else 0.0
                         cm = np.array([])
                         report = {}
                     else:
@@ -1151,6 +1189,8 @@ class ModelTrainer:
             config['global_current_model'] = int(config['global_current_model'])
         if 'global_total_epochs' in config and config['global_total_epochs'] is not None:
             config['global_total_epochs'] = int(config['global_total_epochs'])
+        if 'global_max_epochs' in config and config['global_max_epochs'] is not None:
+            config['global_max_epochs'] = int(config['global_max_epochs'])
         if 'global_completed_epochs' in config and config['global_completed_epochs'] is not None:
             config['global_completed_epochs'] = int(config['global_completed_epochs'])
 
@@ -1413,8 +1453,10 @@ class ModelTrainer:
             ml_samples = ml_train_samples + ml_val_samples
 
             # Use multiclass_groups from config if provided, otherwise detect
+            # CRITICAL: Do NOT auto-detect if user explicitly chose one-vs-all training
+            training_approach = config.get('training_approach')
             multiclass_groups = config.get('multiclass_groups')
-            if multiclass_groups is None:
+            if multiclass_groups is None and training_approach != 'one-vs-all':
                 multiclass_groups = ml_trainer.detect_multiclass_groups(ml_samples)
                 # Only log if we detected it ourselves (not passed from config)
                 if multiclass_groups:
@@ -1422,6 +1464,9 @@ class ModelTrainer:
                     for group_name, labels in multiclass_groups.items():
                         value_names = [lbl[len(group_name)+1:] if lbl.startswith(group_name+'_') else lbl for lbl in labels]
                         self.logger.info(f"  • {group_name}: {', '.join(value_names)}")
+            elif training_approach == 'one-vs-all':
+                # User explicitly chose one-vs-all, force binary training for each label
+                self.logger.info("One-vs-all training: creating separate binary models for each label")
 
             # Train models - CRITICAL: Pass converted samples with dict labels, not original samples
             # CRITICAL: Start timer for training time measurement
@@ -1440,8 +1485,14 @@ class ModelTrainer:
                 global_total_models=config.get('global_total_models'),
                 global_current_model=config.get('global_current_model'),
                 global_total_epochs=config.get('global_total_epochs'),
+                global_max_epochs=config.get('global_max_epochs'),  # CRITICAL: Pass max epochs for "(max X)" display
                 global_completed_epochs=config.get('global_completed_epochs'),
-                global_start_time=config.get('global_start_time')
+                global_start_time=config.get('global_start_time'),
+                reinforced_learning=config.get('reinforced_learning', False),  # CRITICAL: Enable "(max X)" display
+                reinforced_epochs=config.get('reinforced_epochs'),  # CRITICAL: Pass manual reinforced epochs if configured
+                rl_f1_threshold=config.get('rl_f1_threshold', 0.7),
+                rl_oversample_factor=config.get('rl_oversample_factor', 2.0),
+                rl_class_weight_factor=config.get('rl_class_weight_factor', 2.0)
             )
 
             # CRITICAL: Calculate total training time
@@ -1449,8 +1500,9 @@ class ModelTrainer:
 
             # Aggregate results
             if trained_models:
-                avg_f1 = np.mean([m.performance_metrics.get('f1_macro', 0) for m in trained_models.values()])
-                avg_acc = np.mean([m.performance_metrics.get('accuracy', 0) for m in trained_models.values()])
+                # CRITICAL: Convert np.mean results to Python floats to avoid numpy scalar issues
+                avg_f1 = float(np.mean([m.performance_metrics.get('f1_macro', 0) for m in trained_models.values()]))
+                avg_acc = float(np.mean([m.performance_metrics.get('accuracy', 0) for m in trained_models.values()]))
 
                 self.logger.info(f"Multi-label training complete!")
                 self.logger.info(f"Models trained: {len(trained_models)}/{len(trained_models)}")
@@ -1510,7 +1562,8 @@ class ModelTrainer:
                 else:
                     # Multiple categories - return averaged metrics
                     # CRITICAL: Average training time across all models or use total time
-                    avg_training_time = np.mean([m.performance_metrics.get('training_time', 0) for m in trained_models.values()])
+                    # Convert np.mean result to Python float to avoid numpy scalar issues
+                    avg_training_time = float(np.mean([m.performance_metrics.get('training_time', 0) for m in trained_models.values()]))
                     if avg_training_time == 0:
                         avg_training_time = total_training_time
 
@@ -1546,11 +1599,18 @@ class ModelTrainer:
             # Get number of unique labels
             # Note: load_data returns dataframes with 'label' column (hardcoded)
             all_labels = pd.concat([train_df['label'], val_df['label'], test_df['label']])
-            num_labels = len(all_labels.unique())
+            # CRITICAL: Convert to Python int to avoid numpy.int64 issues
+            num_labels = int(len(all_labels.unique()))
 
             # ==================== PER-LANGUAGE MODEL TRAINING ====================
             # Check if we should train separate models per language
             models_by_language = config.get('models_by_language')
+
+            # CRITICAL: Validate models_by_language is a dict (defensive fix for numpy type issues)
+            if models_by_language is not None and not isinstance(models_by_language, dict):
+                self.logger.warning(f"⚠️  models_by_language has invalid type: {type(models_by_language)} (value: {models_by_language})")
+                self.logger.warning("   Expected dict, got scalar or other type. Disabling per-language training.")
+                models_by_language = None
 
             if models_by_language:
                 # Train separate model for each language
@@ -1612,7 +1672,8 @@ class ModelTrainer:
                     if len(val_df_lang) > 0:
                         dfs_to_concat.insert(1, val_df_lang['label'])
                     all_labels_lang = pd.concat(dfs_to_concat)
-                    unique_labels_lang = sorted(all_labels_lang.unique())
+                    # CRITICAL: Convert to Python list to avoid numpy.int64 scalar issues
+                    unique_labels_lang = sorted(all_labels_lang.unique().tolist())
 
                     # Create mapping from old labels to new contiguous labels
                     label_mapping = {old_label: new_label for new_label, old_label in enumerate(unique_labels_lang)}
@@ -1643,12 +1704,18 @@ class ModelTrainer:
                             label_column='label',
                             training_strategy=training_strategy,
                             category_name=config.get('category_name'),
+                            session_id=config.get('session_id'),  # CRITICAL: Unified session ID
                             global_total_models=config.get('global_total_models'),
                             global_current_model=config.get('global_current_model'),
                             global_total_epochs=config.get('global_total_epochs'),
                             global_max_epochs=config.get('global_max_epochs'),
                             global_completed_epochs=config.get('global_completed_epochs'),
-                            global_start_time=config.get('global_start_time')
+                            global_start_time=config.get('global_start_time'),
+                            reinforced_learning=config.get('reinforced_learning', False),
+                            reinforced_epochs=config.get('reinforced_epochs'),
+                            rl_f1_threshold=config.get('rl_f1_threshold', 0.7),
+                            rl_oversample_factor=config.get('rl_oversample_factor', 2.0),
+                            rl_class_weight_factor=config.get('rl_class_weight_factor', 2.0)
                         )
 
                         language_results[lang_code] = {
@@ -1665,14 +1732,20 @@ class ModelTrainer:
                         self.logger.info(f"✓ {lang_code} model complete: Accuracy={lang_result.best_accuracy:.4f}, F1={lang_result.best_f1_macro:.4f}")
 
                     except Exception as e:
-                        self.logger.error(f"❌ Failed to train {lang_code} model: {str(e)}")
+                        # CRITICAL: Log full traceback to identify where numpy.int64 has no len() error occurs
+                        import traceback
+                        self.logger.error(f"❌ Failed to train {lang_code} model: {str(e)}", exc_info=True)
+                        self.logger.error(f"Full traceback:\n{traceback.format_exc()}")
                         language_results[lang_code] = {'error': str(e)}
+                        # CRITICAL: Re-raise to see the actual error instead of "All language-specific models failed"
+                        raise
 
                 # Calculate aggregate metrics
                 successful_langs = [lang for lang, res in language_results.items() if 'error' not in res]
                 if successful_langs:
-                    avg_accuracy = np.mean([language_results[lang]['accuracy'] for lang in successful_langs])
-                    avg_f1 = np.mean([language_results[lang]['f1_macro'] for lang in successful_langs])
+                    # CRITICAL: Convert np.mean results to Python float to avoid numpy scalar issues
+                    avg_accuracy = float(np.mean([language_results[lang]['accuracy'] for lang in successful_langs]))
+                    avg_f1 = float(np.mean([language_results[lang]['f1_macro'] for lang in successful_langs]))
 
                     self.logger.info(f"\n✅ Per-language training complete!")
                     self.logger.info(f"   Models trained: {len(successful_langs)}/{len(models_by_language)}")
@@ -1702,12 +1775,18 @@ class ModelTrainer:
                     label_column='label',  # load_data returns 'label' column
                     training_strategy=training_strategy,
                     category_name=config.get('category_name'),  # Pass category name for display
+                    session_id=config.get('session_id'),  # CRITICAL: Unified session ID
                     global_total_models=config.get('global_total_models'),
                     global_current_model=config.get('global_current_model'),
                     global_total_epochs=config.get('global_total_epochs'),
                     global_max_epochs=config.get('global_max_epochs'),
                     global_completed_epochs=config.get('global_completed_epochs'),
-                    global_start_time=config.get('global_start_time')
+                    global_start_time=config.get('global_start_time'),
+                    reinforced_learning=config.get('reinforced_learning', False),
+                    reinforced_epochs=config.get('reinforced_epochs'),
+                    rl_f1_threshold=config.get('rl_f1_threshold', 0.7),
+                    rl_oversample_factor=config.get('rl_oversample_factor', 2.0),
+                    rl_class_weight_factor=config.get('rl_class_weight_factor', 2.0)
                 )
 
         # Return results (handle both single-model and per-language cases)
@@ -1944,6 +2023,25 @@ class ModelTrainer:
         import time as time_module
         global_start_time = time_module.time()
 
+        # CRITICAL DEBUG: Log all parameter types before calling run_training
+        import numpy as np
+        self.logger.debug("=" * 80)
+        self.logger.debug("BEFORE run_training - Parameter type check:")
+        self.logger.debug(f"  n_epochs: type={type(self.config.num_epochs)}, value={self.config.num_epochs}")
+        self.logger.debug(f"  lr: type={type(self.config.learning_rate)}, value={self.config.learning_rate}")
+        self.logger.debug(f"  session_id: type={type(config.get('session_id'))}, value={config.get('session_id')}")
+        self.logger.debug(f"  global_total_models: type={type(1)}, value=1")
+        self.logger.debug(f"  global_current_model: type={type(1)}, value=1")
+        self.logger.debug(f"  global_total_epochs: type={type(self.config.num_epochs)}, value={self.config.num_epochs}")
+        self.logger.debug(f"  global_completed_epochs: type={type(0)}, value=0")
+        self.logger.debug(f"  global_start_time: type={type(global_start_time)}, value={global_start_time}")
+
+        # Check for numpy types
+        for key, value in locals().items():
+            if isinstance(value, (np.integer, np.floating, np.ndarray)):
+                self.logger.warning(f"  ⚠️ NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
+        self.logger.debug("=" * 80)
+
         # CRITICAL FIX: Use run_training (not run_training_enhanced which doesn't exist) with language_info
         best_metric, best_model_path, best_scores = model.run_training(
             train_dataloader=train_loader,
@@ -2094,8 +2192,9 @@ class ModelTrainer:
         # Calculate average metrics
         successful_results = [r for r in overall_metrics['per_label_results'].values() if 'error' not in r]
         if successful_results:
-            overall_metrics['avg_accuracy'] = np.mean([r['accuracy'] for r in successful_results])
-            overall_metrics['avg_f1_macro'] = np.mean([r['f1_macro'] for r in successful_results])
+            # CRITICAL: Convert np.mean results to Python floats to avoid numpy scalar issues
+            overall_metrics['avg_accuracy'] = float(np.mean([r['accuracy'] for r in successful_results]))
+            overall_metrics['avg_f1_macro'] = float(np.mean([r['f1_macro'] for r in successful_results]))
 
         self.logger.info(f"\nMulti-label training complete!")
         self.logger.info(f"Models trained: {overall_metrics['models_trained']}/{len(training_files)-1}")  # -1 for multilabel file

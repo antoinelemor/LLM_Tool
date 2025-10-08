@@ -6646,7 +6646,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         bundle : TrainingDataBundle
             The training data bundle
         mode : str
-            Training mode (quick, benchmark, custom, distributed)
+            Training mode (quick)
         preloaded_config : dict, optional
             Pre-loaded configuration from saved session (for resume/relaunch)
         is_resume : bool
@@ -6686,13 +6686,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 config_table.add_row("🌍 Languages", langs)
 
             # Training mode
-            mode_descriptions = {
-                "quick": "⚡ Quick Start - Fast training with defaults",
-                "benchmark": "📊 Benchmark - Test multiple models",
-                "custom": "⚙️  Custom - Full parameter control",
-                "distributed": "🔄 Distributed - Parallel multi-label ⚠️  (NOT RECOMMENDED - Untested)"
-            }
-            config_table.add_row("🎯 Training Mode", mode_descriptions.get(mode, mode))
+            config_table.add_row("🎯 Training Mode", "⚡ Quick Start - Fast training with defaults")
 
             # Mode-specific parameters
             if mode == "quick" and quick_params:
@@ -6733,12 +6727,6 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             elif mode == "quick":
                 config_table.add_row("⏱️  Epochs", "Will be asked (default: 10)")
                 config_table.add_row("📦 Batch Size", "16 (default)")
-            elif mode == "benchmark":
-                config_table.add_row("🔬 Models to Test", "5-7 (intelligent selection)")
-                config_table.add_row("⏱️  Epochs per Model", "Will be asked (default: 10)")
-            elif mode == "distributed":
-                num_labels = len(bundle.metadata.get('categories', []))
-                config_table.add_row("🔢 Models to Train", f"{num_labels} (one per label)")
 
             # Statistics
             if bundle.metadata.get('text_length_stats'):
@@ -6900,18 +6888,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         training_result = None
         runtime_params = {}  # Will store actual parameters used during training
         try:
-            if mode == "distributed":
-                training_result = self._training_studio_run_distributed(bundle, model_config, session_id)
-                runtime_params = training_result.get('runtime_params', {}) if training_result else {}
-            elif mode == "quick":
-                training_result = self._training_studio_run_quick(bundle, model_config, quick_params, session_id)
-                runtime_params = training_result.get('runtime_params', {}) if training_result else {}
-            elif mode == "benchmark":
-                training_result = self._training_studio_run_benchmark(bundle, model_config, session_id)
-                runtime_params = training_result.get('runtime_params', {}) if training_result else {}
-            else:
-                training_result = self._training_studio_run_custom(bundle, model_config, session_id)
-                runtime_params = training_result.get('runtime_params', {}) if training_result else {}
+            # Only quick mode is supported
+            training_result = self._training_studio_run_quick(bundle, model_config, quick_params, session_id)
+            runtime_params = training_result.get('runtime_params', {}) if training_result else {}
 
             # Update POST-TRAINING metadata with COMPLETE information
             if save_metadata and metadata_path:
@@ -6937,8 +6916,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 except Exception as e:
                     self.logger.error(f"Failed to update metadata: {e}")
 
-            # Generate comprehensive training data logs AFTER training/benchmark completion
-            # This ensures we capture complete information about benchmark vs normal training
+            # Generate comprehensive training data logs AFTER training completion
             if hasattr(self, 'current_session_manager') and self.current_session_manager:
                 try:
                     training_context = {
@@ -6946,7 +6924,6 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'training_result': training_result,
                         'runtime_params': runtime_params,
                         'models_trained': training_result.get('models_trained', []) if training_result else [],
-                        'benchmark_results': training_result.get('benchmark_results') if training_result and mode == 'benchmark' else None,
                     }
                     self._log_training_data_distributions(bundle, training_context=training_context)
                 except Exception as e:
@@ -10141,11 +10118,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         benchmark_epochs = IntPrompt.ask("[bold yellow]Number of epochs[/bold yellow]", default=10)
 
         # Store RL params
+        # CRITICAL: Initialize reinforced_epochs with a default value to ensure global_max_epochs calculation works
+        # Default to same as base epochs (user can override manually)
         benchmark_rl_params = {
             'f1_threshold': rl_f1_threshold,
             'oversample_factor': rl_oversample_factor,
             'class_weight_factor': rl_class_weight_factor,
-            'reinforced_epochs': None  # Will be set later if configured manually
+            'reinforced_epochs': benchmark_epochs  # Default: same as base epochs (will be overridden if manually configured)
         }
 
         # Calculate and display total epochs (always show, even if RL disabled)
@@ -10660,7 +10639,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'global_total_epochs': global_total_epochs,
                         'global_max_epochs': global_max_epochs,
                         'global_completed_epochs': global_completed_epochs,
-                        'global_start_time': global_start_time
+                        'global_start_time': global_start_time,
+                        # Pass training_approach from bundle metadata (one-vs-all vs multi-class)
+                        'training_approach': bundle.metadata.get('training_approach') if hasattr(bundle, 'metadata') else None
                     }
 
                     # Add language filtering for per-language models
@@ -12736,6 +12717,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Use parameters from quick_params (already collected before config summary)
         if quick_params:
+            # CRITICAL: Debug log to capture exact type of models_by_language from quick_params
+            self.logger.debug(f"quick_params keys: {quick_params.keys()}")
+            if 'models_by_language' in quick_params:
+                self.logger.debug(f"models_by_language type in quick_params: {type(quick_params['models_by_language'])}")
+                self.logger.debug(f"models_by_language value in quick_params: {quick_params['models_by_language']}")
+
             model_name = quick_params['model_name']
             epochs = quick_params['epochs']
             enable_reinforced_learning = quick_params['reinforced_learning']
@@ -12755,6 +12742,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Display training configuration summary
         self.console.print()
+
+        # CRITICAL: Validate models_by_language type before using len()
+        if models_by_language and not isinstance(models_by_language, dict):
+            self.console.print(f"[red]⚠️  ERROR: models_by_language has invalid type: {type(models_by_language)}[/red]")
+            self.logger.error(f"models_by_language type error: {type(models_by_language)}, value: {models_by_language}")
+            models_by_language = None  # Reset to None to prevent crash
+
         if models_by_language:
             self.console.print(f"  • Models: [cyan]{len(models_by_language)}[/cyan] (language-specific)")
         else:
@@ -12906,7 +12900,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             "num_epochs": epochs,
             "reinforced_learning": enable_reinforced_learning,  # CRITICAL: Pass reinforced learning setting
             "train_by_language": needs_language_training,
-            "confirmed_languages": list(languages) if languages else None  # Pass all detected languages
+            "confirmed_languages": list(languages) if languages else None,  # Pass all detected languages
+            "training_approach": training_approach_from_metadata  # CRITICAL: Pass training approach to prevent multiclass auto-detection for one-vs-all
         }
 
         # Add reinforced learning parameters if enabled
@@ -12923,7 +12918,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             extra_config["models_by_language"] = models_by_language
 
         # Add multiclass_groups if user opted for multi-class training
-        if bundle.strategy == "multi-label" and multiclass_groups:
+        # CRITICAL: Do NOT add multiclass_groups if user chose one-vs-all (which uses multi-label infrastructure but creates binary models)
+        if bundle.strategy == "multi-label" and multiclass_groups and training_approach_from_metadata != 'one-vs-all':
             extra_config["multiclass_groups"] = multiclass_groups
 
         # CRITICAL FIX: Handle one-vs-all training properly
@@ -13090,18 +13086,36 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print("[dim]   Note: 'distributed' training mode exists but is NOT RECOMMENDED (untested).[/dim]")
                 self.console.print("[yellow]   Quick mode will train them sequentially...[/yellow]\n")
 
+                # Initialize global progress tracking for one-vs-all training
+                import time
+                global_start_time = time.time()
+                # CRITICAL: Convert to Python int to avoid numpy.int64 issues
+                global_total_models = int(len(category_files))
+                epochs = int(epochs) if epochs is not None else 10
+                manual_rl_epochs = int(manual_rl_epochs) if manual_rl_epochs is not None else None
+                global_total_epochs = int(global_total_models * epochs)
+
+                # Calculate maximum possible epochs (if all models trigger reinforced learning)
+                if enable_reinforced_learning and manual_rl_epochs is not None:
+                    global_max_epochs = int(global_total_models * (epochs + manual_rl_epochs))
+                else:
+                    global_max_epochs = int(global_total_epochs)
+
+                global_completed_epochs = int(0)
+
                 # Train each binary model sequentially
                 results_per_category = {}
-                for category_name, category_file in category_files.items():
+                for idx, (category_name, category_file) in enumerate(category_files.items(), 1):
                     self.console.print(f"\n[cyan]Training binary model for: {category_name}[/cyan]")
 
                     # Create config for this specific category
+                    # CRITICAL: Convert all numeric values to Python int to avoid numpy.int64 issues
                     category_config = {
                         'input_file': str(category_file),
                         'text_column': 'text',
                         'label_column': 'label',
                         'model_name': model_name,
-                        'num_epochs': epochs,
+                        'num_epochs': int(epochs),
                         'reinforced_learning': enable_reinforced_learning,  # CRITICAL: Pass reinforced learning setting
                         'output_dir': str(Path(output_dir) / f'model_{category_name}'),
                         'training_strategy': 'single-label',  # Binary classification
@@ -13109,16 +13123,35 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'confirmed_languages': list(languages) if languages else None,
                         'train_by_language': needs_language_training,
                         'session_id': session_id,
-                        'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
+                        'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
+                        # Global progress tracking - ALL converted to Python int
+                        'global_total_models': int(global_total_models),
+                        'global_current_model': int(idx),
+                        'global_total_epochs': int(global_total_epochs),
+                        'global_max_epochs': int(global_max_epochs),
+                        'global_completed_epochs': int(global_completed_epochs),
+                        'global_start_time': global_start_time
                     }
 
                     # Add reinforced learning parameters if enabled
                     if enable_reinforced_learning and manual_rl_epochs is not None:
-                        category_config["reinforced_epochs"] = manual_rl_epochs
+                        category_config["reinforced_epochs"] = int(manual_rl_epochs)
 
                     # Add models_by_language if user selected per-language models
+                    # CRITICAL: Validate type before passing to avoid numpy type errors
                     if models_by_language:
-                        category_config["models_by_language"] = models_by_language
+                        if not isinstance(models_by_language, dict):
+                            self.console.print(f"[red]⚠️  ERROR: models_by_language has invalid type: {type(models_by_language)}[/red]")
+                            self.logger.error(f"one-vs-all: models_by_language type error: {type(models_by_language)}, value: {models_by_language}")
+                        else:
+                            category_config["models_by_language"] = models_by_language
+
+                    # CRITICAL DEBUG: Log category_config to detect numpy types
+                    self.logger.debug("=" * 80)
+                    self.logger.debug(f"category_config for {category_name}:")
+                    for key, value in category_config.items():
+                        self.logger.debug(f"  {key}: type={type(value)}, value={value}")
+                    self.logger.debug("=" * 80)
 
                     try:
                         category_result = trainer.train(category_config)
@@ -13127,7 +13160,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     except Exception as exc:
                         self.console.print(f"[red]✗ Failed to train {category_name}: {exc}[/red]")
                         self.logger.exception(f"Training failed for {category_name}", exc_info=exc)
+                        # CRITICAL: Log full traceback
+                        import traceback
+                        self.logger.error(f"Full traceback:\n{traceback.format_exc()}")
                         results_per_category[category_name] = {'error': str(exc)}
+                        # CRITICAL: Re-raise to see actual error
+                        raise
 
                 # Aggregate results
                 successful_results = [r for r in results_per_category.values() if 'error' not in r]
@@ -13172,11 +13210,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print(f"  • {len(multiclass_keys)} keys with multi-class strategy")
             self.console.print(f"  • {len(onevsall_keys)} keys with one-vs-all strategy\n")
 
+            # Initialize global progress tracking for hybrid/custom training
+            import time
+            global_start_time = time.time()
+            global_total_models = len(multiclass_keys) + (1 if onevsall_keys else 0)
+            global_total_epochs = global_total_models * epochs
+
+            # Calculate maximum possible epochs (if all models trigger reinforced learning)
+            if enable_reinforced_learning and manual_rl_epochs is not None:
+                global_max_epochs = global_total_models * (epochs + manual_rl_epochs)
+            else:
+                global_max_epochs = global_total_epochs
+
+            global_completed_epochs = 0
+
             results_per_key = {}
 
             # Train multi-class keys (one model per key)
             key_files = {k: v for k, v in bundle.training_files.items() if k in multiclass_keys}
-            for key_name, key_file_path in key_files.items():
+            for idx, (key_name, key_file_path) in enumerate(key_files.items(), 1):
                 self.console.print(f"\n[bold]Training multi-class model for '{key_name}'[/bold] ({key_file_path.name})")
 
                 key_config = {
@@ -13190,7 +13242,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'category_name': key_name,
                     'reinforced_learning': enable_reinforced_learning,
                     'session_id': session_id,
-                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
+                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
+                    # Global progress tracking
+                    'global_total_models': global_total_models,
+                    'global_current_model': idx,
+                    'global_total_epochs': global_total_epochs,
+                    'global_max_epochs': global_max_epochs,
+                    'global_completed_epochs': global_completed_epochs,
+                    'global_start_time': global_start_time
                 }
 
                 if models_by_language:
@@ -13198,6 +13257,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 try:
                     key_result = trainer.train(key_config)
+                    # Update global completed epochs
+                    global_completed_epochs = key_result.get('global_completed_epochs', global_completed_epochs)
                     results_per_key[key_name] = key_result
                     self.console.print(f"[green]✓ Completed {key_name}: Accuracy={key_result.get('accuracy', 0):.4f}, F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
                 except Exception as exc:
@@ -13219,11 +13280,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'text_column': bundle.text_column,
                     'label_column': bundle.label_column,
                     'training_strategy': 'multi-label',  # CRITICAL: Use multi-label trainer
+                    'training_approach': 'one-vs-all',  # CRITICAL: Explicitly mark as one-vs-all to prevent multiclass detection
                     'multiclass_groups': None,  # Force one-vs-all
                     'reinforced_learning': enable_reinforced_learning,
                     'confirmed_languages': list(languages) if languages else None,
                     'session_id': session_id,
-                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
+                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
+                    # Global progress tracking
+                    'global_total_models': global_total_models,
+                    'global_current_model': len(multiclass_keys) + 1,
+                    'global_total_epochs': global_total_epochs,
+                    'global_max_epochs': global_max_epochs,
+                    'global_completed_epochs': global_completed_epochs,
+                    'global_start_time': global_start_time
                 }
 
                 if models_by_language:
@@ -13231,6 +13300,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 try:
                     onevsall_result = trainer.train(onevsall_config)
+                    # Update global completed epochs
+                    global_completed_epochs = onevsall_result.get('global_completed_epochs', global_completed_epochs)
                     results_per_key['onevsall_combined'] = onevsall_result
                     self.console.print(f"[green]✓ Completed one-vs-all models[/green]")
                 except Exception as exc:
@@ -13271,9 +13342,23 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             if key_files:
                 self.console.print(f"\n[cyan]🎯 Multi-class training: {len(key_files)} models (one per key)[/cyan]\n")
 
+                # Initialize global progress tracking for multi-class training
+                import time
+                global_start_time = time.time()
+                global_total_models = len(key_files)
+                global_total_epochs = global_total_models * epochs
+
+                # Calculate maximum possible epochs (if all models trigger reinforced learning)
+                if enable_reinforced_learning and manual_rl_epochs is not None:
+                    global_max_epochs = global_total_models * (epochs + manual_rl_epochs)
+                else:
+                    global_max_epochs = global_total_epochs
+
+                global_completed_epochs = 0
+
                 results_per_key = {}
 
-                for key_name, key_file_path in key_files.items():
+                for idx, (key_name, key_file_path) in enumerate(key_files.items(), 1):
                     self.console.print(f"\n[bold]Training model for key '{key_name}'[/bold] ({key_file_path.name})")
 
                     # Create config for this key
@@ -13288,7 +13373,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'category_name': key_name,
                         'reinforced_learning': enable_reinforced_learning,
                         'session_id': session_id,
-                        'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
+                        'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
+                        # Global progress tracking
+                        'global_total_models': global_total_models,
+                        'global_current_model': idx,
+                        'global_total_epochs': global_total_epochs,
+                        'global_max_epochs': global_max_epochs,
+                        'global_completed_epochs': global_completed_epochs,
+                        'global_start_time': global_start_time
                     }
 
                     # Add models_by_language if user selected per-language models
@@ -13297,6 +13389,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     try:
                         key_result = trainer.train(key_config)
+                        # Update global completed epochs
+                        global_completed_epochs = key_result.get('global_completed_epochs', global_completed_epochs)
                         results_per_key[key_name] = key_result
                         self.console.print(f"[green]✓ Completed {key_name}: Accuracy={key_result.get('accuracy', 0):.4f}, F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
                     except Exception as exc:
@@ -13364,6 +13458,20 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         pass
 
                 # Fall through to standard training
+                # Initialize global progress tracking
+                import time
+                global_start_time = time.time()
+                global_total_models = 1
+                global_total_epochs = epochs
+
+                # Calculate maximum possible epochs (if model triggers reinforced learning)
+                if enable_reinforced_learning and manual_rl_epochs is not None:
+                    global_max_epochs = epochs + manual_rl_epochs
+                else:
+                    global_max_epochs = global_total_epochs
+
+                global_completed_epochs = 0
+
                 result = trainer.train({
                     'input_file': input_file_to_use,
                     'model_name': model_name,
@@ -13375,6 +13483,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'reinforced_learning': enable_reinforced_learning,
                     'session_id': session_id,
                     'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
+                    # Global progress tracking
+                    'global_total_models': global_total_models,
+                    'global_current_model': 1,
+                    'global_total_epochs': global_total_epochs,
+                    'global_max_epochs': global_max_epochs,
+                    'global_completed_epochs': global_completed_epochs,
+                    'global_start_time': global_start_time,
                     **extra_config
                 })
         else:
@@ -13410,9 +13525,30 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     # Continue with original file if validation fails
                     pass
 
+            # Initialize global progress tracking
+            import time
+            global_start_time = time.time()
+            global_total_models = 1
+            global_total_epochs = epochs
+
+            # Calculate maximum possible epochs (if model triggers reinforced learning)
+            if enable_reinforced_learning and manual_rl_epochs is not None:
+                global_max_epochs = epochs + manual_rl_epochs
+            else:
+                global_max_epochs = global_total_epochs
+
+            global_completed_epochs = 0
+
             config = bundle.to_trainer_config(output_dir, extra_config)
             config['session_id'] = session_id
             config['split_config'] = bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
+            # Add global progress tracking
+            config['global_total_models'] = global_total_models
+            config['global_current_model'] = 1
+            config['global_total_epochs'] = global_total_epochs
+            config['global_max_epochs'] = global_max_epochs
+            config['global_completed_epochs'] = global_completed_epochs
+            config['global_start_time'] = global_start_time
 
             try:
                 result = trainer.train(config)
@@ -13435,1639 +13571,6 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'models_trained': [model_name],
             'best_model': result.get('best_model'),
             'best_f1': result.get('best_f1') or result.get('f1_macro')
-        }
-
-    def _training_studio_run_benchmark(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Benchmark training mode - test multiple models on same dataset.
-
-        Args:
-            bundle: Training data bundle
-            model_config: Model configuration dict (will be updated with runtime params)
-            session_id: Session timestamp for organizing logs by session
-
-        Returns:
-            dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
-        """
-        from rich.table import Table
-        from rich import box
-
-        # Handle multi-label benchmarking separately
-        if bundle.strategy == "multi-label":
-            return self._training_studio_run_benchmark_multilabel(bundle, model_config, session_id)
-
-        try:
-            dataset_path, text_column, label_column = self._training_studio_resolve_benchmark_dataset(bundle)
-        except ValueError as exc:
-            self.console.print(f"[red]{exc}[/red]")
-            return
-
-        # Get dataset metadata
-        languages = bundle.metadata.get('confirmed_languages', bundle.metadata.get('languages', set()))
-        language_distribution = bundle.metadata.get('language_distribution', {})
-        text_length_stats = bundle.metadata.get('text_length_stats', {})
-
-        # Use REAL text length stats - prefer token-based, fallback to chars
-        if text_length_stats.get('token_mean'):
-            text_length_avg = text_length_stats['token_mean']
-        elif text_length_stats.get('char_mean'):
-            text_length_avg = text_length_stats['char_mean']
-        else:
-            text_length_avg = text_length_stats.get('avg_chars', 0)
-
-        user_prefers_long_models = text_length_stats.get('user_prefers_long_models', False)
-        model_strategy = bundle.metadata.get('model_strategy', 'multilingual')
-
-        # If we have a recommended model from language detection, use it as hint
-        recommended_model = bundle.recommended_model if hasattr(bundle, 'recommended_model') else None
-
-        # For single-label with multiple categories, ask which category to benchmark
-        # Load the dataset to check number of unique labels
-        import pandas as pd
-        df = pd.read_csv(dataset_path)
-        unique_labels = df[label_column].unique()
-        num_labels = len(unique_labels)
-
-        # Initialize selected_category variable
-        selected_category = None
-
-        if num_labels > 2:
-            self.console.print(f"\n[bold cyan]📊 Category Selection for Benchmarking[/bold cyan]\n")
-            self.console.print(f"[dim]Your dataset has {num_labels} categories. Choose which one to benchmark:[/dim]\n")
-
-            # Show label distribution
-            label_counts = df[label_column].value_counts().to_dict()
-            labels_table = Table(show_header=True, header_style="bold magenta", border_style="cyan")
-            labels_table.add_column("#", style="cyan", width=5)
-            labels_table.add_column("Category", style="white", width=40)
-            labels_table.add_column("Count", style="yellow", justify="right", width=10)
-            labels_table.add_column("Percentage", style="green", justify="right", width=12)
-
-            total = len(df)
-            for idx, label in enumerate(sorted(label_counts.keys(), key=lambda x: label_counts[x], reverse=True), 1):
-                count = label_counts[label]
-                pct = (count / total * 100)
-                labels_table.add_row(str(idx), str(label), f"{count:,}", f"{pct:.1f}%")
-
-            self.console.print(labels_table)
-
-            # Ask user to select category
-            self.console.print("\n[bold]Select category to benchmark:[/bold]")
-            self.console.print("[dim]Enter category name or number from the table above[/dim]")
-
-            category_choice = Prompt.ask("Category name or number")
-
-            # Parse choice (number or name)
-            selected_category = None
-            try:
-                # Try as number first
-                idx = int(category_choice) - 1
-                sorted_labels = sorted(label_counts.keys(), key=lambda x: label_counts[x], reverse=True)
-                if 0 <= idx < len(sorted_labels):
-                    selected_category = sorted_labels[idx]
-            except ValueError:
-                # Not a number, try as category name
-                if category_choice in label_counts:
-                    selected_category = category_choice
-
-            if not selected_category:
-                self.console.print(f"[red]Invalid category: {category_choice}[/red]")
-                return
-
-            self.console.print(f"\n[green]✓ Selected category:[/green] {selected_category}")
-
-            # Convert to binary classification with string labels for proper mapping
-            # CRITICAL FIX: Use string labels NOT_category/category instead of 0/1
-            # This ensures bert_base.py can properly sort labels with NOT_* first
-            df[label_column] = df[label_column].apply(
-                lambda x: selected_category if x == selected_category else f"NOT_{selected_category}"
-            )
-
-            # Save filtered dataset temporarily
-            temp_path = dataset_path.parent / f"temp_benchmark_{selected_category.replace(' ', '_')}.csv"
-            df.to_csv(temp_path, index=False)
-            dataset_path = temp_path
-
-            # Count using string labels
-            class_1_count = (df[label_column] == selected_category).sum()
-            class_0_count = (df[label_column] == f"NOT_{selected_category}").sum()
-            self.console.print(f"[dim]Converted to binary:[/dim]")
-            self.console.print(f"[dim]  • {selected_category} (positive class): {class_1_count} samples[/dim]")
-            self.console.print(f"[dim]  • NOT_{selected_category} (negative class): {class_0_count} samples[/dim]\n")
-
-        # Display intelligent model selection options
-        self.console.print("\n[bold cyan]🎯 Model Selection for Benchmarking[/bold cyan]\n")
-
-        selection_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
-        selection_table.add_column("Option", style="cyan bold", width=18)
-        selection_table.add_column("Description", style="white", width=70)
-
-        selection_table.add_row(
-            "intelligent",
-            "🤖 AI-powered selection based on your data\n" +
-            f"✓ Considers: {len(languages)} language(s), {text_length_avg:.0f} avg chars, '{model_strategy}' strategy\n" +
-            "✓ Selects 5-7 optimal models automatically"
-        )
-        selection_table.add_row(
-            "pre-selected",
-            "📋 Choose from pre-selected categories\n" +
-            "✓ Filter by: language, document length, efficiency\n" +
-            "✓ View and select from curated model lists"
-        )
-        selection_table.add_row(
-            "custom",
-            "✏️  Manual selection from all available models\n" +
-            "✓ Full access to 37+ models\n" +
-            "✓ Enter any HuggingFace model ID"
-        )
-
-        self.console.print(selection_table)
-        self.console.print()
-
-        selection_mode = Prompt.ask(
-            "[bold yellow]Model selection mode[/bold yellow]",
-            choices=["intelligent", "pre-selected", "custom"],
-            default="intelligent"
-        )
-
-        selected_models = []
-        model_lang_map = {}
-
-        if selection_mode == "intelligent":
-            selected_models, model_lang_map = self._get_intelligent_benchmark_models(
-                languages, text_length_avg, model_strategy, recommended_model, language_distribution,
-                user_prefers_long_models
-            )
-
-            self.console.print(f"\n[green]✓ Intelligently selected {len(selected_models)} models:[/green]")
-            for i, model in enumerate(selected_models, 1):
-                lang_info = f" (for {model_lang_map[model].upper()} texts)" if model_lang_map.get(model) else " (multilingual)"
-                self.console.print(f"  {i}. {model}{lang_info}")
-
-            # Warning for monolingual models in multilingual dataset
-            if len(languages) > 1 and model_lang_map:
-                mono_models = [m for m in selected_models if model_lang_map.get(m)]
-                if mono_models:
-                    self.console.print(f"\n[yellow]⚠️  Note: Language-specific models will be trained on ALL texts[/yellow]")
-                    self.console.print(f"[dim]Ideally, monolingual models should only train on their target language.[/dim]")
-                    self.console.print(f"[dim]For better results with mixed languages, prefer multilingual models.[/dim]")
-
-        elif selection_mode == "pre-selected":
-            selected_models = self._get_preselected_benchmark_models(languages, text_length_avg)
-
-        else:  # custom
-            selected_models = self._get_custom_benchmark_models()
-
-        if not selected_models:
-            self.console.print("[yellow]No models selected. Using default: bert-base-uncased[/yellow]")
-            selected_models = ["bert-base-uncased"]
-
-        # Ask about reinforcement learning
-        self.console.print("\n[bold cyan]🎓 Reinforcement Learning Option[/bold cyan]")
-        self.console.print("[dim]Automatically triggered when model underperforms (F1 class 1 < threshold).[/dim]")
-        self.console.print("[dim]• Applies oversampling via WeightedRandomSampler for minority class[/dim]")
-        self.console.print("[dim]• Corrects cross-entropy loss with adaptive class weights[/dim]")
-        self.console.print("[dim]• Adjusts learning rate, batch size, and epochs based on failure severity[/dim]")
-        self.console.print("[dim]• Can improve F1 by 5-15% for underperforming models[/dim]\n")
-
-        use_reinforcement = Confirm.ask("Enable reinforcement learning?", default=False)
-
-        # Ask for number of epochs
-        self.console.print("\n[bold cyan]⏱️  Training Duration[/bold cyan]")
-        self.console.print("[dim]Number of epochs to train each model.[/dim]")
-        self.console.print("[dim]• More epochs = better performance but longer training time[/dim]")
-        self.console.print("[dim]• Recommended: 10-15 epochs for benchmark[/dim]\n")
-
-        n_epochs = IntPrompt.ask("Number of epochs per model", default=10)
-
-        # For single-label benchmark, we'll manually train each model to properly pass label_value
-        # This ensures class names are displayed correctly in the terminal output
-
-        # Determine if we have a selected category (binary) or multi-class
-        # CRITICAL FIX: Always pass category_name for proper class name display
-        category_name = selected_category
-
-        # Load dataset and prepare training data
-        from llm_tool.trainers.multi_label_trainer import MultiLabelTrainer, TrainingConfig as MultiLabelTrainingConfig
-        from llm_tool.trainers.model_selector import ModelSelector
-        import torch
-
-        ml_trainer = MultiLabelTrainer(config=MultiLabelTrainingConfig(), verbose=False)
-
-        # Read the CSV and convert to samples
-        import pandas as pd
-        from llm_tool.trainers.data_utils import DataSample
-
-        df = pd.read_csv(dataset_path)
-        samples = []
-        for _, row in df.iterrows():
-            # CRITICAL FIX: Check for both 'language' and 'lang' columns
-            lang_value = None
-            if 'language' in df.columns:
-                lang_value = row.get('language')
-            elif 'lang' in df.columns:
-                lang_value = row.get('lang')
-
-            # CRITICAL: Use DataSample for single-label benchmark (has .label attribute)
-            samples.append(DataSample(
-                text=str(row[text_column]),
-                label=str(row[label_column]),  # Keep as string for proper NOT_* mapping
-                lang=lang_value,
-                metadata={}
-            ))
-
-        # Check if we have at least 2 instances per class for stratification
-        from collections import Counter
-        from sklearn.model_selection import train_test_split
-
-        label_counts = Counter([s.label for s in samples])
-        min_count = min(label_counts.values())
-
-        if min_count < 2:
-            # Find which classes have insufficient instances
-            insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
-            self.console.print(f"[yellow]⚠️  Dataset has class(es) with only 1 instance: {insufficient_classes}[/yellow]")
-
-            # Ask user if they want to remove these classes or proceed
-            remove_classes = Prompt.ask(
-                f"Remove class(es) with insufficient instances?",
-                choices=["y", "n"],
-                default="y"
-            )
-
-            if remove_classes.lower() == 'y':
-                # Filter out samples with insufficient classes
-                original_count = len(samples)
-                samples = [s for s in samples if s.label not in insufficient_classes]
-                self.console.print(f"[dim]Removed {original_count - len(samples)} samples from classes: {insufficient_classes}[/dim]")
-
-                # Recompute label counts
-                label_counts = Counter([s.label for s in samples])
-                min_count = min(label_counts.values()) if label_counts else 0
-
-                if min_count < 2:
-                    self.console.print("[red]Still insufficient samples after removal. Cannot proceed.[/red]")
-                    return {
-                        'runtime_params': {
-                            'selected_models': selected_models if 'selected_models' in locals() else [],
-                            'benchmark_category': selected_category if 'selected_category' in locals() else None,
-                            'actual_models_trained': [],
-                            'error': 'Insufficient samples after removal'
-                        },
-                        'models_trained': [],
-                        'best_model': None,
-                        'best_f1': None
-                    }
-
-                stratify_labels = [s.label for s in samples]
-            else:
-                self.console.print(f"[yellow]Proceeding without stratification (may reduce quality)[/yellow]")
-                stratify_labels = None
-        else:
-            stratify_labels = [s.label for s in samples]
-
-        # Split into train/test
-        train_samples, test_samples = train_test_split(
-            samples,
-            test_size=0.2,
-            random_state=42,
-            stratify=stratify_labels
-        )
-
-        self.console.print(f"\n[bold cyan]🚀 Starting Benchmark Training[/bold cyan]")
-        self.console.print(f"[dim]Training {len(selected_models)} model(s) on {len(train_samples)} samples ({len(test_samples)} test)[/dim]\n")
-
-        # Train each model
-        results = []
-        selector = ModelSelector()
-
-        # Initialize global progress tracking
-        import time
-        global_start_time = time.time()
-        global_total_models = len(selected_models)
-        global_completed_epochs = 0
-
-        for idx, model_name in enumerate(selected_models, 1):
-            self.console.print(f"[bold]Model {idx}/{len(selected_models)}: {model_name}[/bold]")
-
-            try:
-                # Get model instance
-                model_name_mapping = {
-                    'roberta-base': 'RoBERTaBase',
-                    'roberta-large': 'RoBERTaLarge',
-                    'bert-base-uncased': 'BERTBase',
-                    'bert-large-uncased': 'BERTLarge',
-                    'bert-base-multilingual-cased': 'mBERTBase',
-                    'distilbert-base-uncased': 'DistilBERT',
-                    'distilroberta-base': 'DistilRoBERTa',
-                    'albert-base-v2': 'ALBERTBase',
-                    'camembert-base': 'CamemBERTBase',
-                    'xlm-roberta-base': 'XLMRoBERTaBase',
-                }
-
-                profile_key = model_name_mapping.get(model_name)
-
-                if profile_key and profile_key in selector.MODEL_PROFILES:
-                    model_class = selector.MODEL_PROFILES[profile_key].model_class
-                    model = model_class()
-                elif model_name in selector.MODEL_PROFILES:
-                    model_class = selector.MODEL_PROFILES[model_name].model_class
-                    model = model_class()
-                else:
-                    # Create generic model
-                    from transformers import AutoTokenizer, AutoModelForSequenceClassification
-                    from llm_tool.trainers.bert_base import BertBase
-
-                    class CustomModel(BertBase):
-                        def __init__(self):
-                            super().__init__(
-                                model_name=model_name,
-                                tokenizer=AutoTokenizer,
-                                model_sequence_classifier=AutoModelForSequenceClassification
-                            )
-
-                    model = CustomModel()
-
-                # Encode data
-                train_texts = [s.text for s in train_samples]
-                train_labels = [s.label for s in train_samples]  # DataSample uses .label not .labels
-                test_texts = [s.text for s in test_samples]
-                test_labels = [s.label for s in test_samples]  # DataSample uses .label not .labels
-
-                train_loader = model.encode(train_texts, train_labels, batch_size=32, progress_bar=False)
-                test_loader = model.encode(test_texts, test_labels, batch_size=32, progress_bar=False)
-
-                # CRITICAL: Do NOT use pos_weight for initial training
-                # Let the model learn naturally first, then reinforcement learning
-                # will apply adaptive weights if needed (when F1 is low)
-                # Applying pos_weight from the start causes the model to over-predict minority class
-
-                # Train model
-                temp_model_name = f"benchmark_{model_name.replace('/', '_')}"
-
-                # CRITICAL FIX: Extract language information for per-language metrics
-                test_languages = [s.lang for s in test_samples] if test_samples else None
-                has_languages = test_languages and any(lang for lang in test_languages if lang)
-
-                # Determine language
-                sample_langs = set(s.lang for s in train_samples if s.lang)
-                if len(sample_langs) == 1:
-                    train_language = list(sample_langs)[0].upper()
-                elif len(sample_langs) > 1:
-                    train_language = "MULTI"
-                else:
-                    train_language = None
-
-                # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
-                if has_languages:
-                    from llm_tool.trainers.model_trainer import set_detected_languages_on_model
-                    train_languages = [s.lang for s in train_samples]
-                    set_detected_languages_on_model(
-                        model=model,
-                        train_languages=train_languages,
-                        val_languages=test_languages,
-                        logger=self.logger
-                    )
-
-                # Calculate total expected epochs (base epochs for all models)
-                # Note: May increase if reinforced learning is triggered
-                global_total_epochs = global_total_models * n_epochs
-
-                # Calculate maximum possible epochs (if all models trigger reinforced learning)
-                if use_reinforcement:
-                    reinforced_epochs_count = 10  # Matches the hardcoded value at line 13888
-                    global_max_epochs = global_total_models * (n_epochs + reinforced_epochs_count)
-                else:
-                    global_max_epochs = global_total_epochs
-
-                # Create progress callback to track completed epochs
-                def progress_callback(**metrics):
-                    """Callback to increment global completed epochs counter"""
-                    nonlocal global_completed_epochs
-                    global_completed_epochs += 1
-
-                result = model.run_training(
-                    train_dataloader=train_loader,
-                    test_dataloader=test_loader,
-                    n_epochs=n_epochs,
-                    lr=5e-5,
-                    random_state=42,
-                    save_model_as=temp_model_name,
-                    pos_weight=None,  # CRITICAL: No pos_weight initially - let RL handle it
-                    metrics_output_dir="logs/training_arena",
-                    best_model_criteria="combined",
-                    f1_class_1_weight=0.7,
-                    reinforced_learning=use_reinforcement,
-                    reinforced_epochs=10,
-                    rescue_low_class1_f1=True,  # CRITICAL: Enable automatic rescue for low F1
-                    f1_1_rescue_threshold=0.50,  # Trigger rescue if F1 classe 1 < 50%
-                    reinforced_f1_threshold=0.60,
-                    track_languages=has_languages,  # CRITICAL: Enable if we have language info
-                    language_info=test_languages,     # CRITICAL: Pass language info for metrics
-                    label_key=label_column,
-                    label_value=category_name,  # Pass the selected category name for proper display
-                    language=train_language,
-                    session_id=session_id,
-                    progress_callback=progress_callback,  # Add callback for global progress tracking
-                    global_total_models=global_total_models,
-                    global_current_model=idx,
-                    global_total_epochs=global_total_epochs,
-                    global_max_epochs=global_max_epochs,
-                    global_completed_epochs=global_completed_epochs,
-                    global_start_time=global_start_time
-                )
-
-                # Extract metrics
-                best_metric_val, best_model_path, best_scores = result
-
-                if best_scores:
-                    results.append({
-                        'model': model_name,
-                        'f1_macro': best_scores.get('f1_macro', 0.0),
-                        'f1_class_0': best_scores.get('f1_class_0', 0.0),
-                        'f1_class_1': best_scores.get('f1_class_1', 0.0),
-                        'accuracy': best_scores.get('accuracy', 0.0),
-                        'precision_macro': best_scores.get('precision_macro', 0.0),
-                        'recall_macro': best_scores.get('recall_macro', 0.0),
-                    })
-
-                self.console.print(f"[green]✓ Completed[/green]\n")
-
-            except Exception as exc:
-                self.console.print(f"[red]✗ Failed: {exc}[/red]\n")
-                self.logger.exception(f"Model {model_name} failed", exc_info=exc)
-
-        # Display results summary
-        if results:
-            self.console.print("\n[bold cyan]📊 Benchmark Results Summary[/bold cyan]\n")
-
-            results_df = pd.DataFrame(results)
-            results_df = results_df.sort_values('f1_macro', ascending=False)
-
-            from rich.table import Table
-            table = Table(show_header=True, header_style="bold magenta", border_style="cyan")
-            table.add_column("Rank", style="cyan", width=5)
-            table.add_column("Model", style="white", width=35)
-            table.add_column("F1 Macro", style="green", justify="right", width=10)
-            table.add_column("F1 Class 0", style="yellow", justify="right", width=10)
-            table.add_column("F1 Class 1", style="blue", justify="right", width=10)
-            table.add_column("Accuracy", style="magenta", justify="right", width=10)
-
-            for idx, row in enumerate(results_df.itertuples(), 1):
-                table.add_row(
-                    str(idx),
-                    row.model,
-                    f"{row.f1_macro:.4f}",
-                    f"{row.f1_class_0:.4f}",
-                    f"{row.f1_class_1:.4f}",
-                    f"{row.accuracy:.4f}"
-                )
-
-            self.console.print(table)
-
-            # Show best model
-            best_model = results_df.iloc[0]
-            self.console.print(f"\n[bold green]🏆 Best Model: {best_model['model']}[/bold green]")
-            self.console.print(f"[dim]F1 Macro: {best_model['f1_macro']:.4f}[/dim]\n")
-
-            # Return complete training info for metadata save
-            return {
-                'runtime_params': {
-                    'selected_models': selected_models,
-                    'benchmark_category': selected_category if 'selected_category' in locals() else None,
-                    'actual_models_trained': [row.model for row in results_df.itertuples()]
-                },
-                'models_trained': [row.model for row in results_df.itertuples()],
-                'best_model': best_model['model'],
-                'best_f1': best_model['f1_macro']
-            }
-        else:
-            self.console.print("[yellow]No results to display[/yellow]")
-            return {
-                'runtime_params': {
-                    'selected_models': selected_models if 'selected_models' in locals() else [],
-                    'benchmark_category': selected_category if 'selected_category' in locals() else None,
-                    'actual_models_trained': []
-                },
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None
-            }
-
-    def _training_studio_run_benchmark_multilabel(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
-        """Benchmark multiple models on a multi-label dataset"""
-        from rich.table import Table
-        from rich import box
-
-        self.console.print("\n[bold cyan]Multi-Label Benchmark Mode[/bold cyan]")
-        self.console.print("[dim]Benchmarking models across all labels in your dataset[/dim]\n")
-
-        # Get the multi-label dataset
-        resolved = self._training_studio_resolve_multilabel_dataset(bundle)
-        if resolved is None:
-            self.console.print(
-                "[red]This dataset does not expose a multi-label view."
-                " Please select a format that produces a consolidated JSONL and try again.[/red]"
-            )
-            return {
-                'runtime_params': {'error': 'No multi-label dataset'},
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None
-            }
-
-        dataset_path, label_fields = resolved
-
-        # Get dataset metadata
-        languages = bundle.metadata.get('confirmed_languages', bundle.metadata.get('languages', set()))
-        language_distribution = bundle.metadata.get('language_distribution', {})
-        text_length_stats = bundle.metadata.get('text_length_stats', {})
-
-        # Use REAL text length stats - prefer token-based, fallback to chars
-        if text_length_stats.get('token_mean'):
-            text_length_avg = text_length_stats['token_mean']
-        elif text_length_stats.get('char_mean'):
-            text_length_avg = text_length_stats['char_mean']
-        else:
-            text_length_avg = text_length_stats.get('avg_chars', 0)
-
-        user_prefers_long_models = text_length_stats.get('user_prefers_long_models', False)
-        model_strategy = bundle.metadata.get('model_strategy', 'multilingual')
-        recommended_model = bundle.recommended_model if hasattr(bundle, 'recommended_model') else None
-
-        # Determine majority language
-        majority_lang = self._get_majority_language(languages, language_distribution)
-        if majority_lang:
-            lang_display = f"Majority: {majority_lang.upper()}"
-        else:
-            lang_display = f"{len(languages)} language(s)"
-
-        # Display intelligent model selection options
-        self.console.print("\n[bold cyan]🎯 Model Selection for Benchmarking[/bold cyan]\n")
-
-        selection_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
-        selection_table.add_column("Option", style="cyan bold", width=18)
-        selection_table.add_column("Description", style="white", width=70)
-
-        selection_table.add_row(
-            "intelligent",
-            "🤖 AI-powered selection based on your data\n" +
-            f"✓ Considers: {lang_display}, {text_length_avg:.0f} avg chars, '{model_strategy}' strategy\n" +
-            "✓ Selects 5-7 optimal models automatically"
-        )
-        selection_table.add_row(
-            "pre-selected",
-            "📋 Choose from pre-selected categories\n" +
-            "✓ Filter by: language, document length, efficiency\n" +
-            "✓ View and select from curated model lists"
-        )
-        selection_table.add_row(
-            "custom",
-            "✏️  Manual selection from all available models\n" +
-            "✓ Full access to 37+ models\n" +
-            "✓ Enter any HuggingFace model ID"
-        )
-
-        self.console.print(selection_table)
-        self.console.print()
-
-        selection_mode = Prompt.ask(
-            "[bold yellow]Model selection mode[/bold yellow]",
-            choices=["intelligent", "pre-selected", "custom"],
-            default="intelligent"
-        )
-
-        selected_models = []
-        model_lang_map = {}
-
-        if selection_mode == "intelligent":
-            selected_models, model_lang_map = self._get_intelligent_benchmark_models(
-                languages, text_length_avg, model_strategy, recommended_model, language_distribution,
-                user_prefers_long_models
-            )
-
-            self.console.print(f"\n[green]✓ Intelligently selected {len(selected_models)} models:[/green]")
-            for i, model in enumerate(selected_models, 1):
-                lang_info = f" (for {model_lang_map[model].upper()} texts)" if model_lang_map.get(model) else " (multilingual)"
-                self.console.print(f"  {i}. {model}{lang_info}")
-
-            # Warning for monolingual models in multilingual dataset
-            if len(languages) > 1 and model_lang_map:
-                mono_models = [m for m in selected_models if model_lang_map.get(m)]
-                if mono_models:
-                    self.console.print(f"\n[yellow]⚠️  Note: Language-specific models will be trained on ALL texts[/yellow]")
-                    self.console.print(f"[dim]Ideally, monolingual models should only train on their target language.[/dim]")
-                    self.console.print(f"[dim]For better results with mixed languages, prefer multilingual models.[/dim]")
-
-        elif selection_mode == "pre-selected":
-            selected_models = self._get_preselected_benchmark_models(languages, text_length_avg)
-
-        else:  # custom
-            selected_models = self._get_custom_benchmark_models()
-
-        if not selected_models:
-            self.console.print("[yellow]No models selected. Using default: bert-base-uncased[/yellow]")
-            selected_models = ["bert-base-uncased"]
-
-        # Ask about reinforcement learning
-        self.console.print("\n[bold cyan]🎓 Reinforcement Learning Option[/bold cyan]")
-        self.console.print("[dim]Automatically triggered when model underperforms (F1 class 1 < threshold).[/dim]")
-        self.console.print("[dim]• Applies oversampling via WeightedRandomSampler for minority class[/dim]")
-        self.console.print("[dim]• Corrects cross-entropy loss with adaptive class weights[/dim]")
-        self.console.print("[dim]• Adjusts learning rate, batch size, and epochs based on failure severity[/dim]")
-        self.console.print("[dim]• Can improve F1 by 5-15% for underperforming models[/dim]\n")
-
-        use_reinforcement = Confirm.ask("Enable reinforcement learning?", default=False)
-
-        # Ask for number of epochs
-        self.console.print("\n[bold cyan]⏱️  Training Duration[/bold cyan]")
-        self.console.print("[dim]Number of epochs to train each model.[/dim]")
-        self.console.print("[dim]• More epochs = better performance but longer training time[/dim]")
-        self.console.print("[dim]• Recommended: 10-15 epochs for benchmark[/dim]\n")
-
-        n_epochs = IntPrompt.ask("Number of epochs per model", default=10)
-
-        # Load the multi-label dataset
-        from llm_tool.trainers.multi_label_trainer import (
-            MultiLabelTrainer,
-            TrainingConfig as MultiLabelTrainingConfig,
-            convert_multiclass_samples,  # UNIFIED multi-class conversion
-            setup_multiclass_model  # UNIFIED multi-class model setup
-        )
-
-        output_dir = self._training_studio_make_output_dir("training_studio_benchmark_multilabel")
-
-        try:
-            trainer = MultiLabelTrainer(config=MultiLabelTrainingConfig(), verbose=False)
-            samples = trainer.load_multi_label_data(
-                str(dataset_path),
-                text_field="text",
-                labels_dict_field="labels",
-                label_fields=label_fields,
-            )
-        except Exception as exc:
-            self.console.print(f"[red]Failed to load dataset:[/red] {exc}")
-            self.logger.exception("Multi-label benchmark dataset loading failed", exc_info=exc)
-            return {
-                'runtime_params': {'error': f'Failed to load dataset: {exc}'},
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None
-            }
-
-        if not samples:
-            self.console.print("[red]No samples found in dataset[/red]")
-            return {
-                'runtime_params': {'error': 'No samples found'},
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None
-            }
-
-        # UNIFIED: Use trainer's multi-class detection (same code everywhere)
-        multiclass_groups = trainer.detect_multiclass_groups(samples)
-
-        # Build true_label_keys based on detected groups
-        all_labels = set()
-        for sample in samples:
-            all_labels.update(sample.labels.keys())
-
-        true_label_keys = []
-        used_labels = set()
-
-        # Display detected groups and ask user
-        for prefix, group_labels in multiclass_groups.items():
-            value_names = [lbl[len(prefix)+1:] if lbl.startswith(prefix+'_') else lbl for lbl in group_labels]
-            self.console.print(f"[yellow]ℹ️  Detected mutually exclusive labels '{prefix}' with {len(group_labels)} values: {', '.join(value_names)}[/yellow]")
-
-            # Ask user to confirm if this should be treated as multi-class or separate binary labels
-            treat_as_multiclass = Confirm.ask(
-                f"[bold]Treat '{prefix}' as a single multi-class label (recommended)?[/bold]\n"
-                f"  • Yes: Train one model to predict among {len(group_labels)} classes\n"
-                f"  • No: Train {len(group_labels)} separate binary models (one per value)",
-                default=True
-            )
-
-            if treat_as_multiclass:
-                true_label_keys.append(prefix)
-                used_labels.update(group_labels)
-                self.console.print(f"[green]✓ Will train as multi-class: {prefix}[/green]\n")
-            else:
-                # Treat each value as independent binary label
-                true_label_keys.extend(group_labels)
-                used_labels.update(group_labels)
-                # Remove from multiclass_groups since user chose one-vs-all
-                del multiclass_groups[prefix]
-                self.console.print(f"[green]✓ Will train {len(group_labels)} separate binary models[/green]\n")
-
-        # Add remaining ungrouped labels
-        for label in sorted(all_labels):
-            if label not in used_labels:
-                true_label_keys.append(label)
-
-        self.console.print(f"\n[green]✓ Loaded {len(samples)} samples with {len(true_label_keys)} label type(s)[/green]")
-        self.console.print(f"[dim]Labels: {', '.join(sorted(true_label_keys))}[/dim]\n")
-
-        # Ask which labels to benchmark
-        self.console.print("[bold]Select labels to benchmark:[/bold]")
-        label_list = sorted(true_label_keys)
-        for idx, label in enumerate(label_list, 1):
-            # Count samples for this label
-            # For grouped multi-class labels, count samples with ANY member of the group
-            if label in multiclass_groups:
-                # Multi-class group - count samples with any member active
-                count = sum(1 for s in samples if any(s.labels.get(member, 0) for member in multiclass_groups[label]))
-                # Extract value name = everything after the prefix
-                value_counts = {member[len(label)+1:] if member.startswith(label+'_') else member: sum(1 for s in samples if s.labels.get(member, 0)) for member in multiclass_groups[label]}
-                values_str = ', '.join([f"{v}={c}" for v, c in value_counts.items()])
-                self.console.print(f"  {idx}. {label} ({count} total samples: {values_str})")
-            else:
-                # Single binary label
-                count = sum(1 for s in samples if label in s.labels and s.labels[label])
-                self.console.print(f"  {idx}. {label} ({count} positive samples)")
-
-        self.console.print("\n[dim]Press Enter to benchmark all labels, or enter label indices (comma-separated):[/dim]")
-        label_selection = Prompt.ask("Select labels", default="")
-
-        if label_selection.strip():
-            try:
-                indices = [int(i.strip()) for i in label_selection.split(",")]
-                selected_labels = [label_list[i-1] for i in indices if 1 <= i <= len(label_list)]
-            except (ValueError, IndexError):
-                self.console.print("[yellow]Invalid selection, benchmarking all labels[/yellow]")
-                selected_labels = label_list
-        else:
-            selected_labels = label_list
-
-        if not selected_labels:
-            self.console.print("[red]No labels selected[/red]")
-            return {
-                'runtime_params': {'error': 'No labels selected'},
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None
-            }
-
-        # Run benchmark for each label with each model
-        from rich.table import Table
-        import pandas as pd
-
-        all_results = []
-
-        total_benchmarks = len(selected_labels) * len(selected_models)
-        current = 0
-
-        # Initialize global progress tracking
-        import time
-        global_start_time = time.time()
-        global_total_models = total_benchmarks  # Total number of model+label combinations
-        global_completed_epochs = 0
-
-        for label_name in selected_labels:
-            self.console.print(f"\n[bold cyan]{'━' * 80}[/bold cyan]")
-            self.console.print(f"[bold cyan]  Benchmarking Label:[/bold cyan] [bold white]{label_name}[/bold white]")
-            self.console.print(f"[bold cyan]{'━' * 80}[/bold cyan]\n")
-
-            # Determine if this is a grouped label or a direct label
-            if label_name in multiclass_groups:
-                # UNIFIED: Use trainer's conversion function (same code everywhere)
-                group_labels = multiclass_groups[label_name]
-                multiclass_samples, value_names = convert_multiclass_samples(samples, label_name, group_labels)
-                self.console.print(f"[dim]Multi-class label with {len(group_labels)} values: {', '.join(value_names)}[/dim]\n")
-
-                # Check if any class has only 1 instance
-                from collections import Counter
-                label_counts = Counter([s.label for s in multiclass_samples])
-                min_count = min(label_counts.values()) if label_counts else 0
-
-                if min_count < 2:
-                    # Find which classes (string labels) have insufficient instances
-                    insufficient_class_names = [cls for cls, count in label_counts.items() if count < 2]
-
-                    self.console.print(f"[yellow]⚠️  Label '{label_name}' has value(s) with only 1 instance: {', '.join(insufficient_class_names)}[/yellow]")
-
-                    # Ask user if they want to remove these values
-                    remove_values = Prompt.ask(
-                        f"Remove value(s) '{', '.join(insufficient_class_names)}' and continue with remaining values?",
-                        choices=["y", "n"],
-                        default="y"
-                    )
-
-                    if remove_values.lower() == 'y':
-                        # Remove samples with insufficient values
-                        original_count = len(multiclass_samples)
-                        multiclass_samples = [s for s in multiclass_samples if s.label not in insufficient_class_names]
-                        self.console.print(f"[dim]Removed {original_count - len(multiclass_samples)} samples from values: {', '.join(insufficient_class_names)}[/dim]")
-
-                        # Update value_names to remove insufficient classes
-                        value_names = [name for name in value_names if name not in insufficient_class_names]
-
-                        self.console.print(f"[green]✓ Continuing with {len(value_names)} values: {', '.join(value_names)}[/green]")
-
-                        # Check if we still have at least 2 classes
-                        if len(value_names) < 2:
-                            self.console.print(f"[yellow]⚠️  Only {len(value_names)} value(s) remaining. Skipping {label_name}[/yellow]")
-                            continue
-                    else:
-                        self.console.print(f"[dim]Skipping {label_name}[/dim]")
-                        continue
-
-                binary_samples = multiclass_samples
-                num_classes = len(value_names)  # Use value_names length (may have been reduced)
-            else:
-                # True binary label or ungrouped label
-                # CRITICAL FIX: Use string labels NOT_label/label instead of 0/1
-                binary_samples = []
-                for sample in samples:
-                    if label_name in sample.labels:
-                        from llm_tool.trainers.data_utils import DataSample
-                        binary_label = label_name if sample.labels[label_name] else f"NOT_{label_name}"
-                        binary_samples.append(DataSample(
-                            text=sample.text,
-                            label=binary_label,
-                            id=sample.id,
-                            lang=sample.lang,
-                            metadata={**(sample.metadata or {}), 'original_label': label_name}
-                        ))
-                num_classes = 2
-
-            if len(binary_samples) < 20:
-                self.console.print(f"[yellow]⚠️  Skipping {label_name}: insufficient samples ({len(binary_samples)})[/yellow]")
-                continue
-
-            # Check if we have at least 2 instances per class for stratification
-            # (only for binary labels - multi-class was already checked above)
-            if label_name not in multiclass_groups:
-                from collections import Counter
-                label_counts = Counter([s.label for s in binary_samples])
-                min_count = min(label_counts.values())
-
-                if min_count < 2:
-                    # Find which classes have insufficient instances
-                    insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
-                    self.console.print(f"[yellow]⚠️  Label '{label_name}' has class(es) with only 1 instance: {insufficient_classes}[/yellow]")
-
-                    # Ask user if they want to remove this label
-                    remove_label = Prompt.ask(
-                        f"Remove label '{label_name}' from training?",
-                        choices=["y", "n"],
-                        default="y"
-                    )
-
-                    if remove_label.lower() == 'y':
-                        self.console.print(f"[dim]Skipping {label_name}[/dim]")
-                        continue
-                    else:
-                        self.console.print(f"[yellow]Attempting to proceed without stratification (may reduce quality)[/yellow]")
-                        stratify_labels = None
-                else:
-                    stratify_labels = [s.label for s in binary_samples]
-            else:
-                # Multi-class: already checked and cleaned above
-                stratify_labels = [s.label for s in binary_samples]
-
-            # Split into train/test
-            from sklearn.model_selection import train_test_split
-            train_samples, test_samples = train_test_split(
-                binary_samples,
-                test_size=0.2,
-                random_state=42,
-                stratify=stratify_labels  # None if insufficient samples per class
-            )
-
-            self.console.print(f"[dim]Train: {len(train_samples)}, Test: {len(test_samples)}[/dim]\n")
-
-            # Benchmark each model on this label
-            for model_name in selected_models:
-                current += 1
-                self.console.print(f"[cyan]Benchmark {current}/{total_benchmarks}:[/cyan] [bold]{model_name}[/bold] on [bold]{label_name}[/bold]")
-
-                try:
-                    # Import the appropriate model class
-                    from llm_tool.trainers.model_selector import ModelSelector
-                    selector = ModelSelector(verbose=False)
-
-                    # Map common model names to their profile keys
-                    model_name_mapping = {
-                        'camembert-base': 'Camembert',
-                        'flaubert-base': 'FlauBERTBase',
-                        'camembert-large': 'CamembertLarge',
-                        'xlm-roberta-base': 'XLMRobertaBase',
-                        'xlm-roberta-large': 'XLMRobertaLarge',
-                        'bert-base-uncased': 'BERTBase',
-                        'roberta-base': 'RoBERTaBase',
-                        'bert-large-uncased': 'BERTLarge',
-                        'bert-base-multilingual-cased': 'mBERTBase',
-                        'distilbert-base': 'DistilBERT',
-                        'distilroberta-base': 'DistilRoBERTa',
-                        'albert-base-v2': 'ALBERTBase',
-                        'cmarkea/distilcamembert-base': 'DistilCamemBERT',
-                    }
-
-                    # Try to find the model profile key
-                    profile_key = model_name_mapping.get(model_name)
-
-                    if profile_key and profile_key in selector.MODEL_PROFILES:
-                        # Found a matching profile
-                        model_class = selector.MODEL_PROFILES[profile_key].model_class
-                        model = model_class()
-                    elif model_name in selector.MODEL_PROFILES:
-                        # Direct match in profiles
-                        model_class = selector.MODEL_PROFILES[model_name].model_class
-                        model = model_class()
-                    else:
-                        # Try to create a generic model with AutoTokenizer and AutoModelForSequenceClassification
-                        from transformers import AutoTokenizer, AutoModelForSequenceClassification
-                        from llm_tool.trainers.bert_base import BertBase
-
-                        class CustomModel(BertBase):
-                            def __init__(self):
-                                super().__init__(
-                                    model_name=model_name,
-                                    tokenizer=AutoTokenizer,
-                                    model_sequence_classifier=AutoModelForSequenceClassification
-                                )
-
-                        model = CustomModel()
-
-                    # CRITICAL: Configure model for multi-class using unified function
-                    if num_classes > 2:
-                        setup_multiclass_model(model, num_classes, value_names)
-
-                    # Encode data
-                    train_texts = [s.text for s in train_samples]
-                    train_labels = [s.label for s in train_samples]  # DataSample uses .label not .labels
-                    test_texts = [s.text for s in test_samples]
-                    test_labels = [s.label for s in test_samples]  # DataSample uses .label not .labels
-
-                    train_loader = model.encode(train_texts, train_labels, batch_size=32, progress_bar=False)
-                    test_loader = model.encode(test_texts, test_labels, batch_size=32, progress_bar=False)
-
-                    # CRITICAL: Do NOT use pos_weight for initial training
-                    # Let the model learn naturally first, then reinforcement learning
-                    # will apply adaptive weights if needed (when F1 is low)
-
-                    # Train model
-                    temp_model_name = f"benchmark_{label_name}_{model_name.replace('/', '_')}"
-
-                    # CRITICAL FIX: Extract language information for per-language metrics
-                    test_languages = [s.lang for s in test_samples] if test_samples else None
-                    has_languages = test_languages and any(lang for lang in test_languages if lang)
-
-                    # Determine language (use first sample's language or MULTI if multiple)
-                    sample_langs = set(s.lang for s in train_samples if s.lang)
-                    if len(sample_langs) == 1:
-                        train_language = list(sample_langs)[0].upper()
-                    elif len(sample_langs) > 1:
-                        train_language = "MULTI"
-                    else:
-                        train_language = None
-
-                    # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
-                    if has_languages:
-                        from llm_tool.trainers.model_trainer import set_detected_languages_on_model
-                        train_languages = [s.lang for s in train_samples]
-                        set_detected_languages_on_model(
-                            model=model,
-                            train_languages=train_languages,
-                            val_languages=test_languages,
-                            logger=self.logger
-                        )
-
-                    # Calculate total expected epochs (base epochs for all models)
-                    # Note: May increase if reinforced learning is triggered
-                    global_total_epochs = global_total_models * n_epochs
-
-                    # Calculate maximum possible epochs (if all models trigger reinforced learning)
-                    if use_reinforcement:
-                        reinforced_epochs_count = 10  # Matches the hardcoded value at line 14493
-                        global_max_epochs = global_total_models * (n_epochs + reinforced_epochs_count)
-                    else:
-                        global_max_epochs = global_total_epochs
-
-                    # Create progress callback to track completed epochs
-                    def progress_callback(**metrics):
-                        """Callback to increment global completed epochs counter"""
-                        nonlocal global_completed_epochs
-                        global_completed_epochs += 1
-
-                    result = model.run_training(
-                        train_dataloader=train_loader,
-                        test_dataloader=test_loader,
-                        n_epochs=n_epochs,
-                        lr=5e-5,
-                        random_state=42,
-                        save_model_as=temp_model_name,
-                        pos_weight=None,  # CRITICAL: No pos_weight initially - let RL handle it
-                        metrics_output_dir="logs/training_arena",
-                        best_model_criteria="combined",
-                        f1_class_1_weight=0.7,
-                        reinforced_learning=use_reinforcement,
-                        reinforced_epochs=10,
-                        rescue_low_class1_f1=True,  # CRITICAL: Enable automatic rescue
-                        f1_1_rescue_threshold=0.50,  # Trigger if F1 < 50%
-                        reinforced_f1_threshold=0.60,
-                        track_languages=has_languages,  # CRITICAL: Enable if we have language info
-                        language_info=test_languages,     # CRITICAL: Pass language info for metrics
-                        label_key=label_name,
-                        label_value=None if num_classes > 2 else label_name,
-                        language=train_language,
-                        class_names=value_names if num_classes > 2 else None,
-                        session_id=session_id,
-                        progress_callback=progress_callback,  # Add callback for global progress tracking
-                        global_total_models=global_total_models,
-                        global_current_model=current,
-                        global_total_epochs=global_total_epochs,
-                        global_max_epochs=global_max_epochs,
-                        global_completed_epochs=global_completed_epochs,
-                        global_start_time=global_start_time
-                    )
-
-                    # Extract metrics
-                    best_metric_val, best_model_path, best_scores = result
-
-                    if best_scores:
-                        # Multi-class: best_scores is a tuple of arrays (precision, recall, f1, support)
-                        # Each array has one value per class
-                        if num_classes > 2:
-                            # Multi-class
-                            macro_f1 = np.mean(best_scores[2])  # Average of all F1 scores
-                            result_dict = {
-                                'label': label_name,
-                                'model': model_name,
-                                'f1_macro': macro_f1,
-                                'num_classes': num_classes,
-                                'class_names': ','.join(value_names),  # CRITICAL: Store class names for CSV header
-                            }
-                            # Add per-class metrics
-                            for i in range(num_classes):
-                                result_dict[f'f1_class_{i}'] = best_scores[2][i]
-                                result_dict[f'precision_{i}'] = best_scores[0][i]
-                                result_dict[f'recall_{i}'] = best_scores[1][i]
-                                result_dict[f'support_{i}'] = int(best_scores[3][i])
-                            all_results.append(result_dict)
-                            self.console.print(f"  [green]✓ F1 Macro: {macro_f1:.4f}[/green]\n")
-                        else:
-                            # Binary
-                            precision_0, recall_0, f1_0, support_0 = best_scores[0]
-                            precision_1, recall_1, f1_1, support_1 = best_scores[1]
-                            macro_f1 = (f1_0 + f1_1) / 2
-                            all_results.append({
-                                'label': label_name,
-                                'model': model_name,
-                                'f1_macro': macro_f1,
-                                'f1_class_0': f1_0,
-                                'f1_class_1': f1_1,
-                                'precision_1': precision_1,
-                                'recall_1': recall_1,
-                                'support_0': int(support_0),
-                                'support_1': int(support_1),
-                            })
-                            self.console.print(f"  [green]✓ F1 Macro: {macro_f1:.4f}, F1 Class 1: {f1_1:.4f}[/green]\n")
-                    else:
-                        # No scores
-                        macro_f1 = 0
-                        self.console.print(f"  [yellow]⚠ No scores available[/yellow]\n")
-
-                except Exception as exc:
-                    self.console.print(f"  [red]✗ Failed: {exc}[/red]\n")
-                    self.logger.exception(f"Benchmark failed for {model_name} on {label_name}", exc_info=exc)
-
-        # Display final results
-        if all_results:
-            self.console.print(f"\n[bold cyan]{'━' * 80}[/bold cyan]")
-            self.console.print(f"[bold cyan]  Benchmark Results Summary[/bold cyan]")
-            self.console.print(f"[bold cyan]{'━' * 80}[/bold cyan]\n")
-
-            # Determine max number of classes to create appropriate table columns
-            max_classes = 0
-            for result in all_results:
-                # Count how many f1_class_X keys exist
-                class_keys = [k for k in result.keys() if k.startswith('f1_class_')]
-                max_classes = max(max_classes, len(class_keys))
-
-            # Create summary table with dynamic columns based on max_classes
-            results_table = Table(show_header=True, header_style="bold magenta", border_style="cyan")
-            results_table.add_column("Label", style="cyan", width=25)
-            results_table.add_column("Model", style="white", width=30)
-            results_table.add_column("F1 Macro", justify="right", style="green", width=10)
-
-            # Add columns for each class with explicit widths for readability
-            for i in range(max_classes):
-                results_table.add_column(f"F1 C{i}", justify="right", style="yellow", width=10)
-                results_table.add_column(f"P{i}", justify="right", style="dim", width=8)
-                results_table.add_column(f"R{i}", justify="right", style="dim", width=8)
-
-            # Sort by label and F1 macro
-            all_results.sort(key=lambda x: (x['label'], -x['f1_macro']))
-
-            for result in all_results:
-                row = [
-                    result['label'],
-                    result['model'],
-                    f"{result['f1_macro']:.4f}",
-                ]
-                # Add per-class metrics
-                for i in range(max_classes):
-                    f1_key = f'f1_class_{i}'
-                    precision_key = f'precision_{i}'
-                    recall_key = f'recall_{i}'
-
-                    if f1_key in result:
-                        row.append(f"{result[f1_key]:.4f}")
-                        row.append(f"{result[precision_key]:.4f}")
-                        row.append(f"{result[recall_key]:.4f}")
-                    else:
-                        row.append("")
-                        row.append("")
-                        row.append("")
-
-                results_table.add_row(*row)
-
-            self.console.print(results_table)
-
-            # Save results to CSV with proper handling of missing values
-            results_df = pd.DataFrame(all_results)
-
-            # Replace None/NaN with 0.0 for numeric columns to avoid NA values
-            for col in results_df.columns:
-                if col not in ['label', 'model', 'class_names']:
-                    results_df[col] = results_df[col].fillna(0.0)
-
-            # Save overall results with class name metadata
-            results_csv = output_dir / "multilabel_benchmark_results.csv"
-
-            # CRITICAL: Add metadata header with class name mappings
-            with open(results_csv, 'w', encoding='utf-8') as f:
-                # Write metadata header for each unique label that has class names
-                label_class_mappings = {}
-                for result in all_results:
-                    if 'class_names' in result and result['class_names']:
-                        label_class_mappings[result['label']] = result['class_names']
-
-                if label_class_mappings:
-                    f.write("# CLASS NAME MAPPINGS (Multi-label/Multi-class)\n")
-                    for label, class_names in label_class_mappings.items():
-                        class_list = class_names.split(',')
-                        mapping_str = ', '.join([f"C{i}={name}" for i, name in enumerate(class_list)])
-                        f.write(f"# {label}: {mapping_str}\n")
-                    f.write("#\n")
-
-            # Append the DataFrame (without class_names column in output)
-            output_df = results_df.drop(columns=['class_names', 'num_classes'], errors='ignore')
-            output_df.to_csv(results_csv, index=False, na_rep='0.0', mode='a')
-
-            self.console.print(f"\n[green]✓ Results saved to:[/green] {results_csv}")
-
-            # Create per-label summary CSVs in logs/training_arena/{session_id}/training_metrics/{label_name}/
-            from pathlib import Path
-            # Use the current session's training metrics directory
-            training_logs_base = Path("logs/training_arena") / session_id / "training_metrics"
-
-            for label_name in selected_labels:
-                label_results = [r for r in all_results if r['label'] == label_name]
-                if label_results:
-                    # Create label directory
-                    label_dir = training_logs_base / label_name
-                    label_dir.mkdir(parents=True, exist_ok=True)
-
-                    # Create summary CSV for this label
-                    label_df = pd.DataFrame(label_results)
-                    label_df = label_df.drop(columns=['label'])  # Remove label column since it's redundant
-
-                    # Replace None/NaN with 0.0
-                    for col in label_df.columns:
-                        if col != 'model':
-                            label_df[col] = label_df[col].fillna(0.0)
-
-                    # Sort by F1 macro descending
-                    label_df = label_df.sort_values('f1_macro', ascending=False)
-
-                    summary_csv = label_dir / "models_summary.csv"
-                    label_df.to_csv(summary_csv, index=False, na_rep='0.0')
-
-                    # Create best models ranking CSV
-                    best_df = label_df.head(10)  # Top 10 models
-                    best_csv = label_dir / "best_models_ranking.csv"
-                    best_df.to_csv(best_csv, index=False, na_rep='0.0')
-
-            # Show best model per label
-            self.console.print("\n[bold]Best model per label:[/bold]")
-            best_models_per_label = {}
-            for label_name in selected_labels:
-                label_results = [r for r in all_results if r['label'] == label_name]
-                if label_results:
-                    best = max(label_results, key=lambda x: x['f1_macro'])
-                    best_models_per_label[label_name] = {'model': best['model'], 'f1': best['f1_macro']}
-                    self.console.print(f"  • [cyan]{label_name}:[/cyan] {best['model']} (F1 {best['f1_macro']:.4f})")
-
-            # Return complete training info for metadata save
-            return {
-                'runtime_params': {
-                    'selected_models': selected_models,
-                    'selected_labels': selected_labels,
-                    'actual_models_trained': list(set(r['model'] for r in all_results)),
-                    'best_models_per_label': best_models_per_label
-                },
-                'models_trained': list(set(r['model'] for r in all_results)),
-                'best_model': best_models_per_label,
-                'best_f1': sum(m['f1'] for m in best_models_per_label.values()) / len(best_models_per_label) if best_models_per_label else None
-            }
-        else:
-            self.console.print("[yellow]No benchmark results to display[/yellow]")
-            return {
-                'runtime_params': {
-                    'selected_models': selected_models if 'selected_models' in locals() else [],
-                    'selected_labels': selected_labels if 'selected_labels' in locals() else [],
-                    'actual_models_trained': []
-                },
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None
-            }
-
-    def _training_studio_run_custom(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Custom training mode - full control over hyperparameters.
-
-        Args:
-            bundle: Training data bundle
-            model_config: Model configuration dict (will be updated with runtime params)
-            session_id: Session timestamp for organizing logs by session
-
-        Returns:
-            dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
-        """
-        self.console.print("\n[bold]Custom training configuration[/bold]")
-
-        model_name = Prompt.ask("Model name", default=self._training_studio_default_model())
-        epochs = self._int_prompt_with_validation("Epochs", default=10, min_value=1, max_value=100)
-        batch_size = self._int_prompt_with_validation("Batch size", default=16, min_value=1, max_value=256)
-
-        lr_input = Prompt.ask("Learning rate", default="2e-5")
-        try:
-            learning_rate = float(lr_input)
-        except ValueError:
-            self.console.print(f"[red]Invalid learning rate: {lr_input}[/red]")
-            return {
-                'runtime_params': {
-                    'custom_config': {'error': 'Invalid learning rate'}
-                },
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None,
-                'error': 'Invalid learning rate'
-            }
-
-        # Capture runtime parameters for full reproducibility
-        runtime_params = {
-            'custom_config': {
-                'model_name': model_name,
-                'epochs': epochs,
-                'batch_size': batch_size,
-                'learning_rate': learning_rate
-            },
-            'actual_models_trained': [model_name]
-        }
-
-        output_dir = self._training_studio_make_output_dir("training_studio_custom")
-        trainer = ModelTrainer()
-
-        extra = {
-            "model_name": model_name,
-            "max_epochs": epochs,
-            "batch_size": batch_size,
-            "learning_rate": learning_rate,
-        }
-
-        # ============================================================
-        # CRITICAL: Validate and filter insufficient labels BEFORE training
-        # ============================================================
-        if bundle.primary_file:
-            try:
-                filtered_file, was_filtered = self._validate_and_filter_insufficient_labels(
-                    input_file=str(bundle.primary_file),
-                    strategy=bundle.strategy,
-                    min_samples=2,
-                    auto_remove=False  # Ask user for confirmation
-                )
-                if was_filtered:
-                    # Update bundle to use filtered file
-                    bundle.primary_file = Path(filtered_file)
-                    self.console.print(f"[green]✓ Using filtered training dataset[/green]\n")
-            except ValueError as e:
-                # User cancelled or validation failed
-                self.console.print(f"[red]{e}[/red]")
-                return {
-                    'runtime_params': runtime_params,
-                    'models_trained': [],
-                    'best_model': None,
-                    'best_f1': None,
-                    'error': str(e)
-                }
-            except Exception as e:
-                self.logger.warning(f"Label validation failed: {e}")
-                # Continue with original file if validation fails
-                pass
-
-        config = bundle.to_trainer_config(output_dir, extra)
-        config['session_id'] = session_id
-        config['split_config'] = bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
-
-        try:
-            result = trainer.train(config)
-        except Exception as exc:  # pylint: disable=broad-except
-            self.console.print(f"[red]Training failed:[/red] {exc}")
-            self.logger.exception("Custom training failed", exc_info=exc)
-            return {
-                'runtime_params': runtime_params,
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None,
-                'error': str(exc)
-            }
-
-        self._training_studio_show_training_result(result, bundle, title="Custom training results")
-
-        # Return complete training info for metadata save
-        return {
-            'runtime_params': runtime_params,
-            'models_trained': [model_name],
-            'best_model': result.get('best_model'),
-            'best_f1': result.get('best_f1') or result.get('f1_macro')
-        }
-
-    def _training_studio_run_distributed(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Distributed training mode - parallel multi-label training.
-
-        Args:
-            bundle: Training data bundle
-            model_config: Model configuration dict (will be updated with runtime params)
-            session_id: Session timestamp for organizing logs by session
-
-        Returns:
-            dict with keys: 'runtime_params', 'models_trained', 'best_model', 'best_f1'
-        """
-        # CRITICAL WARNING: This mode is untested
-        self.console.print("\n[bold red]⚠️  WARNING: Distributed mode is NOT RECOMMENDED (untested)[/bold red]")
-        self.console.print("[yellow]This training mode has not been thoroughly tested and may produce incorrect results.[/yellow]")
-        self.console.print("[dim]Proceeding at your own risk...[/dim]\n")
-
-        self.console.print("\n[bold]Distributed multi-label training[/bold]")
-
-        resolved = self._training_studio_resolve_multilabel_dataset(bundle)
-        if resolved is None:
-            self.console.print(
-                "[red]This dataset does not expose a multi-label view."
-                " Please select a format that produces a consolidated JSONL (e.g. LLM annotations, binary long, JSONL multi-label) and try again.[/red]"
-            )
-            return {
-                'runtime_params': {
-                    'distributed_config': {'error': 'No multi-label dataset available'}
-                },
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None,
-                'error': 'No multi-label dataset'
-            }
-
-        dataset_path, label_fields = resolved
-
-        if HAS_RICH and self.console:
-            self.console.print(f"[dim]Using dataset:[/dim] {dataset_path}")
-
-        output_dir = self._training_studio_make_output_dir("training_studio_distributed")
-
-        epochs = self._int_prompt_with_validation("Epochs per label", default=8, min_value=1, max_value=50)
-        batch_size = self._int_prompt_with_validation("Batch size", default=16, min_value=2, max_value=128)
-        learning_rate = self._float_prompt_with_validation("Learning rate", default=5e-5, min_value=1e-6, max_value=1e-2)
-
-        auto_split = Confirm.ask("Automatically split data for validation?", default=True)
-        train_ratio = 0.8
-        val_ratio = 0.1
-        if auto_split:
-            train_ratio = self._float_prompt_with_validation("Training split ratio", default=0.8, min_value=0.5, max_value=0.9)
-            remaining = max(1e-6, 1 - train_ratio)
-            val_default = min(0.2, remaining / 2) or 0.1
-            val_ratio = self._float_prompt_with_validation(
-                "Validation split ratio", default=val_default, min_value=0.05, max_value=min(0.4, remaining)
-            )
-
-        reinforced = Confirm.ask("Enable reinforced learning for hard labels?", default=True)
-        reinforced_epochs = None
-        if reinforced:
-            reinforced_epochs = self._int_prompt_with_validation("Reinforced epochs", default=2, min_value=1, max_value=20)
-
-        parallel_training = Confirm.ask("Train label models in parallel?", default=True)
-        max_workers = 2
-        if parallel_training:
-            max_workers = self._int_prompt_with_validation("Parallel workers", default=2, min_value=1, max_value=8)
-
-        strategy_choice = Prompt.ask(
-            "Language strategy",
-            choices=["auto", "multilingual", "per-language"],
-            default="auto",
-        )
-        train_by_language = strategy_choice == "per-language"
-        multilingual_model = strategy_choice == "multilingual"
-
-        auto_select_model = Confirm.ask("Auto-select the best backbone for each label?", default=True)
-
-        # Capture runtime parameters for full reproducibility
-        runtime_params = {
-            'distributed_config': {
-                'epochs': epochs,
-                'batch_size': batch_size,
-                'learning_rate': learning_rate,
-                'train_ratio': train_ratio,
-                'val_ratio': val_ratio,
-                'reinforced': reinforced,
-                'reinforced_epochs': reinforced_epochs,
-                'parallel_training': parallel_training,
-                'max_workers': max_workers,
-                'strategy_choice': strategy_choice,
-                'train_by_language': train_by_language,
-                'multilingual_model': multilingual_model,
-                'auto_select_model': auto_select_model
-            }
-        }
-
-        # Get the model name from the bundle if available
-        model_name_to_use = None
-        if hasattr(bundle, 'recommended_model') and bundle.recommended_model:
-            model_name_to_use = bundle.recommended_model
-            self.console.print(f"\n[green]✓ Using selected model: {model_name_to_use}[/green]")
-
-        # If no model was selected, ask the user now
-        if not model_name_to_use:
-            self.console.print("\n[yellow]⚠️  No model was selected during data preparation[/yellow]")
-            default_model = "bert-base-multilingual-cased"
-            model_name_to_use = Prompt.ask(
-                "Which model would you like to use?",
-                default=default_model
-            )
-            self.console.print(f"[green]✓ Using model: {model_name_to_use}[/green]")
-
-        trainer_config = MultiLabelTrainingConfig(
-            n_epochs=epochs,
-            batch_size=batch_size,
-            learning_rate=learning_rate,
-            model_name=model_name_to_use,  # Pass the selected model name
-            auto_select_model=auto_select_model,
-            train_by_language=train_by_language,
-            multilingual_model=multilingual_model,
-            reinforced_learning=reinforced,
-            reinforced_epochs=reinforced_epochs,
-            output_dir=str(output_dir),
-            parallel_training=parallel_training,
-            max_workers=max_workers,
-            auto_split=auto_split,
-            split_ratio=train_ratio,
-            stratified=True,
-        )
-
-        trainer = MultiLabelTrainer(config=trainer_config, verbose=False)
-
-        try:
-            with self.console.status("[cyan]Loading multi-label dataset...[/cyan]") if HAS_RICH and self.console else contextlib.nullcontext():
-                samples = trainer.load_multi_label_data(
-                    str(dataset_path),
-                    text_field="text",
-                    labels_dict_field="labels",
-                    label_fields=label_fields,
-                )
-        except Exception as exc:  # pylint: disable=broad-except
-            message = f"Failed to load dataset for distributed training: {exc}"
-            if HAS_RICH and self.console:
-                self.console.print(f"[red]{message}[/red]")
-            else:
-                print(message)
-            self.logger.exception("Distributed training dataset load failed", exc_info=exc)
-            return
-
-        if not samples:
-            self.console.print("[red]No samples available for training.[/red]")
-            return
-
-        # Display quick stats
-        if HAS_RICH and self.console:
-            label_counter = Counter()
-            lang_counter = Counter()
-            for sample in samples:
-                lang_counter[sample.lang or "unknown"] += 1
-                for label_name, value in sample.labels.items():
-                    if isinstance(value, (int, float)):
-                        if value:
-                            label_counter[label_name] += 1
-                    else:
-                        label_counter[label_name] += 1
-
-            stats_table = Table(title="Dataset overview", border_style="green")
-            stats_table.add_column("Metric", style="cyan")
-            stats_table.add_column("Value", style="white")
-            stats_table.add_row("Samples", str(len(samples)))
-            stats_table.add_row("Unique labels", str(len(label_counter) or len(label_fields or [])))
-            if label_counter:
-                top_labels = ", ".join(f"{k}: {v}" for k, v in label_counter.most_common(5))
-                stats_table.add_row("Label frequency", top_labels)
-            if lang_counter:
-                lang_summary = ", ".join(f"{k}: {v}" for k, v in lang_counter.most_common(5))
-                stats_table.add_row("Language distribution", lang_summary)
-            self.console.print(stats_table)
-
-        # Detect multi-class groups and ask user if they want multi-class training
-        multiclass_groups = trainer.detect_multiclass_groups(samples)
-
-        if multiclass_groups and HAS_RICH and self.console:
-            self.console.print(f"\n[bold cyan]🎯 Multi-Class Groups Detected:[/bold cyan]\n")
-
-            for group_name, group_labels in multiclass_groups.items():
-                self.console.print(f"  • [cyan]{group_name}[/cyan]: {len(group_labels)} classes")
-                self.console.print(f"    {', '.join(sorted(group_labels)[:5])}{' ...' if len(group_labels) > 5 else ''}\n")
-
-            self.console.print("[dim]Choose training approach:[/dim]\n")
-
-            approach_table = Table(show_header=True, header_style="bold magenta", border_style="cyan")
-            approach_table.add_column("Approach", style="cyan bold", width=18)
-            approach_table.add_column("Description", style="white", width=60)
-
-            approach_table.add_row(
-                "multi-class",
-                f"🎯 ONE model per group (e.g., 1 model for all {list(multiclass_groups.keys())[0]} values)\n"
-                "✓ Faster training (fewer models)\n"
-                "✓ Model learns relationships between classes\n"
-                "✓ Consistent predictions (only one class predicted)"
-            )
-            approach_table.add_row(
-                "one-vs-all",
-                f"⚡ Multiple binary models (one per label)\n"
-                "✓ Each model: 'Label X' vs 'NOT Label X'\n"
-                "✓ Better for: imbalanced data or label-specific tuning\n"
-                "✓ More flexible but slower training"
-            )
-
-            self.console.print(approach_table)
-            self.console.print()
-
-            training_approach = Prompt.ask(
-                "[bold yellow]Training approach[/bold yellow]",
-                choices=["multi-class", "one-vs-all"],
-                default="multi-class"
-            )
-
-            if training_approach == "multi-class":
-                trainer_config.multiclass_mode = True
-                trainer_config.multiclass_groups = multiclass_groups
-                # Recreate trainer with updated config
-                trainer = MultiLabelTrainer(config=trainer_config, verbose=False)
-                self.console.print(f"[green]✓ Multi-class mode enabled for {len(multiclass_groups)} group(s)[/green]\n")
-
-        if HAS_RICH and self.console:
-            status_ctx = self.console.status("[bold green]Training label models...[/bold green]", spinner="dots")
-        else:
-            status_ctx = contextlib.nullcontext()
-
-        with status_ctx:
-            try:
-                models = trainer.train_all_models(samples, train_ratio=train_ratio, val_ratio=val_ratio)
-            except Exception as exc:  # pylint: disable=broad-except
-                message = f"Distributed training failed: {exc}"
-                if HAS_RICH and self.console:
-                    self.console.print(f"[red]{message}[/red]")
-                else:
-                    print(message)
-                self.logger.exception("Distributed training failed", exc_info=exc)
-                return {
-                    'runtime_params': runtime_params,
-                    'models_trained': [],
-                    'best_model': None,
-                    'best_f1': None,
-                    'error': str(exc)
-                }
-
-        self._training_studio_show_distributed_results(trainer, models, output_dir)
-
-        # Extract trained model names and performance
-        trained_model_names = list(models.keys()) if models else []
-        # Compute average F1 across all labels if available
-        avg_f1 = None
-        if models and hasattr(trainer, 'trained_models'):
-            f1_scores = []
-            for label, model_info in trainer.trained_models.items():
-                if isinstance(model_info, dict) and 'performance_metrics' in model_info:
-                    metrics = model_info['performance_metrics']
-                    if 'f1_macro' in metrics:
-                        f1_scores.append(metrics['f1_macro'])
-            if f1_scores:
-                avg_f1 = sum(f1_scores) / len(f1_scores)
-
-        # Return complete training info for metadata save
-        return {
-            'runtime_params': runtime_params,
-            'models_trained': trained_model_names,
-            'best_model': trained_model_names,  # All models trained
-            'best_f1': avg_f1
         }
 
     def _training_studio_resolve_multilabel_dataset(self, bundle: TrainingDataBundle) -> Optional[Tuple[Path, Optional[List[str]]]]:
@@ -15961,7 +14464,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         bundle : TrainingDataBundle
             The training data bundle with all dataset information
         mode : str
-            Training mode: quick, benchmark, custom, or distributed
+            Training mode: quick
         model_config : dict
             Model configuration including selected_model, epochs, batch_size, etc.
         execution_status : dict, optional

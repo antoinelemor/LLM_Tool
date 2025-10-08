@@ -67,6 +67,7 @@ from llm_tool.trainers.sota_models import (
     ELECTRABase, ELECTRALarge, ELECTRASmall,
     ALBERTBase, ALBERTLarge
 )
+from llm_tool.trainers.data_utils import safe_tolist, safe_convert_labels
 
 
 REQUIRED_COLS = [
@@ -224,8 +225,11 @@ class BenchmarkRunner:
         self.results.clear()
 
         # Create unified session ID for all training runs in this benchmark session
+        # CRITICAL FIX: Only create new session_id if one doesn't already exist
+        # This ensures benchmark run from Training Arena reuses the existing session
         import datetime
-        self.session_id = datetime.datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
+        if self.session_id is None:
+            self.session_id = datetime.datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
         self.logger.info("Starting benchmark session: %s", self.session_id)
 
         if multiple_datasets:
@@ -430,15 +434,15 @@ class BenchmarkRunner:
             train_df_filtered = filter_data_by_language(train_df, target_languages, 'language')
             test_df_filtered = filter_data_by_language(test_df, target_languages, 'language')
 
-            # Update lists
+            # Update lists - CRITICAL: Use safe_tolist to convert numpy types to Python native types
             train_texts = train_df_filtered['text'].tolist()
-            train_labels = train_df_filtered['label'].tolist()
+            train_labels = safe_tolist(train_df_filtered['label'], column_name='label')
             test_texts = test_df_filtered['text'].tolist()
-            test_labels = test_df_filtered['label'].tolist()
+            test_labels = safe_tolist(test_df_filtered['label'], column_name='label')
 
             # Update language info - CRITICAL FIX: only use test set languages for validation
             if test_languages:
-                test_languages = test_df_filtered['language'].tolist()
+                test_languages = safe_tolist(test_df_filtered['language'], column_name='language')
 
             self.logger.info(f"✓ Filtered to {len(train_texts)} train + {len(test_texts)} test samples")
 
@@ -769,8 +773,11 @@ class BenchmarkRunner:
             Name of best/selected model or None
         """
         # Create unified session ID for all training runs in this comprehensive benchmark session
+        # CRITICAL FIX: Only create new session_id if one doesn't already exist
+        # This ensures benchmark run from Training Arena reuses the existing session
         import datetime
-        self.session_id = datetime.datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
+        if self.session_id is None:
+            self.session_id = datetime.datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
         self.logger.info("Starting comprehensive benchmark session: %s", self.session_id)
         self.logger.info("Data path: %s", data_path)
 
@@ -1155,12 +1162,12 @@ class BenchmarkRunner:
                                  f"{len(train_df_filtered)} train, {len(test_df_filtered)} test. Skipping.")
                         continue
 
-                    # Update filtered data
+                    # Update filtered data - CRITICAL: Use safe_tolist to convert numpy types to Python native types
                     filtered_train_texts = train_df_filtered['text'].tolist()
-                    filtered_train_labels = train_df_filtered['label'].tolist()
+                    filtered_train_labels = safe_tolist(train_df_filtered['label'], column_name='label')
                     filtered_test_texts = test_df_filtered['text'].tolist()
-                    filtered_test_labels = test_df_filtered['label'].tolist()
-                    filtered_test_languages = train_df_filtered['language'].tolist() + test_df_filtered['language'].tolist()
+                    filtered_test_labels = safe_tolist(test_df_filtered['label'], column_name='label')
+                    filtered_test_languages = safe_tolist(train_df_filtered['language'], column_name='language') + safe_tolist(test_df_filtered['language'], column_name='language')
 
                     if verbose:
                         print(f"   ✓ Filtered to {len(filtered_train_texts)} train + {len(filtered_test_texts)} test samples")

@@ -692,7 +692,8 @@ class ModelSelector:
                          epochs: int = 2,
                          sample_size: Optional[int] = None,
                          language_info: Optional[List[str]] = None,
-                         show_detailed_metrics: bool = True) -> List[BenchmarkResult]:
+                         show_detailed_metrics: bool = True,
+                         session_id: Optional[str] = None) -> List[BenchmarkResult]:
         """
         Benchmark multiple models on actual data with detailed language-specific metrics.
 
@@ -747,7 +748,8 @@ class ModelSelector:
                     language_info=language_info,
                     label_key=None,  # Model selector benchmark mode
                     label_value='benchmark',  # Generic label for model selection
-                    language=None  # Language not specified in this context
+                    language=None,  # Language not specified in this context
+                    session_id=session_id  # CRITICAL: Unified session ID for all runs
                 )
                 training_time = time.time() - start_time
 

@@ -868,7 +868,13 @@ class MultiLabelTrainer:
                          global_current_model: Optional[int] = None,
                          global_total_epochs: Optional[int] = None,
                          global_completed_epochs: Optional[int] = None,
-                         global_start_time: Optional[float] = None) -> ModelInfo:
+                         global_start_time: Optional[float] = None,
+                         global_max_epochs: Optional[int] = None,
+                         reinforced_learning: bool = False,
+                         reinforced_epochs: Optional[int] = None,
+                         rl_f1_threshold: float = 0.7,
+                         rl_oversample_factor: float = 2.0,
+                         rl_class_weight_factor: float = 2.0) -> ModelInfo:
         """
         Train a single model for one label.
 
@@ -990,9 +996,9 @@ class MultiLabelTrainer:
             n_epochs=self.config.n_epochs,
             lr=self.config.learning_rate,
             save_model_as=model_name,
-            reinforced_learning=self.config.reinforced_learning,
+            reinforced_learning=reinforced_learning,
             n_epochs_reinforced=self.config.n_epochs_reinforced,
-            reinforced_epochs=self.config.reinforced_epochs,  # Manual override if configured
+            reinforced_epochs=reinforced_epochs,  # Manual override if configured
             track_languages=True,  # Always enable to get per-language metrics
             language_info=val_language_info,  # Pass language info for each validation sample
             metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
@@ -1006,7 +1012,11 @@ class MultiLabelTrainer:
             global_current_model=global_current_model,
             global_total_epochs=global_total_epochs,
             global_completed_epochs=global_completed_epochs,
-            global_start_time=global_start_time
+            global_start_time=global_start_time,
+            global_max_epochs=global_max_epochs,
+            rl_f1_threshold=rl_f1_threshold,
+            rl_oversample_factor=rl_oversample_factor,
+            rl_class_weight_factor=rl_class_weight_factor
             # NOTE: num_labels and class_names are already set on model object (lines 808-812)
         )
 
@@ -1061,7 +1071,8 @@ class MultiLabelTrainer:
             else:
                 precision, recall, f1, support = [], [], [], []
 
-            f1_macro_val = np.mean(f1) if len(f1) > 0 else 0
+            # CRITICAL: Convert to Python float to avoid numpy scalar issues
+            f1_macro_val = float(np.mean(f1)) if len(f1) > 0 else 0.0
             performance_metrics = {
                 'precision': precision.tolist() if hasattr(precision, 'tolist') else precision,
                 'recall': recall.tolist() if hasattr(recall, 'tolist') else recall,
@@ -1110,7 +1121,13 @@ class MultiLabelTrainer:
              global_current_model: Optional[int] = None,
              global_total_epochs: Optional[int] = None,
              global_completed_epochs: Optional[int] = None,
-             global_start_time: Optional[float] = None) -> Dict[str, ModelInfo]:
+             global_start_time: Optional[float] = None,
+             global_max_epochs: Optional[int] = None,
+             reinforced_learning: bool = False,
+             reinforced_epochs: Optional[int] = None,
+             rl_f1_threshold: float = 0.7,
+             rl_oversample_factor: float = 2.0,
+             rl_class_weight_factor: float = 2.0) -> Dict[str, ModelInfo]:
         """
         Main training method with automatic data handling.
 
@@ -1221,7 +1238,13 @@ class MultiLabelTrainer:
                                     global_current_model=global_current_model,
                                     global_total_epochs=global_total_epochs,
                                     global_completed_epochs=global_completed_epochs,
-                                    global_start_time=global_start_time)
+                                    global_start_time=global_start_time,
+                                    global_max_epochs=global_max_epochs,
+                                    reinforced_learning=reinforced_learning,
+                                    reinforced_epochs=reinforced_epochs,
+                                    rl_f1_threshold=rl_f1_threshold,
+                                    rl_oversample_factor=rl_oversample_factor,
+                                    rl_class_weight_factor=rl_class_weight_factor)
 
     def _convert_to_samples(self, data: List[Dict]) -> List[MultiLabelSample]:
         """Convert list of dicts to MultiLabelSample objects."""
@@ -1282,7 +1305,13 @@ class MultiLabelTrainer:
                                  global_current_model: Optional[int] = None,
                                  global_total_epochs: Optional[int] = None,
                                  global_completed_epochs: Optional[int] = None,
-                                 global_start_time: Optional[float] = None) -> Dict[str, ModelInfo]:
+                                 global_start_time: Optional[float] = None,
+                                 global_max_epochs: Optional[int] = None,
+                                 reinforced_learning: bool = False,
+                                 reinforced_epochs: Optional[int] = None,
+                                 rl_f1_threshold: float = 0.7,
+                                 rl_oversample_factor: float = 2.0,
+                                 rl_class_weight_factor: float = 2.0) -> Dict[str, ModelInfo]:
         """
         Train multi-class models for detected groups.
 
@@ -1353,7 +1382,13 @@ class MultiLabelTrainer:
                 global_current_model=global_current_model,
                 global_total_epochs=global_total_epochs,
                 global_completed_epochs=global_completed_epochs,
-                global_start_time=global_start_time
+                global_start_time=global_start_time,
+                global_max_epochs=global_max_epochs,
+                reinforced_learning=reinforced_learning,
+                reinforced_epochs=reinforced_epochs,
+                rl_f1_threshold=rl_f1_threshold,
+                rl_oversample_factor=rl_oversample_factor,
+                rl_class_weight_factor=rl_class_weight_factor
             )
 
             trained_models[model_info.model_name] = model_info
@@ -1374,7 +1409,13 @@ class MultiLabelTrainer:
                         global_current_model: Optional[int] = None,
                         global_total_epochs: Optional[int] = None,
                         global_completed_epochs: Optional[int] = None,
-                        global_start_time: Optional[float] = None) -> Dict[str, ModelInfo]:
+                        global_start_time: Optional[float] = None,
+                        global_max_epochs: Optional[int] = None,
+                        reinforced_learning: bool = False,
+                        reinforced_epochs: Optional[int] = None,
+                        rl_f1_threshold: float = 0.7,
+                        rl_oversample_factor: float = 2.0,
+                        rl_class_weight_factor: float = 2.0) -> Dict[str, ModelInfo]:
         """
         Train all models for all labels.
 
@@ -1399,15 +1440,23 @@ class MultiLabelTrainer:
                                                 global_current_model=global_current_model,
                                                 global_total_epochs=global_total_epochs,
                                                 global_completed_epochs=global_completed_epochs,
-                                                global_start_time=global_start_time)
+                                                global_start_time=global_start_time,
+                                                global_max_epochs=global_max_epochs,
+                                                reinforced_learning=reinforced_learning,
+                                                reinforced_epochs=reinforced_epochs,
+                                                rl_f1_threshold=rl_f1_threshold,
+                                                rl_oversample_factor=rl_oversample_factor,
+                                                rl_class_weight_factor=rl_class_weight_factor)
 
         # Otherwise, continue with standard multi-label (one-vs-all) training
         # prepare datasets
         # Create centralized directory for distribution reports in logs/training_arena/
-        # Use session_id if provided, otherwise create timestamp
+        # CRITICAL FIX: ALWAYS reuse session_id if provided - NEVER create a new one
+        # This ensures benchmark and normal training use the SAME session directory
         from datetime import datetime
-        timestamp = session_id if session_id else datetime.now().strftime("%Y%m%d_%H%M%S")
-        reports_dir = os.path.join('logs/training_arena', timestamp, 'training_data')
+        if session_id is None:
+            session_id = datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
+        reports_dir = os.path.join('logs/training_arena', session_id, 'training_data')
 
         # Detect if we have multiple languages in the dataset
         # If yes, we need to stratify by language to ensure minority classes
@@ -1521,7 +1570,13 @@ class MultiLabelTrainer:
                         global_current_model=global_current_model if len(training_jobs) == 1 else idx,
                         global_total_epochs=global_total_epochs,
                         global_completed_epochs=0,  # Can't track in parallel
-                        global_start_time=global_start_time
+                        global_start_time=global_start_time,
+                        global_max_epochs=global_max_epochs,
+                        reinforced_learning=reinforced_learning,
+                        reinforced_epochs=reinforced_epochs,
+                        rl_f1_threshold=rl_f1_threshold,
+                        rl_oversample_factor=rl_oversample_factor,
+                        rl_class_weight_factor=rl_class_weight_factor
                     )
                     futures.append(future)
 
@@ -1547,7 +1602,13 @@ class MultiLabelTrainer:
                     global_current_model=current_model_idx,
                     global_total_epochs=global_total_epochs,
                     global_completed_epochs=global_completed_epochs,
-                    global_start_time=global_start_time
+                    global_start_time=global_start_time,
+                    global_max_epochs=global_max_epochs,
+                    reinforced_learning=reinforced_learning,
+                    reinforced_epochs=reinforced_epochs,
+                    rl_f1_threshold=rl_f1_threshold,
+                    rl_oversample_factor=rl_oversample_factor,
+                    rl_class_weight_factor=rl_class_weight_factor
                 )
                 trained_models[model_info.model_name] = model_info
                 # Update completed epochs after model training

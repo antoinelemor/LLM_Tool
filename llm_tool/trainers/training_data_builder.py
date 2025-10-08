@@ -414,7 +414,8 @@ class TrainingDatasetBuilder:
         positive_mapping: Dict[str, List[str]] = {}
 
         # Get all unique categories
-        unique_categories = df[request.label_column].unique()
+        # CRITICAL: Convert to Python list to avoid numpy type issues
+        unique_categories = df[request.label_column].unique().tolist()
 
         # Prepare columns for binary files
         columns_to_include = [request.text_column]
