@@ -799,8 +799,14 @@ class BenchmarkRunner:
         total_models = len(models_to_test)
         global_start_time = time.time()
 
-        # Calculate total expected epochs (approximate - may change with reinforced learning)
+        # Calculate total expected epochs (base scenario without reinforced learning)
         global_total_epochs = total_models * benchmark_epochs
+
+        # Calculate maximum possible epochs (if all models trigger reinforced learning)
+        if self.config.reinforced_learning and self.config.reinforced_epochs:
+            global_max_epochs = total_models * (benchmark_epochs + self.config.reinforced_epochs)
+        else:
+            global_max_epochs = global_total_epochs
 
         # Run benchmark on all models
         results = self._benchmark_models_with_languages(
@@ -811,6 +817,7 @@ class BenchmarkRunner:
             verbose=verbose,
             global_total_models=total_models,
             global_total_epochs=global_total_epochs,
+            global_max_epochs=global_max_epochs,
             global_start_time=global_start_time
         )
 
@@ -989,6 +996,7 @@ class BenchmarkRunner:
         verbose: bool = True,
         global_total_models: Optional[int] = None,
         global_total_epochs: Optional[int] = None,
+        global_max_epochs: Optional[int] = None,
         global_start_time: Optional[float] = None
     ) -> List[Dict]:
         """
@@ -1265,6 +1273,7 @@ class BenchmarkRunner:
                     global_total_models=global_total_models,
                     global_current_model=idx,
                     global_total_epochs=global_total_epochs,
+                    global_max_epochs=global_max_epochs,
                     global_completed_epochs=global_completed_epochs,
                     global_start_time=global_start_time
                 )

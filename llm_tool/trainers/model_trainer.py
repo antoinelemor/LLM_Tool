@@ -722,6 +722,7 @@ class ModelTrainer:
                           global_total_models: Optional[int] = None,
                           global_current_model: Optional[int] = None,
                           global_total_epochs: Optional[int] = None,
+                          global_max_epochs: Optional[int] = None,
                           global_completed_epochs: Optional[int] = None,
                           global_start_time: Optional[float] = None) -> TrainingResult:
         """Train a single model"""
@@ -927,6 +928,13 @@ class ModelTrainer:
             if global_completed_epochs is None:
                 global_completed_epochs = 0
 
+            # CRITICAL: Convert to Python int to avoid numpy.int64 issues
+            global_total_models = int(global_total_models) if global_total_models is not None else None
+            global_current_model = int(global_current_model) if global_current_model is not None else None
+            global_total_epochs = int(global_total_epochs) if global_total_epochs is not None else None
+            global_max_epochs = int(global_max_epochs) if global_max_epochs is not None else None
+            global_completed_epochs = int(global_completed_epochs) if global_completed_epochs is not None else None
+
             best_metric, best_model_path, best_scores = model_instance.run_training(
                 train_dataloader=train_dataloader,
                 test_dataloader=val_dataloader,  # bert_base expects test_dataloader for validation
@@ -943,6 +951,7 @@ class ModelTrainer:
                 global_total_models=global_total_models,
                 global_current_model=global_current_model,
                 global_total_epochs=global_total_epochs,
+                global_max_epochs=global_max_epochs,
                 global_completed_epochs=global_completed_epochs,
                 global_start_time=global_start_time
             )
@@ -1133,6 +1142,16 @@ class ModelTrainer:
 
         Handles both single-label and multi-label training scenarios.
         """
+        # CRITICAL: Convert global progress parameters to Python int to avoid numpy.int64 issues
+        if 'global_total_models' in config and config['global_total_models'] is not None:
+            config['global_total_models'] = int(config['global_total_models'])
+        if 'global_current_model' in config and config['global_current_model'] is not None:
+            config['global_current_model'] = int(config['global_current_model'])
+        if 'global_total_epochs' in config and config['global_total_epochs'] is not None:
+            config['global_total_epochs'] = int(config['global_total_epochs'])
+        if 'global_completed_epochs' in config and config['global_completed_epochs'] is not None:
+            config['global_completed_epochs'] = int(config['global_completed_epochs'])
+
         # CRITICAL: Check training_strategy FIRST before checking training_files
         # This ensures single-label is correctly routed even if training_files exists
         training_strategy = config.get('training_strategy', 'single-label')
@@ -1625,6 +1644,7 @@ class ModelTrainer:
                             global_total_models=config.get('global_total_models'),
                             global_current_model=config.get('global_current_model'),
                             global_total_epochs=config.get('global_total_epochs'),
+                            global_max_epochs=config.get('global_max_epochs'),
                             global_completed_epochs=config.get('global_completed_epochs'),
                             global_start_time=config.get('global_start_time')
                         )
@@ -1683,6 +1703,7 @@ class ModelTrainer:
                     global_total_models=config.get('global_total_models'),
                     global_current_model=config.get('global_current_model'),
                     global_total_epochs=config.get('global_total_epochs'),
+                    global_max_epochs=config.get('global_max_epochs'),
                     global_completed_epochs=config.get('global_completed_epochs'),
                     global_start_time=config.get('global_start_time')
                 )

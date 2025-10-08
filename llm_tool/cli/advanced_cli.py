@@ -2208,55 +2208,16 @@ class AdvancedCLI:
             return
 
         from rich.align import Align
+        from .banners import BANNERS
 
-        banners = {
-            'annotator': {
-                'color': 'bright_magenta',
-                'ascii': """
-████████╗██╗  ██╗███████╗     █████╗ ███╗   ██╗███╗   ██╗ ██████╗ ████████╗ █████╗ ████████╗ ██████╗ ██████╗
-╚══██╔══╝██║  ██║██╔════╝    ██╔══██╗████╗  ██║████╗  ██║██╔═══██╗╚══██╔══╝██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗
-   ██║   ███████║█████╗      ███████║██╔██╗ ██║██╔██╗ ██║██║   ██║   ██║   ███████║   ██║   ██║   ██║██████╔╝
-   ██║   ██║  ██║██╔══╝      ██╔══██║██║╚██╗██║██║╚██╗██║██║   ██║   ██║   ██╔══██║   ██║   ██║   ██║██╔══██╗
-   ██║   ██║  ██║███████╗    ██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║
-   ╚═╝   ╚═╝  ╚═╝╚══════╝    ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
-""",
-                'tagline': '🎨 LLM Tool annotates, you decide'
-            },
-            'factory': {
-                'color': 'bright_yellow',
-                'ascii': """
-               
-███████╗ ███╗   ██╗███╗   ██╗ ██████╗ ████████╗ █████╗ ████████╗ ██████╗ ██████╗     ███████╗ █████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗
-██╔══██╗████╗  ██║████╗  ██║██╔═══██╗╚══██╔══╝██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗    ██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗╚██╗ ██╔╝
-███████║██╔██╗ ██║██╔██╗ ██║██║   ██║   ██║   ███████║   ██║   ██║   ██║██████╔╝    █████╗  ███████║██║        ██║   ██║   ██║██████╔╝ ╚████╔╝
-  ██╔══██║██║╚██╗██║██║╚██╗██║██║   ██║   ██║   ██╔══██║   ██║   ██║   ██║██╔══██╗    ██╔══╝  ██╔══██║██║        ██║   ██║   ██║██╔══██╗  ╚██╔╝
- ██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║    ██║     ██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║   ██║
- ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝    ╚═╝     ╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝   ╚═╝
-""",
-                'tagline': '🏭 Clone The Annotator into ML Models'
-            },
-            'arena': {
-                'color': 'bright_green',
-                'ascii': """
-████████╗██████╗  █████╗ ██╗███╗   ██╗██╗███╗   ██╗ ██████╗      █████╗ ██████╗ ███████╗███╗   ██╗ █████╗
- ╚══██╔══╝██╔══██╗██╔══██╗██║████╗  ██║██║████╗  ██║██╔════╝     ██╔══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗
-    ██║   ██████╔╝███████║██║██╔██╗ ██║██║██╔██╗ ██║██║  ███╗    ███████║██████╔╝█████╗  ██╔██╗ ██║███████║
-    ██║   ██╔══██╗██╔══██║██║██║╚██╗██║██║██║╚██╗██║██║   ██║    ██╔══██║██╔══██╗██╔══╝  ██║╚██╗██║██╔══██║
-    ██║   ██║  ██║██║  ██║██║██║ ╚████║██║██║ ╚████║╚██████╔╝    ██║  ██║██║  ██║███████╗██║ ╚████║██║  ██║
-    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚═════╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝
-""",
-                'tagline': '🎮 Train Your Own Models'
-            }
-        }
-
-        if mode not in banners:
+        if mode not in BANNERS:
             return
 
-        banner_data = banners[mode]
+        banner_data = BANNERS[mode]
         color = banner_data['color']
 
         self.console.print()
-        for line in banner_data['ascii'].strip().split('\n'):
+        for line in banner_data['ascii'].split('\n'):
             self.console.print(Align.center(f"[bold {color}]{line}[/bold {color}]"))
 
         self.console.print()
@@ -6792,7 +6753,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 else:
                     config_table.add_row("🎓 Reinforced Learning", "No")
 
-                config_table.add_row("⏱️  Epochs", str(quick_params['epochs']))
+                # Epochs display with reinforced learning info
+                if quick_params['reinforced_learning']:
+                    manual_rl_epochs = quick_params.get('manual_rl_epochs')
+                    if manual_rl_epochs:
+                        max_epochs = quick_params['epochs'] + manual_rl_epochs
+                        config_table.add_row("⏱️  Epochs", f"{quick_params['epochs']} (up to {max_epochs} with reinforced learning)")
+                    else:
+                        config_table.add_row("⏱️  Epochs", f"{quick_params['epochs']} (up to {quick_params['epochs']}+auto with reinforced learning)")
+                else:
+                    config_table.add_row("⏱️  Epochs", str(quick_params['epochs']))
                 config_table.add_row("📦 Batch Size", "16 (default)")
             elif mode == "quick":
                 config_table.add_row("⏱️  Epochs", "Will be asked (default: 10)")
@@ -6928,6 +6898,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'training_end_time': None
         }
 
+        # Get session ID BEFORE saving metadata
+        # Reuse the session ID created at the beginning (self.current_session_id)
+        session_id = self.current_session_id
+
         # Save PRE-TRAINING metadata
         metadata_path = None  # Initialize before conditional block
         if save_metadata:
@@ -6955,9 +6929,6 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Execute the selected training mode
         self.console.print("\n[green]✓ Starting training...[/green]\n")
-
-        # Reuse the session ID created at the beginning (self.current_session_id)
-        session_id = self.current_session_id
         self.console.print(f"[dim]Session ID: {session_id}[/dim]\n")
 
         training_result = None
@@ -10522,10 +10493,28 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print(f"  • Categories: [cyan]{len(selected_benchmark_categories)}[/cyan]")
         else:
             self.console.print(f"  • Dataset: [cyan]Full training dataset[/cyan]")
-        self.console.print(f"  • Epochs per model: [cyan]{benchmark_epochs}[/cyan]")
+
+        # Display epochs with reinforced learning info if enabled
         if enable_benchmark_rl:
+            reinforced_epochs = benchmark_rl_params.get('reinforced_epochs', None)
+            if reinforced_epochs is not None:
+                # Manual reinforced epochs configured
+                max_epochs = benchmark_epochs + reinforced_epochs
+                self.console.print(f"  • Epochs per model: [cyan]{benchmark_epochs}[/cyan] (up to [yellow]{max_epochs}[/yellow] with reinforced learning)")
+            else:
+                # Auto-calculated reinforced epochs (typically 8-20)
+                self.console.print(f"  • Epochs per model: [cyan]{benchmark_epochs}[/cyan] (up to [yellow]{benchmark_epochs}+auto[/yellow] with reinforced learning)")
             self.console.print(f"  • Reinforced learning: [cyan]Enabled[/cyan] (F1 < {benchmark_rl_params.get('f1_threshold', 0.70):.2f})")
-        self.console.print(f"  • Estimated time: [yellow]~{len(all_models_to_test) * benchmark_epochs // 2} minutes[/yellow]\n")
+
+            # Estimate time considering potential reinforced learning
+            # Conservative estimate: assume some models will trigger RL
+            estimated_avg_epochs = benchmark_epochs + (reinforced_epochs // 2 if reinforced_epochs else 5)
+            estimated_minutes = len(all_models_to_test) * estimated_avg_epochs // 2
+        else:
+            self.console.print(f"  • Epochs per model: [cyan]{benchmark_epochs}[/cyan]")
+            estimated_minutes = len(all_models_to_test) * benchmark_epochs // 2
+
+        self.console.print(f"  • Estimated time: [yellow]~{estimated_minutes} minutes[/yellow]\n")
 
         proceed = Confirm.ask("[bold yellow]Proceed with benchmark?[/bold yellow]", default=True)
         if not proceed:
@@ -12778,6 +12767,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             enable_reinforced_learning = quick_params['reinforced_learning']
             models_by_language = quick_params.get('models_by_language', None)
             train_by_language_flag = quick_params.get('train_by_language', False)
+            manual_rl_epochs = quick_params.get('manual_rl_epochs', None)
+            rl_f1_threshold = quick_params.get('rl_f1_threshold', 0.70)
         else:
             # Fallback for legacy resume mode
             model_name = model_config.get('quick_model_name', 'bert-base-uncased')
@@ -12785,6 +12776,29 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             enable_reinforced_learning = model_config.get('use_reinforcement', False)
             models_by_language = None
             train_by_language_flag = False
+            manual_rl_epochs = None
+            rl_f1_threshold = 0.70
+
+        # Display training configuration summary
+        self.console.print()
+        if models_by_language:
+            self.console.print(f"  • Models: [cyan]{len(models_by_language)}[/cyan] (language-specific)")
+        else:
+            self.console.print(f"  • Model: [cyan]{model_name}[/cyan]")
+
+        # Display epochs with reinforced learning info if enabled
+        if enable_reinforced_learning:
+            if manual_rl_epochs is not None:
+                # Manual reinforced epochs configured
+                max_epochs = epochs + manual_rl_epochs
+                self.console.print(f"  • Epochs: [cyan]{epochs}[/cyan] (up to [yellow]{max_epochs}[/yellow] with reinforced learning)")
+            else:
+                # Auto-calculated reinforced epochs (typically 8-20)
+                self.console.print(f"  • Epochs: [cyan]{epochs}[/cyan] (up to [yellow]{epochs}+auto[/yellow] with reinforced learning)")
+            self.console.print(f"  • Reinforced learning: [cyan]Enabled[/cyan] (F1 < {rl_f1_threshold:.2f})")
+        else:
+            self.console.print(f"  • Epochs: [cyan]{epochs}[/cyan]")
+        self.console.print()
 
         # Get languages from metadata (needed for training)
         languages = set()
@@ -13123,6 +13137,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'session_id': session_id,
                         'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
                     }
+
+                    # Add reinforced learning parameters if enabled
+                    if enable_reinforced_learning and manual_rl_epochs is not None:
+                        category_config["reinforced_epochs"] = manual_rl_epochs
 
                     # Add models_by_language if user selected per-language models
                     if models_by_language:

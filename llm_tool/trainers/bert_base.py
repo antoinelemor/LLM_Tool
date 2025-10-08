@@ -112,8 +112,9 @@ class TrainingDisplay:
                  language: str = None, n_epochs: int = 10, is_reinforced: bool = False,
                  num_labels: int = 2, class_names: list = None, detected_languages: list = None,
                  global_total_models: int = None, global_current_model: int = None,
-                 global_total_epochs: int = None, global_completed_epochs: int = None,
-                 global_start_time: float = None):
+                 global_total_epochs: int = None, global_max_epochs: int = None,
+                 global_completed_epochs: int = None,
+                 global_start_time: float = None, reinforced_learning_enabled: bool = False):
         self.model_name = model_name
         self.label_key = label_key
         self.label_value = label_value
@@ -122,11 +123,13 @@ class TrainingDisplay:
         self.n_epochs = n_epochs
         self.is_reinforced = is_reinforced
         self.num_labels = num_labels
+        self.reinforced_learning_enabled = reinforced_learning_enabled  # Whether reinforced learning is enabled globally
 
         # Global progress tracking (for benchmark and multi-model training)
         self.global_total_models = global_total_models
         self.global_current_model = global_current_model
         self.global_total_epochs = global_total_epochs
+        self.global_max_epochs = global_max_epochs or global_total_epochs  # Default to global_total_epochs if not provided
         self.global_completed_epochs = global_completed_epochs or 0
         self.global_start_time = global_start_time
 
@@ -223,6 +226,13 @@ class TrainingDisplay:
         table.add_column(style="bold yellow", width=20)
         table.add_column(style="bold white")
 
+        # Check if reinforced learning is enabled globally (for "minimum" indicators)
+        reinforced_enabled = self.reinforced_learning_enabled
+
+        # DEBUG: Log global epoch values (REMOVE AFTER TESTING)
+        if self.global_total_epochs is not None:
+            print(f"[DEBUG] global_total_epochs={self.global_total_epochs}, global_max_epochs={self.global_max_epochs}, reinforced_enabled={reinforced_enabled}")
+
         # Global header
         table.add_row("🌍 GLOBAL PROGRESS", "")
 
@@ -232,21 +242,18 @@ class TrainingDisplay:
             model_bar = self._create_bar(model_pct, width=40)
             table.add_row("Models:", f"{self.global_current_model}/{self.global_total_models} {model_bar}")
 
-        # Total epochs progress (with estimated indicator if reinforced learning is enabled)
+        # Total epochs progress (with maximum indicator if reinforced learning is enabled)
         if self.global_total_epochs is not None and self.global_completed_epochs is not None:
-            # Check if reinforced learning is enabled to show "minimum" indicator
-            reinforced_enabled = hasattr(self.config, 'reinforced_learning') and self.config.reinforced_learning
-
             # Calculate percentage based on actual completed vs current total
             epoch_pct = (self.global_completed_epochs / self.global_total_epochs) * 100 if self.global_total_epochs > 0 else 0
             # Cap at 100% for display purposes
             epoch_pct = min(epoch_pct, 100.0)
             epoch_bar = self._create_bar(epoch_pct, width=40)
 
-            # Add "min." indicator if reinforced learning is enabled and epochs might increase
+            # Display format: "0/4 (max 8)" if reinforced learning might add more epochs
             epoch_label = f"{self.global_completed_epochs}/{self.global_total_epochs}"
-            if reinforced_enabled and self.global_completed_epochs < self.global_total_epochs:
-                epoch_label += " min."
+            if reinforced_enabled and self.global_max_epochs and self.global_max_epochs > self.global_total_epochs:
+                epoch_label += f" (max {self.global_max_epochs})"
 
             table.add_row("Total Epochs:", f"{epoch_label} {epoch_bar}")
 
@@ -262,12 +269,18 @@ class TrainingDisplay:
                 remaining_epochs = self.global_total_epochs - self.global_completed_epochs
                 estimated_remaining = avg_time_per_epoch * remaining_epochs
                 remaining_str = self._format_time(estimated_remaining)
-                table.add_row("Est. Remaining:", remaining_str)
+
+                # Add "min." indicator if reinforced learning might add more epochs
+                time_suffix = ""
+                if reinforced_enabled and self.global_completed_epochs < self.global_total_epochs:
+                    time_suffix = " (minimum)"
+
+                table.add_row("Est. Remaining:", f"{remaining_str}{time_suffix}")
 
                 # Total estimated time
                 total_estimated = elapsed + estimated_remaining
                 total_str = self._format_time(total_estimated)
-                table.add_row("Est. Total Time:", total_str)
+                table.add_row("Est. Total Time:", f"{total_str}{time_suffix}")
 
         return table
 
@@ -926,7 +939,8 @@ class BertBase(BertABC):
             progress_callback: Optional[callable] = None,  # Callback function called after each epoch with (epoch, metrics)
             global_total_models: Optional[int] = None,  # Total number of models in this training session
             global_current_model: Optional[int] = None,  # Current model number (1-indexed)
-            global_total_epochs: Optional[int] = None,  # Total epochs across all models
+            global_total_epochs: Optional[int] = None,  # Total epochs across all models (base scenario)
+            global_max_epochs: Optional[int] = None,  # Maximum possible epochs if all models trigger reinforced learning
             global_completed_epochs: Optional[int] = None,  # Completed epochs across all models
             global_start_time: Optional[float] = None  # Start time of the entire training session
     ) -> Tuple[Any, Any, Any, Any]:
@@ -1007,6 +1021,14 @@ class BertBase(BertABC):
         """
         # Reset reinforced learning flag at the start of each training session
         self._reinforced_already_triggered = False
+
+        # Store global progress tracking parameters for display updates
+        self.global_total_models = global_total_models
+        self.global_current_model = global_current_model
+        self.global_total_epochs = global_total_epochs
+        self.global_max_epochs = global_max_epochs
+        self.global_completed_epochs = global_completed_epochs
+        self.global_start_time = global_start_time
 
         # NEW STRUCTURE:
         # Normal mode:    logs/training_arena/{session_id}/training_metrics/{category}/
@@ -1348,8 +1370,10 @@ class BertBase(BertABC):
             global_total_models=global_total_models,
             global_current_model=global_current_model,
             global_total_epochs=global_total_epochs,
+            global_max_epochs=global_max_epochs,
             global_completed_epochs=global_completed_epochs,
-            global_start_time=global_start_time
+            global_start_time=global_start_time,
+            reinforced_learning_enabled=reinforced_learning
         )
 
         # Start Live display - this will remain fixed and update in place
