@@ -1563,7 +1563,7 @@ class BERTAnnotationStudio:
                 result_array: Optional[np.ndarray] = None
 
                 with Progress(*progress_columns, console=self.console, transient=True) as progress:
-                    overall_task = progress.add_task("Annotation totale", total=total)
+                    overall_task = progress.add_task("Total annotation", total=total)
                     device_tasks: Dict[str, int] = {}
 
                     def get_label(tag: str) -> str:
