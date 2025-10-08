@@ -109,6 +109,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "python-dateutil>=2.8.0",
     "cryptography>=41.0.0",
+    "tabulate>=0.9.0",
     # LLM and AI
     "openai>=1.0.0",
     "ollama>=0.6.0",
