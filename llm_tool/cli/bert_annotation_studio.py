@@ -1195,7 +1195,8 @@ class BERTAnnotationStudio:
             if id_column:
                 self.console.print(f"[green]✓ ID column: {id_column}[/green]")
 
-            self._display_text_length_stats(df, text_column, model_info)
+            # Use first model for text length stats
+            self._display_text_length_stats(df, text_column, models[0])
             df, column_mapping = self._ensure_unique_identifier(df, column_mapping)
 
             return df, column_mapping
@@ -1204,7 +1205,7 @@ class BERTAnnotationStudio:
             self.console.print(f"[red]✗ Error: {str(e)}[/red]")
             return None, None
 
-    def _detect_and_validate_language(self, df: pd.DataFrame, column_mapping: Dict, model_info: Dict) -> Optional[Dict]:
+    def _detect_and_validate_language(self, df: pd.DataFrame, column_mapping: Dict, models: List[Dict[str, Any]]) -> Optional[Dict]:
         """Detect and validate language"""
         self.console.print("\n[bold cyan]Step 4/8: Language Detection[/bold cyan]\n")
 
@@ -1285,20 +1286,27 @@ class BERTAnnotationStudio:
         else:
             column_mapping['language'] = language_column
 
-        model_lang = model_info['language']
-        self.console.print(f"[cyan]Model language: {model_lang} • Primary data language: {primary_lang}[/cyan]")
+        # Check compatibility for all models
+        model_languages = {m['language'] for m in models}
+        has_multilingual = any(m.get('is_multilingual', False) for m in models)
 
-        is_compatible = model_info['is_multilingual'] or model_lang == primary_lang
+        # Display model languages
+        model_lang_str = ", ".join(sorted(model_languages))
+        self.console.print(f"[cyan]Model language(s): {model_lang_str} • Primary data language: {primary_lang}[/cyan]")
+
+        # Check if at least one model is compatible
+        is_compatible = has_multilingual or primary_lang in model_languages
+
         if is_compatible:
-            self.console.print("[green]✓ Model is compatible with detected language[/green]")
+            self.console.print("[green]✓ At least one model is compatible with detected language[/green]")
         else:
-            self.console.print("[yellow]⚠ Language mismatch between model and data[/yellow]")
+            self.console.print("[yellow]⚠ Language mismatch between models and data[/yellow]")
             if language_column and len(unique_languages) > 1:
                 self.console.print("[yellow]• Consider filtering the dataset by language column before annotating.[/yellow]")
             if not Confirm.ask("Proceed with annotation despite the mismatch?", default=False):
                 return None
 
-        if len(unique_languages) > 1 and not model_info['is_multilingual']:
+        if len(unique_languages) > 1 and not has_multilingual:
             self.console.print("[yellow]⚠ Multiple languages detected but the model is monolingual.[/yellow]")
 
         return {
@@ -1326,7 +1334,7 @@ class BERTAnnotationStudio:
             'remove_extra_spaces': Confirm.ask("  Remove extra spaces?", default=True),
         }
 
-    def _configure_annotation_options(self) -> Dict[str, Any]:
+    def _configure_annotation_options(self, models: List[Dict[str, Any]], df: pd.DataFrame, column_mapping: Dict) -> Dict[str, Any]:
         """Configure annotation options"""
         self.console.print("\n[bold cyan]Step 6/8: Annotation Options[/bold cyan]\n")
 
@@ -1456,11 +1464,14 @@ class BERTAnnotationStudio:
             'include_confidence_interval': include_ci
         }
 
-    def _confirm_and_execute(self, model_info: Dict, data_source: Dict, df: pd.DataFrame,
+    def _confirm_and_execute(self, models: List[Dict[str, Any]], data_source: Dict, df: pd.DataFrame,
                             column_mapping: Dict, language_info: Dict, correction_config: Dict,
                             annotation_config: Dict, export_config: Dict) -> bool:
         """Execute annotation"""
         self.console.print("\n[bold cyan]Step 8/8: Execute[/bold cyan]\n")
+
+        # Use first model for initial compatibility check (will process all models later)
+        model_info = models[0]
 
         row_languages = self._get_or_compute_row_languages(df, column_mapping, language_info or {})
         if model_info.get('is_multilingual'):
@@ -1471,11 +1482,16 @@ class BERTAnnotationStudio:
         eligible_count = int(eligible_mask.sum())
         skipped_count = len(df) - eligible_count
 
+        # Build models display string
+        models_str = ", ".join([m['relative_name'] for m in models])
+        if len(models_str) > 80:
+            models_str = models_str[:77] + "..."
+
         summary = Table(title="Annotation Summary", box=box.ROUNDED)
         summary.add_column("Parameter", style="cyan", width=18)
         summary.add_column("Value", style="green", overflow="fold")
-        summary.add_row("Model", model_info['relative_name'])
-        summary.add_row("Model language", model_info['language'])
+        summary.add_row("Model(s)", models_str)
+        summary.add_row("Model language(s)", ", ".join(sorted({m['language'] for m in models})))
         summary.add_row("Rows", f"{len(df):,}")
         if language_info:
             languages_str = ", ".join(language_info.get('languages', []))
