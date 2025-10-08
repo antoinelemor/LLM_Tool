@@ -1,15 +1,43 @@
+<div align="center">
+
 ```
-██╗     ██╗     ███╗   ███╗    ████████╗ ██████╗  ██████╗ ██╗
-██║     ██║     ████╗ ████║    ╚══██╔══╝██╔═══██╗██╔═══██╗██║
-██║     ██║     ██╔████╔██║       ██║   ██║   ██║██║   ██║██║
-██║     ██║     ██║╚██╔╝██║       ██║   ██║   ██║██║   ██║██║
-███████╗███████╗██║ ╚═╝ ██║       ██║   ╚██████╔╝╚██████╔╝███████╗
-╚══════╝╚══════╝╚═╝     ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                                                                               ║
+║     ██╗     ██╗     ███╗   ███╗    ████████╗ ██████╗  ██████╗ ██╗           ║
+║     ██║     ██║     ████╗ ████║    ╚══██╔══╝██╔═══██╗██╔═══██╗██║           ║
+║     ██║     ██║     ██╔████╔██║       ██║   ██║   ██║██║   ██║██║           ║
+║     ██║     ██║     ██║╚██╔╝██║       ██║   ██║   ██║██║   ██║██║           ║
+║     ███████╗███████╗██║ ╚═╝ ██║       ██║   ╚██████╔╝╚██████╔╝███████╗      ║
+║     ╚══════╝╚══════╝╚═╝     ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝      ║
+║                                                                               ║
+║                   🤖 AI-Powered Annotation & ML Training Pipeline            ║
+║                   Transform Text into Trained Models in 45 Minutes           ║
+║                                                                               ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
-**Transform Your Research Data into Machine Learning Models — No Coding Required**
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.9+"/>
+  <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT License"/>
+  <img src="https://img.shields.io/badge/status-stable-brightgreen?style=for-the-badge" alt="Stable"/>
+  <img src="https://img.shields.io/badge/PRs-welcome-ff69b4?style=for-the-badge" alt="PRs Welcome"/>
+</p>
 
-> 🎓 Built for Social Science Researchers • 🌍 75+ Languages • 🤖 Zero-Shot Annotation with AI • 📊 Automated Model Training
+<p align="center">
+  <img src="https://img.shields.io/badge/🤖_GPT--4-supported-00A67E?style=flat-square" alt="GPT-4"/>
+  <img src="https://img.shields.io/badge/🧠_Claude-supported-8A2BE2?style=flat-square" alt="Claude"/>
+  <img src="https://img.shields.io/badge/🦙_Ollama-FREE-FF6B35?style=flat-square" alt="Ollama"/>
+  <img src="https://img.shields.io/badge/⚡_BERT-training-FFD700?style=flat-square" alt="BERT"/>
+  <img src="https://img.shields.io/badge/🌍_75+_Languages-multilingual-00CED1?style=flat-square" alt="Multilingual"/>
+</p>
+
+---
+
+### 🎯 **Transform Research Data into ML Models — Zero Coding Required**
+
+> 🎓 Built for Social Science Researchers • 🌍 75+ Languages • 🤖 Zero-Shot AI Annotation • 📊 Automated BERT Training • 💻 100% Local Option
+
+</div>
 
 ---
 
