@@ -23,6 +23,13 @@ MAIN FEATURES:
 5) Filter and prepare only annotated rows
 6) Export to JSONL format for training
 
+IMPORTANT NOTE ON NULL VALUES:
+-----------------------------
+The string value 'null' is treated as a VALID class label, not as an empty/missing value.
+This is critical for multi-class training in hybrid mode where 'null' represents a legitimate
+category (e.g., specific_themes can have values: 'early_learning_childcare', 'null', 'welfare_state').
+Only None and empty strings ('') are treated as missing values.
+
 Author:
 -------
 Antoine Lemor
@@ -267,13 +274,15 @@ class AnnotationToTrainingConverter:
                         value = annotation[key]
 
                     # Check if value is valid
-                    has_valid_value = value is not None and value != '' and value != 'null'
+                    # CRITICAL FIX: 'null' is a valid class value, not an empty value!
+                    has_valid_value = value is not None and value != ''
 
                     # Create label based on strategy
                     # CRITICAL FIX: For one-vs-all, include ALL labels from annotation
                     if isinstance(value, list) and has_valid_value:
                         # For lists, create multiple labels (key_item1, key_item2, ...)
-                        clean_values = [v for v in value if v is not None and v != '' and v != 'null']
+                        # Keep 'null' as a valid value
+                        clean_values = [v for v in value if v is not None and v != '']
                         if label_strategy == "key_value":
                             labels = [f"{key}_{item}" for item in clean_values]
                         else:
@@ -289,10 +298,12 @@ class AnnotationToTrainingConverter:
                         # For one-vs-all: collect labels from OTHER keys
                         labels = []
                         for other_key, other_value in annotation.items():
-                            if other_key == key or other_value is None or other_value == '' or other_value == 'null':
+                            # CRITICAL FIX: Keep 'null' as a valid class value
+                            if other_key == key or other_value is None or other_value == '':
                                 continue
                             if isinstance(other_value, list):
-                                clean_values = [v for v in other_value if v is not None and v != '' and v != 'null']
+                                # Keep 'null' as a valid value
+                                clean_values = [v for v in other_value if v is not None and v != '']
                                 if label_strategy == "key_value":
                                     labels.extend([f"{other_key}_{item}" for item in clean_values])
                                 else:
@@ -504,14 +515,15 @@ class AnnotationToTrainingConverter:
 
                     value = annotation[key]
 
-                    # Skip null values
-                    if value is None or value == '' or value == 'null':
+                    # Skip only None and empty values
+                    # CRITICAL FIX: 'null' is a valid class value, not empty!
+                    if value is None or value == '':
                         continue
 
                     # Create labels based on strategy and add to flat list
                     if isinstance(value, list):
-                        # Filter out empty or null values from list
-                        clean_values = [v for v in value if v is not None and v != '' and v != 'null']
+                        # Filter out empty values but keep 'null' as valid
+                        clean_values = [v for v in value if v is not None and v != '']
                         if label_strategy == "key_value":
                             all_labels.extend([f"{key}_{item}" for item in clean_values])
                         else:
@@ -718,12 +730,15 @@ class AnnotationToTrainingConverter:
                     value = annotation[annotation_key]
 
                 # Check if value is present and valid
+                # CRITICAL FIX: 'null' is a valid class value, not an empty value!
+                # Only treat None and empty string as invalid
                 has_valid_value = False
-                if value is not None and value != '' and value != 'null':
+                if value is not None and value != '':
                     has_valid_value = True
 
                 # Create label based on strategy
                 # CRITICAL FIX: For single-key datasets (multiclass), store as STRING not list
+                # CRITICAL FIX: Preserve 'null' as a valid class value
                 if not has_valid_value:
                     # No value for this key → negative class
                     if label_strategy == "key_value":
@@ -731,7 +746,8 @@ class AnnotationToTrainingConverter:
                     else:
                         label_string = "NO_VALUE"
                 elif isinstance(value, list):
-                    clean_values = [v for v in value if v is not None and v != '' and v != 'null']
+                    # For lists, keep 'null' as a valid value
+                    clean_values = [v for v in value if v is not None and v != '']
                     if not clean_values:
                         # Empty list → negative class
                         if label_strategy == "key_value":
@@ -746,6 +762,7 @@ class AnnotationToTrainingConverter:
                         else:
                             label_string = str(first_value)
                 else:
+                    # Handle string values including 'null' as a valid class
                     if label_strategy == "key_value":
                         label_string = f"{annotation_key}_{value}"
                     else:

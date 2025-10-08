@@ -1502,7 +1502,8 @@ class ModelTrainer:
                 reinforced_epochs=config.get('reinforced_epochs'),  # CRITICAL: Pass manual reinforced epochs if configured
                 rl_f1_threshold=config.get('rl_f1_threshold', 0.7),
                 rl_oversample_factor=config.get('rl_oversample_factor', 2.0),
-                rl_class_weight_factor=config.get('rl_class_weight_factor', 2.0)
+                rl_class_weight_factor=config.get('rl_class_weight_factor', 2.0),
+                progress_callback=config.get('progress_callback')  # CRITICAL: Pass progress callback for epoch tracking
             )
 
             # CRITICAL: Calculate total training time

@@ -1,0 +1,137 @@
+================================================================================
+                    VALIDATION FIX - VISUAL EXPLANATION
+================================================================================
+
+PROBLEM: Validation and Training Count Labels Differently
+----------------------------------------------------------
+
+SCENARIO: Dataset with sentiment_null having 1 EN + 3 FR samples
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           INPUT DATASET                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│  {"text": "...", "labels": ["sentiment_null"], "lang": "EN"}  ← 1 EN   │
+│  {"text": "...", "labels": ["sentiment_null"], "lang": "FR"}  ← 3 FR   │
+│  {"text": "...", "labels": ["sentiment_null"], "lang": "FR"}           │
+│  {"text": "...", "labels": ["sentiment_null"], "lang": "FR"}           │
+└─────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+        ┌─────────────────────────────────────────┐
+        │   USER: train_by_language = True        │
+        │   (Wants separate EN and FR models)     │
+        └─────────────────────────────────────────┘
+                                  │
+                                  ├───────────────────┐
+                                  │                   │
+                                  ▼                   ▼
+    ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
+    │   OLD VALIDATION (BROKEN)       │   │   NEW VALIDATION (FIXED)        │
+    │   train_by_language=False       │   │   train_by_language=True        │
+    ├─────────────────────────────────┤   ├─────────────────────────────────┤
+    │   Counts:                       │   │   Counts:                       │
+    │   • sentiment_null: 4           │   │   • sentiment_null_EN: 1  ✗    │
+    │                                 │   │   • sentiment_null_FR: 3  ✓    │
+    │   Check: 4 >= 2 → PASS ✓        │   │                                 │
+    │                                 │   │   Check: 1 >= 2 → FAIL ✗        │
+    │   ⚠️ FALSE POSITIVE!            │   │   ✓ CORRECTLY DETECTED!         │
+    └─────────────────────────────────┘   └─────────────────────────────────┘
+                    │                                       │
+                    │                                       │
+                    ▼                                       ▼
+    ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
+    │   TRAINING STARTS               │   │   VALIDATION BLOCKS TRAINING    │
+    │   ✗ Will crash later            │   │   ✓ Shows error to user         │
+    └─────────────────────────────────┘   └─────────────────────────────────┘
+                    │
+                    ▼
+    ┌─────────────────────────────────┐
+    │   TRAINING SPLIT                │
+    │   (data_utils.py)               │
+    ├─────────────────────────────────┤
+    │   Creates keys:                 │
+    │   • sentiment_null_EN: 1 ✗      │
+    │   • sentiment_null_FR: 3 ✓      │
+    │                                 │
+    │   Check: 1 >= 2 → CRASH!        │
+    │   Error: "Class 'null_EN':      │
+    │           1 sample(s)"          │
+    └─────────────────────────────────┘
+
+================================================================================
+                            THE FIX IN CODE
+================================================================================
+
+BEFORE (Language-Blind):
+------------------------
+for record in records:
+    labels_data = record.get('labels', [])
+    for label in labels_data:
+        label_counter[label] += 1  # ❌ Counts 'sentiment_null' globally
+
+    Result: {'sentiment_null': 4} → PASS (but training will fail!)
+
+
+AFTER (Language-Aware):
+-----------------------
+for record in records:
+    labels_data = record.get('labels', [])
+    lang = record.get('lang', 'unknown') if train_by_language else None
+    
+    for label in labels_data:
+        if train_by_language:
+            key = f"{label}_{lang}"  # ✓ Matches training split logic!
+        else:
+            key = label
+        label_counter[key] += 1
+
+    Result when train_by_language=True:
+        {'sentiment_null_EN': 1, 'sentiment_null_FR': 3}
+    → FAIL for 'sentiment_null_EN' (correct detection!)
+
+================================================================================
+                         CALL CHAIN MAPPING
+================================================================================
+
+User Action: "Start Training"
+      │
+      ├─ Benchmark Mode
+      │   └─ advanced_cli.py:10686
+      │       └─ _validate_and_filter_insufficient_labels(
+      │            train_by_language=train_by_language  ← from benchmark config
+      │          )
+      │
+      ├─ Quick Training Mode
+      │   └─ advanced_cli.py:13007
+      │       └─ _validate_and_filter_insufficient_labels(
+      │            train_by_language=train_by_language_flag  ← from quick_params
+      │          )
+      │
+      └─ Custom Training Mode
+          ├─ Key Files Fallback → advanced_cli.py:13828
+          │   └─ _validate_and_filter_insufficient_labels(
+          │        train_by_language=needs_language_training  ← from config
+          │      )
+          │
+          └─ Standard Path → advanced_cli.py:13911
+              └─ _validate_and_filter_insufficient_labels(
+                   train_by_language=needs_language_training  ← from config
+                 )
+
+All paths lead to the SAME validation function with the CORRECT parameter!
+
+================================================================================
+                           WHY IT'S DEFINITIVE
+================================================================================
+
+✓ ROOT CAUSE:  Validation now uses EXACT same key format as training split
+✓ ALL PATHS:   All 4 training entry points updated
+✓ TESTED:      Test script confirms fix catches failing scenario  
+✓ COMPATIBLE:  Backward compatible (language-agnostic by default)
+✓ USER-FRIENDLY: Clear error messages with language breakdown
+✓ PREVENTIVE:  Catches problems BEFORE training starts (saves time)
+
+This is not a workaround - it's a proper architectural fix that aligns
+validation logic with training split logic at the fundamental level.
+
+================================================================================

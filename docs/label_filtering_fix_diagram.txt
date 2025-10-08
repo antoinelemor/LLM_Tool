@@ -1,0 +1,239 @@
+═══════════════════════════════════════════════════════════════════════════════
+  LABEL FILTERING BUG FIX - VISUAL DIAGRAM
+═══════════════════════════════════════════════════════════════════════════════
+
+SCENARIO: Multi-label dataset with 2 insufficient labels detected
+  • sentiment_null_EN: 1 sample (insufficient, minimum is 2)
+  • themes_urban_affairs_EN: 1 sample (insufficient, minimum is 2)
+
+───────────────────────────────────────────────────────────────────────────────
+SAMPLE TYPE 1: Mixed Labels (Sufficient + Insufficient)
+───────────────────────────────────────────────────────────────────────────────
+
+INPUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ {                                                                           │
+│   "text": "Healthcare is important",                                        │
+│   "labels": ["sentiment_null", "themes_healthcare"],                        │
+│   "lang": "EN",                                                             │
+│   "id": "sample_1"                                                          │
+│ }                                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+BEFORE FIX (WRONG):
+  ↓ Filter: sentiment_null is insufficient
+  ↓ Result: filtered_labels = ["themes_healthcare"]
+  ↓ Check: if filtered_labels → TRUE
+  ↓ Action: KEEP SAMPLE ✓ (but confusing logic)
+
+AFTER FIX (CORRECT):
+  ↓ Filter: sentiment_null is insufficient
+  ↓ Result: filtered_labels = ["themes_healthcare"]
+  ↓ Count: 1 label removed
+  ↓ Action: ALWAYS KEEP SAMPLE ✓
+
+OUTPUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ {                                                                           │
+│   "text": "Healthcare is important",                                        │
+│   "labels": ["themes_healthcare"],    ← Only sufficient labels kept        │
+│   "lang": "EN",                                                             │
+│   "id": "sample_1"                                                          │
+│ }                                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+STATUS: ✓ Sample kept, only insufficient label removed
+
+───────────────────────────────────────────────────────────────────────────────
+SAMPLE TYPE 2: ONLY Insufficient Labels (THE BUG!)
+───────────────────────────────────────────────────────────────────────────────
+
+INPUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ {                                                                           │
+│   "text": "This is a rare case",                                            │
+│   "labels": ["sentiment_null"],                                             │
+│   "lang": "EN",                                                             │
+│   "id": "sample_2"                                                          │
+│ }                                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+BEFORE FIX (WRONG):
+  ↓ Filter: sentiment_null is insufficient
+  ↓ Result: filtered_labels = []  ← EMPTY LIST
+  ↓ Check: if filtered_labels → FALSE (empty list is falsy!)
+  ↓ Action: else → removed_count += 1
+  ↓ Result: SAMPLE DELETED! ❌ DATA LOSS!
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  ∅ SAMPLE DELETED                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+AFTER FIX (CORRECT):
+  ↓ Filter: sentiment_null is insufficient
+  ↓ Result: filtered_labels = []  ← EMPTY LIST
+  ↓ Count: 1 label removed
+  ↓ Action: ALWAYS KEEP SAMPLE (no conditional!)
+  ↓ Result: Sample preserved with empty labels ✓
+
+OUTPUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ {                                                                           │
+│   "text": "This is a rare case",                                            │
+│   "labels": [],                        ← Empty, but sample is KEPT!        │
+│   "lang": "EN",                                                             │
+│   "id": "sample_2"                                                          │
+│ }                                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+STATUS: ✓ Sample kept, all labels removed but sample preserved
+
+───────────────────────────────────────────────────────────────────────────────
+SAMPLE TYPE 3: ONLY Sufficient Labels
+───────────────────────────────────────────────────────────────────────────────
+
+INPUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ {                                                                           │
+│   "text": "Normal sample",                                                  │
+│   "labels": ["sentiment_positive", "themes_healthcare"],                    │
+│   "lang": "EN",                                                             │
+│   "id": "sample_3"                                                          │
+│ }                                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+BEFORE FIX:
+  ↓ Filter: No insufficient labels
+  ↓ Result: filtered_labels = ["sentiment_positive", "themes_healthcare"]
+  ↓ Check: if filtered_labels → TRUE
+  ↓ Action: KEEP SAMPLE ✓
+
+AFTER FIX:
+  ↓ Filter: No insufficient labels
+  ↓ Result: filtered_labels = ["sentiment_positive", "themes_healthcare"]
+  ↓ Count: 0 labels removed
+  ↓ Action: KEEP SAMPLE ✓
+
+OUTPUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ {                                                                           │
+│   "text": "Normal sample",                                                  │
+│   "labels": ["sentiment_positive", "themes_healthcare"],  ← Unchanged      │
+│   "lang": "EN",                                                             │
+│   "id": "sample_3"                                                          │
+│ }                                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+STATUS: ✓ Sample kept unchanged (no filtering needed)
+
+───────────────────────────────────────────────────────────────────────────────
+CODE COMPARISON
+───────────────────────────────────────────────────────────────────────────────
+
+BEFORE (BUGGY):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ filtered_labels = [                                                         │
+│     label for label in labels_data                                          │
+│     if f"{label}_{lang}" not in insufficient_labels                         │
+│ ]                                                                           │
+│                                                                             │
+│ if filtered_labels:              ← BUG: Conditional deletion!              │
+│     record_copy = record.copy()                                             │
+│     record_copy['labels'] = filtered_labels                                 │
+│     filtered_records.append(record_copy)                                    │
+│ else:                            ← Empty list goes here!                   │
+│     removed_count += 1           ← SAMPLE DELETED! ❌                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+AFTER (FIXED):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ filtered_labels = [                                                         │
+│     label for label in labels_data                                          │
+│     if f"{label}_{lang}" not in insufficient_labels                         │
+│ ]                                                                           │
+│                                                                             │
+│ # Count removed labels                                                      │
+│ removed_labels_in_sample = len(original_labels) - len(filtered_labels)     │
+│ if removed_labels_in_sample > 0:                                            │
+│     labels_removed_count += removed_labels_in_sample                        │
+│     samples_with_removed_labels += 1                                        │
+│                                                                             │
+│ # CRITICAL FIX: Keep record even if all labels were removed                │
+│ record_copy = record.copy()                                                 │
+│ record_copy['labels'] = filtered_labels  # May be empty                    │
+│ filtered_records.append(record_copy)     # ← ALWAYS KEEP! ✓                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+───────────────────────────────────────────────────────────────────────────────
+STATISTICS COMPARISON
+───────────────────────────────────────────────────────────────────────────────
+
+Dataset: 5999 samples, 2 insufficient label types detected
+
+BEFORE FIX (WRONG):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ✓ Filtered dataset saved: multilabel_all_keys_filtered.jsonl               │
+│   • Original samples: 5999                                                  │
+│   • Filtered samples: 5899         ← 100 samples LOST! ❌                  │
+│   • Removed samples: 100           ← DATA LOSS ❌                           │
+│   • Removed labels: 2                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+Result: Training FAILS ❌
+
+AFTER FIX (CORRECT):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ✓ Filtered dataset saved: multilabel_all_keys_filtered.jsonl               │
+│   • Original samples: 5999                                                  │
+│   • Filtered samples: 5999         ← All samples PRESERVED! ✓              │
+│   • Samples kept: 5999 (all samples preserved)                              │
+│   • Samples with labels removed: 100                                        │
+│   • Label instances removed: 100   ← Only labels removed, not samples!     │
+│   • Insufficient label types: 2                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+Result: Training SUCCEEDS ✓
+
+───────────────────────────────────────────────────────────────────────────────
+KEY INSIGHT
+───────────────────────────────────────────────────────────────────────────────
+
+The bug was caused by Python's truthiness evaluation:
+
+  Empty list [] is FALSY in Python!
+
+  if []:         # FALSE - goes to else branch
+      print("Has labels")
+  else:
+      print("No labels - DELETE SAMPLE!")  # ← This happened!
+
+The fix eliminates the conditional entirely:
+
+  # No more if/else - just always keep the sample
+  record_copy['labels'] = filtered_labels  # May be []
+  filtered_records.append(record_copy)     # ALWAYS KEEP
+
+This is correct because:
+  • Multi-label samples CAN have empty labels list
+  • Sample text is valuable even without labels
+  • User may want to re-annotate later
+  • Deleting samples is permanent and destructive
+
+───────────────────────────────────────────────────────────────────────────────
+SINGLE-LABEL BEHAVIOR (Different!)
+───────────────────────────────────────────────────────────────────────────────
+
+For single-label datasets, samples MUST be deleted if label is insufficient:
+
+  Single-label: Each sample has exactly ONE label
+  If that label is insufficient → Sample CANNOT be used for training
+  Action: DELETE the sample (correct behavior)
+
+Example:
+  INPUT:  {"text": "Test", "label": "rare_category", "lang": "EN"}
+  If "rare_category" is insufficient:
+  OUTPUT: Sample DELETED ✓ (correct for single-label)
+
+The fix preserves this correct behavior for single-label datasets.
+
+═══════════════════════════════════════════════════════════════════════════════
+  SUMMARY: MULTI-LABEL = KEEP SAMPLES, SINGLE-LABEL = REMOVE SAMPLES
+═══════════════════════════════════════════════════════════════════════════════

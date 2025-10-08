@@ -874,7 +874,8 @@ class MultiLabelTrainer:
                          reinforced_epochs: Optional[int] = None,
                          rl_f1_threshold: float = 0.7,
                          rl_oversample_factor: float = 2.0,
-                         rl_class_weight_factor: float = 2.0) -> ModelInfo:
+                         rl_class_weight_factor: float = 2.0,
+                         progress_callback: Optional[callable] = None) -> ModelInfo:
         """
         Train a single model for one label.
 
@@ -922,12 +923,19 @@ class MultiLabelTrainer:
             logger=self.logger
         )
 
-        # Set num_labels and class_names for multi-class classification
+        # Set num_labels and class_names for both binary and multi-class classification
         if num_labels > 2:
             model.num_labels = num_labels
             if class_names:
                 model.class_names = class_names
             self.logger.info(f"🎯 Multi-class mode: {num_labels} classes - {class_names}")
+        else:
+            # For binary classification in one-vs-all mode, set proper class names
+            # Using the parsed label_value to create meaningful class names
+            model.num_labels = 2
+            model.class_names = [f"NOT_{label_value}", label_value]
+            if self.verbose:
+                self.logger.info(f"🎯 Binary mode for {label_name}: {model.class_names}")
 
         # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================
         from .model_trainer import get_model_target_languages
@@ -1016,7 +1024,8 @@ class MultiLabelTrainer:
             global_max_epochs=global_max_epochs,
             rl_f1_threshold=rl_f1_threshold,
             rl_oversample_factor=rl_oversample_factor,
-            rl_class_weight_factor=rl_class_weight_factor
+            rl_class_weight_factor=rl_class_weight_factor,
+            progress_callback=progress_callback  # Pass progress callback for epoch tracking
             # NOTE: num_labels and class_names are already set on model object (lines 808-812)
         )
 
@@ -1127,7 +1136,8 @@ class MultiLabelTrainer:
              reinforced_epochs: Optional[int] = None,
              rl_f1_threshold: float = 0.7,
              rl_oversample_factor: float = 2.0,
-             rl_class_weight_factor: float = 2.0) -> Dict[str, ModelInfo]:
+             rl_class_weight_factor: float = 2.0,
+             progress_callback: Optional[callable] = None) -> Dict[str, ModelInfo]:
         """
         Main training method with automatic data handling.
 
@@ -1244,7 +1254,8 @@ class MultiLabelTrainer:
                                     reinforced_epochs=reinforced_epochs,
                                     rl_f1_threshold=rl_f1_threshold,
                                     rl_oversample_factor=rl_oversample_factor,
-                                    rl_class_weight_factor=rl_class_weight_factor)
+                                    rl_class_weight_factor=rl_class_weight_factor,
+                                    progress_callback=progress_callback)
 
     def _convert_to_samples(self, data: List[Dict]) -> List[MultiLabelSample]:
         """Convert list of dicts to MultiLabelSample objects."""
@@ -1311,7 +1322,8 @@ class MultiLabelTrainer:
                                  reinforced_epochs: Optional[int] = None,
                                  rl_f1_threshold: float = 0.7,
                                  rl_oversample_factor: float = 2.0,
-                                 rl_class_weight_factor: float = 2.0) -> Dict[str, ModelInfo]:
+                                 rl_class_weight_factor: float = 2.0,
+                                 progress_callback: Optional[callable] = None) -> Dict[str, ModelInfo]:
         """
         Train multi-class models for detected groups.
 
@@ -1388,7 +1400,8 @@ class MultiLabelTrainer:
                 reinforced_epochs=reinforced_epochs,
                 rl_f1_threshold=rl_f1_threshold,
                 rl_oversample_factor=rl_oversample_factor,
-                rl_class_weight_factor=rl_class_weight_factor
+                rl_class_weight_factor=rl_class_weight_factor,
+                progress_callback=progress_callback
             )
 
             trained_models[model_info.model_name] = model_info
@@ -1415,7 +1428,8 @@ class MultiLabelTrainer:
                         reinforced_epochs: Optional[int] = None,
                         rl_f1_threshold: float = 0.7,
                         rl_oversample_factor: float = 2.0,
-                        rl_class_weight_factor: float = 2.0) -> Dict[str, ModelInfo]:
+                        rl_class_weight_factor: float = 2.0,
+                        progress_callback: Optional[callable] = None) -> Dict[str, ModelInfo]:
         """
         Train all models for all labels.
 
@@ -1446,7 +1460,8 @@ class MultiLabelTrainer:
                                                 reinforced_epochs=reinforced_epochs,
                                                 rl_f1_threshold=rl_f1_threshold,
                                                 rl_oversample_factor=rl_oversample_factor,
-                                                rl_class_weight_factor=rl_class_weight_factor)
+                                                rl_class_weight_factor=rl_class_weight_factor,
+                                                progress_callback=progress_callback)
 
         # Otherwise, continue with standard multi-label (one-vs-all) training
         # prepare datasets
@@ -1586,7 +1601,8 @@ class MultiLabelTrainer:
                         reinforced_epochs=reinforced_epochs,
                         rl_f1_threshold=rl_f1_threshold,
                         rl_oversample_factor=rl_oversample_factor,
-                        rl_class_weight_factor=rl_class_weight_factor
+                        rl_class_weight_factor=rl_class_weight_factor,
+                        progress_callback=progress_callback
                     )
                     futures.append(future)
 
@@ -1618,7 +1634,8 @@ class MultiLabelTrainer:
                     reinforced_epochs=reinforced_epochs,
                     rl_f1_threshold=rl_f1_threshold,
                     rl_oversample_factor=rl_oversample_factor,
-                    rl_class_weight_factor=rl_class_weight_factor
+                    rl_class_weight_factor=rl_class_weight_factor,
+                    progress_callback=progress_callback
                 )
                 trained_models[model_info.model_name] = model_info
                 # Update completed epochs after model training

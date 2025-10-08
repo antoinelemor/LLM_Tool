@@ -1562,8 +1562,8 @@ class AdvancedCLI:
             info_table = Table(show_header=False, box=None, padding=(0, 2))
             info_table.add_row("📚 Version:", "[bright_green]1.0[/bright_green]")
             info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
-            info_table.add_row("🚀 Features:", "[cyan]Multi-LLM Support, Smart Training, Auto-Detection[/cyan]")
-            info_table.add_row("🎯 Capabilities:", "[magenta]JSON Annotation, BERT Training, Benchmarking[/magenta]")
+            info_table.add_row("🚀 Features:", "[cyan]50+ BERT Models, Multi-LLM (Ollama/OpenAI/Claude), Parallel GPU/CPU, Reinforcement Learning[/cyan]")
+            info_table.add_row("🎯 Capabilities:", "[magenta]Multi-Label Classification, 100+ Languages, SQL/File I/O, Doccano/Label Studio Export[/magenta]")
 
             self.console.print(Panel(
                 info_table,
@@ -1806,11 +1806,11 @@ class AdvancedCLI:
             menu_table.add_column()
 
             options = [
-                ("1", "🎨 The Annotator - LLM Tool annotates, you decide"),
-                ("2", "🏭 The Annotator Factory - Clone The Annotator into ML Models"),
-                ("3", "🎮 Training Arena - Train Your Own Models"),
-                ("4", "🤖 BERT Annotation Studio - Annotate with Trained Models"),
-                ("5", "🔍 Validation Lab - Quality Assurance Tools"),
+                ("1", "🎨 The Annotator - Zero-Shot LLM Annotation (Ollama/OpenAI/Claude) → Label Studio/Doccano Export"),
+                ("2", "🏭 The Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models"),
+                ("3", "🎮 Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
+                ("4", "🤖 BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
+                ("5", "🔍 Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement"),
                 ("6", "💾 Profile Manager - Save & Load Configurations"),
                 ("7", "📚 Documentation & Help"),
                 ("0", "❌ Exit")
@@ -1845,11 +1845,11 @@ class AdvancedCLI:
             print("\n" + "="*50)
             print("Main Menu")
             print("="*50)
-            print("1. The Annotator - LLM Tool annotates, you decide")
-            print("2. The Annotator Factory - Clone The Annotator into ML Models")
-            print("3. Training Arena - Train Your Own Models")
-            print("4. BERT Annotation Studio - Annotate with Trained Models")
-            print("5. Validation Lab - Quality Assurance Tools")
+            print("1. The Annotator - Zero-Shot LLM Annotation (Ollama/OpenAI/Claude) → Export")
+            print("2. The Annotator Factory - LLM Annotations → Training Data → BERT Models")
+            print("3. Training Arena - Train 50+ Models (Multi-Label & Benchmarking)")
+            print("4. BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU)")
+            print("5. Validation Lab - Quality Scoring & Sampling")
             print("6. Profile Manager - Save & Load Configurations")
             print("7. Documentation & Help")
             print("0. Exit")
@@ -2350,9 +2350,9 @@ class AdvancedCLI:
             info_table = Table(show_header=False, box=None, padding=(0, 2))
             info_table.add_row("📚 Version:", "[bright_green]1.0[/bright_green]")
             info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
-            info_table.add_row("🚀 Features:", "[cyan]Ollama/API Models, Prompt Wizard, Label Studio Export, Multi-Language[/cyan]")
-            info_table.add_row("🎯 Capabilities:", "[magenta]Social Science Annotation, BERT Training, Model Benchmarking, Quality Metrics[/magenta]")
-            info_table.add_row("⚡ Performance:", "[green]Incremental Save, Resume Support, Rich Progress UI, Batch Processing[/green]")
+            info_table.add_row("🚀 Features:", "[cyan]Ollama/OpenAI/Claude, Prompt Wizard, Auto JSON Repair, 200K Context Support[/cyan]")
+            info_table.add_row("🎯 Capabilities:", "[magenta]Multi-Label Categories, NER, Hierarchical Schemas, Pydantic Validation[/magenta]")
+            info_table.add_row("⚡ Performance:", "[green]Parallel Processing, Incremental Save, Resume, Label Studio/Doccano Export[/green]")
 
             self.console.print(Panel(
                 info_table,
@@ -2369,9 +2369,9 @@ class AdvancedCLI:
             print("="*80)
             print("\n📚 Version: 1.0")
             print("👨‍💻 Author: Antoine Lemor")
-            print("🚀 Features: Multi-LLM Support, Smart Training, Auto-Detection")
-            print("🎯 Capabilities: JSON Annotation, BERT Training, Benchmarking")
-            print("⚡ Performance: Parallel Processing, Progress Tracking")
+            print("🚀 Features: Ollama/OpenAI/Claude, Prompt Wizard, 200K Context, JSON Repair")
+            print("🎯 Capabilities: Multi-Label Categories, NER, Hierarchical Schemas")
+            print("⚡ Performance: Parallel Processing, Incremental Save, Resume Support")
             print("\n  🤖 -> 📝 -> 🧹 -> 🎯 -> 🧠 -> 📊 -> ✨")
             print("  AI   Annotate Clean Label Train Test Deploy\n")
             print("="*80 + "\n")
@@ -2386,15 +2386,15 @@ class AdvancedCLI:
 
         # Display personalized mode info
         self._display_section_header(
-            "🏭 The Annotator Factory - Clone The Annotator into ML Models",
-            "End-to-end pipeline: annotate with LLM then train classifier models",
+            "🏭 The Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models",
+            "End-to-end pipeline: Ollama/OpenAI/Claude annotation → Automatic training data conversion → Model training",
             mode_info={
-                'workflow': 'Data → LLM Annotate → Language Detection → Model Training → Export',
-                'capabilities': ['LLM Annotation', 'Multi-Language Support', 'Intelligent Training', 'Model Benchmarking'],
-                'input': 'CSV/Excel/JSON with text column',
-                'output': 'Annotated data + Trained BERT models + Training metrics',
-                'best_for': 'Complete annotation-to-training pipeline with automatic language detection',
-                'duration': '~10-30 min (annotation + training time)'
+                'workflow': 'Data → LLM Annotate (Parallel) → Language Detection → Auto-Convert → Train 50+ Models',
+                'capabilities': ['Multi-LLM Support (Ollama/OpenAI/Claude)', '100+ Languages', 'Multi-Label Classification', 'Reinforcement Learning'],
+                'input': 'CSV/Excel/JSON/SQL with text column',
+                'output': 'Annotated data + Trained BERT models + Benchmarking metrics + Training summaries',
+                'best_for': 'Complete zero-shot annotation to supervised learning pipeline with automatic optimization',
+                'duration': '~10-60 min (annotation + training + benchmarking)'
             }
         )
 
@@ -6347,15 +6347,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Display personalized mode info
         self._display_section_header(
-            "🎨 The Annotator - LLM Tool annotates, you decide",
-            "Professional annotation workflow without model training",
+            "🎨 The Annotator - Zero-Shot LLM Annotation → Label Studio/Doccano Export",
+            "Professional zero-shot annotation with Ollama/OpenAI/Claude, automatic JSON repair, and export to review platforms",
             mode_info={
-                'workflow': 'Data → Select Prompts → LLM Annotate → Export (JSON/Doccano/Label Studio)',
-                'capabilities': ['Multi-Prompt Support', 'Incremental Save', 'Resume Capability', 'Export Formats'],
-                'input': 'Raw text data (CSV/Excel/JSON/Database)',
-                'output': 'Annotated JSON + Doccano/Label Studio exports',
-                'best_for': 'Pure annotation tasks without training (data collection, labeling, export)',
-                'duration': '~2-10 min (depends on dataset and LLM speed)'
+                'workflow': 'Data → Prompt Wizard → LLM Annotate (Parallel) → JSON Repair → Export (Doccano/Label Studio)',
+                'capabilities': ['Ollama/OpenAI/Claude Support', 'Prompt Wizard', '200K Context', 'Multi-Label Categories', 'NER', 'Pydantic Validation'],
+                'input': 'Raw text data (CSV/Excel/JSON/SQL)',
+                'output': 'Annotated JSON + Doccano JSONL + Label Studio JSON (API or file)',
+                'best_for': 'Zero-shot annotation with LLMs, human review workflows, data labeling for training',
+                'duration': '~2-20 min (depends on dataset size, LLM speed, and context length)'
             }
         )
 
@@ -6470,15 +6470,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Display personalized mode info
         self._display_section_header(
-            "🎮 Training Arena - Train Your Own Models",
-            "Professional model training with intelligent dataset preparation",
+            "🎮 Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking",
+            "Professional model training with intelligent optimization, reinforcement learning, and comprehensive benchmarking",
             mode_info={
-                'workflow': 'Load Data → Auto-Detect Columns → Detect Languages → Recommend Models → Train → Benchmark',
-                'capabilities': ['Multi-format Support', 'Language Detection', 'Model Recommendations', '70+ BERT/Longformer Models'],
-                'input': 'Annotated CSV/JSON/JSONL or Category labels',
-                'output': 'Trained BERT models + Performance metrics + Best model selection',
-                'best_for': 'Training custom models on annotated data with optimal model selection',
-                'duration': '~10-30 min per model (benchmark mode: 1-3 hours)'
+                'workflow': 'Load Data → Language Detection → Model Selection → Multi-Label Training → Reinforcement Learning → Benchmark',
+                'capabilities': ['50+ Models (BERT/RoBERTa/DeBERTa/Longformer)', 'Multi-Label Classification', 'Parallel GPU/CPU', 'Class Imbalance Handling', 'Hard Negative Mining'],
+                'input': 'Annotated CSV/JSON/JSONL/SQL with labels (single or multi-label)',
+                'output': 'Trained models + Confusion matrices + F1 scores + Training summaries + Best model selection',
+                'best_for': 'Production-ready model training with automatic optimization and comprehensive evaluation',
+                'duration': '~5-30 min per model (benchmark mode: 30min-3hrs depending on data size)'
             }
         )
 
@@ -6575,20 +6575,6 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self._training_studio_show_model_catalog()
 
-        # Display training mode options with Rich
-        self.console.print("\n[bold cyan]🎯 Training Mode Selection[/bold cyan]\n")
-
-        modes_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
-        modes_table.add_column("Mode", style="cyan bold", width=15)
-        modes_table.add_column("Description", style="white", width=60)
-        modes_table.add_column("Duration", style="yellow", width=20)
-
-        modes_table.add_row(
-            "quick",
-            "Fast training with default settings\n✓ Recommended for all use cases",
-            "~5-10 minutes"
-        )
-
         # First, configure the dataset
         try:
             bundle = self._training_studio_dataset_wizard(builder)
@@ -6607,25 +6593,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Note: Comprehensive logging will be done AFTER training/benchmark
         # to include complete information about what was used for what
 
-        # Now ask for training mode
-        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-        self.console.print("[bold cyan]           📚 Training Mode Selection                          [/bold cyan]")
-        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+        # Configure learning parameters and start training
+        self.console.print("\n[bold cyan]Configuring learning parameters...[/bold cyan]\n")
 
-        self.console.print(modes_table)
-        self.console.print()
-
-        mode = Prompt.ask(
-            "[bold yellow]Select training mode[/bold yellow]",
-            choices=["quick", "back"],
-            default="quick",
-        )
-
-        if mode == "back":
-            return
-
-        # Show training mode confirmation and parameters
-        self._training_studio_confirm_and_execute(bundle, mode)
+        # Proceed directly to parameter configuration and training
+        self._training_studio_confirm_and_execute(bundle, "quick")
 
     # ------------------------------------------------------------------
     # Training Arena helpers
@@ -6779,29 +6751,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print("[yellow]Modification not available for this mode. Training cancelled.[/yellow]")
                     return
 
-        # STEP 3: Ask to save metadata (unless resuming)
+        # STEP 3: Metadata is ALWAYS saved (mandatory for session persistence)
+        # This ensures ALL training sessions are recallable for resume/relaunch
         save_metadata = True
         metadata_path = None
 
         if not is_resume:
             self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
-            self.console.print("  [green]1. Resume Capability[/green]")
-            self.console.print("     • Save parameters to resume later if interrupted")
+            self.console.print("  [green]✓ Session metadata will be automatically saved for:[/green]")
+            self.console.print("     • Resume capability if training is interrupted")
+            self.console.print("     • Complete parameter tracking for reproducibility")
             self.console.print("     • Access via 'Resume/Relaunch Training' option\n")
-
-            self.console.print("  [green]2. Scientific Reproducibility[/green]")
-            self.console.print("     • Document exact training configuration")
-            self.console.print("     • Track model, dataset, and hyperparameters")
-            self.console.print("     • Share configurations with collaborators\n")
-
-            self.console.print("  [red]⚠️  If you choose NO:[/red]")
-            self.console.print("     • You CANNOT resume this training later")
-            self.console.print("     • Parameters will not be saved for future reference\n")
-
-            save_metadata = Confirm.ask(
-                "[bold yellow]Save training parameters to JSON?[/bold yellow]",
-                default=True
-            )
 
         # STEP 4: Start training
         confirm_start = Confirm.ask(
@@ -6854,7 +6814,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Get session ID BEFORE saving metadata
         # Reuse the session ID created at the beginning (self.current_session_id)
-        session_id = self.current_session_id
+        # Add defensive check in case this attribute wasn't initialized
+        if not hasattr(self, 'current_session_id') or not self.current_session_id:
+            # Fallback: generate a session_id if not set (should not happen in normal flow)
+            self.logger.warning("current_session_id not set, generating fallback session_id")
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            session_id = f"training_session_{timestamp}"
+            self.current_session_id = session_id
+        else:
+            session_id = self.current_session_id
 
         # Save PRE-TRAINING metadata
         metadata_path = None  # Initialize before conditional block
@@ -6864,6 +6833,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     bundle=bundle,
                     mode=mode,
                     model_config=model_config,
+                    quick_params=quick_params,  # Pass quick_params for comprehensive capture
                     execution_status={
                         'status': 'pending',
                         'started_at': datetime.now().isoformat(),
@@ -6872,7 +6842,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'best_model': None,
                         'best_f1': None
                     },
-                    session_id=session_id
+                    session_id=session_id,
+                    training_context={
+                        'user_choices': {
+                            'save_metadata': save_metadata,
+                            'modification_requested': not confirm if mode == "quick" else False
+                        }
+                    }
                 )
                 self.console.print(f"\n[green]✅ Metadata saved for reproducibility[/green]")
                 self.console.print(f"[cyan]📋 Metadata File:[/cyan]")
@@ -6928,6 +6904,24 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self._log_training_data_distributions(bundle, training_context=training_context)
                 except Exception as e:
                     self.logger.warning(f"Could not generate comprehensive training logs: {e}")
+
+            # Generate comprehensive summary files (CSV and JSONL) at the end of training
+            try:
+                from llm_tool.utils.training_summary_generator import generate_training_summaries
+
+                self.console.print("\n[bold cyan]📊 Generating Comprehensive Training Summaries...[/bold cyan]")
+                csv_path, jsonl_path = generate_training_summaries(session_id)
+
+                self.console.print("[green]✓ Training summaries generated successfully:[/green]")
+                self.console.print(f"  • CSV Summary: [cyan]{csv_path.name}[/cyan]")
+                self.console.print(f"  • JSONL Summary: [cyan]{jsonl_path.name}[/cyan]")
+                self.console.print(f"\n[dim]Full paths:[/dim]")
+                self.console.print(f"  • {csv_path}")
+                self.console.print(f"  • {jsonl_path}")
+
+            except Exception as e:
+                self.logger.error(f"Failed to generate training summaries: {e}")
+                self.console.print(f"[yellow]⚠️  Could not generate comprehensive summaries: {e}[/yellow]")
 
         except Exception as e:
             # Update metadata with failure status
@@ -7942,9 +7936,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             "{'category': 'Tech', 'sentiment': 'pos'}"
         )
         formats_table.add_row(
-            "category-csv",
-            "Simple CSV with text and label columns\n✓ Most common format\n✓ One row = one sample with its label",
-            "text,label\n'Hello',positive"
+            "[dim]category-csv[/dim]",
+            "[dim]Simple CSV with text and label columns\n✓ Most common format\n✓ One row = one sample with its label[/dim]",
+            "[dim]text,label\n'Hello',positive[/dim]"
         )
         formats_table.add_row(
             "[dim]binary-long[/dim]",
@@ -7966,13 +7960,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print()
 
         # Add development notice for experimental formats
-        self.console.print("[yellow]⚠️  Note:[/yellow] [bold red]binary-long, jsonl-single, and jsonl-multi are currently under development and NOT accessible.[/bold red]")
+        self.console.print("[yellow]⚠️  Note:[/yellow] [bold red]category-csv, binary-long, jsonl-single, and jsonl-multi are currently under development and NOT accessible.[/bold red]")
         self.console.print("[dim]      These formats will be enabled in a future release after thorough testing.[/dim]")
         self.console.print()
 
         format_choice = Prompt.ask(
             "[bold yellow]Select dataset format[/bold yellow]",
-            choices=["llm-json", "category-csv", "cancel", "back"],
+            choices=["llm-json", "cancel", "back"],
             default="llm-json",
         )
 
@@ -8029,10 +8023,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print("[dim]   • Enter the [cyan]#[/cyan] number from the table above (e.g., '1', '13')[/dim]")
                 self.console.print("[dim]   • Enter an [cyan]absolute path[/cyan] to any file (e.g., '/Users/name/data/file.csv')[/dim]\n")
 
-                dataset_choice = Prompt.ask("Dataset selection")
+                dataset_choice = Prompt.ask("Dataset selection", default="1")
 
                 # Parse choice
-                if dataset_choice.isdigit():
+                if not dataset_choice or dataset_choice.strip() == "":
+                    # Empty input - default to first dataset
+                    self.console.print("[yellow]⚠️  No selection made, defaulting to first dataset[/yellow]")
+                    csv_path = self.detected_datasets[0].path
+                elif dataset_choice.isdigit():
                     idx = int(dataset_choice) - 1
                     if 0 <= idx < len(self.detected_datasets):
                         csv_path = self.detected_datasets[idx].path
@@ -8041,6 +8039,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         return None
                 else:
                     csv_path = Path(dataset_choice)
+                    # Validate that it's a file, not a directory
+                    if csv_path.is_dir():
+                        self.console.print(f"[red]Error: '{csv_path}' is a directory, not a file[/red]")
+                        return None
+                    if not csv_path.exists():
+                        self.console.print(f"[red]Error: File '{csv_path}' does not exist[/red]")
+                        return None
             else:
                 file_path_str = self._prompt_file_path("Annotated file path (CSV/JSON/Excel/Parquet)")
                 csv_path = Path(file_path_str)
@@ -8074,6 +8079,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Read CSV to analyze ALL columns
             import pandas as pd
+
+            # Final validation before reading
+            if not csv_path or csv_path.is_dir():
+                self.console.print(f"[red]Error: Invalid file path '{csv_path}'[/red]")
+                return None
+            if not csv_path.exists():
+                self.console.print(f"[red]Error: File '{csv_path}' does not exist[/red]")
+                return None
+
             df = pd.read_csv(csv_path)
 
             # Create comprehensive column overview table
@@ -9007,6 +9021,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Determine which keys will be trained
             keys_to_train = annotation_keys if annotation_keys else detected_keys
 
+            # Validate that all selected keys exist in all_keys_values
+            invalid_keys = [key for key in keys_to_train if key not in all_keys_values]
+            if invalid_keys:
+                self.console.print(f"\n[bold red]❌ Error: Invalid keys selected[/bold red]")
+                self.console.print(f"[yellow]The following keys do not exist in the dataset:[/yellow]")
+                for key in invalid_keys:
+                    self.console.print(f"  • [red]{key}[/red]")
+                self.console.print(f"\n[bold cyan]Available keys:[/bold cyan]")
+                for key in sorted(all_keys_values.keys()):
+                    self.console.print(f"  • [green]{key}[/green]")
+                self.console.print()
+                return None
+
             # Calculate total number of models for each approach
             total_values_count = 0
             for key in keys_to_train:
@@ -9474,10 +9501,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return bundle
 
         if format_choice == "category-csv":
-            # Use sophisticated universal selector
-            selection = self._training_studio_intelligent_dataset_selector(format_type="category-csv")
-            if not selection:
-                return None
+            # DEVELOPMENT MODE: This format is not yet available
+            self.console.print("\n[bold red]❌ Error: category-csv format is currently under development[/bold red]")
+            self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
+            self.console.print("[dim]Please use 'llm-json' format instead.[/dim]\n")
+            return None
 
             # Ask user for training strategy (mono-label vs multi-label)
             self.console.print("\n[bold cyan]📊 Training Strategy Selection[/bold cyan]\n")
@@ -9611,7 +9639,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # DEVELOPMENT MODE: This format is not yet available
             self.console.print("\n[bold red]❌ Error: binary-long format is currently under development[/bold red]")
             self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
-            self.console.print("[dim]Please use 'llm-json' or 'category-csv' formats instead.[/dim]\n")
+            self.console.print("[dim]Please use 'llm-json' format instead.[/dim]\n")
             return None
 
             # Use sophisticated universal selector
@@ -9655,7 +9683,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # DEVELOPMENT MODE: This format is not yet available
             self.console.print("\n[bold red]❌ Error: jsonl-single format is currently under development[/bold red]")
             self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
-            self.console.print("[dim]Please use 'llm-json' or 'category-csv' formats instead.[/dim]\n")
+            self.console.print("[dim]Please use 'llm-json' format instead.[/dim]\n")
             return None
 
             # Use sophisticated universal selector
@@ -9693,12 +9721,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # DEVELOPMENT MODE: This format is not yet available
             self.console.print("\n[bold red]❌ Error: jsonl-multi format is currently under development[/bold red]")
             self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
-            self.console.print("[dim]Please use 'llm-json' or 'category-csv' formats instead.[/dim]\n")
+            self.console.print("[dim]Please use 'llm-json' format instead.[/dim]\n")
             return None
 
         # Fallback: unrecognized format
         self.console.print(f"\n[bold red]❌ Error: Unknown format '{format_choice}'[/bold red]")
-        self.console.print("[dim]Supported formats: llm-json, category-csv[/dim]\n")
+        self.console.print("[dim]Supported formats: llm-json[/dim]\n")
         return None
 
     def _display_model_details(self, model_id: str, MODEL_METADATA: dict):
@@ -9869,7 +9897,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             models_table.add_row(str(idx), model_id, langs, max_len, size, desc)
 
                         self.console.print(models_table)
-                        default_model = lang_recommended[0] if not lang_models else lang_recommended[0]
+                        # Default to next model in recommendations based on how many already selected
+                        default_idx = min(len(lang_models), len(lang_recommended) - 1)
+                        default_model = lang_recommended[default_idx]
                     else:
                         default_model = 'bert-base-uncased'
 
@@ -9985,7 +10015,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     for m in selected_models_benchmark:
                         self.console.print(f"  • {m}")
 
-                default_model = recommended_models_list[0] if recommended_models_list and not selected_models_benchmark else (recommended_models_list[1] if recommended_models_list and len(recommended_models_list) > 1 else 'bert-base-uncased')
+                # Default to next model in recommendations based on how many already selected
+                if recommended_models_list:
+                    default_idx = min(len(selected_models_benchmark), len(recommended_models_list) - 1)
+                    default_model = recommended_models_list[default_idx]
+                else:
+                    default_model = 'bert-base-uncased'
 
                 # Show selection hint
                 self.console.print(f"\n[dim]💡 Tip: Type 'info X' (e.g., 'info 1') to see full details of a model[/dim]")
@@ -10337,8 +10372,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Select suggested categories
             suggested_categories = select_benchmark_categories(imbalance_analysis, num_categories=3)
 
-            # Display analysis
+            # Display analysis with explanation
             self.console.print("[bold cyan]📊 Class Imbalance Analysis[/bold cyan]\n")
+
+            self.console.print("[bold]🎯 Why This Analysis?[/bold]")
+            self.console.print("[dim]To choose the best model, we need to test how each model performs on:[/dim]")
+            self.console.print("[dim]  • [cyan]Balanced categories[/cyan] - Equal class distribution (easier, baseline performance)[/dim]")
+            self.console.print("[dim]  • [yellow]Imbalanced categories[/yellow] - Skewed class distribution (harder, real-world scenario)[/dim]")
+            self.console.print("[dim]This reveals which model handles both easy and challenging data best.[/dim]\n")
+
+            self.console.print("[bold]📋 Category Selection Strategy:[/bold]")
+            self.console.print("[dim]The system automatically selects a mix of:[/dim]")
+            self.console.print("[dim]  • Categories with different imbalance ratios (2:1, 5:1, 10:1+)[/dim]")
+            self.console.print("[dim]  • Different sample sizes (small vs large datasets)[/dim]")
+            self.console.print("[dim]  • Different numbers of classes (binary vs multi-class)[/dim]")
+            self.console.print("[dim]This comprehensive test ensures you pick the model that performs well across all scenarios.[/dim]\n")
 
             categories_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
             categories_table.add_column("Category", style="yellow", width=30)
@@ -10357,13 +10405,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             self.console.print(categories_table)
 
+            # Explain metrics
+            self.console.print("\n[bold]📏 Understanding the Metrics:[/bold]")
+            self.console.print("[dim]  • [cyan]Ratio[/cyan] - Largest class / Smallest class (e.g., 5.3:1 means majority class is 5.3× larger)[/dim]")
+            self.console.print("[dim]  • [cyan]Gini[/cyan] - Inequality coefficient (0=perfect balance, 1=extreme imbalance)[/dim]")
+            self.console.print("[dim]  • [green]Balanced[/green]: Ratio < 2:1, Gini < 0.2 | [yellow]Moderate[/yellow]: Ratio 2-5:1, Gini 0.2-0.4 | [red]Imbalanced[/red]: Ratio > 5:1, Gini > 0.4[/dim]\n")
+
             # Collect all suggested
             all_suggested = []
             for cats in suggested_categories.values():
                 all_suggested.extend(cats)
 
             # User choice
-            self.console.print("\n[bold]Select categories for benchmark:[/bold]")
+            self.console.print("[bold]Select categories for benchmark:[/bold]")
             self.console.print("  • Press [cyan]ENTER[/cyan] to use all suggested categories")
             self.console.print("  • Or enter [cyan]category names[/cyan] (comma-separated)")
             self.console.print("  • Or enter [cyan]'all'[/cyan] to see all available categories\n")
@@ -10576,6 +10630,66 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print(f"\n[cyan]📂 Session ID:[/cyan] [bold]{benchmark_session_id}[/bold]")
             self.console.print(f"[dim]All benchmark models will be saved to: models/{benchmark_session_id}/benchmark/[/dim]\n")
 
+            # ============================================================
+            # CRITICAL: Save initial benchmark metadata for session tracking
+            # This enables session persistence and resume capability even if
+            # training is interrupted or user chooses to exit benchmark early
+            # ============================================================
+            try:
+                self.logger.info("💾 Saving initial benchmark metadata for session tracking...")
+
+                # Build comprehensive benchmark configuration for metadata
+                benchmark_model_config = {
+                    'training_mode': 'benchmark',
+                    'benchmark_enabled': True,
+                    'selected_models': selected_models_benchmark if not train_by_language else list(all_models_to_test),
+                    'models_by_language': models_by_language_benchmark if train_by_language else {},
+                    'train_by_language': train_by_language,
+                    'benchmark_categories': selected_benchmark_categories,
+                    'benchmark_epochs': benchmark_epochs,
+                    'reinforced_learning_enabled': enable_benchmark_rl,
+                    'rl_f1_threshold': benchmark_rl_params.get('f1_threshold', 0.70),
+                    'rl_oversample_factor': benchmark_rl_params.get('oversample_factor', 2.0),
+                    'rl_class_weight_factor': benchmark_rl_params.get('class_weight_factor', 2.0),
+                    'reinforced_epochs': benchmark_rl_params.get('reinforced_epochs'),
+                    'epochs': benchmark_epochs,
+                    'batch_size': 16,
+                    'learning_rate': 2e-5
+                }
+
+                # Save metadata immediately (before any training starts)
+                initial_metadata_path = self._save_training_metadata(
+                    bundle=bundle,
+                    mode='benchmark',
+                    model_config=benchmark_model_config,
+                    execution_status={
+                        'status': 'benchmark_starting',
+                        'started_at': datetime.now().isoformat(),
+                        'completed_at': None,
+                        'models_trained': [],
+                        'models_to_test': list(all_models_to_test),
+                        'best_model': None,
+                        'best_f1': None,
+                        'benchmark_phase': 'initialization'
+                    },
+                    session_id=benchmark_session_id,
+                    training_context={
+                        'benchmark_mode': True,
+                        'user_choices': {
+                            'enable_benchmark': True,
+                            'num_models_selected': len(all_models_to_test),
+                            'selected_categories': selected_benchmark_categories
+                        }
+                    }
+                )
+                self.console.print(f"[dim]💾 Session metadata saved: {initial_metadata_path.name}[/dim]\n")
+                self.logger.info(f"✓ Initial benchmark metadata saved: {initial_metadata_path}")
+
+            except Exception as e:
+                self.logger.error(f"Failed to save initial benchmark metadata: {e}")
+                self.console.print(f"[yellow]⚠️  Warning: Could not save session metadata: {e}[/yellow]\n")
+                # Continue anyway - metadata saving should not block training
+
             # Initialize global progress tracking for benchmark
             import time
             global_start_time = time.time()
@@ -10602,7 +10716,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     input_file=str(benchmark_file),
                     strategy=bundle.strategy,
                     min_samples=2,
-                    auto_remove=False  # Ask user for confirmation
+                    auto_remove=False,  # Ask user for confirmation
+                    train_by_language=train_by_language  # CRITICAL: Language-aware validation for multilingual
                 )
                 if was_filtered:
                     self.console.print(f"[green]✓ Using filtered benchmark dataset[/green]\n")
@@ -10942,6 +11057,95 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if choice in ["3", "stop"]:
             self.console.print("\n[green]✓ Benchmark complete. Exiting without full training.[/green]")
+
+            # ============================================================
+            # CRITICAL: Update metadata with final benchmark results
+            # This ensures the benchmark-only session is fully tracked
+            # ============================================================
+            try:
+                self.logger.info("💾 Updating benchmark metadata with final results...")
+
+                # Extract best model from results
+                best_model = comparison_df.iloc[0]['model'] if not comparison_df.empty else None
+                best_f1 = comparison_df.iloc[0]['f1_macro'] if not comparison_df.empty else None
+
+                # Build final benchmark model config
+                final_benchmark_config = {
+                    'training_mode': 'benchmark',
+                    'benchmark_enabled': True,
+                    'selected_models': selected_models_benchmark if not train_by_language else list(all_models_to_test),
+                    'models_by_language': models_by_language_benchmark if train_by_language else {},
+                    'train_by_language': train_by_language,
+                    'benchmark_categories': selected_benchmark_categories,
+                    'benchmark_epochs': benchmark_epochs,
+                    'reinforced_learning_enabled': enable_benchmark_rl,
+                    'epochs': benchmark_epochs,
+                    'batch_size': 16,
+                    'learning_rate': 2e-5,
+                    'actual_models_trained': list(benchmark_results.keys()),
+                    'best_model_from_benchmark': best_model,
+                    'benchmark_rankings': comparison_df.to_dict('records') if not comparison_df.empty else []
+                }
+
+                # Save complete metadata
+                final_metadata_path = self._save_training_metadata(
+                    bundle=bundle,
+                    mode='benchmark',
+                    model_config=final_benchmark_config,
+                    execution_status={
+                        'status': 'benchmark_completed_no_training',
+                        'started_at': datetime.now().isoformat(),
+                        'completed_at': datetime.now().isoformat(),
+                        'models_trained': list(benchmark_results.keys()),
+                        'best_model': best_model,
+                        'best_f1': best_f1,
+                        'benchmark_phase': 'completed',
+                        'user_choice': 'stop_after_benchmark'
+                    },
+                    session_id=benchmark_session_id,
+                    training_context={
+                        'benchmark_mode': True,
+                        'benchmark_results': {
+                            model_id: {
+                                'best_f1_macro': result.get('best_f1_macro', 0),
+                                'accuracy': result.get('accuracy', 0),
+                                'training_time': result.get('training_time', 0)
+                            }
+                            for model_id, result in benchmark_results.items()
+                        },
+                        'user_choices': {
+                            'enable_benchmark': True,
+                            'stopped_after_benchmark': True,
+                            'num_models_tested': len(benchmark_results)
+                        }
+                    }
+                )
+                self.console.print(f"[dim]💾 Final metadata saved: {final_metadata_path.name}[/dim]")
+                self.logger.info(f"✓ Final benchmark metadata saved: {final_metadata_path}")
+
+            except Exception as e:
+                self.logger.error(f"Failed to save final benchmark metadata: {e}")
+                self.console.print(f"[yellow]⚠️  Warning: Could not save final metadata: {e}[/yellow]")
+                # Continue to summaries even if metadata fails
+
+            # Generate comprehensive summary files for benchmark-only session
+            try:
+                from llm_tool.utils.training_summary_generator import generate_training_summaries
+
+                self.console.print("\n[bold cyan]📊 Generating Comprehensive Benchmark Summaries...[/bold cyan]")
+                csv_path, jsonl_path = generate_training_summaries(benchmark_session_id)
+
+                self.console.print("[green]✓ Benchmark summaries generated successfully:[/green]")
+                self.console.print(f"  • CSV Summary: [cyan]{csv_path.name}[/cyan]")
+                self.console.print(f"  • JSONL Summary: [cyan]{jsonl_path.name}[/cyan]")
+                self.console.print(f"\n[dim]Full paths:[/dim]")
+                self.console.print(f"  • {csv_path}")
+                self.console.print(f"  • {jsonl_path}")
+
+            except Exception as e:
+                self.logger.error(f"Failed to generate benchmark summaries: {e}")
+                self.console.print(f"[yellow]⚠️  Could not generate comprehensive summaries: {e}[/yellow]")
+
             return None
 
         # Select final models
@@ -11060,6 +11264,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 - benchmark_results: Results if benchmark mode was used
         """
         import json
+
+        # Defensive check: Ensure session attributes are initialized
+        if not hasattr(self, 'current_session_manager') or not self.current_session_manager:
+            self.logger.warning("_log_training_data_distributions called without session_manager initialized. Skipping logging.")
+            return
+        if not hasattr(self, 'current_session_id') or not self.current_session_id:
+            self.logger.warning("_log_training_data_distributions called without session_id initialized. Skipping logging.")
+            return
 
         if training_context:
             self.console.print(f"\n[bold cyan]📊 Generating comprehensive training session report...[/bold cyan]")
@@ -11310,14 +11522,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             train_ratio = FloatPrompt.ask("  Training ratio", default=0.7)
             # Calculate remaining ratio for val + test
-            remaining_ratio = 1.0 - train_ratio
+            remaining_ratio = round(1.0 - train_ratio, 10)
             # Default: split remaining evenly between val and test (but favor validation slightly)
-            default_val = min(0.2, remaining_ratio * 0.67)
-            default_test = remaining_ratio - default_val
+            default_val = round(min(0.2, remaining_ratio * 0.67), 10)
+            default_test = round(remaining_ratio - default_val, 10)
 
             validation_ratio = FloatPrompt.ask("  Validation ratio", default=default_val)
             # Update test default based on what's left
-            remaining_for_test = 1.0 - train_ratio - validation_ratio
+            remaining_for_test = round(1.0 - train_ratio - validation_ratio, 10)
             test_ratio = FloatPrompt.ask("  Test ratio", default=max(0.0, remaining_for_test))
 
         else:
@@ -11326,7 +11538,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             train_ratio = FloatPrompt.ask("  Training ratio", default=0.8)
             # Calculate default validation as remaining ratio
-            default_validation = 1.0 - train_ratio
+            default_validation = round(1.0 - train_ratio, 10)
             validation_ratio = FloatPrompt.ask("  Validation ratio", default=default_validation)
             test_ratio = 0.0
 
@@ -11546,10 +11758,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             train = FloatPrompt.ask("      Train ratio", default=default_train)
 
             # Calculate dynamic default for validation based on entered train ratio
-            remaining = 1.0 - train
+            remaining = round(1.0 - train, 10)
             if use_test_set:
                 # Split remaining between val and test
-                dynamic_val_default = min(default_validation, remaining * 0.67)
+                dynamic_val_default = round(min(default_validation, remaining * 0.67), 10)
             else:
                 # All remaining goes to validation
                 dynamic_val_default = remaining
@@ -11558,7 +11770,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             if use_test_set:
                 # Calculate remaining for test
-                remaining_for_test = 1.0 - train - validation
+                remaining_for_test = round(1.0 - train - validation, 10)
                 test = FloatPrompt.ask("      Test ratio", default=max(0.0, remaining_for_test))
             else:
                 test = 0.0
@@ -11581,17 +11793,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         input_file: str,
         strategy: str,
         min_samples: int = 2,
-        auto_remove: bool = False
+        auto_remove: bool = False,
+        train_by_language: bool = False
     ) -> Tuple[str, bool]:
         """
         Validate that all labels have at least min_samples.
         If not, prompt user to remove insufficient labels.
+
+        CRITICAL: This validation must be LANGUAGE-AWARE when train_by_language=True
+        to match the actual splitting logic in DataUtil.prepare_splits().
 
         Args:
             input_file: Path to JSONL training file
             strategy: 'multi-label' or 'single-label' (multi-class)
             min_samples: Minimum samples required per label (default: 2 for train+val split)
             auto_remove: If True, automatically remove insufficient labels without prompting
+            train_by_language: If True, validate per-language label counts (CRITICAL for multilingual)
 
         Returns:
             Tuple of (filtered_file_path, was_modified)
@@ -11608,6 +11825,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return str(input_file), False
 
         # Read dataset and count labels
+        # CRITICAL: When train_by_language=True, count per language-label combination
         label_counter = Counter()
         records = []
 
@@ -11621,18 +11839,32 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     # Extract labels based on strategy
                     labels_data = record.get('labels', record.get('label'))
+                    lang = record.get('lang', 'unknown') if train_by_language else None
 
                     if strategy == 'multi-label':
                         # Labels is a list of strings
                         if isinstance(labels_data, list):
                             for label in labels_data:
-                                label_counter[str(label)] += 1
+                                if train_by_language:
+                                    # CRITICAL: Count per language (matches DataUtil.prepare_splits logic)
+                                    key = f"{label}_{lang}"
+                                else:
+                                    key = str(label)
+                                label_counter[key] += 1
                         elif isinstance(labels_data, str):
-                            label_counter[labels_data] += 1
+                            if train_by_language:
+                                key = f"{labels_data}_{lang}"
+                            else:
+                                key = labels_data
+                            label_counter[key] += 1
                     else:
                         # Single-label: labels is a string
                         if labels_data:
-                            label_counter[str(labels_data)] += 1
+                            if train_by_language:
+                                key = f"{labels_data}_{lang}"
+                            else:
+                                key = str(labels_data)
+                            label_counter[key] += 1
 
         except Exception as e:
             self.logger.warning(f"Could not validate labels: {e}")
@@ -11650,7 +11882,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Display warning
         self.console.print(f"\n[bold red]⚠️  INSUFFICIENT SAMPLES DETECTED[/bold red]\n")
-        self.console.print(f"[yellow]The following labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]\n")
+        if train_by_language:
+            self.console.print(f"[yellow]The following language-specific labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]")
+            self.console.print(f"[dim]Note: Validation is language-aware because train_by_language=True[/dim]\n")
+        else:
+            self.console.print(f"[yellow]The following labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]\n")
 
         table = Table(border_style="red", show_header=True, header_style="bold red", box=box.ROUNDED)
         table.add_column("Label", style="yellow bold", width=40)
@@ -11670,8 +11906,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Ask user what to do
         if not auto_remove:
             self.console.print("[bold]Options:[/bold]")
-            self.console.print("  • [green]Remove[/green]: Automatically remove all samples with these labels")
-            self.console.print("  • [red]Cancel[/red]: Stop training and fix dataset manually\n")
+            if strategy == 'multi-label':
+                self.console.print("  • [green]Remove[/green]: Automatically remove insufficient labels from samples (samples will be kept)")
+                self.console.print("  • [red]Cancel[/red]: Stop training and fix dataset manually\n")
+            else:
+                self.console.print("  • [green]Remove[/green]: Automatically remove samples with insufficient labels")
+                self.console.print("  • [red]Cancel[/red]: Stop training and fix dataset manually\n")
 
             should_remove = Confirm.ask(
                 "Remove insufficient labels automatically?",
@@ -11687,38 +11927,78 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         filtered_records = []
         removed_count = 0
+        labels_removed_count = 0  # Track number of label instances removed
+        samples_with_removed_labels = 0  # Track samples that had labels removed but were kept
 
         for record in records:
             labels_data = record.get('labels', record.get('label'))
+            lang = record.get('lang', 'unknown') if train_by_language else None
 
             if strategy == 'multi-label':
-                # Filter list of labels
+                # Filter list of labels - KEEP SAMPLE even if all labels are removed
                 if isinstance(labels_data, list):
                     original_labels = labels_data
-                    filtered_labels = [
-                        label for label in labels_data
-                        if str(label) not in insufficient_labels
-                    ]
-
-                    if filtered_labels:
-                        # Keep record with filtered labels
-                        record_copy = record.copy()
-                        record_copy['labels'] = filtered_labels
-                        filtered_records.append(record_copy)
+                    if train_by_language:
+                        # Check language-specific keys
+                        filtered_labels = [
+                            label for label in labels_data
+                            if f"{label}_{lang}" not in insufficient_labels
+                        ]
                     else:
-                        # All labels removed - skip record
-                        removed_count += 1
+                        filtered_labels = [
+                            label for label in labels_data
+                            if str(label) not in insufficient_labels
+                        ]
+
+                    # Count removed labels
+                    removed_labels_in_sample = len(original_labels) - len(filtered_labels)
+                    if removed_labels_in_sample > 0:
+                        labels_removed_count += removed_labels_in_sample
+                        samples_with_removed_labels += 1
+
+                    # CRITICAL FIX: Keep record even if all labels were removed
+                    # The sample itself is still valid, just has no sufficient labels
+                    record_copy = record.copy()
+                    record_copy['labels'] = filtered_labels  # May be empty list
+                    filtered_records.append(record_copy)
                 else:
-                    # Single label in multi-label format - check if sufficient
-                    if str(labels_data) not in insufficient_labels:
+                    # Single label in multi-label format - convert to list and check
+                    if labels_data:
+                        if train_by_language:
+                            check_key = f"{labels_data}_{lang}"
+                        else:
+                            check_key = str(labels_data)
+
+                        if check_key not in insufficient_labels:
+                            # Keep as-is (string format)
+                            filtered_records.append(record)
+                        else:
+                            # Label is insufficient - keep sample but remove label
+                            labels_removed_count += 1
+                            samples_with_removed_labels += 1
+                            record_copy = record.copy()
+                            record_copy['labels'] = []  # Empty labels list
+                            filtered_records.append(record_copy)
+                    else:
+                        # No labels at all - keep sample
+                        filtered_records.append(record)
+            else:
+                # Single-label: MUST remove sample if label is insufficient
+                # (cannot have a single-label sample with no label)
+                if labels_data:
+                    if train_by_language:
+                        check_key = f"{labels_data}_{lang}"
+                    else:
+                        check_key = str(labels_data)
+
+                    if check_key not in insufficient_labels:
                         filtered_records.append(record)
                     else:
+                        # For single-label, we must remove the sample
                         removed_count += 1
-            else:
-                # Single-label: only keep if label is sufficient
-                if labels_data and str(labels_data) not in insufficient_labels:
-                    filtered_records.append(record)
+                        labels_removed_count += 1
                 else:
+                    # No label - remove sample
                     removed_count += 1
 
         # Save filtered dataset
@@ -11731,8 +12011,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print(f"[green]✓ Filtered dataset saved:[/green] {filtered_path.name}")
         self.console.print(f"  • [cyan]Original samples:[/cyan] {len(records)}")
         self.console.print(f"  • [cyan]Filtered samples:[/cyan] {len(filtered_records)}")
-        self.console.print(f"  • [yellow]Removed samples:[/yellow] {removed_count}")
-        self.console.print(f"  • [red]Removed labels:[/red] {len(insufficient_labels)}\n")
+
+        if strategy == 'multi-label':
+            # For multi-label, show label removal stats (samples are kept)
+            self.console.print(f"  • [green]Samples kept:[/green] {len(filtered_records)} (all samples preserved)")
+            if removed_count > 0:
+                self.console.print(f"  • [yellow]Samples removed:[/yellow] {removed_count} (only if needed)")
+            self.console.print(f"  • [yellow]Samples with labels removed:[/yellow] {samples_with_removed_labels}")
+            self.console.print(f"  • [red]Label instances removed:[/red] {labels_removed_count}")
+            self.console.print(f"  • [red]Insufficient label types:[/red] {len(insufficient_labels)}")
+        else:
+            # For single-label, samples must be removed if label is insufficient
+            self.console.print(f"  • [yellow]Removed samples:[/yellow] {removed_count}")
+            self.console.print(f"  • [red]Removed label types:[/red] {len(insufficient_labels)}")
+
+        self.console.print()
 
         return str(filtered_path), True
 
@@ -12779,6 +13072,38 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             manual_rl_epochs = None
             rl_f1_threshold = 0.70
 
+        # ============================================================
+        # CRITICAL: Validate and filter insufficient labels BEFORE training
+        # MUST happen AFTER extracting train_by_language_flag
+        # ============================================================
+        if bundle.primary_file:
+            try:
+                filtered_file, was_filtered = self._validate_and_filter_insufficient_labels(
+                    input_file=str(bundle.primary_file),
+                    strategy=bundle.strategy,
+                    min_samples=2,
+                    auto_remove=False,  # Ask user for confirmation
+                    train_by_language=train_by_language_flag  # CRITICAL: Language-aware validation
+                )
+                if was_filtered:
+                    # Update bundle to use filtered file
+                    bundle.primary_file = Path(filtered_file)
+                    self.console.print(f"[green]✓ Using filtered training dataset[/green]\n")
+            except ValueError as e:
+                # User cancelled or validation failed
+                self.console.print(f"[red]{e}[/red]")
+                return {
+                    'runtime_params': {},
+                    'models_trained': [],
+                    'best_model': None,
+                    'best_f1': None,
+                    'error': str(e)
+                }
+            except Exception as e:
+                self.logger.warning(f"Label validation failed: {e}")
+                # Continue with original file if validation fails
+                pass
+
         # Display training configuration summary
         self.console.print()
 
@@ -13577,7 +13902,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             input_file=str(bundle.primary_file),
                             strategy=bundle.strategy,
                             min_samples=2,
-                            auto_remove=False  # Ask user for confirmation
+                            auto_remove=False,  # Ask user for confirmation
+                            train_by_language=needs_language_training  # CRITICAL: Language-aware validation
                         )
                         if was_filtered:
                             input_file_to_use = filtered_file
@@ -13659,7 +13985,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         input_file=str(bundle.primary_file),
                         strategy=bundle.strategy,
                         min_samples=2,
-                        auto_remove=False  # Ask user for confirmation
+                        auto_remove=False,  # Ask user for confirmation
+                        train_by_language=needs_language_training  # CRITICAL: Language-aware validation
                     )
                     if was_filtered:
                         # Update bundle to use filtered file
@@ -14637,92 +14964,62 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         mode: str,
         model_config: Dict[str, Any],
         execution_status: Optional[Dict[str, Any]] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        quick_params: Optional[Dict[str, Any]] = None,
+        runtime_params: Optional[Dict[str, Any]] = None,
+        training_context: Optional[Dict[str, Any]] = None
     ) -> Path:
         """
-        Save comprehensive training session metadata for reproducibility and resume capability.
+        Save COMPREHENSIVE training session metadata for reproducibility and resume capability.
+
+        Now uses the enhanced MetadataManager for complete parameter capture.
 
         Parameters
         ----------
         bundle : TrainingDataBundle
             The training data bundle with all dataset information
         mode : str
-            Training mode: quick
+            Training mode: quick, benchmark, custom, etc.
         model_config : dict
             Model configuration including selected_model, epochs, batch_size, etc.
         execution_status : dict, optional
             Execution status information (status, started_at, completed_at, etc.)
+        session_id : str, optional
+            Session ID to use (defaults to timestamp)
+        quick_params : dict, optional
+            Quick mode parameters if applicable
+        runtime_params : dict, optional
+            Runtime parameters from actual training
+        training_context : dict, optional
+            Additional training context information
 
         Returns
         -------
         Path
             Path to the saved metadata JSON file
         """
-        import json
         from datetime import datetime
+        from llm_tool.utils.metadata_manager import MetadataManager
 
         # Use provided session_id or create new one
         timestamp = session_id or datetime.now().strftime('%Y%m%d_%H%M%S')
 
-        # Build comprehensive metadata
-        metadata = {
-            'training_session': {
-                'timestamp': timestamp,
-                'tool_version': 'LLMTool v1.0',
-                'workflow': f'Training Arena - {mode.capitalize()}',
-                'session_id': timestamp
-            },
-            'dataset_config': {
-                'primary_file': str(bundle.primary_file) if bundle.primary_file else None,
-                'format': bundle.format_type if hasattr(bundle, 'format_type') else 'unknown',
-                'strategy': bundle.strategy,
-                'text_column': bundle.text_column,
-                'label_column': bundle.label_column,
-                'total_samples': len(bundle.samples) if hasattr(bundle, 'samples') and bundle.samples else 0,
-                'num_categories': len(bundle.metadata.get('categories', [])),
-                'category_distribution': bundle.metadata.get('category_distribution', {}),
-                'training_files': {k: str(v) for k, v in bundle.training_files.items()} if hasattr(bundle, 'training_files') and bundle.training_files else {}
-            },
-            'language_config': {
-                'confirmed_languages': list(bundle.metadata.get('confirmed_languages', [])),
-                'language_distribution': bundle.metadata.get('language_distribution', {}),
-                'model_strategy': bundle.metadata.get('model_strategy', 'multilingual'),
-                'language_model_mapping': bundle.metadata.get('language_model_mapping', {})
-            },
-            'text_analysis': {
-                'text_length_stats': bundle.metadata.get('text_length_stats', {}),
-                'requires_long_document_model': bundle.metadata.get('requires_long_document_model', False),
-                'avg_token_length': bundle.metadata.get('text_length_stats', {}).get('token_mean', 0),
-                'max_token_length': bundle.metadata.get('text_length_stats', {}).get('token_max', 0)
-            },
-            'model_config': model_config,
-            'execution_status': execution_status or {
-                'status': 'pending',
-                'started_at': None,
-                'completed_at': None,
-                'models_trained': [],
-                'best_model': None,
-                'best_f1': None
-            },
-            'output_paths': {
-                'models_dir': str(self.settings.paths.models_dir),
-                'logs_dir': str(self.settings.paths.logs_dir),
-                'results_csv': None
-            }
-        }
+        # Initialize metadata manager
+        metadata_manager = MetadataManager(session_id=timestamp)
 
-        # Use centralized training arena structure
-        # logs/training_arena/{session_id}/training_session_metadata/
-        from pathlib import Path
-        metadata_dir = Path("logs/training_arena") / timestamp / "training_session_metadata"
-        metadata_dir.mkdir(parents=True, exist_ok=True)
+        # Save comprehensive metadata using the new manager
+        metadata_path = metadata_manager.save_comprehensive_metadata(
+            bundle=bundle,
+            mode=mode,
+            model_config=model_config,
+            quick_params=quick_params,
+            execution_status=execution_status,
+            runtime_params=runtime_params,
+            training_context=training_context
+        )
 
-        # Save metadata JSON
-        metadata_filename = "training_metadata.json"
-        metadata_path = metadata_dir / metadata_filename
-
-        with open(metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        # Store metadata manager for later updates
+        self._current_metadata_manager = metadata_manager
 
         return metadata_path
 
@@ -14734,6 +15031,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         """
         Update existing training metadata file with new information (post-training).
 
+        Now uses the enhanced MetadataManager for safe updates.
+
         Parameters
         ----------
         metadata_path : Path
@@ -14741,37 +15040,49 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         **updates : dict
             Sections to update (e.g., execution_status={'status': 'completed'})
         """
-        import json
-
-        if not metadata_path.exists():
-            self.logger.warning(f"Metadata file not found: {metadata_path}")
-            return
+        from llm_tool.utils.metadata_manager import MetadataManager
 
         try:
-            # Load existing metadata
-            with open(metadata_path, 'r', encoding='utf-8') as f:
-                metadata = json.load(f)
-
-            # Update sections
-            for section, data in updates.items():
-                if section in metadata:
-                    if isinstance(metadata[section], dict) and isinstance(data, dict):
-                        metadata[section].update(data)
-                    else:
-                        metadata[section] = data
-                else:
-                    metadata[section] = data
-
-            # Save updated metadata
-            with open(metadata_path, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            # Use metadata manager for updates
+            if hasattr(self, '_current_metadata_manager') and self._current_metadata_manager:
+                # Use existing manager if available
+                self._current_metadata_manager.update_metadata(**updates)
+            else:
+                # Create new manager from path
+                session_id = metadata_path.parent.parent.name
+                metadata_manager = MetadataManager(session_id=session_id)
+                metadata_manager.update_metadata(**updates)
 
         except Exception as e:
             self.logger.error(f"Failed to update metadata: {e}")
 
+            # Fallback to direct JSON update
+            import json
+            if metadata_path.exists():
+                try:
+                    with open(metadata_path, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+
+                    for section, data in updates.items():
+                        if section in metadata:
+                            if isinstance(metadata[section], dict) and isinstance(data, dict):
+                                metadata[section].update(data)
+                            else:
+                                metadata[section] = data
+                        else:
+                            metadata[section] = data
+
+                    with open(metadata_path, 'w', encoding='utf-8') as f:
+                        json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+                except Exception as fallback_error:
+                    self.logger.error(f"Fallback update also failed: {fallback_error}")
+
     def _reconstruct_bundle_from_metadata(self, metadata: Dict[str, Any]) -> Optional[TrainingDataBundle]:
         """
         Reconstruct a TrainingDataBundle from saved metadata for resume/relaunch.
+
+        Now handles the comprehensive metadata format from MetadataManager.
 
         Parameters
         ----------
@@ -14784,9 +15095,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             Reconstructed bundle, or None if reconstruction fails
         """
         try:
+            # Handle both old and new metadata formats
             dataset_config = metadata.get('dataset_config', {})
             language_config = metadata.get('language_config', {})
             text_analysis = metadata.get('text_analysis', {})
+            split_config = metadata.get('split_config', {})
+            label_config = metadata.get('label_config', {})
+            preprocessing_config = metadata.get('preprocessing', {})
 
             # Load primary file
             primary_file_str = dataset_config.get('primary_file')
@@ -14797,38 +15112,98 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             primary_file = Path(primary_file_str)
             if not primary_file.exists():
                 self.console.print(f"[red]Error: Dataset file not found: {primary_file}[/red]")
-                return None
+                # Check for training files as fallback
+                if dataset_config.get('training_files'):
+                    self.console.print("[yellow]Primary file missing, but training files may be available[/yellow]")
+                else:
+                    return None
 
-            # Create bundle with basic info
+            # Create bundle with comprehensive info
+            # Note: TrainingDataBundle doesn't accept format_type or samples parameters
             bundle = TrainingDataBundle(
-                primary_file=primary_file,
-                format_type=dataset_config.get('format', 'unknown'),
+                primary_file=primary_file if primary_file.exists() else None,
                 strategy=dataset_config.get('strategy', 'single-label'),
                 text_column=dataset_config.get('text_column', 'text'),
                 label_column=dataset_config.get('label_column', 'label'),
-                samples=[],  # Will be loaded during training
                 metadata={}
             )
 
-            # Restore metadata fields
+            # Store format information in metadata instead
+            bundle.metadata['format_type'] = dataset_config.get('format_type', dataset_config.get('format', 'unknown'))
+            bundle.metadata['format'] = dataset_config.get('format', 'unknown')
+
+            # Restore training_files if present
+            if dataset_config.get('training_files'):
+                bundle.training_files = {
+                    label: Path(path)
+                    for label, path in dataset_config['training_files'].items()
+                }
+
+            # Restore ALL metadata fields comprehensively
+            # Language configuration
             bundle.metadata['confirmed_languages'] = set(language_config.get('confirmed_languages', []))
             bundle.metadata['language_distribution'] = language_config.get('language_distribution', {})
             bundle.metadata['model_strategy'] = language_config.get('model_strategy', 'multilingual')
             bundle.metadata['language_model_mapping'] = language_config.get('language_model_mapping', {})
+            bundle.metadata['per_language_training'] = language_config.get('per_language_training', False)
+            bundle.metadata['models_by_language'] = language_config.get('models_by_language', {})
 
+            # Text analysis
             bundle.metadata['text_length_stats'] = text_analysis.get('text_length_stats', {})
             bundle.metadata['requires_long_document_model'] = text_analysis.get('requires_long_document_model', False)
+            bundle.metadata['user_prefers_long_models'] = text_analysis.get('user_prefers_long_models', False)
+            bundle.metadata['exclude_long_texts'] = text_analysis.get('exclude_long_texts', False)
+            bundle.metadata['split_long_texts'] = text_analysis.get('split_long_texts', False)
 
-            bundle.metadata['categories'] = list(dataset_config.get('category_distribution', {}).keys())
+            # Label configuration
+            bundle.metadata['categories'] = dataset_config.get('categories', list(dataset_config.get('category_distribution', {}).keys()))
             bundle.metadata['category_distribution'] = dataset_config.get('category_distribution', {})
+            bundle.metadata['num_categories'] = dataset_config.get('num_categories', len(bundle.metadata['categories']))
+            bundle.metadata['label_type'] = label_config.get('label_type', 'single')
+            bundle.metadata['label_mapping'] = label_config.get('label_mapping', {})
+            bundle.metadata['imbalanced_labels'] = label_config.get('imbalanced_labels', [])
+
+            # Dataset configuration
+            bundle.metadata['source_file'] = dataset_config.get('source_file')
+            bundle.metadata['annotation_column'] = dataset_config.get('annotation_column')
+            bundle.metadata['training_approach'] = dataset_config.get('training_approach')
+            bundle.metadata['original_strategy'] = dataset_config.get('original_strategy')
+
+            # CRITICAL FIX: Restore hybrid/custom training configuration
+            # These fields are REQUIRED for session relaunch to work with hybrid training
+            bundle.metadata['multiclass_keys'] = dataset_config.get('multiclass_keys', [])
+            bundle.metadata['onevsall_keys'] = dataset_config.get('onevsall_keys', [])
+            bundle.metadata['key_strategies'] = dataset_config.get('key_strategies', {})
+            bundle.metadata['files_per_key'] = dataset_config.get('files_per_key', {})
+
+            # Split configuration
+            if split_config:
+                bundle.metadata['split_config'] = split_config
+
+            # Preprocessing
+            if preprocessing_config:
+                bundle.metadata['preprocessing'] = preprocessing_config
 
             # Restore training files paths if they exist
             training_files_dict = dataset_config.get('training_files', {})
             if training_files_dict:
                 bundle.training_files = {k: Path(v) for k, v in training_files_dict.items()}
 
-            # Restore recommended model if available
+            # Restore model configuration
             model_config = metadata.get('model_config', {})
+            if model_config:
+                bundle.metadata['recommended_model'] = model_config.get('recommended_model')
+                bundle.metadata['selected_model'] = model_config.get('selected_model')
+                bundle.metadata['models_by_language'] = model_config.get('models_by_language', {})
+
+            # Restore advanced settings
+            advanced_settings = metadata.get('advanced_settings', {})
+            if advanced_settings:
+                bundle.metadata['benchmark_mode'] = advanced_settings.get('benchmark_mode', False)
+                bundle.metadata['one_vs_all'] = advanced_settings.get('one_vs_all', False)
+                bundle.metadata['multi_label'] = advanced_settings.get('multi_label', False)
+
+            # Set recommended model if available
             if 'recommended_model' in model_config:
                 bundle.recommended_model = model_config['recommended_model']
 
@@ -14845,32 +15220,121 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("\n[bold cyan]🔄 Resume/Relaunch Training[/bold cyan]\n")
         self.console.print("[dim]Load saved parameters from previous training sessions[/dim]\n")
 
-        # Detect metadata files
-        metadata_dir = self.settings.paths.logs_dir / "training_sessions"
-        self.console.print(f"[dim]Searching in: {metadata_dir}[/dim]\n")
+        # Detect metadata files - now using the new training_arena structure
+        from pathlib import Path
+        base_dir = Path("logs/training_arena")
 
-        if not metadata_dir.exists():
-            self.console.print("[yellow]⚠️  Training sessions directory not found.[/yellow]")
-            self.console.print(f"[dim]Expected location: {metadata_dir}[/dim]")
+        self.console.print(f"[dim]Searching in: {base_dir}[/dim]\n")
+
+        if not base_dir.exists():
+            self.console.print("[yellow]⚠️  Training arena logs directory not found.[/yellow]")
+            self.console.print(f"[dim]Expected location: {base_dir}[/dim]")
             self.console.print("[dim]Complete a training first to create session history.[/dim]")
             self.console.print("\n[dim]Press Enter to continue...[/dim]")
             input()
             return
 
-        # Find all metadata JSON files
-        metadata_files = list(metadata_dir.glob("training_metadata_*.json"))
+        # Find all training sessions - BOTH with and without metadata
+        # This ensures ALL sessions are recallable, even if metadata was not saved
+        metadata_files = []
+        sessions_without_metadata = []
+
+        for session_dir in base_dir.iterdir():
+            if not session_dir.is_dir():
+                continue
+
+            metadata_path = session_dir / "training_session_metadata" / "training_metadata.json"
+            if metadata_path.exists():
+                # Session has metadata - add to primary list
+                metadata_files.append(metadata_path)
+            else:
+                # Session exists but has NO metadata - create minimal metadata on-the-fly
+                # This allows recovery of sessions where user declined metadata saving
+                sessions_without_metadata.append(session_dir)
+
+        # Generate minimal metadata for sessions without it
+        for session_dir in sessions_without_metadata:
+            try:
+                session_id = session_dir.name
+
+                # Create minimal metadata structure for display and potential recovery
+                minimal_metadata = {
+                    "metadata_version": "2.0",
+                    "created_at": datetime.fromtimestamp(session_dir.stat().st_mtime).isoformat(),
+                    "last_updated": datetime.fromtimestamp(session_dir.stat().st_mtime).isoformat(),
+                    "training_session": {
+                        "session_id": session_id,
+                        "timestamp": session_id,
+                        "tool_version": "LLMTool",
+                        "workflow": "Training Arena - Unknown",
+                        "mode": "unknown"
+                    },
+                    "dataset_config": {
+                        "primary_file": None,
+                        "format_type": "unknown",
+                        "strategy": "single-label",
+                        "text_column": "text",
+                        "label_column": "label",
+                        "total_samples": 0
+                    },
+                    "model_config": {
+                        "training_mode": "unknown",
+                        "selected_model": None,
+                        "epochs": None,
+                        "batch_size": 16
+                    },
+                    "execution_status": {
+                        "status": "no_metadata",
+                        "started_at": None,
+                        "completed_at": None
+                    },
+                    "output_paths": {
+                        "session_dir": str(session_dir),
+                        "models_dir": str(Path("models") / session_id),
+                        "logs_dir": str(session_dir)
+                    },
+                    "_recovered": True  # Flag indicating this was auto-recovered
+                }
+
+                # Try to extract information from training_data directory if it exists
+                training_data_dir = session_dir / "training_data"
+                if training_data_dir.exists():
+                    # Look for training files to get dataset info
+                    for train_file in training_data_dir.glob("train_*.csv"):
+                        minimal_metadata["dataset_config"]["primary_file"] = str(train_file)
+                        break
+
+                # Create a "virtual" metadata file path for this session
+                # We don't actually save it to disk unless user tries to relaunch
+                virtual_metadata_path = session_dir / "training_session_metadata" / "training_metadata.json"
+
+                # Store the metadata temporarily (we'll handle it specially in the loop)
+                # Add to metadata_files list as a tuple to distinguish it
+                metadata_files.append((virtual_metadata_path, minimal_metadata))
+
+            except Exception as e:
+                self.logger.debug(f"Could not generate metadata for {session_dir.name}: {e}")
+                continue
 
         if not metadata_files:
-            self.console.print("[yellow]⚠️  No saved training sessions found.[/yellow]")
-            self.console.print(f"[dim]Searched in: {metadata_dir}[/dim]")
-            self.console.print(f"[dim]Found {len(list(metadata_dir.iterdir()))} files total in directory[/dim]")
-            self.console.print("[dim]Complete a training and save parameters to use this feature.[/dim]")
+            self.console.print("[yellow]⚠️  No training sessions found.[/yellow]")
+            self.console.print(f"[dim]Searched in: {base_dir}[/dim]")
+            self.console.print("[dim]Complete a training to create session history.[/dim]")
             self.console.print("\n[dim]Press Enter to continue...[/dim]")
             input()
             return
 
         # Sort by modification time (most recent first)
-        metadata_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        # Handle both Path objects and tuples (virtual metadata)
+        def get_mtime(item):
+            if isinstance(item, tuple):
+                # Virtual metadata - use parent directory mtime
+                return item[0].parent.parent.stat().st_mtime
+            else:
+                # Real metadata file
+                return item.stat().st_mtime
+
+        metadata_files.sort(key=get_mtime, reverse=True)
 
         # Display sessions table
         sessions_table = Table(
@@ -14879,10 +15343,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             box=box.ROUNDED
         )
         sessions_table.add_column("#", style="cyan bold", width=4)
-        sessions_table.add_column("Date", style="yellow", width=18)
-        sessions_table.add_column("Mode", style="magenta", width=15)
-        sessions_table.add_column("Dataset", style="green", width=30)
-        sessions_table.add_column("Model", style="blue", width=25)
+        sessions_table.add_column("Session Name", style="white", width=25)
+        sessions_table.add_column("Date", style="yellow", width=12)
+        sessions_table.add_column("Time", style="yellow", width=8)
+        sessions_table.add_column("Mode", style="magenta", width=12)
+        sessions_table.add_column("Dataset", style="green", width=25)
+        sessions_table.add_column("Model", style="blue", width=20)
         sessions_table.add_column("Status", style="white", width=12)
 
         import json
@@ -14892,47 +15358,88 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         valid_sessions = []
         parsing_errors = []  # Track errors for debugging
 
-        for i, mf in enumerate(metadata_files[:20], 1):  # Show max 20 most recent
+        for i, mf_item in enumerate(metadata_files[:20], 1):  # Show max 20 most recent
             try:
-                with open(mf, 'r', encoding='utf-8') as f:
-                    metadata = json.load(f)
+                # Handle both real metadata files and virtual metadata (tuples)
+                if isinstance(mf_item, tuple):
+                    # Virtual metadata - already loaded
+                    mf, metadata = mf_item
+                    is_recovered = True
+                else:
+                    # Real metadata file - load it
+                    mf = mf_item
+                    with open(mf, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+                    is_recovered = False
 
                 session_info = metadata.get('training_session', {})
                 dataset_config = metadata.get('dataset_config', {})
                 model_config = metadata.get('model_config', {})
                 exec_status = metadata.get('execution_status', {})
 
-                # Format display
-                timestamp_str = session_info.get('timestamp', '')
+                # Extract session name and timestamp
+                session_id = session_info.get('session_id', '')
+
+                # Parse session name and timestamp from session_id
+                # Expected format: {name}_{YYYYMMDD_HHMMSS}
+                session_name_parts = session_id.rsplit('_', 2)
+                if len(session_name_parts) >= 3 and len(session_name_parts[-1]) == 6 and len(session_name_parts[-2]) == 8:
+                    # Has proper timestamp format
+                    session_name = '_'.join(session_name_parts[:-2]) or 'training_session'
+                    timestamp_str = f"{session_name_parts[-2]}_{session_name_parts[-1]}"
+                else:
+                    # Fallback for legacy or malformed session IDs
+                    session_name = session_id.split('_20')[0] if '_20' in session_id else session_id
+                    timestamp_str = session_info.get('timestamp', '')
+
+                # Format date and time separately
                 try:
                     dt = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
-                    date_str = dt.strftime('%Y-%m-%d %H:%M')
+                    date_str = dt.strftime('%Y-%m-%d')
+                    time_str = dt.strftime('%H:%M')
                 except:
-                    date_str = timestamp_str
+                    # Fallback if timestamp parsing fails
+                    date_str = timestamp_str[:10] if len(timestamp_str) >= 10 else 'N/A'
+                    time_str = timestamp_str[11:16] if len(timestamp_str) >= 16 else 'N/A'
+
+                # Truncate session name if too long
+                if len(session_name) > 23:
+                    session_name = session_name[:20] + "..."
 
                 mode = model_config.get('training_mode', 'unknown')
                 dataset_path = dataset_config.get('primary_file', '')
                 dataset_name = Path(dataset_path).name if dataset_path else 'N/A'
-                if len(dataset_name) > 28:
-                    dataset_name = dataset_name[:25] + "..."
+                if len(dataset_name) > 23:
+                    dataset_name = dataset_name[:20] + "..."
 
                 model_name = model_config.get('selected_model') or 'N/A'
-                if len(model_name) > 23:
-                    model_name = model_name[:20] + "..."
+                if len(model_name) > 18:
+                    model_name = model_name[:15] + "..."
 
                 status = exec_status.get('status', 'unknown')
 
                 # Color code status
-                if status == 'completed':
+                if is_recovered:
+                    # Session recovered without metadata
+                    status_display = f"[yellow]⚠ recovered[/yellow]"
+                elif status == 'completed':
                     status_display = f"[green]✓ {status}[/green]"
                 elif status == 'failed':
                     status_display = f"[red]✗ {status}[/red]"
+                elif 'benchmark' in status.lower():
+                    # Benchmark-specific statuses
+                    if 'completed' in status.lower():
+                        status_display = f"[green]🎯 benchmark[/green]"
+                    else:
+                        status_display = f"[cyan]🎯 {status}[/cyan]"
                 else:
                     status_display = f"[yellow]⏸ {status}[/yellow]"
 
                 sessions_table.add_row(
                     str(i),
+                    session_name,
                     date_str,
+                    time_str,
                     mode,
                     dataset_name,
                     model_name,
@@ -14961,6 +15468,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self.console.print(sessions_table)
 
+        # Check if any sessions were recovered
+        recovered_count = sum(1 for _, metadata in valid_sessions if metadata.get('_recovered', False))
+        if recovered_count > 0:
+            self.console.print(f"\n[yellow]ℹ️  {recovered_count} session(s) marked as 'recovered' had no saved metadata.[/yellow]")
+            self.console.print("[dim]   These sessions can still be viewed, but may have limited information.[/dim]")
+            self.console.print("[dim]   Note: Starting now, all new training sessions will automatically save metadata.[/dim]\n")
+
         # Select session
         session_choices = [str(i) for i in range(1, len(valid_sessions) + 1)] + ["back"]
         session_choice = Prompt.ask(
@@ -14974,8 +15488,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         metadata_file, metadata = valid_sessions[int(session_choice) - 1]
 
+        # Check if this is a recovered session
+        is_recovered_session = metadata.get('_recovered', False)
+
         # Display selected session details
         self.console.print("\n[bold cyan]📋 Selected Session Details[/bold cyan]")
+
+        if is_recovered_session:
+            self.console.print("[yellow]⚠️  This session was recovered without complete metadata.[/yellow]")
+            self.console.print("[dim]Some training parameters may be missing or unknown.[/dim]\n")
 
         details_table = Table(border_style="green", box=box.SIMPLE)
         details_table.add_column("Parameter", style="cyan bold", width=25)
@@ -14988,7 +15509,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         details_table.add_row("Timestamp", session_info.get('timestamp', 'N/A'))
         details_table.add_row("Workflow", session_info.get('workflow', 'N/A'))
-        details_table.add_row("Dataset", Path(dataset_config.get('primary_file', '')).name)
+
+        dataset_file = dataset_config.get('primary_file', '')
+        if dataset_file:
+            details_table.add_row("Dataset", Path(dataset_file).name)
+        else:
+            details_table.add_row("Dataset", "[yellow]Unknown[/yellow]")
+
         details_table.add_row("Strategy", dataset_config.get('strategy', 'N/A'))
         details_table.add_row("Total Samples", str(dataset_config.get('total_samples', 0)))
         details_table.add_row("Training Mode", model_config.get('training_mode', 'N/A'))
@@ -15008,6 +15535,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         details_table.add_row("Status", exec_status.get('status', 'unknown'))
 
         self.console.print(details_table)
+
+        # Special handling for recovered sessions
+        if is_recovered_session:
+            self.console.print("\n[yellow]⚠️  Recovered Session Limitations:[/yellow]")
+            self.console.print("  • Training parameters are incomplete")
+            self.console.print("  • Cannot guarantee exact reproduction of original training")
+            self.console.print("  • Consider starting a new training session instead\n")
+
+            if not dataset_config.get('primary_file'):
+                self.console.print("[red]✗ Cannot relaunch: Dataset file is unknown[/red]")
+                self.console.print("[dim]Press Enter to continue...[/dim]")
+                input()
+                return
 
         # Ask: resume or relaunch?
         self.console.print("\n[bold cyan]🎯 Action Mode[/bold cyan]")
@@ -15033,6 +15573,28 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Get training mode
         mode = model_config.get('training_mode', 'quick')
+
+        # CRITICAL: Initialize session attributes for resume/relaunch
+        # Extract session_id from metadata
+        session_info = metadata.get('training_session', {})
+        session_id = session_info.get('session_id')
+
+        if not session_id:
+            # Fallback: try to extract from metadata file path or generate new one
+            self.logger.warning("No session_id found in metadata, generating new session_id for relaunch")
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            session_id = f"relaunch_{timestamp}"
+
+        # Initialize session manager (required by training execution code)
+        from llm_tool.utils.training_data_utils import TrainingDataSessionManager
+        session_manager = TrainingDataSessionManager(session_id=session_id)
+
+        # Store session attributes for use throughout training
+        self.current_session_id = session_id
+        self.current_session_manager = session_manager
+
+        self.console.print(f"[dim]Session ID: {session_id}[/dim]\n")
 
         # Display confirmation message
         if action_mode == 'resume':
@@ -15599,6 +16161,59 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def bert_annotation_studio(self):
         """BERT Annotation Studio - Advanced annotation with trained models"""
+        # Display ASCII logo only
+        self._display_ascii_logo()
+
+        # Display mode-specific banner
+        self._display_mode_banner('bert_studio')
+
+        # Display personalized mode info
+        self._display_section_header(
+            "🤖 BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)",
+            "Production-ready inference with trained BERT models: Parallel processing, language validation, confidence scoring",
+            mode_info={
+                'workflow': 'Select Model → Load Data (SQL/File) → Detect Language → Preprocessing → Parallel Inference → Export',
+                'capabilities': ['50+ Trained Models', '100+ Languages', 'Multi-GPU/CPU Parallel', 'Confidence Scoring', 'Language Validation', 'Text Preprocessing'],
+                'input': 'SQL (PostgreSQL/MySQL/SQLite/SQL Server) or Files (CSV/Excel/JSON/JSONL/Parquet/RData)',
+                'output': 'Predictions with probabilities + Confidence intervals + Language tags + Multiple export formats',
+                'best_for': 'High-throughput production inference, multilingual datasets, large-scale annotation with trained models',
+                'duration': '~2-20 min (depends on dataset size, model complexity, and GPU availability)'
+            }
+        )
+
+        if HAS_RICH and self.console:
+            # Create mode menu
+            self.console.print("\n[bold cyan]🎯 BERT Annotation Studio Options[/bold cyan]\n")
+
+            studio_options_table = Table(show_header=False, box=None, padding=(0, 2))
+            studio_options_table.add_column("Option", style="cyan", width=8)
+            studio_options_table.add_column("Description")
+
+            options = [
+                ("1", "🚀 Start Annotation Workflow (8-step guided process)"),
+                ("0", "⬅️  Back to main menu")
+            ]
+
+            for option, desc in options:
+                studio_options_table.add_row(f"[bold cyan]{option}[/bold cyan]", desc)
+
+            panel = Panel(
+                studio_options_table,
+                title="[bold]🤖 BERT Annotation Studio[/bold]",
+                border_style="cyan"
+            )
+
+            self.console.print(panel)
+
+            choice = Prompt.ask(
+                "\n[bold yellow]Select an option[/bold yellow]",
+                choices=["0", "1"],
+                default="1"
+            )
+
+            if choice == "0":
+                return
+
         from .bert_annotation_studio import BERTAnnotationStudio
 
         studio = BERTAnnotationStudio(
@@ -15613,21 +16228,56 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Display ASCII logo only
         self._display_ascii_logo()
 
+        # Display mode-specific banner
+        self._display_mode_banner('validation')
+
         # Display personalized mode info
         self._display_section_header(
-            "🔍 Validation Lab",
-            "Quality control and human review preparation tools",
+            "🔍 Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement",
+            "Quality assurance tools: Validate LLM annotations, detect imbalances, prepare stratified samples for human review",
             mode_info={
-                'workflow': 'Load Annotations → Quality Metrics → Sample Review → Export to Doccano/Label Studio',
-                'capabilities': ['Quality Scoring', 'Sample Analysis', 'Export Tools', 'Inter-rater Reliability'],
-                'input': 'Annotated JSON files from LLM',
-                'output': 'Quality reports + Doccano/Label Studio export files',
-                'best_for': 'Validating LLM annotations before training or publication',
-                'duration': '~2-5 min'
+                'workflow': 'Load Annotations → Quality Metrics (0-100 score) → Stratified Sampling → Export to Doccano/Label Studio',
+                'capabilities': ['Quality Scoring', 'Label Distribution Analysis', 'Stratified Sampling', 'Inter-Annotator Agreement (Cohen\'s Kappa)', 'Schema Validation'],
+                'input': 'Annotated JSON/JSONL files from LLM or BERT Studio',
+                'output': 'Quality reports + Validation metrics + Doccano/Label Studio export files + Sample selection justification',
+                'best_for': 'Quality assurance before training, human validation workflows, detecting annotation issues',
+                'duration': '~2-5 min (analysis + sampling + export)'
             }
         )
 
         if HAS_RICH and self.console:
+            # Create mode menu
+            self.console.print("\n[bold cyan]🎯 Validation Lab Options[/bold cyan]\n")
+
+            lab_options_table = Table(show_header=False, box=None, padding=(0, 2))
+            lab_options_table.add_column("Option", style="cyan", width=8)
+            lab_options_table.add_column("Description")
+
+            options = [
+                ("1", "🔍 Start Validation Workflow (Quality scoring + sampling + export)"),
+                ("0", "⬅️  Back to main menu")
+            ]
+
+            for option, desc in options:
+                lab_options_table.add_row(f"[bold cyan]{option}[/bold cyan]", desc)
+
+            panel = Panel(
+                lab_options_table,
+                title="[bold]🔍 Validation Lab[/bold]",
+                border_style="magenta"
+            )
+
+            self.console.print(panel)
+
+            choice = Prompt.ask(
+                "\n[bold yellow]Select an option[/bold yellow]",
+                choices=["0", "1"],
+                default="1"
+            )
+
+            if choice == "0":
+                return
+
             # Select annotations file
             self.console.print("\n[bold]Select Annotations File:[/bold]")
             annotations_path = self._prompt_file_path("Annotations file path")

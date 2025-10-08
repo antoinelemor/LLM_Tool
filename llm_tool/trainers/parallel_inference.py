@@ -29,7 +29,7 @@ MAIN FEATURES:
 5) Progress tracking with tqdm
 6) Support for all package models (BERT variants, SOTA models)
 7) Automatic fallback to CPU when GPU unavailable
-8) Fork-safe implementation for macOS compatibility
+8) Spawn-based start method on macOS/Metal to avoid fork crashes
 
 Author:
 -------
@@ -41,7 +41,7 @@ import math
 import os
 import queue
 import sys
-from typing import Iterable, List, Sequence, Tuple, Union, Dict, Any
+from typing import Iterable, List, Sequence, Tuple, Union, Dict, Any, Callable
 
 import numpy as np
 import torch
@@ -71,6 +71,7 @@ def _best_available_gpu() -> torch.device | None:
 _WORKER_DEVICE: torch.device | None = None            # set once per process
 _WORKER_BS_CPU = 32
 _WORKER_BS_GPU = 64
+_WORKER_TAG = "cpu"
 
 
 def _worker_init(
@@ -87,7 +88,7 @@ def _worker_init(
     • We load the tokenizer + model **lazily** (first call per worker)
       to avoid the fork-after-initialise trap on macOS.
     """
-    global _WORKER_DEVICE, _WORKER_BS_CPU, _WORKER_BS_GPU
+    global _WORKER_DEVICE, _WORKER_BS_CPU, _WORKER_BS_GPU, _WORKER_TAG
 
     try:
         _WORKER_DEVICE = dev_q.get_nowait()
@@ -96,6 +97,10 @@ def _worker_init(
 
     _WORKER_BS_CPU = bs_cpu
     _WORKER_BS_GPU = bs_gpu
+    if _WORKER_DEVICE is None:
+        _WORKER_TAG = "cpu"
+    else:
+        _WORKER_TAG = getattr(_WORKER_DEVICE, "type", "cpu")
 
     # Reduce Hugging Face noise inside forks
     try:
@@ -153,7 +158,7 @@ def _load_backend_for_language(lang: str, device: torch.device | None):
 # --- Core predictor ---------------------------------------------------------
 def _predict_chunk(
     args: Tuple[Sequence[str], str, str],
-) -> List[np.ndarray]:
+) -> Tuple[np.ndarray, str]:
     """
     Worker-side prediction on a list of texts.
 
@@ -164,7 +169,8 @@ def _predict_chunk(
 
     Returns
     -------
-    List[np.ndarray]  – probability vectors for each text
+    tuple
+        (probability matrix for the chunk, device tag used: 'cpu' | 'cuda' | 'mps')
     """
     texts, model_path, lang = args
     backend = _load_backend_for_language(lang, _WORKER_DEVICE)
@@ -172,7 +178,8 @@ def _predict_chunk(
     bs = _WORKER_BS_GPU if (_WORKER_DEVICE and _WORKER_DEVICE.type != "cpu") else _WORKER_BS_CPU
     dl = backend.encode(list(texts), labels=None, batch_size=bs, progress_bar=False)
     probs = backend.predict_with_model(dl, model_path, proba=True, progress_bar=False)
-    return probs
+    device_tag = _WORKER_TAG if _WORKER_TAG else ("cpu" if _WORKER_DEVICE is None else getattr(_WORKER_DEVICE, "type", "cpu"))
+    return probs, device_tag
 
 
 # --- Public API -------------------------------------------------------------
@@ -187,6 +194,7 @@ def parallel_predict(
     batch_size_gpu: int = 64,
     show_progress: bool = True,
     chunk_size: int = 1024,
+    progress_handler: Callable[[int, str], None] | None = None,
 ) -> np.ndarray:
     """
     Predict **probability distributions** for an arbitrary list of *texts*
@@ -222,6 +230,11 @@ def parallel_predict(
     chunk_size :
         Number of sentences fed to **each** worker task.  Keeping it large
         amortises serialisation cost; 1 k–2 k is usually safe.
+
+    progress_handler :
+        Optional callback receiving ``(processed_count, device_tag)`` for each completed
+        chunk. Useful for external progress trackers (e.g. Rich). When provided you may
+        wish to disable the internal tqdm bar via ``show_progress=False``.
 
     Returns
     -------
@@ -261,12 +274,20 @@ def parallel_predict(
         backend = _load_backend_for_language(lang, devices[0])
         bs = batch_size_gpu if devices[0] and devices[0].type != "cpu" else batch_size_cpu
         dl = backend.encode(all_texts, labels=None, batch_size=bs, progress_bar=show_progress)
-        return backend.predict_with_model(dl, model_path, proba=True, progress_bar=show_progress)
+        result = backend.predict_with_model(dl, model_path, proba=True, progress_bar=show_progress)
+        if progress_handler is not None:
+            device_label = devices[0].type if (devices[0] is not None and hasattr(devices[0], "type")) else "cpu"
+            progress_handler(n, device_label)
+        return result
 
     # ------------ Multiprocessing pool ------------------------------------
-    #   We deliberately use the *spawn* context on Windows to avoid
-    #   pickling issues; fork elsewhere for speed.
-    ctx = get_context("spawn" if sys.platform == "win32" else "fork")
+    #   macOS + Metal (MPS) cannot safely fork a multi-threaded process, so we
+    #   force the safer 'spawn' start method on Darwin. Same for Windows.
+    use_spawn = sys.platform in {"win32", "darwin"}
+    if not use_spawn and gpu_device is not None and getattr(gpu_device, "type", "") == "mps":
+        use_spawn = True  # defensive: MPS is only available on macOS, but be explicit
+    start_method = "spawn" if use_spawn else "fork"
+    ctx = get_context(start_method)
     manager = ctx.Manager()
     dev_q = manager.Queue()
     for d in devices:
@@ -294,8 +315,18 @@ def parallel_predict(
             jobs_iter = jobs
 
         outputs: List[np.ndarray] = []
+        device_counts: Dict[str, int] = {}
         for job in jobs_iter:
-            outputs.extend(job.get())
+            chunk_outputs, device_tag = job.get()
+            chunk_array = np.asarray(chunk_outputs)
+            if chunk_array.ndim == 1:
+                chunk_array = np.expand_dims(chunk_array, 0)
+            outputs.append(chunk_array)
+
+            if progress_handler is not None:
+                processed = int(chunk_array.shape[0])
+                device_counts[device_tag] = device_counts.get(device_tag, 0) + processed
+                progress_handler(processed, device_tag)
 
         result = np.vstack(outputs)               # (n_texts, n_labels)
 

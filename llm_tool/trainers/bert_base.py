@@ -136,10 +136,11 @@ class TrainingDisplay:
         # Class names for display (no truncation - let table handle width)
         if class_names:
             # Multi-class: use provided class names as-is
-            self.class_names = class_names
+            # Ensure all class names are strings
+            self.class_names = [str(name) for name in class_names]
         elif label_value and num_labels == 2:
             # Binary with label value: Class 0 = NOT_category, Class 1 = category
-            self.class_names = [f"NOT_{label_value}", label_value]
+            self.class_names = [f"NOT_{label_value}", str(label_value)]
         else:
             # Default: Class 0, Class 1, etc.
             self.class_names = [f"Class {i}" for i in range(num_labels)]
@@ -328,19 +329,22 @@ class TrainingDisplay:
 
         # Calculate dynamic column width based on longest class name
         # Min 15, max 35 to keep table readable
-        max_class_name_length = max([len(name) for name in self.class_names]) if self.class_names else 15
+        # Ensure all class names are strings before calculating length
+        max_class_name_length = max([len(str(name)) for name in self.class_names]) if self.class_names else 15
         class_col_width = min(max(max_class_name_length + 2, 15), 35)
 
         # Add columns for each class
         colors = ["yellow", "green", "magenta", "blue", "red", "cyan"]
         for i, class_name in enumerate(self.class_names):
             color = colors[i % len(colors)]
+            # Ensure class_name is a string
+            class_name_str = str(class_name)
             # Use calculated width or allow wrapping for very long names
-            if len(class_name) > 35:
+            if len(class_name_str) > 35:
                 # For very long names, allow wrapping
-                table.add_column(class_name, justify="center", style=color, no_wrap=False, width=35)
+                table.add_column(class_name_str, justify="center", style=color, no_wrap=False, width=35)
             else:
-                table.add_column(class_name, justify="center", style=color, width=class_col_width)
+                table.add_column(class_name_str, justify="center", style=color, width=class_col_width)
 
         table.add_column("Overall", justify="center", style="bold white", width=10)
 
@@ -428,14 +432,17 @@ class TrainingDisplay:
         table.add_column("Language", style="cyan", width=15)
 
         # Calculate dynamic column width based on longest class name
-        max_class_name_length = max([len(name) for name in self.class_names]) if self.class_names else 15
+        # Ensure all class names are strings before calculating length
+        max_class_name_length = max([len(str(name)) for name in self.class_names]) if self.class_names else 15
         class_col_width = min(max(max_class_name_length + 2, 15), 35)
 
         # Add support columns for each class
         colors = ["yellow", "green", "magenta", "blue", "red", "cyan"]
         for i, class_name in enumerate(self.class_names):
             color = colors[i % len(colors)]
-            col_header = f"Sup {class_name}"
+            # Ensure class_name is a string
+            class_name_str = str(class_name)
+            col_header = f"Sup {class_name_str}"
             if len(col_header) > 35:
                 table.add_column(col_header, justify="center", style=color, no_wrap=False, width=35)
             else:
@@ -446,7 +453,9 @@ class TrainingDisplay:
         # Add F1 columns for each class
         for i, class_name in enumerate(self.class_names):
             color = colors[i % len(colors)]
-            col_header = f"F1 {class_name}"
+            # Ensure class_name is a string
+            class_name_str = str(class_name)
+            col_header = f"F1 {class_name_str}"
             if len(col_header) > 35:
                 table.add_column(col_header, justify="center", style=color, no_wrap=False, width=35)
             else:
@@ -1799,6 +1808,12 @@ class BertBase(BertABC):
 
                     writer.writerow(row)
 
+                # Update global completed epochs in display and model
+                # CRITICAL: Do this BEFORE calling callback so it gets the updated count
+                if global_total_models is not None:
+                    display.global_completed_epochs += 1
+                    self.global_completed_epochs = display.global_completed_epochs
+
                 # Call progress callback if provided
                 if progress_callback is not None:
                     callback_metrics = {
@@ -1806,7 +1821,8 @@ class BertBase(BertABC):
                         'train_loss': avg_train_loss,
                         'val_loss': avg_val_loss,
                         'accuracy': accuracy,
-                        'f1_macro': macro_f1
+                        'f1_macro': macro_f1,
+                        'global_completed_epochs': display.global_completed_epochs if global_total_models is not None else None
                     }
                     # Add per-class F1 scores
                     for i in range(num_labels):
@@ -1822,11 +1838,6 @@ class BertBase(BertABC):
                     except Exception as e:
                         # Don't fail training if callback fails
                         self.logger.warning(f"Progress callback failed: {e}")
-
-                # Update global completed epochs in display and model
-                if global_total_models is not None:
-                    display.global_completed_epochs += 1
-                    self.global_completed_epochs = display.global_completed_epochs
 
                 # Compute "combined" metric if best_model_criteria is "combined"
                 if best_model_criteria == "combined":
@@ -2613,6 +2624,11 @@ class BertBase(BertABC):
                             writer = csv.writer(f)
                             writer.writerow(reinforced_row)
 
+                        # Update global completed epochs in display (reinforced)
+                        # CRITICAL: Do this BEFORE calling callback so it gets the updated count
+                        if global_total_models is not None:
+                            display.global_completed_epochs += 1
+
                         # Call progress callback if provided (reinforced learning)
                         if progress_callback is not None:
                             callback_metrics = {
@@ -2620,7 +2636,8 @@ class BertBase(BertABC):
                                 'train_loss': avg_train_loss,
                                 'val_loss': avg_val_loss,
                                 'accuracy': accuracy,
-                                'f1_macro': macro_f1
+                                'f1_macro': macro_f1,
+                                'global_completed_epochs': display.global_completed_epochs if global_total_models is not None else None
                             }
                             # Add per-class F1 scores
                             for i in range(num_labels):
@@ -2636,10 +2653,6 @@ class BertBase(BertABC):
                             except Exception as e:
                                 # Don't fail training if callback fails
                                 self.logger.warning(f"Progress callback failed (reinforced): {e}")
-
-                        # Update global completed epochs in display (reinforced)
-                        if global_total_models is not None:
-                            display.global_completed_epochs += 1
 
                         # Check if this is a new best model
                         if num_labels == 2:

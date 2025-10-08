@@ -185,10 +185,21 @@ def select_benchmark_categories(
     """
     Select categories for benchmarking based on imbalance profiles.
 
-    Selects:
-    - One balanced category (low imbalance)
-    - One medium imbalance category
-    - One high imbalance category
+    This function strategically selects categories with different class distribution
+    characteristics to provide a comprehensive benchmark:
+
+    Selection Strategy:
+    - One BALANCED category (Gini < 0.2, ratio < 2:1)
+      → Tests baseline performance on easy, well-distributed data
+    - One MEDIUM imbalance category (Gini 0.2-0.4, ratio 2-5:1)
+      → Tests performance on moderately challenging data
+    - One HIGHLY IMBALANCED category (Gini > 0.4, ratio > 5:1)
+      → Tests robustness on real-world skewed distributions
+
+    Why This Matters:
+    - Models performing well only on balanced data may fail in production
+    - Models handling imbalanced data well are more robust and production-ready
+    - Comparing performance across profiles reveals true model capabilities
 
     Args:
         imbalance_analysis: Results from analyze_categories_imbalance
@@ -196,6 +207,17 @@ def select_benchmark_categories(
 
     Returns:
         Dict with 'balanced', 'medium', 'imbalanced' keys mapping to category names
+        Each key contains a list of category names matching that imbalance profile
+
+    Example:
+        >>> analysis = analyze_categories_imbalance(df, 'annotations')
+        >>> selected = select_benchmark_categories(analysis)
+        >>> selected
+        {
+            'balanced': ['sentiment'],
+            'medium': ['topics'],
+            'imbalanced': ['rare_events']
+        }
     """
     if not imbalance_analysis:
         return {'balanced': [], 'medium': [], 'imbalanced': []}
