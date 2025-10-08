@@ -99,9 +99,49 @@ if [ ! -d ".venv" ]; then
 fi
 echo ""
 
+# Configure VS Code
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Step 3: Configuring VS Code..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+mkdir -p .vscode
+
+cat > .vscode/settings.json << 'EOF'
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.formatting.provider": "black",
+    "python.linting.enabled": true,
+    "python.linting.flake8Enabled": true,
+    "python.linting.mypyEnabled": true,
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        },
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    }
+}
+EOF
+
+echo -e "${GREEN}✓ VS Code configured to use .venv as default Python interpreter${NC}"
+echo ""
+
 # Activate virtual environment
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Step 3: Activating virtual environment..."
+echo "Step 4: Activating virtual environment..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 source .venv/bin/activate
@@ -110,7 +150,7 @@ echo ""
 
 # Upgrade pip
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Step 4: Upgrading pip..."
+echo "Step 5: Upgrading pip..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 pip install --upgrade pip setuptools wheel > /dev/null 2>&1
@@ -119,7 +159,7 @@ echo ""
 
 # Install LLM Tool
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Step 5: Installing LLM Tool..."
+echo "Step 6: Installing LLM Tool..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 if [ "$INSTALL_TYPE" == "all" ]; then
@@ -135,7 +175,7 @@ echo ""
 
 # Verify installation
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Step 6: Verifying installation..."
+echo "Step 7: Verifying installation..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -162,6 +202,10 @@ echo -e "     ${BLUE}python examples/quickstart_annotation.py${NC}"
 echo ""
 echo "  4. Read the documentation:"
 echo -e "     ${BLUE}cat README.md | less${NC}"
+echo ""
+echo "  5. VS Code users:"
+echo -e "     ${GREEN}✓ VS Code is already configured to use .venv${NC}"
+echo -e "     ${GREEN}  Just open/reload the workspace in VS Code!${NC}"
 echo ""
 echo "Optional setup:"
 echo ""
