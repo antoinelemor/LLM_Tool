@@ -246,10 +246,23 @@ class TrainingDisplay:
             epoch_pct = min(epoch_pct, 100.0)
             epoch_bar = self._create_bar(epoch_pct, width=40)
 
-            # Display format: "0/4 (max 8)" if reinforced learning might add more epochs
+            # Display format: Always show "(max X)" when maximum epochs are defined or reinforced learning is enabled
             epoch_label = f"{self.global_completed_epochs}/{self.global_total_epochs}"
-            if reinforced_enabled and self.global_max_epochs and self.global_max_epochs > self.global_total_epochs:
+
+            # Show maximum epochs in various scenarios:
+            # 1. When reinforced learning is enabled and max epochs is defined and different
+            # 2. When global_max_epochs exists and is different from global_total_epochs
+            # 3. Always when reinforced learning is enabled (even if max not yet calculated)
+            if self.global_max_epochs is not None and self.global_max_epochs != self.global_total_epochs:
+                # We have a defined maximum that's different from current total
                 epoch_label += f" (max {self.global_max_epochs})"
+            elif reinforced_enabled and self.global_max_epochs is not None:
+                # Reinforced learning is enabled and we have max epochs calculated
+                epoch_label += f" (max {self.global_max_epochs})"
+            elif reinforced_enabled:
+                # Reinforced learning is enabled but max not yet calculated - show current total as minimum
+                # This ensures we always show some indication when reinforced learning is active
+                epoch_label += f" (max {self.global_total_epochs}+)"
 
             table.add_row("Total Epochs:", f"{epoch_label} {epoch_bar}")
 
@@ -1038,7 +1051,7 @@ class BertBase(BertABC):
         self.global_total_models = global_total_models
         self.global_current_model = global_current_model
         self.global_total_epochs = global_total_epochs
-        self.global_max_epochs = global_max_epochs
+        self.global_max_epochs = global_max_epochs or global_total_epochs  # Default to global_total_epochs if not provided
         self.global_completed_epochs = global_completed_epochs
         self.global_start_time = global_start_time
 
@@ -2228,17 +2241,27 @@ class BertBase(BertABC):
                     reinforced_metrics_csv = training_metrics_csv.replace('_training.csv', '_reinforced.csv').replace('training.csv', 'reinforced.csv')
 
                     # Create headers for reinforced metrics CSV
+                    # CRITICAL: Use same structure as normal training CSV with standardized indices
                     reinforced_headers = [
-                        "model_identifier", "model_type", "label_key", "label_value", "language",
-                        "epoch", "train_loss", "val_loss", "accuracy",
+                        "model_name",
+                        "label_key",        # Multi-label: key (e.g., 'themes', 'sentiment')
+                        "label_value",      # Multi-label: value (e.g., 'transportation', 'positive')
+                        "language",         # Language of the data (e.g., 'EN', 'FR', 'MULTI')
+                        "timestamp",
+                        "epoch",
+                        "train_loss",
+                        "val_loss",
+                        "accuracy",         # Overall accuracy
                     ]
 
-                    # Add per-class metric headers
-                    # CRITICAL: Include class names in headers for multi-label/multi-class clarity
+                    # Add per-class metric headers dynamically based on num_labels
+                    # CRITICAL: Use standardized indices (_0, _1, _2) for consistency
                     for i in range(num_labels):
-                        class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
                         reinforced_headers.extend([
-                            f"precision{class_suffix}", f"recall{class_suffix}", f"f1{class_suffix}", f"support{class_suffix}"
+                            f"precision_{i}",
+                            f"recall_{i}",
+                            f"f1_{i}",
+                            f"support_{i}"
                         ])
 
                     reinforced_headers.append("macro_f1")
@@ -2257,16 +2280,19 @@ class BertBase(BertABC):
                         for lang in langs_for_headers:
                             reinforced_headers.append(f"{lang}_accuracy")
                             for i in range(num_labels):
-                                class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
                                 reinforced_headers.extend([
-                                    f"{lang}_precision{class_suffix}", f"{lang}_recall{class_suffix}",
-                                    f"{lang}_f1{class_suffix}", f"{lang}_support{class_suffix}"
+                                    f"{lang}_precision_{i}",
+                                    f"{lang}_recall_{i}",
+                                    f"{lang}_f1_{i}",
+                                    f"{lang}_support_{i}"
                                 ])
                             reinforced_headers.append(f"{lang}_macro_f1")
 
                     with open(reinforced_metrics_csv, mode='w', newline='', encoding='utf-8') as f:
                         writer = csv.writer(f)
-                        # Write column headers only (metadata is in the columns themselves)
+                        # Write legend as comment row (starts with #) - same as normal training CSV
+                        f.write(f"# {class_legend}\n")
+                        # Write column headers
                         writer.writerow(reinforced_headers)
 
                     # Extract dataset from train_dataloader and apply WeightedRandomSampler
@@ -2538,12 +2564,13 @@ class BertBase(BertABC):
                         live.update(display.create_panel())  # ✅ INLINE update with all metrics
 
                         # Write epoch metrics to CSV
+                        current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                         reinforced_row = [
-                            model_identifier if model_identifier else "Unknown",
-                            self.__class__.__name__,
-                            label_key if label_key else "",
-                            label_value if label_value else "",
+                            self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
+                            label_key if label_key else category if category else "",
+                            label_value if label_value else category if category else "",
                             language if language else "MULTI",
+                            current_timestamp,
                             epoch + 1,
                             avg_train_loss,
                             avg_val_loss,

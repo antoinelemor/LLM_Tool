@@ -557,8 +557,8 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
     Consolidate all CSV files from a training session into summary files.
 
     Creates two consolidated CSV files at the session root:
-    - {session_id}_training_metrics.csv: All training metrics from all epochs
-    - {session_id}_best_models.csv: Best models from all categories
+    - {session_id}_training_metrics.csv: All training metrics from ALL epochs and ALL modes
+    - {session_id}_best_models.csv: ONLY the final best selected models with combined scores
 
     Args:
         session_dir: Path to the session directory (e.g., logs/training_arena/20251007_141900/training_metrics)
@@ -569,6 +569,7 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
     """
     import glob
     import os
+    import numpy as np
 
     # Find all training.csv, reinforced.csv, and best.csv files recursively
     training_csvs = list(session_dir.rglob("training.csv"))
@@ -594,13 +595,14 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
     consolidated_files = {}
 
     # Consolidate training metrics (both normal training.csv and reinforced.csv)
+    # CRITICAL: This should contain ALL epochs from ALL modes (benchmark, normal, reinforced)
     if training_csvs or reinforced_csvs:
         all_training_data = []
 
         # CRITICAL: Extract legends from CSV files (lines starting with #)
         collected_legends = set()  # Use set to avoid duplicates
 
-        # Process normal training files
+        # Process normal training files (includes benchmark mode and normal training mode)
         for csv_path in training_csvs:
             try:
                 # CRITICAL: Extract legend from first line if it exists
@@ -609,7 +611,8 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
                     if first_line.startswith('#'):
                         collected_legends.add(first_line)
 
-                df = pd.read_csv(csv_path)
+                # Read CSV, skipping comment lines
+                df = pd.read_csv(csv_path, comment='#')
 
                 # Extract metadata from path
                 # Path structure: session_dir/[benchmark|normal_training]/category/[language/][model/]training.csv
@@ -625,11 +628,11 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
                     metadata['mode'] = 'benchmark'
                     parts = parts[1:]  # Remove 'benchmark' from parts
                 elif parts and parts[0] == 'normal_training':
-                    metadata['mode'] = 'normal'
+                    metadata['mode'] = 'normal_training'  # Keep full mode name
                     parts = parts[1:]  # Remove 'normal_training' from parts
                 else:
                     # Legacy: old structure without benchmark or normal_training prefix
-                    metadata['mode'] = 'normal'
+                    metadata['mode'] = 'unknown'
 
                 # Extract category, language, model from remaining parts
                 if len(parts) >= 1:
@@ -641,7 +644,8 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
 
                 # Add metadata columns to dataframe
                 for key, value in metadata.items():
-                    df[key] = value
+                    if key not in df.columns:  # Only add if not already present
+                        df[key] = value
 
                 all_training_data.append(df)
 
@@ -658,7 +662,8 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
                     if first_line.startswith('#'):
                         collected_legends.add(first_line)
 
-                df = pd.read_csv(csv_path)
+                # Read CSV, skipping comment lines
+                df = pd.read_csv(csv_path, comment='#')
 
                 # Extract metadata from path
                 # Path structure: session_dir/[benchmark|normal_training]/category/[language/][model/]reinforced.csv
@@ -674,11 +679,11 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
                     metadata['mode'] = 'benchmark'
                     parts = parts[1:]  # Remove 'benchmark' from parts
                 elif parts and parts[0] == 'normal_training':
-                    metadata['mode'] = 'normal'
+                    metadata['mode'] = 'normal_training'  # Keep full mode name
                     parts = parts[1:]  # Remove 'normal_training' from parts
                 else:
                     # Legacy: old structure without benchmark or normal_training prefix
-                    metadata['mode'] = 'normal'
+                    metadata['mode'] = 'unknown'
 
                 # Extract category, language, model from remaining parts
                 if len(parts) >= 1:
@@ -690,7 +695,8 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
 
                 # Add metadata columns to dataframe
                 for key, value in metadata.items():
-                    df[key] = value
+                    if key not in df.columns:  # Only add if not already present
+                        df[key] = value
 
                 all_training_data.append(df)
 
@@ -742,7 +748,8 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
                     if first_line.startswith('#'):
                         best_legends.add(first_line)
 
-                df = pd.read_csv(csv_path)
+                # Read CSV, skipping comment lines
+                df = pd.read_csv(csv_path, comment='#')
 
                 # Extract metadata from path
                 # Path structure: session_dir/[benchmark|normal_training]/category/[language/][model/]best.csv
@@ -757,11 +764,11 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
                     metadata['mode'] = 'benchmark'
                     parts = parts[1:]
                 elif parts and parts[0] == 'normal_training':
-                    metadata['mode'] = 'normal'
+                    metadata['mode'] = 'normal_training'  # Keep full mode name for consistency
                     parts = parts[1:]
                 else:
                     # Legacy: old structure without benchmark or normal_training prefix
-                    metadata['mode'] = 'normal'
+                    metadata['mode'] = 'unknown'
 
                 # Extract category, language, model from remaining parts
                 if len(parts) >= 1:
@@ -793,33 +800,59 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
             existing_metadata_cols = [col for col in metadata_cols if col in consolidated_df.columns]
             consolidated_df = consolidated_df[existing_metadata_cols + other_cols]
 
+            # CRITICAL: Calculate combined_score if not present
+            # This ensures the final CSV has combined scores for ranking
+            if 'combined_score' not in consolidated_df.columns:
+                logging.info("Calculating combined_score for best models...")
+
+                # Detect if binary or multi-class based on columns
+                f1_cols = [col for col in consolidated_df.columns if col.startswith('f1_') and col[3:].isdigit()]
+                num_labels = len(f1_cols)
+
+                if num_labels == 2 and 'f1_1' in consolidated_df.columns:
+                    # Binary classification: 70% F1_class_1 + 30% F1_macro
+                    f1_class_1_weight = 0.7
+                    consolidated_df['combined_score'] = (
+                        f1_class_1_weight * consolidated_df['f1_1'].fillna(0) +
+                        (1 - f1_class_1_weight) * consolidated_df['macro_f1'].fillna(0)
+                    )
+                elif 'macro_f1' in consolidated_df.columns:
+                    # Multi-class: use macro F1
+                    consolidated_df['combined_score'] = consolidated_df['macro_f1'].fillna(0)
+                else:
+                    # Fallback: try to find any F1 metric
+                    for col in ['f1_macro', 'val_f1_macro', 'best_f1_macro']:
+                        if col in consolidated_df.columns:
+                            consolidated_df['combined_score'] = consolidated_df[col].fillna(0)
+                            break
+                    else:
+                        # Last resort: use accuracy
+                        for col in ['accuracy', 'val_accuracy', 'best_accuracy']:
+                            if col in consolidated_df.columns:
+                                consolidated_df['combined_score'] = consolidated_df[col].fillna(0)
+                                break
+                        else:
+                            consolidated_df['combined_score'] = 0
+
             # Filter to keep ONLY the best model per (category, language, model) combination
             # Identify the grouping columns that exist
             grouping_cols = [col for col in ['category', 'language', 'model'] if col in consolidated_df.columns]
 
             if grouping_cols:
-                # CRITICAL: Identify the metric column to use for ranking
-                # Priority: combined_score > f1_macro > accuracy
-                metric_col = None
-                for possible_metric in ['combined_score', 'f1_macro', 'val_f1_macro', 'best_f1_macro', 'accuracy', 'val_accuracy', 'best_accuracy']:
-                    if possible_metric in consolidated_df.columns:
-                        metric_col = possible_metric
-                        break
+                # CRITICAL: Use combined_score for ranking (now guaranteed to exist)
+                metric_col = 'combined_score'
 
-                if metric_col:
-                    # Sort by grouping columns and metric (descending)
-                    consolidated_df = consolidated_df.sort_values(
-                        by=grouping_cols + [metric_col],
-                        ascending=[True] * len(grouping_cols) + [False]
-                    )
+                # Sort by grouping columns and metric (descending)
+                consolidated_df = consolidated_df.sort_values(
+                    by=grouping_cols + [metric_col],
+                    ascending=[True] * len(grouping_cols) + [False]
+                )
 
-                    # Keep only the first (best) entry for each group
-                    consolidated_df = consolidated_df.drop_duplicates(subset=grouping_cols, keep='first')
+                # Keep only the first (best) entry for each group
+                consolidated_df = consolidated_df.drop_duplicates(subset=grouping_cols, keep='first')
 
-                    logging.info(f"Filtered to best models using metric: {metric_col}")
-                    logging.info(f"  • Grouping by: {', '.join(grouping_cols)}")
-                else:
-                    logging.warning("No metric column found for filtering best models")
+                logging.info(f"Filtered to best models using metric: {metric_col}")
+                logging.info(f"  • Grouping by: {', '.join(grouping_cols)}")
             else:
                 logging.warning("No grouping columns found for filtering best models")
 

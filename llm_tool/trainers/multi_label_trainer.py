@@ -1549,6 +1549,16 @@ class MultiLabelTrainer:
         if global_current_model is None:
             global_current_model = 1
 
+        # Calculate global_max_epochs if not provided
+        # This accounts for potential reinforced learning epochs
+        if global_max_epochs is None:
+            if reinforced_learning and reinforced_epochs:
+                # Maximum possible epochs if all models trigger reinforced learning
+                global_max_epochs = total_models * (self.config.n_epochs + reinforced_epochs)
+            else:
+                # No reinforced learning or no extra epochs specified
+                global_max_epochs = global_total_epochs
+
         # train models
         trained_models = {}
 

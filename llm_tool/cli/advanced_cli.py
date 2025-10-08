@@ -10211,7 +10211,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Ask what the user wants to configure
             self.console.print("\n[yellow]What would you like to configure?[/yellow]")
 
-            # Ask if user wants to modify base epochs
+            # ──────────────────────────────────────────────────────────────
+            # Step 1: Base Epochs Configuration (optional)
+            # ──────────────────────────────────────────────────────────────
             modify_base = Confirm.ask(
                 "[bold yellow]Modify base epochs?[/bold yellow]",
                 default=True
@@ -10223,9 +10225,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     default=benchmark_epochs
                 )
                 self.console.print(f"[green]✓ Base epochs set to: {benchmark_epochs}[/green]\n")
+            else:
+                self.console.print(f"[green]✓ Keeping base epochs at: {benchmark_epochs}[/green]\n")
 
+            # ──────────────────────────────────────────────────────────────
+            # Step 2: Reinforced Learning Epochs Configuration (independent)
+            # ──────────────────────────────────────────────────────────────
+            # NOTE: This section executes REGARDLESS of whether base epochs
+            # were modified above. Both configurations are independent.
             if enable_benchmark_rl:
-                # Ask if user wants to configure RL epochs manually
                 configure_rl_epochs = Confirm.ask(
                     "[bold yellow]Configure reinforced learning epochs manually?[/bold yellow]\n"
                     "[dim](Default: auto-calculated based on model performance)[/dim]",
@@ -10545,16 +10553,28 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Run benchmark for each model
             benchmark_results = {}
 
-            # Reuse the session ID from the training session (self.current_session_id)
-            # This ensures all benchmark results go to the same session directory
-            # If session_id doesn't exist yet, create one
+            # CRITICAL: Reuse the session ID from the training session (self.current_session_id)
+            # This ensures benchmark and full training use THE SAME session folder.
+            # The session_id format is: {user_name}_{YYYYMMDD_HHMMSS} (created at line 6558)
             if hasattr(self, 'current_session_id') and self.current_session_id:
                 benchmark_session_id = self.current_session_id
+                self.logger.info(f"✓ Benchmark reusing existing session: {benchmark_session_id}")
             else:
-                # Fallback: create session_id if not yet initialized
+                # Fallback: create session_id if not yet initialized (should not happen in Training Arena)
                 import datetime
-                benchmark_session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                benchmark_session_id = datetime.datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
                 self.current_session_id = benchmark_session_id
+                self.logger.warning(f"⚠️  Created new session_id for benchmark (expected to reuse existing): {benchmark_session_id}")
+
+            # CRITICAL: Display session information to user
+            self.logger.info("="*80)
+            self.logger.info("SESSION MANAGEMENT - BENCHMARK")
+            self.logger.info(f"  benchmark_session_id: {benchmark_session_id}")
+            self.logger.info(f"  Models will be saved to: models/{benchmark_session_id}/benchmark/")
+            self.logger.info(f"  Logs will be saved to: logs/training_arena/{benchmark_session_id}/training_metrics/benchmark/")
+            self.logger.info("="*80)
+            self.console.print(f"\n[cyan]📂 Session ID:[/cyan] [bold]{benchmark_session_id}[/bold]")
+            self.console.print(f"[dim]All benchmark models will be saved to: models/{benchmark_session_id}/benchmark/[/dim]\n")
 
             # Initialize global progress tracking for benchmark
             import time
@@ -12715,6 +12735,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         """
         self.console.print("\n[bold]Quick training[/bold] - using configured parameters.")
 
+        # CRITICAL: Log session management for debugging
+        self.logger.info("="*80)
+        self.logger.info("SESSION MANAGEMENT - FULL TRAINING")
+        self.logger.info(f"  session_id (passed to function): {session_id}")
+        self.logger.info(f"  self.current_session_id: {getattr(self, 'current_session_id', 'NOT SET')}")
+        if session_id and hasattr(self, 'current_session_id') and session_id == self.current_session_id:
+            self.logger.info("  ✓ Full training REUSING same session_id as benchmark")
+            self.logger.info(f"  Models will be saved to: models/{session_id}/normal_training/")
+            self.logger.info(f"  Logs will be saved to: logs/training_arena/{session_id}/training_metrics/normal_training/")
+        elif session_id:
+            self.logger.warning("  ⚠️  session_id provided but differs from self.current_session_id")
+            self.logger.info(f"  Models will be saved to: models/{session_id}/normal_training/")
+        else:
+            self.logger.warning("  ⚠️  No session_id provided - will create new one (BAD!)")
+        self.logger.info("="*80)
+        if session_id:
+            self.console.print(f"\n[cyan]📂 Session ID:[/cyan] [bold]{session_id}[/bold]")
+            self.console.print(f"[dim]All trained models will be saved to: models/{session_id}/normal_training/[/dim]\n")
+
         # Use parameters from quick_params (already collected before config summary)
         if quick_params:
             # CRITICAL: Debug log to capture exact type of models_by_language from quick_params
@@ -12795,7 +12834,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'actual_models_trained': [model_name]
             }
 
-        output_dir = self._training_studio_make_output_dir("training_studio_quick")
+        # CRITICAL: DO NOT create a new timestamped directory for Training Arena.
+        # Models are saved using session_id which is passed in the config to bert_base.py.
+        # The output_dir is only used as a fallback placeholder for save_model_as.
+        # Real path: models/{session_id}/normal_training/{category}/{language}/{model}/
+        # This ensures benchmark and full training use THE SAME session folder.
+        output_dir = Path("models") / "placeholder_not_used"
 
         # Initialize multiclass_groups (will be set if detected)
         multiclass_groups = None
@@ -13089,8 +13133,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 # Initialize global progress tracking for one-vs-all training
                 import time
                 global_start_time = time.time()
-                # CRITICAL: Convert to Python int to avoid numpy.int64 issues
-                global_total_models = int(len(category_files))
+
+                # CRITICAL: Calculate total models based on training approach
+                # One-vs-all creates one binary model per category
+                # If needs_language_training=True, we train one model PER (category, language)
+                num_categories = int(len(category_files))
+                num_languages = int(len(languages)) if languages else 1
+
+                if needs_language_training and num_languages > 1:
+                    # Per-language training: one model per (category, language) combination
+                    global_total_models = int(num_categories * num_languages)
+                    self.logger.info(f"[EPOCH CALC] One-vs-all + per-language: {num_categories} categories × {num_languages} languages = {global_total_models} total models")
+                else:
+                    # Multilingual model: one model per category (handles all languages)
+                    global_total_models = int(num_categories)
+                    self.logger.info(f"[EPOCH CALC] One-vs-all + multilingual: {num_categories} categories = {global_total_models} total models")
+
                 epochs = int(epochs) if epochs is not None else 10
                 manual_rl_epochs = int(manual_rl_epochs) if manual_rl_epochs is not None else None
                 global_total_epochs = int(global_total_models * epochs)
@@ -13100,6 +13158,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     global_max_epochs = int(global_total_models * (epochs + manual_rl_epochs))
                 else:
                     global_max_epochs = int(global_total_epochs)
+
+                # DEBUGGING: Log the epoch calculation
+                self.logger.info("="*80)
+                self.logger.info("GLOBAL EPOCHS CALCULATION DEBUG")
+                self.logger.info(f"  Training mode: one-vs-all")
+                self.logger.info(f"  Language training: {'per-language' if needs_language_training else 'multilingual'}")
+                self.logger.info(f"  Number of categories: {num_categories}")
+                self.logger.info(f"  Number of languages: {num_languages}")
+                self.logger.info(f"  Languages: {sorted(languages) if languages else 'N/A'}")
+                self.logger.info(f"  Base epochs per model: {epochs}")
+                self.logger.info(f"  RL epochs per model: {manual_rl_epochs if manual_rl_epochs else 'None'}")
+                self.logger.info(f"  CALCULATED global_total_models: {global_total_models}")
+                self.logger.info(f"  CALCULATED global_total_epochs: {global_total_epochs}")
+                self.logger.info(f"  CALCULATED global_max_epochs: {global_max_epochs}")
+                self.logger.info("="*80)
 
                 global_completed_epochs = int(0)
 
@@ -13213,7 +13286,29 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Initialize global progress tracking for hybrid/custom training
             import time
             global_start_time = time.time()
-            global_total_models = len(multiclass_keys) + (1 if onevsall_keys else 0)
+
+            # CRITICAL: Calculate total models for hybrid/custom training
+            # Multi-class keys: 1 model per key (handles all classes in that key)
+            # One-vs-all keys: N models per key (1 per class/category in that key)
+            num_multiclass_models = len(multiclass_keys)
+            num_onevsall_models = 0
+            if onevsall_keys:
+                # Count total categories across all one-vs-all keys
+                for key in onevsall_keys:
+                    if key in bundle.training_files:
+                        # Each one-vs-all key creates multiple binary models
+                        # TODO: This is approximate - actual count depends on number of categories per key
+                        num_onevsall_models += 1  # Placeholder - needs refinement
+
+            # If per-language training, multiply by number of languages
+            num_languages = int(len(languages)) if languages else 1
+            if needs_language_training and num_languages > 1:
+                global_total_models = (num_multiclass_models + num_onevsall_models) * num_languages
+                self.logger.info(f"[EPOCH CALC] Hybrid/custom + per-language: ({num_multiclass_models} + {num_onevsall_models}) × {num_languages} languages = {global_total_models} total models")
+            else:
+                global_total_models = num_multiclass_models + num_onevsall_models
+                self.logger.info(f"[EPOCH CALC] Hybrid/custom + multilingual: {num_multiclass_models} + {num_onevsall_models} = {global_total_models} total models")
+
             global_total_epochs = global_total_models * epochs
 
             # Calculate maximum possible epochs (if all models trigger reinforced learning)
@@ -13221,6 +13316,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 global_max_epochs = global_total_models * (epochs + manual_rl_epochs)
             else:
                 global_max_epochs = global_total_epochs
+
+            # DEBUGGING: Log the epoch calculation
+            self.logger.info("="*80)
+            self.logger.info("GLOBAL EPOCHS CALCULATION DEBUG")
+            self.logger.info(f"  Training mode: hybrid/custom")
+            self.logger.info(f"  Language training: {'per-language' if needs_language_training else 'multilingual'}")
+            self.logger.info(f"  Multiclass keys: {num_multiclass_models}")
+            self.logger.info(f"  One-vs-all keys: {num_onevsall_models}")
+            self.logger.info(f"  Number of languages: {num_languages}")
+            self.logger.info(f"  Languages: {sorted(languages) if languages else 'N/A'}")
+            self.logger.info(f"  Base epochs per model: {epochs}")
+            self.logger.info(f"  RL epochs per model: {manual_rl_epochs if manual_rl_epochs else 'None'}")
+            self.logger.info(f"  CALCULATED global_total_models: {global_total_models}")
+            self.logger.info(f"  CALCULATED global_total_epochs: {global_total_epochs}")
+            self.logger.info(f"  CALCULATED global_max_epochs: {global_max_epochs}")
+            self.logger.info("="*80)
 
             global_completed_epochs = 0
 
@@ -13345,7 +13456,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 # Initialize global progress tracking for multi-class training
                 import time
                 global_start_time = time.time()
-                global_total_models = len(key_files)
+
+                # CRITICAL: Calculate total models for multi-class training
+                # Multi-class: 1 model per key (each model handles all classes in that key)
+                num_keys = len(key_files)
+                num_languages = int(len(languages)) if languages else 1
+
+                if needs_language_training and num_languages > 1:
+                    # Per-language training: one model per (key, language) combination
+                    global_total_models = num_keys * num_languages
+                    self.logger.info(f"[EPOCH CALC] Multi-class + per-language: {num_keys} keys × {num_languages} languages = {global_total_models} total models")
+                else:
+                    # Multilingual model: one model per key (handles all languages)
+                    global_total_models = num_keys
+                    self.logger.info(f"[EPOCH CALC] Multi-class + multilingual: {num_keys} keys = {global_total_models} total models")
+
                 global_total_epochs = global_total_models * epochs
 
                 # Calculate maximum possible epochs (if all models trigger reinforced learning)
@@ -13353,6 +13478,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     global_max_epochs = global_total_models * (epochs + manual_rl_epochs)
                 else:
                     global_max_epochs = global_total_epochs
+
+                # DEBUGGING: Log the epoch calculation
+                self.logger.info("="*80)
+                self.logger.info("GLOBAL EPOCHS CALCULATION DEBUG")
+                self.logger.info(f"  Training mode: multi-class")
+                self.logger.info(f"  Language training: {'per-language' if needs_language_training else 'multilingual'}")
+                self.logger.info(f"  Number of keys: {num_keys}")
+                self.logger.info(f"  Number of languages: {num_languages}")
+                self.logger.info(f"  Languages: {sorted(languages) if languages else 'N/A'}")
+                self.logger.info(f"  Base epochs per model: {epochs}")
+                self.logger.info(f"  RL epochs per model: {manual_rl_epochs if manual_rl_epochs else 'None'}")
+                self.logger.info(f"  CALCULATED global_total_models: {global_total_models}")
+                self.logger.info(f"  CALCULATED global_total_epochs: {global_total_epochs}")
+                self.logger.info(f"  CALCULATED global_max_epochs: {global_max_epochs}")
+                self.logger.info("="*80)
 
                 global_completed_epochs = 0
 
@@ -13470,6 +13610,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 else:
                     global_max_epochs = global_total_epochs
 
+                # DEBUGGING: Log the epoch calculation
+                num_languages = int(len(languages)) if languages else 1
+                self.logger.info("="*80)
+                self.logger.info("GLOBAL EPOCHS CALCULATION DEBUG")
+                self.logger.info(f"  Training mode: multi-label (single model)")
+                self.logger.info(f"  Number of models: {global_total_models}")
+                self.logger.info(f"  Number of languages: {num_languages}")
+                self.logger.info(f"  Languages: {sorted(languages) if languages else 'N/A'}")
+                self.logger.info(f"  Base epochs: {epochs}")
+                self.logger.info(f"  RL epochs: {manual_rl_epochs if manual_rl_epochs else 'None'}")
+                self.logger.info(f"  CALCULATED global_total_models: {global_total_models}")
+                self.logger.info(f"  CALCULATED global_total_epochs: {global_total_epochs}")
+                self.logger.info(f"  CALCULATED global_max_epochs: {global_max_epochs}")
+                self.logger.info("="*80)
+
                 global_completed_epochs = 0
 
                 result = trainer.train({
@@ -13536,6 +13691,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 global_max_epochs = epochs + manual_rl_epochs
             else:
                 global_max_epochs = global_total_epochs
+
+            # DEBUGGING: Log the epoch calculation
+            num_languages = int(len(languages)) if languages else 1
+            self.logger.info("="*80)
+            self.logger.info("GLOBAL EPOCHS CALCULATION DEBUG")
+            self.logger.info(f"  Training mode: standard (multi-label or multi-class single model)")
+            self.logger.info(f"  Number of models: {global_total_models}")
+            self.logger.info(f"  Number of languages: {num_languages}")
+            self.logger.info(f"  Languages: {sorted(languages) if languages else 'N/A'}")
+            self.logger.info(f"  Base epochs: {epochs}")
+            self.logger.info(f"  RL epochs: {manual_rl_epochs if manual_rl_epochs else 'None'}")
+            self.logger.info(f"  CALCULATED global_total_models: {global_total_models}")
+            self.logger.info(f"  CALCULATED global_total_epochs: {global_total_epochs}")
+            self.logger.info(f"  CALCULATED global_max_epochs: {global_max_epochs}")
+            self.logger.info("="*80)
 
             global_completed_epochs = 0
 
@@ -13719,6 +13889,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         return path, "text", "label"
 
     def _training_studio_make_output_dir(self, prefix: str) -> Path:
+        """
+        Create output directory for models.
+
+        CRITICAL: This function should NOT be used in Training Arena mode.
+        Instead, models are saved directly to models/{session_id}/...
+        This function is kept for backward compatibility with legacy modes.
+
+        Args:
+            prefix: Prefix for directory name (e.g., 'training_studio_quick')
+
+        Returns:
+            Path to created directory
+        """
         directory = self.settings.paths.models_dir / f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         directory.mkdir(parents=True, exist_ok=True)
         return directory

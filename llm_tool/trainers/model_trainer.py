@@ -940,6 +940,16 @@ class ModelTrainer:
             if global_completed_epochs is None:
                 global_completed_epochs = 0
 
+            # Calculate global_max_epochs if not provided
+            # This accounts for potential reinforced learning epochs
+            if global_max_epochs is None:
+                if reinforced_learning and reinforced_epochs:
+                    # Maximum possible epochs if reinforced learning is triggered
+                    global_max_epochs = self.config.num_epochs + reinforced_epochs
+                else:
+                    # No reinforced learning or no extra epochs specified
+                    global_max_epochs = global_total_epochs
+
             # CRITICAL: Convert to Python int to avoid numpy.int64 issues
             global_total_models = int(global_total_models) if global_total_models is not None else None
             global_current_model = int(global_current_model) if global_current_model is not None else None
@@ -2057,6 +2067,7 @@ class ModelTrainer:
             global_total_models=1,  # Quick mode trains single model
             global_current_model=1,
             global_total_epochs=self.config.num_epochs,
+            global_max_epochs=self.config.num_epochs + (self.config.reinforced_epochs if hasattr(self.config, 'reinforced_epochs') and self.config.reinforced_epochs and self.config.reinforced_learning else 0),
             global_completed_epochs=0,
             global_start_time=global_start_time
         )
