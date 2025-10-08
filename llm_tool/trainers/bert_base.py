@@ -229,10 +229,6 @@ class TrainingDisplay:
         # Check if reinforced learning is enabled globally (for "minimum" indicators)
         reinforced_enabled = self.reinforced_learning_enabled
 
-        # DEBUG: Log global epoch values (REMOVE AFTER TESTING)
-        if self.global_total_epochs is not None:
-            print(f"[DEBUG] global_total_epochs={self.global_total_epochs}, global_max_epochs={self.global_max_epochs}, reinforced_enabled={reinforced_enabled}")
-
         # Global header
         table.add_row("🌍 GLOBAL PROGRESS", "")
 
@@ -1761,9 +1757,10 @@ class BertBase(BertABC):
                         # Don't fail training if callback fails
                         self.logger.warning(f"Progress callback failed: {e}")
 
-                # Update global completed epochs in display
+                # Update global completed epochs in display and model
                 if global_total_models is not None:
                     display.global_completed_epochs += 1
+                    self.global_completed_epochs = display.global_completed_epochs
 
                 # Compute "combined" metric if best_model_criteria is "combined"
                 if best_model_criteria == "combined":

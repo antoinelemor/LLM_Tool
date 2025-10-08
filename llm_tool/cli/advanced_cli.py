@@ -6585,23 +6585,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         modes_table.add_row(
             "quick",
-            "Fast training with default settings (10 epochs)\n✓ Best for quick prototyping and testing",
+            "Fast training with default settings\n✓ Recommended for all use cases",
             "~5-10 minutes"
-        )
-        modes_table.add_row(
-            "benchmark",
-            "Compare multiple models to find the best one\n✓ Tests 5+ models and selects the best performer",
-            "~1-3 hours"
-        )
-        modes_table.add_row(
-            "custom",
-            "Full control over all training parameters\n✓ Configure epochs, batch size, learning rate, etc.",
-            "Varies"
-        )
-        modes_table.add_row(
-            "[dim]distributed[/dim]",
-            "[dim]Multi-label parallel training (one model per label)\n✓ For datasets with multiple labels/categories[/dim]\n[bold red]⚠️  NOT RECOMMENDED - Untested[/bold red]",
-            "[dim]~30-60 minutes[/dim]"
         )
 
         # First, configure the dataset
@@ -6630,33 +6615,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print(modes_table)
         self.console.print()
 
-        # If one-vs-all approach, suggest distributed mode
-        default_mode = "quick"
-        if bundle.metadata.get('training_approach') == 'one-vs-all':
-            self.console.print("[bold yellow]💡 Recommended Mode:[/bold yellow] [dim strikethrough]distributed[/dim strikethrough] → [green]quick[/green]")
-            self.console.print(f"[dim]   Since you selected 'one-vs-all' training, distributed mode will train {bundle.metadata.get('num_categories', '?')} models in parallel[/dim]")
-            self.console.print("[bold red]   ⚠️  WARNING: distributed mode is NOT RECOMMENDED (untested). Use 'quick' instead.[/bold red]\n")
-            default_mode = "quick"  # Changed from "distributed" to "quick"
-
         mode = Prompt.ask(
             "[bold yellow]Select training mode[/bold yellow]",
-            choices=["quick", "benchmark", "custom", "distributed", "back"],
-            default=default_mode,
+            choices=["quick", "back"],
+            default="quick",
         )
 
         if mode == "back":
             return
-
-        # Warn if distributed mode was selected
-        if mode == "distributed":
-            self.console.print("\n[bold red]⚠️  WARNING: Distributed mode is NOT RECOMMENDED[/bold red]")
-            self.console.print("[yellow]This mode has not been thoroughly tested and may contain bugs.[/yellow]")
-            self.console.print("[dim]Consider using 'quick' or 'benchmark' mode instead for more reliable results.[/dim]\n")
-
-            confirm = Confirm.ask("[bold]Do you still want to proceed with distributed mode?[/bold]", default=False)
-            if not confirm:
-                self.console.print("[yellow]Training cancelled. Please select another mode.[/yellow]")
-                return
 
         # Show training mode confirmation and parameters
         self._training_studio_confirm_and_execute(bundle, mode)
@@ -10620,6 +10586,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Each model must be trained on each category, so total = models × categories × epochs
             num_categories = 1 if selected_benchmark_categories is None else len(selected_benchmark_categories)
             global_total_epochs = global_total_models * num_categories * benchmark_epochs
+
+            # Calculate maximum possible epochs (if all models trigger reinforced learning)
+            if enable_benchmark_rl and benchmark_rl_params.get('reinforced_epochs') is not None:
+                global_max_epochs = global_total_models * num_categories * (benchmark_epochs + benchmark_rl_params['reinforced_epochs'])
+            else:
+                global_max_epochs = global_total_epochs
+
             global_completed_epochs = 0
 
             # ============================================================
@@ -10685,6 +10658,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'global_total_models': global_total_models,
                         'global_current_model': idx,
                         'global_total_epochs': global_total_epochs,
+                        'global_max_epochs': global_max_epochs,
                         'global_completed_epochs': global_completed_epochs,
                         'global_start_time': global_start_time
                     }
@@ -13859,6 +13833,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 # Note: May increase if reinforced learning is triggered
                 global_total_epochs = global_total_models * n_epochs
 
+                # Calculate maximum possible epochs (if all models trigger reinforced learning)
+                if use_reinforcement:
+                    reinforced_epochs_count = 10  # Matches the hardcoded value at line 13888
+                    global_max_epochs = global_total_models * (n_epochs + reinforced_epochs_count)
+                else:
+                    global_max_epochs = global_total_epochs
+
                 # Create progress callback to track completed epochs
                 def progress_callback(**metrics):
                     """Callback to increment global completed epochs counter"""
@@ -13891,6 +13872,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     global_total_models=global_total_models,
                     global_current_model=idx,
                     global_total_epochs=global_total_epochs,
+                    global_max_epochs=global_max_epochs,
                     global_completed_epochs=global_completed_epochs,
                     global_start_time=global_start_time
                 )
@@ -14456,6 +14438,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     # Note: May increase if reinforced learning is triggered
                     global_total_epochs = global_total_models * n_epochs
 
+                    # Calculate maximum possible epochs (if all models trigger reinforced learning)
+                    if use_reinforcement:
+                        reinforced_epochs_count = 10  # Matches the hardcoded value at line 14493
+                        global_max_epochs = global_total_models * (n_epochs + reinforced_epochs_count)
+                    else:
+                        global_max_epochs = global_total_epochs
+
                     # Create progress callback to track completed epochs
                     def progress_callback(**metrics):
                         """Callback to increment global completed epochs counter"""
@@ -14489,6 +14478,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         global_total_models=global_total_models,
                         global_current_model=current,
                         global_total_epochs=global_total_epochs,
+                        global_max_epochs=global_max_epochs,
                         global_completed_epochs=global_completed_epochs,
                         global_start_time=global_start_time
                     )

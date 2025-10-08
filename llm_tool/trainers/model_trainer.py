@@ -822,11 +822,13 @@ class ModelTrainer:
 
         # Now extract texts as strings
         train_texts = train_df['text'].astype(str).str.strip().tolist()
-        train_labels = train_df[label_column].tolist()
+        # CRITICAL FIX: Convert labels to Python native types (int or str)
+        # This prevents issues with numpy.int64 objects in downstream processing
+        train_labels = [int(x) if isinstance(x, (np.integer, np.int64)) else x for x in train_df[label_column].tolist()]
         val_texts = val_df['text'].astype(str).str.strip().tolist()
-        val_labels = val_df[label_column].tolist()
+        val_labels = [int(x) if isinstance(x, (np.integer, np.int64)) else x for x in val_df[label_column].tolist()]
         test_texts = test_df['text'].astype(str).str.strip().tolist()
-        test_labels = test_df[label_column].tolist()
+        test_labels = [int(x) if isinstance(x, (np.integer, np.int64)) else x for x in test_df[label_column].tolist()]
 
         self.logger.info(f"Final dataset sizes - Train: {len(train_texts)}, Val: {len(val_texts)}, Test: {len(test_texts)}")
 

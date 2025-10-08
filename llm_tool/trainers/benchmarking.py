@@ -156,6 +156,9 @@ class BenchmarkRunner:
 
         self._model_cache: Dict[str, BertBase] = {}
 
+        # Session ID for unified logging across all training runs in this session
+        self.session_id: Optional[str] = None
+
         # Initialize dataset builder if auto-building is enabled
         self.dataset_builder = None
         if self.config.auto_build_datasets:
@@ -220,6 +223,11 @@ class BenchmarkRunner:
         """Launch benchmarking on one or many datasets."""
         self.results.clear()
 
+        # Create unified session ID for all training runs in this benchmark session
+        import datetime
+        self.session_id = datetime.datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
+        self.logger.info("Starting benchmark session: %s", self.session_id)
+
         if multiple_datasets:
             training_dirs = sorted(
                 p for p in self.data_root.iterdir()
@@ -269,13 +277,49 @@ class BenchmarkRunner:
         self.logger.info("Models target: %s", models_output_dir)
         self.logger.info("%s", "=" * 80)
 
+        # Calculate total models for global progress tracking
+        total_models = 0
+        for category_dir in sorted(p for p in training_root.iterdir() if p.is_dir()):
+            if category_dir.name == self.logs_subdir:
+                continue
+            for lang_dir in sorted(p for p in category_dir.iterdir() if p.is_dir()):
+                # Check if there's data to train
+                train_files = list((lang_dir / "train").glob("*_train.jsonl"))
+                test_files = list((lang_dir / "test").glob("*_test.jsonl"))
+                if (train_files and test_files) or self.config.auto_build_datasets:
+                    total_models += 1
+
+        # Initialize global tracking parameters
+        import time
+        global_start_time = time.time()
+        global_total_epochs = total_models * self.config.epochs
+
+        # Calculate maximum possible epochs (if all models trigger reinforced learning)
+        if self.config.reinforced_learning and self.config.reinforced_epochs:
+            global_max_epochs = total_models * (self.config.epochs + self.config.reinforced_epochs)
+        else:
+            global_max_epochs = global_total_epochs
+
+        global_completed_epochs = 0
+        current_model = 0
+
         for category_dir in sorted(p for p in training_root.iterdir() if p.is_dir()):
             if category_dir.name == self.logs_subdir:
                 continue
 
             for lang_dir in sorted(p for p in category_dir.iterdir() if p.is_dir()):
                 lang = lang_dir.name.upper()
-                self._train_category_language(
+
+                # Pre-check if we should train this model
+                train_files = list((lang_dir / "train").glob("*_train.jsonl"))
+                test_files = list((lang_dir / "test").glob("*_test.jsonl"))
+                should_train = (train_files and test_files) or self.config.auto_build_datasets
+
+                if not should_train:
+                    continue  # Skip this model, don't increment counter
+
+                current_model += 1
+                epochs_completed = self._train_category_language(
                     category_dir,
                     lang_dir,
                     lang,
@@ -283,7 +327,16 @@ class BenchmarkRunner:
                     logs_root,
                     summary_csv,
                     models_output_dir,
+                    global_total_models=total_models,
+                    global_current_model=current_model,
+                    global_total_epochs=global_total_epochs,
+                    global_max_epochs=global_max_epochs,
+                    global_completed_epochs=global_completed_epochs,
+                    global_start_time=global_start_time,
                 )
+                # Update completed epochs for next model
+                if epochs_completed is not None:
+                    global_completed_epochs = epochs_completed
 
     def _train_category_language(
         self,
@@ -294,7 +347,13 @@ class BenchmarkRunner:
         logs_root: Path,
         summary_csv: Path,
         models_output_dir: Path,
-    ) -> None:
+        global_total_models: Optional[int] = None,
+        global_current_model: Optional[int] = None,
+        global_total_epochs: Optional[int] = None,
+        global_max_epochs: Optional[int] = None,
+        global_completed_epochs: Optional[int] = None,
+        global_start_time: Optional[float] = None,
+    ) -> Optional[int]:
         cat_name = category_dir.name
         train_files = list((lang_dir / "train").glob("*_train.jsonl"))
         test_files = list((lang_dir / "test").glob("*_test.jsonl"))
@@ -447,7 +506,14 @@ class BenchmarkRunner:
             model_identifier=f"{cat_name}_{language}_{model.__class__.__name__}" if self.config.track_languages and test_languages else None,
             label_key=None,  # Benchmark uses label_value directly
             label_value=cat_name,  # CRITICAL: Category name for organized logs (e.g., "Health")
-            language=language  # CRITICAL: Language for metadata (e.g., "EN", "FR")
+            language=language,  # CRITICAL: Language for metadata (e.g., "EN", "FR")
+            global_total_models=global_total_models,
+            global_current_model=global_current_model,
+            global_total_epochs=global_total_epochs,
+            global_max_epochs=global_max_epochs,
+            global_completed_epochs=global_completed_epochs,
+            global_start_time=global_start_time,
+            session_id=self.session_id  # CRITICAL: Unified session ID for all runs
         )
 
         best_path = model.last_saved_model_path
@@ -477,6 +543,11 @@ class BenchmarkRunner:
                 metrics=summary if isinstance(summary, dict) else {},
             )
         )
+
+        # Return updated global_completed_epochs for the next model
+        if global_total_models is not None and hasattr(model, 'global_completed_epochs'):
+            return model.global_completed_epochs
+        return None
 
     # ------------------------------------------------------------------
     # Static helpers
@@ -697,7 +768,11 @@ class BenchmarkRunner:
         Returns:
             Name of best/selected model or None
         """
-        self.logger.info("Starting comprehensive benchmark on %s", data_path)
+        # Create unified session ID for all training runs in this comprehensive benchmark session
+        import datetime
+        self.session_id = datetime.datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
+        self.logger.info("Starting comprehensive benchmark session: %s", self.session_id)
+        self.logger.info("Data path: %s", data_path)
 
         # Load and analyze data (auto-detect format)
         print("\n🔍 Analyzing dataset format...")
@@ -1275,7 +1350,8 @@ class BenchmarkRunner:
                     global_total_epochs=global_total_epochs,
                     global_max_epochs=global_max_epochs,
                     global_completed_epochs=global_completed_epochs,
-                    global_start_time=global_start_time
+                    global_start_time=global_start_time,
+                    session_id=self.session_id  # CRITICAL: Unified session ID for all runs
                 )
 
                 training_time = time.time() - start_time
