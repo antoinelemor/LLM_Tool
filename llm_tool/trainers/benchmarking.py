@@ -434,7 +434,7 @@ class BenchmarkRunner:
             random_state=self.config.random_state,
             save_model_as=temp_model_name,
             pos_weight=pos_weight,
-            metrics_output_dir='training_logs',  # CRITICAL: Base dir - bert_base.py creates subdirs
+            metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
             best_model_criteria=self.config.best_model_criteria,
             f1_class_1_weight=self.config.f1_class_1_weight,
             reinforced_learning=self.config.reinforced_learning,
@@ -795,13 +795,23 @@ class BenchmarkRunner:
         if verbose:
             print(dataset.get_summary())
 
+        # Initialize global progress tracking
+        total_models = len(models_to_test)
+        global_start_time = time.time()
+
+        # Calculate total expected epochs (approximate - may change with reinforced learning)
+        global_total_epochs = total_models * benchmark_epochs
+
         # Run benchmark on all models
         results = self._benchmark_models_with_languages(
             dataset=dataset,
             models_to_test=models_to_test,
             detected_languages=detected_languages,
             benchmark_epochs=benchmark_epochs,
-            verbose=verbose
+            verbose=verbose,
+            global_total_models=total_models,
+            global_total_epochs=global_total_epochs,
+            global_start_time=global_start_time
         )
 
         if not results:
@@ -976,12 +986,16 @@ class BenchmarkRunner:
         models_to_test: List[Tuple[str, List[str]]],
         detected_languages: List[str],
         benchmark_epochs: int,
-        verbose: bool = True
+        verbose: bool = True,
+        global_total_models: Optional[int] = None,
+        global_total_epochs: Optional[int] = None,
+        global_start_time: Optional[float] = None
     ) -> List[Dict]:
         """
         Benchmark multiple models with language-specific testing.
         """
         all_results = []
+        global_completed_epochs = 0  # Track completed epochs across all models
 
         for idx, (model_name, test_languages) in enumerate(models_to_test, 1):
             if verbose:
@@ -1202,6 +1216,12 @@ class BenchmarkRunner:
                 import numpy as np
                 start_time = time.time()
 
+                # Create progress callback to track completed epochs
+                def progress_callback(**metrics):
+                    """Callback to increment global completed epochs counter"""
+                    nonlocal global_completed_epochs
+                    global_completed_epochs += 1
+
                 # Decide whether to use reinforced learning
                 # Pass reinforced_learning if it's enabled in config
                 # This allows bert_base.py to automatically trigger if F1_1 < threshold
@@ -1237,10 +1257,16 @@ class BenchmarkRunner:
                     f1_1_rescue_threshold=self.config.f1_rescue_threshold,
                     reinforced_f1_threshold=self.config.reinforced_f1_threshold,
                     model_identifier=f"benchmark_{model_name.lower()}",
-                    metrics_output_dir='training_logs',  # CRITICAL: Base dir - bert_base.py creates subdirs
+                    metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
                     label_key=None,  # Benchmark uses label_value directly
                     label_value=dataset.category,  # CRITICAL: Category name from dataset
-                    language=dataset.language  # CRITICAL: Language from dataset
+                    language=dataset.language,  # CRITICAL: Language from dataset
+                    progress_callback=progress_callback,  # Add callback for global progress tracking
+                    global_total_models=global_total_models,
+                    global_current_model=idx,
+                    global_total_epochs=global_total_epochs,
+                    global_completed_epochs=global_completed_epochs,
+                    global_start_time=global_start_time
                 )
 
                 training_time = time.time() - start_time

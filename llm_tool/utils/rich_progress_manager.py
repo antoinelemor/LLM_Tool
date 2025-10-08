@@ -40,6 +40,8 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
+from rich.live import Live
+from rich import box
 
 
 class CompactPercentColumn(ProgressColumn):
@@ -47,6 +49,373 @@ class CompactPercentColumn(ProgressColumn):
     def render(self, task):
         percentage = task.percentage if task.percentage is not None else 0
         return Text(f"{percentage:>5.1f}%", style="bright_magenta")
+
+
+class GlobalProgressTracker:
+    """
+    Global progress tracker for tracking total training progress across ALL models and epochs.
+
+    This tracker provides a rich UI display showing:
+    - Total number of models to train
+    - Total number of epochs across all models
+    - Current model being trained
+    - Global progress (epochs completed / total epochs)
+    - Elapsed time
+    - Estimated time remaining
+
+    Usage:
+        # Initialize with total models and epochs per model
+        tracker = GlobalProgressTracker(total_models=5, epochs_per_model=10)
+
+        # Start tracking
+        tracker.start()
+
+        # Update when starting a new model
+        tracker.start_model("bert-base-uncased", "Health", "EN")
+
+        # Update after each epoch
+        tracker.update_epoch(epoch=1, train_loss=0.5, val_loss=0.4, f1_score=0.85)
+
+        # Finish current model
+        tracker.finish_model()
+
+        # Stop tracking
+        tracker.stop()
+    """
+
+    def __init__(self, total_models: int, epochs_per_model: int, mode: str = "training"):
+        """
+        Initialize global progress tracker.
+
+        Args:
+            total_models: Total number of models to train
+            epochs_per_model: Number of epochs per model (can be updated per model)
+            mode: Training mode (e.g., "training", "benchmark", "multi-label")
+        """
+        self.console = Console()
+        self.total_models = total_models
+        self.default_epochs_per_model = epochs_per_model
+        self.mode = mode
+
+        # Global progress tracking
+        self.total_epochs = total_models * epochs_per_model
+        self.completed_epochs = 0
+        self.current_model_idx = 0
+
+        # Current model tracking
+        self.current_model_name = ""
+        self.current_category = ""
+        self.current_language = ""
+        self.current_epochs = epochs_per_model
+        self.current_epoch = 0
+
+        # Metrics tracking
+        self.current_train_loss = 0.0
+        self.current_val_loss = 0.0
+        self.current_f1 = 0.0
+
+        # Timing
+        self.start_time = None
+        self.current_model_start_time = None
+        self.total_elapsed = 0.0
+        self.estimated_remaining = 0.0
+
+        # Progress display
+        self.progress = None
+        self.global_task_id = None
+        self.model_task_id = None
+        self.live = None
+        self.is_running = False
+
+    def start(self):
+        """Start the global progress tracker."""
+        if self.is_running:
+            return
+
+        self.is_running = True
+        self.start_time = time.time()
+
+        # Create progress bars
+        self.progress = Progress(
+            SpinnerColumn(style="bold cyan"),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(
+                bar_width=50,
+                complete_style="bold green",
+                finished_style="bold green",
+                pulse_style="bold cyan"
+            ),
+            CompactPercentColumn(),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(compact=True, elapsed_when_finished=True),
+            console=self.console,
+            expand=False
+        )
+
+        # Add global task (all models, all epochs)
+        mode_emoji = {
+            "training": "🏋️",
+            "benchmark": "⚡",
+            "multi-label": "🎯",
+            "multi-class": "🔢"
+        }.get(self.mode, "🏋️")
+
+        self.global_task_id = self.progress.add_task(
+            f"{mode_emoji} TOTAL PROGRESS: 0/{self.total_models} models",
+            total=self.total_epochs,
+            completed=0
+        )
+
+        # Add current model task
+        self.model_task_id = self.progress.add_task(
+            "📊 Current Model: Waiting...",
+            total=100,
+            completed=0
+        )
+
+        # Start live display
+        self.live = Live(
+            self._create_panel(),
+            console=self.console,
+            refresh_per_second=4,
+            transient=False
+        )
+        self.live.start()
+
+    def start_model(self, model_name: str, category: str = "", language: str = "", epochs: int = None):
+        """
+        Start tracking a new model.
+
+        Args:
+            model_name: Name of the model being trained
+            category: Category/label being trained
+            language: Language of the data
+            epochs: Number of epochs for this model (if different from default)
+        """
+        if not self.is_running:
+            return
+
+        # Update model index
+        self.current_model_idx += 1
+
+        # Store current model info
+        self.current_model_name = model_name
+        self.current_category = category
+        self.current_language = language
+        self.current_epoch = 0
+
+        # Update epochs for this model
+        if epochs is not None:
+            # Adjust total epochs if this model has different epoch count
+            old_epochs = self.current_epochs
+            self.current_epochs = epochs
+            self.total_epochs = self.total_epochs - old_epochs + epochs
+
+            # Update global task total
+            self.progress.update(self.global_task_id, total=self.total_epochs)
+        else:
+            self.current_epochs = self.default_epochs_per_model
+
+        # Reset metrics
+        self.current_train_loss = 0.0
+        self.current_val_loss = 0.0
+        self.current_f1 = 0.0
+
+        # Reset model timer
+        self.current_model_start_time = time.time()
+
+        # Update display
+        self._update_display()
+
+    def update_epoch(self, epoch: int, train_loss: float = 0.0, val_loss: float = 0.0,
+                     f1_score: float = 0.0, accuracy: float = 0.0):
+        """
+        Update progress after completing an epoch.
+
+        Args:
+            epoch: Current epoch number (1-indexed)
+            train_loss: Training loss
+            val_loss: Validation loss
+            f1_score: F1 score
+            accuracy: Accuracy score
+        """
+        if not self.is_running:
+            return
+
+        self.current_epoch = epoch
+        self.current_train_loss = train_loss
+        self.current_val_loss = val_loss
+        self.current_f1 = f1_score
+
+        # Increment completed epochs
+        self.completed_epochs += 1
+
+        # Calculate timing
+        if self.start_time:
+            self.total_elapsed = time.time() - self.start_time
+
+            # Estimate remaining time based on average time per epoch
+            if self.completed_epochs > 0:
+                avg_time_per_epoch = self.total_elapsed / self.completed_epochs
+                remaining_epochs = self.total_epochs - self.completed_epochs
+                self.estimated_remaining = avg_time_per_epoch * remaining_epochs
+
+        # Update progress bars
+        self.progress.update(
+            self.global_task_id,
+            completed=self.completed_epochs,
+            description=f"{'⚡' if self.mode == 'benchmark' else '🏋️'} TOTAL PROGRESS: {self.current_model_idx}/{self.total_models} models"
+        )
+
+        model_progress = (epoch / self.current_epochs) * 100
+        self.progress.update(
+            self.model_task_id,
+            completed=model_progress,
+            description=self._get_model_description()
+        )
+
+        # Update live display
+        self._update_display()
+
+    def finish_model(self):
+        """Mark current model as finished."""
+        if not self.is_running:
+            return
+
+        # Set model progress to 100%
+        self.progress.update(
+            self.model_task_id,
+            completed=100,
+            description=f"✅ {self.current_model_name}: Complete"
+        )
+
+        self._update_display()
+
+    def stop(self):
+        """Stop the global progress tracker."""
+        if not self.is_running:
+            return
+
+        # Update final status
+        self.progress.update(
+            self.global_task_id,
+            completed=self.total_epochs,
+            description=f"✨ COMPLETE: {self.total_models} models trained"
+        )
+
+        self._update_display()
+
+        # Stop live display
+        time.sleep(0.5)
+        if self.live:
+            self.live.stop()
+
+        self.is_running = False
+
+    def _get_model_description(self) -> str:
+        """Get description for current model task."""
+        parts = [f"📊 Model {self.current_model_idx}/{self.total_models}"]
+
+        if self.current_model_name:
+            parts.append(f"{self.current_model_name}")
+
+        if self.current_category:
+            parts.append(f"[{self.current_category}]")
+
+        if self.current_language:
+            parts.append(f"({self.current_language})")
+
+        parts.append(f"Epoch {self.current_epoch}/{self.current_epochs}")
+
+        return " ".join(parts)
+
+    def _create_panel(self) -> Panel:
+        """Create the panel with progress bars and stats."""
+        # Create stats table
+        stats_table = Table(show_header=False, box=None, padding=(0, 1))
+        stats_table.add_column(style="cyan", width=20)
+        stats_table.add_column(style="white")
+
+        # Add statistics
+        stats_table.add_row("📈 Total Models:", f"{self.total_models}")
+        stats_table.add_row("🔢 Total Epochs:", f"{self.total_epochs}")
+        stats_table.add_row("✅ Completed Epochs:", f"{self.completed_epochs}/{self.total_epochs}")
+
+        if self.completed_epochs > 0:
+            completion_pct = (self.completed_epochs / self.total_epochs) * 100
+            stats_table.add_row("📊 Overall Progress:", f"{completion_pct:.1f}%")
+
+        # Timing info
+        if self.start_time:
+            elapsed = time.time() - self.start_time
+            stats_table.add_row("⏱️ Elapsed Time:", self._format_time(elapsed))
+
+            if self.estimated_remaining > 0:
+                stats_table.add_row("⏳ Est. Remaining:", self._format_time(self.estimated_remaining))
+
+        # Current model metrics (if available)
+        if self.current_model_name and self.current_epoch > 0:
+            stats_table.add_row("", "")  # Spacer
+            stats_table.add_row("🎯 Current Model:", self.current_model_name)
+            if self.current_category:
+                stats_table.add_row("  Category:", self.current_category)
+            if self.current_language:
+                stats_table.add_row("  Language:", self.current_language)
+            stats_table.add_row("  Epoch:", f"{self.current_epoch}/{self.current_epochs}")
+            if self.current_f1 > 0:
+                stats_table.add_row("  F1 Score:", f"{self.current_f1:.4f}")
+            if self.current_train_loss > 0:
+                stats_table.add_row("  Train Loss:", f"{self.current_train_loss:.4f}")
+            if self.current_val_loss > 0:
+                stats_table.add_row("  Val Loss:", f"{self.current_val_loss:.4f}")
+
+        # Combine progress bars and stats
+        from rich.console import Group
+        group = Group(
+            self.progress,
+            Text(),  # Spacer
+            stats_table
+        )
+
+        # Different colors based on mode
+        border_colors = {
+            "training": "bold blue",
+            "benchmark": "bold yellow",
+            "multi-label": "bold magenta",
+            "multi-class": "bold cyan"
+        }
+
+        titles = {
+            "training": "🏋️ TRAINING PROGRESS",
+            "benchmark": "⚡ BENCHMARK PROGRESS",
+            "multi-label": "🎯 MULTI-LABEL TRAINING PROGRESS",
+            "multi-class": "🔢 MULTI-CLASS TRAINING PROGRESS"
+        }
+
+        return Panel(
+            group,
+            title=titles.get(self.mode, "🏋️ TRAINING PROGRESS"),
+            border_style=border_colors.get(self.mode, "bold blue"),
+            box=box.HEAVY
+        )
+
+    def _update_display(self):
+        """Update the live display."""
+        if self.live and self.is_running:
+            self.live.update(self._create_panel())
+
+    def _format_time(self, seconds: float) -> str:
+        """Format time in seconds to readable format."""
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        elif seconds < 3600:
+            return f"{int(seconds // 60)}m {int(seconds % 60)}s"
+        else:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return f"{hours}h {minutes}m"
 
 
 @dataclass

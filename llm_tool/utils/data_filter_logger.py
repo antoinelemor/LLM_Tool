@@ -50,23 +50,29 @@ import pandas as pd
 class DataFilterLogger:
     """Centralized logger for tracking filtered data throughout the application"""
 
-    def __init__(self, log_dir: Optional[Path] = None, logger_name: str = "data_filter"):
+    def __init__(self, log_dir: Optional[Path] = None, logger_name: str = "data_filter", session_id: Optional[str] = None):
         """
         Initialize the data filter logger
 
         Args:
             log_dir: Directory to store filter logs (default: logs/filtered_data/)
             logger_name: Name for the logger instance
+            session_id: Optional Training Arena session ID for contextualized logging
         """
         self.logger = logging.getLogger(logger_name)
 
-        # Setup log directory
+        # Setup log directory based on context
         if log_dir is None:
-            log_dir = Path.cwd() / "logs" / "filtered_data"
+            if session_id:
+                # Training Arena context: logs go to session directory
+                log_dir = Path.cwd() / "logs" / "training_arena" / session_id / "filtered_data"
+            else:
+                # General context: logs go to application directory
+                log_dir = Path.cwd() / "logs" / "application" / "filtered_data"
         self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        # Don't create directory yet - will be created on first write
 
-        # Create timestamped log file for this session
+        # Prepare timestamped log file path for this session
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.current_session_file = self.log_dir / f"filter_log_{timestamp}.jsonl"
 
@@ -130,6 +136,9 @@ class DataFilterLogger:
         # Add additional info
         if additional_info:
             log_entry['additional_info'] = additional_info
+
+        # Ensure log directory exists before writing
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # Write to JSONL file
         with open(self.current_session_file, 'a', encoding='utf-8') as f:
@@ -200,6 +209,9 @@ class DataFilterLogger:
                 sample['content'] = 'NaN/None'
 
             summary_entry['sample_items'].append(sample)
+
+        # Ensure log directory exists before writing
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # Write to JSONL file
         with open(self.current_session_file, 'a', encoding='utf-8') as f:
@@ -273,6 +285,9 @@ class DataFilterLogger:
                     sample_rows.append(row_data)
             log_entry['sample_filtered_rows'] = sample_rows
 
+        # Ensure log directory exists before writing
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
         # Write to JSONL file
         with open(self.current_session_file, 'a', encoding='utf-8') as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
@@ -324,12 +339,13 @@ class DataFilterLogger:
 _global_filter_logger: Optional[DataFilterLogger] = None
 
 
-def get_filter_logger(log_dir: Optional[Path] = None) -> DataFilterLogger:
+def get_filter_logger(log_dir: Optional[Path] = None, session_id: Optional[str] = None) -> DataFilterLogger:
     """
     Get or create the global filter logger instance
 
     Args:
         log_dir: Optional log directory (only used on first call)
+        session_id: Optional Training Arena session ID for contextualized logging
 
     Returns:
         DataFilterLogger instance
@@ -337,7 +353,7 @@ def get_filter_logger(log_dir: Optional[Path] = None) -> DataFilterLogger:
     global _global_filter_logger
 
     if _global_filter_logger is None:
-        _global_filter_logger = DataFilterLogger(log_dir=log_dir)
+        _global_filter_logger = DataFilterLogger(log_dir=log_dir, session_id=session_id)
 
     return _global_filter_logger
 

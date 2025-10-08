@@ -382,7 +382,10 @@ class DataLoader:
             for class_key in key_counts.keys():
                 # Extract just the label part if combined with language
                 if stratify_by_label and stratify_by_lang:
-                    label_part = class_key.split('_')[0]
+                    # CRITICAL FIX: Use rsplit to split on LAST underscore only
+                    # Labels can contain underscores (e.g., 'welfare_state', 'early_learning_childcare')
+                    # Format is: {label}_{lang}, so split on last '_' to extract label
+                    label_part = class_key.rsplit('_', 1)[0]
                 else:
                     label_part = class_key
 

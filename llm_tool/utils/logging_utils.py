@@ -97,7 +97,8 @@ class StructuredLogger:
             self.log_dir = Path(log_dir)
             self.log_dir.mkdir(parents=True, exist_ok=True)
         else:
-            self.log_dir = Path('logs')
+            # Use application subdirectory for general logs
+            self.log_dir = Path('logs/application')
             self.log_dir.mkdir(parents=True, exist_ok=True)
         
         self.use_json = use_json

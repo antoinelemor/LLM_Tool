@@ -51,37 +51,54 @@ class TrainingDataSessionManager:
     """
     Manages session-based organization of training data with comprehensive logging.
 
-    Structure:
+    New centralized structure:
+        logs/training_arena/{session_id}/
+        ├── training_data/              # Dataset analysis and reports
+        │   ├── model_catalog.csv
+        │   ├── SESSION_SUMMARY.txt
+        │   ├── quick_summary.csv
+        │   ├── split_summary.csv
+        │   └── distribution_report.json
+        ├── training_metrics/           # Training metrics (from trainer)
+        │   └── (populated by ModelTrainer)
+        └── training_session_metadata/  # Session parameters
+            └── training_metadata.json
+
         data/training_data/{session_id}/
-        ├── training_data/     # All generated JSONL files
-        └── logs/              # Distribution reports and validation warnings
-            ├── distribution_report.json
-            ├── split_summary.csv
-            └── validation_warnings.log
+        └── training_data/              # Actual JSONL dataset files
+            ├── multiclass_*.jsonl
+            ├── multilabel_*.jsonl
+            └── onevsall_*.jsonl
     """
 
-    def __init__(self, session_id: Optional[str] = None, base_dir: str = "data/training_data"):
+    def __init__(self, session_id: Optional[str] = None):
         """
-        Initialize session manager.
+        Initialize session manager with centralized log structure.
 
         Args:
             session_id: Session ID (timestamp). If None, creates new session.
-            base_dir: Base directory for training data (default: "data/training_data")
         """
         self.session_id = session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.base_dir = Path(base_dir)
 
-        # Create session directories
-        self.session_dir = self.base_dir / self.session_id
-        self.datasets_dir = self.session_dir / "training_data"
-        self.logs_dir = self.session_dir / "logs"
+        # Data directory: Raw JSONL files
+        self.data_base_dir = Path("data/training_data")
+        self.datasets_dir = self.data_base_dir / self.session_id / "training_data"
+
+        # Logs directory: All reports and analysis
+        self.logs_base_dir = Path("logs/training_arena")
+        self.session_dir = self.logs_base_dir / self.session_id
+        self.training_data_logs_dir = self.session_dir / "training_data"
+        self.training_metrics_dir = self.session_dir / "training_metrics"
+        self.metadata_dir = self.session_dir / "training_session_metadata"
 
         # Create all directories
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.training_data_logs_dir.mkdir(parents=True, exist_ok=True)
+        self.training_metrics_dir.mkdir(parents=True, exist_ok=True)
+        self.metadata_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize validation warnings log
-        self.warnings_log = self.logs_dir / "validation_warnings.log"
+        self.warnings_log = self.training_data_logs_dir / "validation_warnings.log"
         self.warnings_logger = self._setup_warnings_logger()
 
         # Distribution data accumulator
@@ -337,7 +354,7 @@ class TrainingDataSessionManager:
 
     def save_distribution_report(self):
         """Save comprehensive distribution report as JSON."""
-        report_path = self.logs_dir / "distribution_report.json"
+        report_path = self.training_data_logs_dir / "distribution_report.json"
 
         # Sanitize data to ensure JSON compatibility (convert sets to lists)
         sanitized_data = self._sanitize_for_json({
@@ -495,7 +512,7 @@ class TrainingDataSessionManager:
 
         if catalog_rows:
             df = pd.DataFrame(catalog_rows)
-            catalog_path = self.logs_dir / "model_catalog.csv"
+            catalog_path = self.training_data_logs_dir / "model_catalog.csv"
             df.to_csv(catalog_path, index=False)
             logger.info(f"Model catalog saved to {catalog_path} with {len(catalog_rows)} models")
 
@@ -588,7 +605,7 @@ class TrainingDataSessionManager:
             ]
             df = df[column_order]
 
-            csv_path = self.logs_dir / "split_summary.csv"
+            csv_path = self.training_data_logs_dir / "split_summary.csv"
             df.to_csv(csv_path, index=False)
             logger.info(f"Split summary saved: {csv_path}")
 
@@ -641,7 +658,7 @@ class TrainingDataSessionManager:
 
             if summary_rows:
                 summary_df = pd.DataFrame(summary_rows)
-                quick_summary_path = self.logs_dir / "quick_summary.csv"
+                quick_summary_path = self.training_data_logs_dir / "quick_summary.csv"
                 summary_df.to_csv(quick_summary_path, index=False)
                 logger.info(f"Quick summary saved: {quick_summary_path}")
 
@@ -788,7 +805,7 @@ class TrainingDataSessionManager:
             f.write("─" * 80 + "\n")
 
             # Load model catalog for detailed listing
-            catalog_path = self.logs_dir / "model_catalog.csv"
+            catalog_path = self.training_data_logs_dir / "model_catalog.csv"
             if catalog_path.exists():
                 import pandas as pd
                 catalog_df = pd.read_csv(catalog_path)
@@ -933,7 +950,7 @@ class TrainingDataSessionManager:
 
             if summary.get('total_warnings', 0) > 0:
                 f.write(f"\n  ⚠️  Some datasets have quality issues.\n")
-                f.write(f"  Review: {self.logs_dir / 'validation_warnings.log'}\n")
+                f.write(f"  Review: {self.training_data_logs_dir / 'validation_warnings.log'}\n")
             else:
                 f.write(f"\n  ✓ All datasets passed validation checks\n")
 
@@ -944,7 +961,7 @@ class TrainingDataSessionManager:
             f.write("─" * 80 + "\n")
             f.write(f"  Session Directory:     {self.session_dir}/\n")
             f.write(f"  Training Data:         {self.datasets_dir}/\n")
-            f.write(f"  Logs & Reports:        {self.logs_dir}/\n")
+            f.write(f"  Logs & Reports:        {self.training_data_logs_dir}/\n")
             f.write(f"\n  Reports:\n")
 
             # Check if catalog exists to show model count

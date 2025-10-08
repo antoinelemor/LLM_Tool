@@ -128,6 +128,18 @@ from ..config.settings import Settings
 from ..pipelines.pipeline_controller import PipelineController
 from ..utils.language_detector import LanguageDetector
 from ..utils.data_filter_logger import get_filter_logger
+from ..utils.system_resources import detect_resources, SystemResourceDetector
+from ..utils.resource_display import (
+    display_resources,
+    create_resource_table,
+    create_recommendations_table,
+    create_compact_resource_panel,
+    display_resource_header,
+    get_resource_summary_text,
+    create_visual_resource_panel,
+    create_mode_resource_banner,
+    create_detailed_mode_panel
+)
 from ..annotators.json_cleaner import extract_expected_keys
 from ..annotators.prompt_wizard import SocialSciencePromptWizard, create_llm_client_for_wizard
 from ..trainers.model_trainer import ModelTrainer, BenchmarkConfig
@@ -1165,6 +1177,8 @@ class AdvancedCLI:
         self.trainer_model_detector = TrainerModelDetector()
         self.data_detector = DataDetector()
         self.profile_manager = ProfileManager()
+        self.resource_detector = SystemResourceDetector()
+        self.system_resources = None  # Will be populated on first detection
 
         # Import and initialize PromptManager
         from ..annotators.prompt_manager import PromptManager
@@ -1411,7 +1425,8 @@ class AdvancedCLI:
 
     def _setup_logging(self):
         """Configure professional logging"""
-        log_dir = self.settings.paths.logs_dir
+        # Use application logs subdirectory for general application logs
+        log_dir = self.settings.paths.logs_dir / "application"
         log_dir.mkdir(parents=True, exist_ok=True)
 
         log_file = log_dir / f"llmtool_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -1550,15 +1565,6 @@ class AdvancedCLI:
             info_table.add_row("🚀 Features:", "[cyan]Multi-LLM Support, Smart Training, Auto-Detection[/cyan]")
             info_table.add_row("🎯 Capabilities:", "[magenta]JSON Annotation, BERT Training, Benchmarking[/magenta]")
 
-            # Add system info if available
-            if HAS_PSUTIL:
-                cpu_percent = psutil.cpu_percent(interval=0.1)
-                memory = psutil.virtual_memory()
-                info_table.add_row(
-                    "💻 System:",
-                    f"[yellow]CPU {cpu_percent:.1f}% | RAM {memory.percent:.1f}% used[/yellow]"
-                )
-
             self.console.print(Panel(
                 info_table,
                 title="[bold bright_cyan]✨ Welcome to LLM Tool ✨[/bold bright_cyan]",
@@ -1567,13 +1573,15 @@ class AdvancedCLI:
             ))
             self.console.print()
 
-            # Auto-detect models in background
+            # Auto-detect models and system resources in background
             with self.console.status("[bold green]🔍 Scanning environment...", spinner="dots"):
                 self.detected_llms = self.llm_detector.detect_all_llms()
                 self.available_trainer_models = self.trainer_model_detector.get_available_models()
                 # Scan only in data/ directory
                 data_dir = self.settings.paths.data_dir
                 self.detected_datasets = self.data_detector.scan_directory(data_dir)
+                # Detect system resources
+                self.system_resources = self.resource_detector.detect_all()
 
             # Show detection results
             self._display_detection_results()
@@ -1778,6 +1786,16 @@ class AdvancedCLI:
 
         self.console.print(formats_panel)
         self.console.print()
+
+        # === SYSTEM RESOURCES SECTION ===
+        if self.system_resources:
+            # Create and display the visual resource panel
+            resource_panel = create_visual_resource_panel(
+                self.system_resources,
+                show_recommendations=True
+            )
+            self.console.print(resource_panel)
+            self.console.print()
 
     def get_main_menu_choice(self) -> str:
         """Display sophisticated main menu with smart suggestions"""
@@ -2197,7 +2215,7 @@ class AdvancedCLI:
                 'ascii': """
 ████████╗██╗  ██╗███████╗     █████╗ ███╗   ██╗███╗   ██╗ ██████╗ ████████╗ █████╗ ████████╗ ██████╗ ██████╗
 ╚══██╔══╝██║  ██║██╔════╝    ██╔══██╗████╗  ██║████╗  ██║██╔═══██╗╚══██╔══╝██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗
-   ██║   ██║  ██║█████╗      ███████║██╔██╗ ██║██╔██╗ ██║██║   ██║   ██║   ███████║   ██║   ██║   ██║██████╔╝
+   ██║   ███████║█████╗      ███████║██╔██╗ ██║██╔██╗ ██║██║   ██║   ██║   ███████║   ██║   ██║   ██║██████╔╝
    ██║   ██║  ██║██╔══╝      ██╔══██║██║╚██╗██║██║╚██╗██║██║   ██║   ██║   ██╔══██║   ██║   ██║   ██║██╔══██╗
    ██║   ██║  ██║███████╗    ██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║
    ╚═╝   ╚═╝  ╚═╝╚══════╝    ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
@@ -2207,12 +2225,13 @@ class AdvancedCLI:
             'factory': {
                 'color': 'bright_yellow',
                 'ascii': """
- █████╗ ███╗   ██╗███╗   ██╗ ██████╗ ████████╗ █████╗ ████████╗ ██████╗ ██████╗     ███████╗ █████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗
+               
+███████╗ ███╗   ██╗███╗   ██╗ ██████╗ ████████╗ █████╗ ████████╗ ██████╗ ██████╗     ███████╗ █████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗
 ██╔══██╗████╗  ██║████╗  ██║██╔═══██╗╚══██╔══╝██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗    ██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗╚██╗ ██╔╝
 ███████║██╔██╗ ██║██╔██╗ ██║██║   ██║   ██║   ███████║   ██║   ██║   ██║██████╔╝    █████╗  ███████║██║        ██║   ██║   ██║██████╔╝ ╚████╔╝
-██╔══██║██║╚██╗██║██║╚██╗██║██║   ██║   ██║   ██╔══██║   ██║   ██║   ██║██╔══██╗    ██╔══╝  ██╔══██║██║        ██║   ██║   ██║██╔══██╗  ╚██╔╝
-██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║    ██║     ██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║   ██║
-╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝    ╚═╝     ╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝   ╚═╝
+  ██╔══██║██║╚██╗██║██║╚██╗██║██║   ██║   ██║   ██╔══██║   ██║   ██║   ██║██╔══██╗    ██╔══╝  ██╔══██║██║        ██║   ██║   ██║██╔══██╗  ╚██╔╝
+ ██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║    ██║     ██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║   ██║
+ ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝    ╚═╝     ╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝   ╚═╝
 """,
                 'tagline': '🏭 Clone The Annotator into ML Models'
             },
@@ -2283,12 +2302,38 @@ class AdvancedCLI:
                     border_style="cyan",
                     padding=(1, 2)
                 ))
+
+                # Display horizontal resource banner below the info panel
+                if self.system_resources:
+                    self.console.print()
+                    resource_banner = create_mode_resource_banner(self.system_resources)
+                    banner_panel = Panel(
+                        resource_banner,
+                        title="[bold bright_blue]⚙️  System Resources[/bold bright_blue]",
+                        border_style="blue",
+                        padding=(0, 1)
+                    )
+                    self.console.print(banner_panel)
+
             else:
                 # Fallback to simple panel
                 self.console.print(Panel.fit(
                     f"[bold cyan]{title}[/bold cyan]\n{description}",
                     border_style="cyan"
                 ))
+
+                # Display horizontal resource banner
+                if self.system_resources:
+                    self.console.print()
+                    resource_banner = create_mode_resource_banner(self.system_resources)
+                    banner_panel = Panel(
+                        resource_banner,
+                        title="[bold bright_blue]⚙️  System Resources[/bold bright_blue]",
+                        border_style="blue",
+                        padding=(0, 1)
+                    )
+                    self.console.print(banner_panel)
+
         else:
             print(f"\n{title}")
             print(description)
@@ -2434,7 +2479,41 @@ class AdvancedCLI:
             elif workflow == "1":
                 self._resume_mode2()
             elif workflow == "2":
-                self._complete_workflow_mode2()
+                # CRITICAL: Ask user for session name first (like Training Arena and Mode 1)
+                from datetime import datetime
+
+                self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+                self.console.print("[bold cyan]           📝 Session Name Configuration                       [/bold cyan]")
+                self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+                self.console.print("[bold]Why session names matter:[/bold]")
+                self.console.print("  • [green]Organization:[/green] Easily identify pipelines (e.g., 'sentiment_twitter', 'legal_classifier')")
+                self.console.print("  • [green]Traceability:[/green] Track annotations, training, and models in one place")
+                self.console.print("  • [green]Collaboration:[/green] Team members understand each pipeline's purpose")
+                self.console.print("  • [green]Audit trail:[/green] Timestamp ensures uniqueness\n")
+
+                self.console.print("[dim]Format: {session_name}_{yyyymmdd_hhmmss}[/dim]")
+                self.console.print("[dim]Example: sentiment_pipeline_20251008_143022[/dim]\n")
+
+                # Ask for user-defined session name
+                user_session_name = Prompt.ask(
+                    "[bold yellow]Enter a descriptive name for this annotation+training pipeline[/bold yellow]",
+                    default="factory_session"
+                ).strip()
+
+                # Sanitize the user input
+                user_session_name = user_session_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+                user_session_name = ''.join(c for c in user_session_name if c.isalnum() or c in ['_', '-'])
+
+                # Create full session ID with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                session_id = f"{user_session_name}_{timestamp}"
+
+                self.console.print(f"\n[bold green]✓ Session ID:[/bold green] [cyan]{session_id}[/cyan]")
+                self.console.print(f"[dim]This ID will be used for annotations, training, and all outputs[/dim]\n")
+
+                # Pass session_id to _complete_workflow_mode2
+                self._complete_workflow_mode2(session_id=session_id)
             elif workflow == "3":
                 self._clean_metadata()
         else:
@@ -2453,8 +2532,25 @@ class AdvancedCLI:
             elif choice == "3":
                 self._clean_metadata()
 
-    def _complete_workflow_mode2(self):
-        """Execute complete annotation → training workflow"""
+    def _complete_workflow_mode2(self, session_id: str = None):
+        """Execute complete annotation → training workflow
+
+        Parameters
+        ----------
+        session_id : str, optional
+            Session identifier for organizing outputs. If None, a timestamp-based ID is generated.
+        """
+        import pandas as pd
+        from datetime import datetime
+        from pathlib import Path
+
+        # Generate session_id if not provided (for backward compatibility)
+        if session_id is None:
+            session_id = f"factory_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Create session directories
+        session_dirs = self._create_annotator_factory_session_directories(session_id)
+
         # Step 1: Data Source Selection
         self.console.print("[bold]Step 1/7: Data Source Selection[/bold]\n")
 
@@ -3354,13 +3450,18 @@ class AdvancedCLI:
         # EXECUTE ANNOTATION
         # ============================================================
     
-        # Prepare output path
-        annotations_dir = self.settings.paths.data_dir / 'annotations'
-        annotations_dir.mkdir(parents=True, exist_ok=True)
+        # CRITICAL: Use new organized structure with dataset-specific subfolder
+        # Structure: logs/annotator/{session_id}/annotated_data/{dataset_name}/
         safe_model_name = model_name.replace(':', '_').replace('/', '_')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        # Create dataset-specific subdirectory (like {category} in Training Arena)
+        dataset_name = data_path.stem
+        dataset_subdir = session_dirs['annotated_data'] / dataset_name
+        dataset_subdir.mkdir(parents=True, exist_ok=True)
+
         output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
-        default_output_path = annotations_dir / output_filename
+        default_output_path = dataset_subdir / output_filename
     
         self.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
         self.console.print(f"   {default_output_path}")
@@ -3493,8 +3594,12 @@ class AdvancedCLI:
             }
 
             # Save metadata JSON (PRE-ANNOTATION SAVE POINT 1)
+            # Use dataset-specific subdirectory for metadata too
+            metadata_subdir = session_dirs['metadata'] / dataset_name
+            metadata_subdir.mkdir(parents=True, exist_ok=True)
+
             metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
-            metadata_path = annotations_dir / metadata_filename
+            metadata_path = metadata_subdir / metadata_filename
 
             with open(metadata_path, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, indent=2, ensure_ascii=False)
@@ -3685,7 +3790,8 @@ class AdvancedCLI:
                     prompt_configs=prompt_configs,
                     data_path=data_path,
                     timestamp=timestamp,
-                    sample_size=export_sample_size
+                    sample_size=export_sample_size,
+                    session_dirs=session_dirs
                 )
     
             # Export to Label Studio if requested
@@ -3712,7 +3818,8 @@ class AdvancedCLI:
                         data_path=data_path,
                         timestamp=timestamp,
                         sample_size=export_sample_size,
-                        prediction_mode=prediction_mode
+                        prediction_mode=prediction_mode,
+                        session_dirs=session_dirs
                     )
     
             self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
@@ -3955,15 +4062,17 @@ class AdvancedCLI:
         if run_annotation:
             self.console.print("\n[bold cyan]📝 Phase 1: LLM Annotation[/bold cyan]\n")
 
-            # Use _execute_from_metadata logic for annotation
-            # (Reuse existing implementation from Mode 1)
-            annotations_dir = self.settings.paths.data_dir / 'annotations'
-            annotations_dir.mkdir(parents=True, exist_ok=True)
+            # CRITICAL: Use organized structure logs/annotator_factory/{session_id}/annotated_data/{dataset_name}/
             safe_model_name = model_config.get('model_name', 'unknown').replace(':', '_').replace('/', '_')
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
+            # Create dataset-specific subdirectory
+            dataset_name = data_path.stem
+            dataset_subdir = session_dirs['annotated_data'] / dataset_name
+            dataset_subdir.mkdir(parents=True, exist_ok=True)
+
             output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
-            output_path = annotations_dir / output_filename
+            output_path = dataset_subdir / output_filename
 
             # Build pipeline config (same as Mode 1)
             provider = model_config.get('provider', 'ollama')
@@ -4438,15 +4547,26 @@ class AdvancedCLI:
                     for i, rec in enumerate(lang_recommendations[:5], 1):
                         self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
 
-                    model_choice = Prompt.ask(
-                        f"\nSelect model for {lang_upper} (number or name)",
-                        default="1"
-                    )
+                    # Loop until valid model is selected
+                    selected = None
+                    while selected is None:
+                        model_choice = Prompt.ask(
+                            f"\nSelect model for {lang_upper} (number or name)",
+                            default="1"
+                        )
 
-                    if model_choice.isdigit() and 0 < int(model_choice) <= len(lang_recommendations):
-                        selected = lang_recommendations[int(model_choice) - 1]['model']
-                    else:
-                        selected = model_choice
+                        if model_choice.isdigit():
+                            choice_num = int(model_choice)
+                            if 0 < choice_num <= len(lang_recommendations):
+                                selected = lang_recommendations[choice_num - 1]['model']
+                            else:
+                                self.console.print(f"[red]Invalid number. Please enter 1-{len(lang_recommendations)}[/red]")
+                        else:
+                            # Check if it's a valid model name
+                            if model_choice in self.available_trainer_models:
+                                selected = model_choice
+                            else:
+                                self.console.print(f"[red]Model '{model_choice}' not found. Use number or valid model name.[/red]")
 
                     language_model_mapping[lang] = selected
                     self.console.print(f"[green]✓ {lang_upper}: {selected}[/green]\n")
@@ -4479,15 +4599,26 @@ class AdvancedCLI:
                 for i, model in enumerate(recommended_models[:5], 1):
                     self.console.print(f"  {i}. {model}")
 
-                selected_model = Prompt.ask(
-                    "\nSelect model (number or name)",
-                    default="1"
-                )
+                # Loop until valid model is selected
+                training_model = None
+                while training_model is None:
+                    selected_model = Prompt.ask(
+                        "\nSelect model (number or name)",
+                        default="1"
+                    )
 
-                if selected_model.isdigit() and 0 < int(selected_model) <= len(recommended_models):
-                    training_model = recommended_models[int(selected_model) - 1]
-                else:
-                    training_model = selected_model
+                    if selected_model.isdigit():
+                        choice_num = int(selected_model)
+                        if 0 < choice_num <= len(recommended_models):
+                            training_model = recommended_models[choice_num - 1]
+                        else:
+                            self.console.print(f"[red]Invalid number. Please enter 1-{len(recommended_models)}[/red]")
+                    else:
+                        # Check if it's a valid model name
+                        if selected_model in self.available_trainer_models:
+                            training_model = selected_model
+                        else:
+                            self.console.print(f"[red]Model '{selected_model}' not found. Use number or valid model name.[/red]")
 
                 self.console.print(f"[green]✓ Selected model: {training_model}[/green]\n")
 
@@ -4657,7 +4788,8 @@ class AdvancedCLI:
 
                             if remove_labels:
                                 # Filter out samples with insufficient classes
-                                filter_logger = get_filter_logger()
+                                # Pass session_id if available for contextualized logging
+                                filter_logger = get_filter_logger(session_id=getattr(self, 'current_session_id', None))
                                 df_before = train_df.copy()
                                 train_df = train_df[~train_df['label'].isin(insufficient_classes)]
 
@@ -6309,7 +6441,41 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             elif workflow == "1":
                 self._quick_annotate()
             elif workflow == "2":
-                self._smart_annotate()
+                # CRITICAL: Ask user for session name first (like Training Arena)
+                from datetime import datetime
+
+                self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+                self.console.print("[bold cyan]           📝 Session Name Configuration                       [/bold cyan]")
+                self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+                self.console.print("[bold]Why session names matter:[/bold]")
+                self.console.print("  • [green]Organization:[/green] Easily identify annotation projects (e.g., 'sentiment_tweets', 'legal_documents')")
+                self.console.print("  • [green]Traceability:[/green] Track your annotations across data, logs, and exports")
+                self.console.print("  • [green]Collaboration:[/green] Team members understand what each session represents")
+                self.console.print("  • [green]Audit trail:[/green] Timestamp ensures uniqueness\n")
+
+                self.console.print("[dim]Format: {session_name}_{yyyymmdd_hhmmss}[/dim]")
+                self.console.print("[dim]Example: sentiment_analysis_20251008_143022[/dim]\n")
+
+                # Ask for user-defined session name
+                user_session_name = Prompt.ask(
+                    "[bold yellow]Enter a descriptive name for this annotation session[/bold yellow]",
+                    default="annotation_session"
+                ).strip()
+
+                # Sanitize the user input (remove special chars, replace spaces with underscores)
+                user_session_name = user_session_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+                user_session_name = ''.join(c for c in user_session_name if c.isalnum() or c in ['_', '-'])
+
+                # Create full session ID with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                session_id = f"{user_session_name}_{timestamp}"
+
+                self.console.print(f"\n[bold green]✓ Session ID:[/bold green] [cyan]{session_id}[/cyan]")
+                self.console.print(f"[dim]This ID will be used consistently across all data, logs, and exports[/dim]\n")
+
+                # Pass session_id to _smart_annotate
+                self._smart_annotate(session_id=session_id)
             elif workflow == "3":
                 self._database_annotator()
             elif workflow == "4":
@@ -6399,18 +6565,42 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return
 
         # Continue with NEW training session
-        # Create session ID for this training session
+        # CRITICAL: Ask user for session name first
         from datetime import datetime
         from llm_tool.utils.training_data_utils import TrainingDataSessionManager
 
-        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.console.print(f"\n[dim]📋 Session ID: {session_id}[/dim]")
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           📝 Session Name Configuration                       [/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        self.console.print("[bold]Why session names matter:[/bold]")
+        self.console.print("  • [green]Organization:[/green] Easily identify experiments (e.g., 'baseline', 'improved_features')")
+        self.console.print("  • [green]Traceability:[/green] Track your training runs across data, logs, and models")
+        self.console.print("  • [green]Collaboration:[/green] Team members understand what each session represents")
+        self.console.print("  • [green]Audit trail:[/green] Timestamp ensures uniqueness\n")
+
+        self.console.print("[dim]Format: {session_name}_{yyyymmdd_hhmmss}[/dim]")
+        self.console.print("[dim]Example: sentiment_analysis_20251008_143022[/dim]\n")
+
+        # Ask for user-defined session name
+        user_session_name = Prompt.ask(
+            "[bold yellow]Enter a descriptive name for this training session[/bold yellow]",
+            default="training_session"
+        ).strip()
+
+        # Sanitize the user input (remove special chars, replace spaces with underscores)
+        user_session_name = user_session_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        user_session_name = ''.join(c for c in user_session_name if c.isalnum() or c in ['_', '-'])
+
+        # Create full session ID with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_id = f"{user_session_name}_{timestamp}"
+
+        self.console.print(f"\n[bold green]✓ Session ID:[/bold green] [cyan]{session_id}[/cyan]")
+        self.console.print(f"[dim]This ID will be used consistently across all data, logs, and models[/dim]\n")
 
         # Initialize session manager for comprehensive data distribution logging
-        session_manager = TrainingDataSessionManager(
-            session_id=session_id,
-            base_dir=str(self.settings.paths.data_dir / "training_data")
-        )
+        session_manager = TrainingDataSessionManager(session_id=session_id)
 
         # Initialize builder with session-based organization
         builder = TrainingDatasetBuilder(
@@ -6632,13 +6822,35 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             if confirm:
                 break
             else:
-                # User wants to modify - re-collect parameters for quick mode
+                # User wants to modify - ask what to modify for quick mode
                 if mode == "quick":
-                    self.console.print("\n[cyan]Let's modify the parameters...[/cyan]\n")
-                    quick_params = self._collect_quick_mode_parameters(bundle, quick_params)
-                    if quick_params is None:
-                        self.console.print("[yellow]Training cancelled by user.[/yellow]")
-                        return
+                    self.console.print("\n[yellow]What would you like to modify?[/yellow]")
+
+                    # Ask if user wants to modify base parameters
+                    modify_base = Confirm.ask(
+                        "[bold yellow]Modify base parameters (model, epochs)?[/bold yellow]",
+                        default=False
+                    )
+
+                    modify_rl = False
+                    if quick_params.get('reinforced_learning'):
+                        modify_rl = Confirm.ask(
+                            "[bold yellow]Modify reinforced learning parameters?[/bold yellow]",
+                            default=False
+                        )
+
+                    if not modify_base and not modify_rl:
+                        # User doesn't want to modify anything, ask again
+                        self.console.print("[yellow]No modifications requested. Please confirm parameters again or modify them.[/yellow]\n")
+                        continue
+
+                    # Only re-collect if user wants to modify something
+                    if modify_base or modify_rl:
+                        self.console.print("\n[cyan]Modifying parameters...[/cyan]\n")
+                        quick_params = self._collect_quick_mode_parameters(bundle, quick_params)
+                        if quick_params is None:
+                            self.console.print("[yellow]Training cancelled by user.[/yellow]")
+                            return
                 else:
                     self.console.print("[yellow]Modification not available for this mode. Training cancelled.[/yellow]")
                     return
@@ -6731,7 +6943,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'models_trained': [],
                         'best_model': None,
                         'best_f1': None
-                    }
+                    },
+                    session_id=session_id
                 )
                 self.console.print(f"\n[green]✅ Metadata saved for reproducibility[/green]")
                 self.console.print(f"[cyan]📋 Metadata File:[/cyan]")
@@ -6743,9 +6956,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Execute the selected training mode
         self.console.print("\n[green]✓ Starting training...[/green]\n")
 
-        # Create session ID for this training session (shared across all models)
-        from datetime import datetime
-        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Reuse the session ID created at the beginning (self.current_session_id)
+        session_id = self.current_session_id
         self.console.print(f"[dim]Session ID: {session_id}[/dim]\n")
 
         training_result = None
@@ -8732,126 +8944,89 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                 self.logger.warning(f"Error filtering row {idx}: {e}")
                                 continue
 
-                        # Only remove rows that have NO valid labels left (all keys are None/empty)
-                        if samples_modified > 0:
-                            rows_to_remove_empty = []
-                            for idx, row in df.iterrows():
-                                annotation_val = row.get(annotation_column)
-                                if pd.isna(annotation_val) or annotation_val == '':
-                                    continue
+                        # IMPORTANT: Do NOT remove samples even if they have no valid labels remaining
+                        # Reason: Label filtering happens BEFORE key selection for training.
+                        # A sample with all null/None labels might still be useful when training
+                        # on specific keys later (e.g., user might select keys where null is valid).
+                        # The training code will naturally skip samples without valid labels for selected keys.
+                        removed_count = 0
+                        filtered_count = len(df)
 
-                                try:
-                                    if isinstance(annotation_val, str):
+                        self.console.print(f"[green]✓ Label filtering complete:[/green]")
+                        self.console.print(f"  • [cyan]Samples kept:[/cyan] {original_count} → {filtered_count}")
+                        self.console.print(f"  • [cyan]Samples modified:[/cyan] {samples_modified}")
+                        self.console.print(f"  • [cyan]Labels removed:[/cyan] {labels_removed_count}")
+                        if removed_count > 0:
+                            self.console.print(f"  • [yellow]Samples removed (empty):[/yellow] {removed_count}")
+                        self.console.print()
+
+                        # Recalculate all_keys_values with filtered data
+                        all_keys_values = {}
+                        total_samples = 0
+                        malformed_count = 0
+
+                        for idx, row in df.iterrows():
+                            annotation_val = row.get(annotation_column)
+                            if pd.isna(annotation_val) or annotation_val == '':
+                                continue
+
+                            total_samples += 1
+                            try:
+                                if isinstance(annotation_val, str):
+                                    try:
                                         annotation_dict = json.loads(annotation_val)
-                                    elif isinstance(annotation_val, dict):
-                                        annotation_dict = annotation_val
-                                    else:
-                                        continue
-
-                                    # Check if ALL keys are None or empty
-                                    has_any_valid_label = False
-                                    for key, val in annotation_dict.items():
-                                        if val is not None and val != '' and val != []:
-                                            # Special check for "null" string
-                                            if isinstance(val, str) and val.lower() == 'null':
-                                                continue
-                                            has_any_valid_label = True
-                                            break
-
-                                    if not has_any_valid_label:
-                                        rows_to_remove_empty.append(idx)
-
-                                except:
-                                    continue
-
-                            # Remove completely empty rows
-                            if rows_to_remove_empty:
-                                df = df.drop(rows_to_remove_empty)
-                                df = df.reset_index(drop=True)
-                                removed_count = len(rows_to_remove_empty)
-                                self.console.print(f"[yellow]⚠️  {removed_count} sample(s) removed (no valid labels remaining)[/yellow]")
-                            else:
-                                removed_count = 0
-
-                            filtered_count = len(df)
-
-                            self.console.print(f"[green]✓ Label filtering complete:[/green]")
-                            self.console.print(f"  • [cyan]Samples kept:[/cyan] {original_count} → {filtered_count}")
-                            self.console.print(f"  • [cyan]Samples modified:[/cyan] {samples_modified}")
-                            self.console.print(f"  • [cyan]Labels removed:[/cyan] {labels_removed_count}")
-                            if removed_count > 0:
-                                self.console.print(f"  • [yellow]Samples removed (empty):[/yellow] {removed_count}")
-                            self.console.print()
-
-                            # Recalculate all_keys_values with filtered data
-                            all_keys_values = {}
-                            total_samples = 0
-                            malformed_count = 0
-
-                            for idx, row in df.iterrows():
-                                annotation_val = row.get(annotation_column)
-                                if pd.isna(annotation_val) or annotation_val == '':
-                                    continue
-
-                                total_samples += 1
-                                try:
-                                    if isinstance(annotation_val, str):
-                                        try:
-                                            annotation_dict = json.loads(annotation_val)
-                                        except json.JSONDecodeError:
-                                            import ast
-                                            annotation_dict = ast.literal_eval(annotation_val)
-                                    elif isinstance(annotation_val, dict):
-                                        annotation_dict = annotation_val
-                                    else:
-                                        continue
-
-                                    # Extract keys and values (excluding the filtered ones)
-                                    for key, value in annotation_dict.items():
-                                        if key not in all_keys_values:
-                                            all_keys_values[key] = set()
-
-                                        if isinstance(value, list):
-                                            for v in value:
-                                                if v is not None and v != '':
-                                                    all_keys_values[key].add(str(v))
-                                        elif value is not None and value != '':
-                                            all_keys_values[key].add(str(value))
-
-                                except (json.JSONDecodeError, AttributeError, TypeError, ValueError, SyntaxError) as e:
-                                    malformed_count += 1
-                                    continue
-
-                            # Display updated summary
-                            self.console.print("[bold]📊 Updated Data Summary:[/bold]")
-                            summary_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
-                            summary_table.add_column("Key", style="yellow bold", width=25)
-                            summary_table.add_column("Values (After Filtering)", style="white", width=50)
-
-                            for key in sorted(all_keys_values.keys()):
-                                values_set = all_keys_values[key]
-                                num_values = len(values_set)
-                                sample_str = ', '.join([f"'{v}'" for v in sorted(values_set)[:5]])
-                                if num_values > 5:
-                                    sample_str += f" ... (+{num_values - 5} more)"
-
-                                # Show what was excluded
-                                if key in excluded_values:
-                                    excluded_str = f"[dim red](excluded: {', '.join(excluded_values[key])})[/dim red]"
-                                    summary_table.add_row(
-                                        f"{key}\n{excluded_str}",
-                                        f"[green]{num_values} values[/green]: {sample_str}"
-                                    )
+                                    except json.JSONDecodeError:
+                                        import ast
+                                        annotation_dict = ast.literal_eval(annotation_val)
+                                elif isinstance(annotation_val, dict):
+                                    annotation_dict = annotation_val
                                 else:
-                                    summary_table.add_row(
-                                        key,
-                                        f"{num_values} values: {sample_str}"
-                                    )
+                                    continue
 
-                            self.console.print(summary_table)
-                            self.console.print()
-                        else:
-                            self.console.print("[yellow]⚠️  No matching rows found to remove[/yellow]\n")
+                                # Extract keys and values (excluding the filtered ones)
+                                for key, value in annotation_dict.items():
+                                    if key not in all_keys_values:
+                                        all_keys_values[key] = set()
+
+                                    if isinstance(value, list):
+                                        for v in value:
+                                            if v is not None and v != '':
+                                                all_keys_values[key].add(str(v))
+                                    elif value is not None and value != '':
+                                        all_keys_values[key].add(str(value))
+
+                            except (json.JSONDecodeError, AttributeError, TypeError, ValueError, SyntaxError) as e:
+                                malformed_count += 1
+                                continue
+
+                        # Display updated summary
+                        self.console.print("[bold]📊 Updated Data Summary:[/bold]")
+                        summary_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+                        summary_table.add_column("Key", style="yellow bold", width=25)
+                        summary_table.add_column("Values (After Filtering)", style="white", width=50)
+
+                        for key in sorted(all_keys_values.keys()):
+                            values_set = all_keys_values[key]
+                            num_values = len(values_set)
+                            sample_str = ', '.join([f"'{v}'" for v in sorted(values_set)[:5]])
+                            if num_values > 5:
+                                sample_str += f" ... (+{num_values - 5} more)"
+
+                            # Show what was excluded
+                            if key in excluded_values:
+                                excluded_str = f"[dim red](excluded: {', '.join(excluded_values[key])})[/dim red]"
+                                summary_table.add_row(
+                                    f"{key}\n{excluded_str}",
+                                    f"[green]{num_values} values[/green]: {sample_str}"
+                                )
+                            else:
+                                summary_table.add_row(
+                                    key,
+                                    f"{num_values} values: {sample_str}"
+                                )
+
+                        self.console.print(summary_table)
+                        self.console.print()
                 else:
                     self.console.print("[dim]✓ No values excluded - using all data[/dim]\n")
 
@@ -9684,6 +9859,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         )
         from llm_tool.trainers.model_trainer import ModelTrainer, TrainingConfig
         from rich.prompt import IntPrompt
+        from rich.table import Table
+        from rich import box
         import tempfile
         from pathlib import Path
         import json
@@ -9995,139 +10172,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(f"\n[red]❌ Only {len(selected_models_benchmark)} unique model(s) - benchmark requires at least 2 different models[/red]")
                 return None
 
-        # ======================== STEP 2: Reinforced Learning Strategy ========================
-        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-        self.console.print("[bold cyan]      🧠 STEP 2: Reinforced Learning Strategy (Benchmark)      [/bold cyan]")
-        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
-
-        self.console.print("[bold]What is Reinforced Learning?[/bold]")
-        self.console.print("  • [cyan]Adaptive training technique[/cyan] that activates when a model underperforms")
-        self.console.print("  • [cyan]Detects poor F1 scores[/cyan] and applies corrective techniques automatically")
-        self.console.print("  • [cyan]Specifically designed[/cyan] to address [yellow]class imbalance[/yellow] problems\n")
-
-        self.console.print("[bold]🔧 Techniques Applied:[/bold]")
-        self.console.print("  • [cyan]Minority class oversampling[/cyan]: Duplicates underrepresented samples")
-        self.console.print("  • [cyan]Adaptive parameters[/cyan]: Automatically adjusts learning rate, batch size, and epochs")
-        self.console.print("  • [cyan]Loss correction[/cyan]: Applies class weights to the cross-entropy loss function\n")
-
-        self.console.print("[bold yellow]⚠️  Default Settings (Configurable):[/bold yellow]")
-        self.console.print("  • [yellow]F1 Threshold[/yellow]: 0.70 - Triggers reinforced learning when F1 < threshold")
-        self.console.print("  • [yellow]Oversampling Factor[/yellow]: 2.0 - Minority class appears 2× more in training")
-        self.console.print("  • [yellow]Loss Weight Factor[/yellow]: 2.0 - Minority class errors weighted 2× higher\n")
-
-        self.console.print("[bold]📊 What These Parameters Do:[/bold]")
-        self.console.print("  • [green]F1 Threshold[/green]: Lower = More aggressive (activates earlier)")
-        self.console.print("    Example: 0.50 → Triggers when model performs poorly")
-        self.console.print("    Example: 0.80 → Triggers only for high-performing models")
-        self.console.print("  • [green]Oversampling Factor[/green]: How many times to duplicate minority samples")
-        self.console.print("    Example: 3.0 → Minority class appears 3× in each epoch")
-        self.console.print("  • [green]Loss Weight Factor[/green]: Penalty multiplier for minority class errors")
-        self.console.print("    Example: 3.0 → Model penalized 3× more for missing minority samples\n")
-
-        self.console.print("[bold red]Risks & Considerations:[/bold red]")
-        self.console.print("  • [yellow]Longer training time[/yellow] (can add 50-100% more time)")
-        self.console.print("  • [yellow]Potential overfitting[/yellow] if dataset is very small (<500 samples)")
-        self.console.print("  • [yellow]May not help[/yellow] if data quality or quantity is insufficient")
-        self.console.print("  • [yellow]High oversampling[/yellow] (>5.0) can cause memorization of minority class\n")
-
-        self.console.print("[yellow]Note:[/yellow] [dim]Compatible with ALL models (BERT, RoBERTa, DeBERTa, etc.)[/dim]\n")
-
-        enable_benchmark_rl = Confirm.ask(
-            "[bold yellow]Enable reinforced learning?[/bold yellow]",
-            default=False
-        )
-
-        # Default reinforced learning parameters
+        # ======================== STEP 2: Training Epochs ========================
+        # Reinforced learning is enabled by default with standard parameters
+        enable_benchmark_rl = True
         rl_f1_threshold = 0.70
         rl_oversample_factor = 2.0
         rl_class_weight_factor = 2.0
-
-        if enable_benchmark_rl:
-            # Ask if user wants to configure parameters
-            configure_rl = Confirm.ask(
-                "\n[bold cyan]Configure reinforced learning parameters manually?[/bold cyan]\n"
-                "[dim](Choose 'n' to use recommended defaults)[/dim]",
-                default=False
-            )
-
-            if configure_rl:
-                self.console.print("\n[bold green]⚙️  Manual Configuration[/bold green]\n")
-
-                # F1 Threshold
-                self.console.print("[bold]1️⃣  F1 Activation Threshold[/bold]")
-                self.console.print("   [dim]When F1-score drops below this value, reinforced learning activates[/dim]")
-                self.console.print("   • Recommended: [green]0.70[/green] (moderate)")
-                self.console.print("   • Conservative: [yellow]0.50[/yellow] (only very poor models)")
-                self.console.print("   • Aggressive: [yellow]0.85[/yellow] (triggers early)\n")
-
-                f1_input = Prompt.ask(
-                    "F1 threshold",
-                    default="0.70"
-                )
-                try:
-                    rl_f1_threshold = float(f1_input)
-                    if rl_f1_threshold < 0 or rl_f1_threshold > 1:
-                        self.console.print("[yellow]⚠️  F1 must be between 0 and 1. Using default 0.70[/yellow]")
-                        rl_f1_threshold = 0.70
-                except ValueError:
-                    self.console.print("[yellow]⚠️  Invalid input. Using default 0.70[/yellow]")
-                    rl_f1_threshold = 0.70
-
-                # Oversampling Factor
-                self.console.print("\n[bold]2️⃣  Minority Class Oversampling Factor[/bold]")
-                self.console.print("   [dim]How many times to duplicate minority class samples during training[/dim]")
-                self.console.print("   • Recommended: [green]2.0[/green] (doubles minority samples)")
-                self.console.print("   • Light: [yellow]1.5[/yellow] (50% increase)")
-                self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× minority samples)")
-                self.console.print("   • [red]⚠️  Values > 5.0 risk overfitting[/red]\n")
-
-                oversample_input = Prompt.ask(
-                    "Oversampling factor",
-                    default="2.0"
-                )
-                try:
-                    rl_oversample_factor = float(oversample_input)
-                    if rl_oversample_factor < 1.0:
-                        self.console.print("[yellow]⚠️  Factor must be ≥ 1.0. Using default 2.0[/yellow]")
-                        rl_oversample_factor = 2.0
-                    elif rl_oversample_factor > 5.0:
-                        self.console.print("[yellow]⚠️  Warning: High values (>5.0) may cause overfitting[/yellow]")
-                except ValueError:
-                    self.console.print("[yellow]⚠️  Invalid input. Using default 2.0[/yellow]")
-                    rl_oversample_factor = 2.0
-
-                # Class Weight Factor
-                self.console.print("\n[bold]3️⃣  Cross-Entropy Loss Weight Factor[/bold]")
-                self.console.print("   [dim]Penalty multiplier for misclassifying minority class samples[/dim]")
-                self.console.print("   • Recommended: [green]2.0[/green] (2× penalty for minority errors)")
-                self.console.print("   • Light: [yellow]1.5[/yellow] (50% higher penalty)")
-                self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× penalty)")
-                self.console.print("   • [red]⚠️  Values > 5.0 may destabilize training[/red]\n")
-
-                weight_input = Prompt.ask(
-                    "Loss weight factor",
-                    default="2.0"
-                )
-                try:
-                    rl_class_weight_factor = float(weight_input)
-                    if rl_class_weight_factor < 1.0:
-                        self.console.print("[yellow]⚠️  Factor must be ≥ 1.0. Using default 2.0[/yellow]")
-                        rl_class_weight_factor = 2.0
-                    elif rl_class_weight_factor > 5.0:
-                        self.console.print("[yellow]⚠️  Warning: High values (>5.0) may destabilize training[/yellow]")
-                except ValueError:
-                    self.console.print("[yellow]⚠️  Invalid input. Using default 2.0[/yellow]")
-                    rl_class_weight_factor = 2.0
-
-                # Summary
-                self.console.print("\n[bold green]✓ Reinforced Learning Configuration:[/bold green]")
-                self.console.print(f"  • F1 Threshold: [cyan]{rl_f1_threshold:.2f}[/cyan]")
-                self.console.print(f"  • Oversampling Factor: [cyan]{rl_oversample_factor:.1f}×[/cyan]")
-                self.console.print(f"  • Loss Weight Factor: [cyan]{rl_class_weight_factor:.1f}×[/cyan]\n")
-            else:
-                self.console.print("\n[green]✓ Using recommended defaults (F1=0.70, Oversample=2.0×, Weight=2.0×)[/green]\n")
-
-        # ======================== STEP 3: Training Epochs ========================
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
         self.console.print("[bold cyan]           ⏱️  STEP 3: Training Epochs (Benchmark)              [/bold cyan]")
         self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
@@ -10157,8 +10207,132 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         benchmark_rl_params = {
             'f1_threshold': rl_f1_threshold,
             'oversample_factor': rl_oversample_factor,
-            'class_weight_factor': rl_class_weight_factor
+            'class_weight_factor': rl_class_weight_factor,
+            'reinforced_epochs': None  # Will be set later if configured manually
         }
+
+        # Calculate and display total epochs (always show, even if RL disabled)
+        from ..trainers.reinforced_params import get_reinforced_params
+
+        if enable_benchmark_rl:
+            self.console.print("\n[bold yellow]⚠️  Reinforced Learning Epoch Calculation[/bold yellow]\n")
+            self.console.print("[dim]When F1 < {:.2f}, reinforced learning adds extra epochs.[/dim]".format(rl_f1_threshold))
+            self.console.print("[dim]The table below shows the MAXIMUM possible epochs (worst case: F1 = 0.0)[/dim]\n")
+        else:
+            self.console.print("\n[bold cyan]📊 Total Training Epochs[/bold cyan]\n")
+            self.console.print("[dim]Reinforced learning is disabled. All models will train for the same number of epochs.[/dim]\n")
+
+        # Create table showing epoch calculation (always show)
+        epoch_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+        epoch_table.add_column("Model", style="yellow", width=40)
+        epoch_table.add_column("Base Epochs", style="cyan", justify="center", width=12)
+        if enable_benchmark_rl:
+            epoch_table.add_column("Max Reinforced", style="red", justify="center", width=15)
+            epoch_table.add_column("Max Total", style="green bold", justify="center", width=12)
+        else:
+            epoch_table.add_column("Total Epochs", style="green bold", justify="center", width=12)
+
+        max_total_epochs = benchmark_epochs
+
+        # Get all models to calculate epochs for
+        models_to_calculate = []
+        if train_by_language:
+            for lang, models in models_by_language_benchmark.items():
+                models_to_calculate.extend(models)
+        else:
+            models_to_calculate = selected_models_benchmark
+
+        for model_id in models_to_calculate:
+            model_name = model_id.split('/')[-1] if '/' in model_id else model_id
+
+            if enable_benchmark_rl:
+                # Calculate potential reinforced epochs (worst case: F1 = 0.0)
+                reinforced_params = get_reinforced_params(
+                    model_name=model_name,
+                    best_f1_1=0.0,  # Worst case scenario
+                    original_lr=5e-5,
+                    num_classes=2
+                )
+                max_reinforced_epochs = reinforced_params.get('n_epochs', 0)
+                total_possible = benchmark_epochs + max_reinforced_epochs
+
+                if total_possible > max_total_epochs:
+                    max_total_epochs = total_possible
+
+                epoch_table.add_row(
+                    model_id,
+                    str(benchmark_epochs),
+                    str(max_reinforced_epochs),
+                    str(total_possible)
+                )
+            else:
+                # No reinforced learning - just show base epochs
+                epoch_table.add_row(
+                    model_id,
+                    str(benchmark_epochs),
+                    str(benchmark_epochs)
+                )
+
+        self.console.print(epoch_table)
+        self.console.print()
+
+        # Ask for confirmation
+        if enable_benchmark_rl:
+            epochs_confirmed = Confirm.ask(
+                f"[bold yellow]Continue with these epoch settings? (Max {max_total_epochs} epochs per model)[/bold yellow]",
+                default=True
+            )
+        else:
+            epochs_confirmed = Confirm.ask(
+                f"[bold yellow]Continue with {benchmark_epochs} epoch(s) per model?[/bold yellow]",
+                default=True
+            )
+
+        # Store manual reinforced epochs if configured
+        manual_reinforced_epochs = None
+
+        if not epochs_confirmed:
+            # Ask what the user wants to configure
+            self.console.print("\n[yellow]What would you like to configure?[/yellow]")
+
+            # Ask if user wants to modify base epochs
+            modify_base = Confirm.ask(
+                "[bold yellow]Modify base epochs?[/bold yellow]",
+                default=True
+            )
+
+            if modify_base:
+                benchmark_epochs = IntPrompt.ask(
+                    "[bold yellow]Base epochs for benchmark[/bold yellow]",
+                    default=benchmark_epochs
+                )
+                self.console.print(f"[green]✓ Base epochs set to: {benchmark_epochs}[/green]\n")
+
+            if enable_benchmark_rl:
+                # Ask if user wants to configure RL epochs manually
+                configure_rl_epochs = Confirm.ask(
+                    "[bold yellow]Configure reinforced learning epochs manually?[/bold yellow]\n"
+                    "[dim](Default: auto-calculated based on model performance)[/dim]",
+                    default=False
+                )
+
+                if configure_rl_epochs:
+                    self.console.print("\n[bold cyan]ℹ️  Reinforced Learning Epochs:[/bold cyan]")
+                    self.console.print("[dim]These epochs will be used for ALL models when F1 < {:.2f}[/dim]".format(rl_f1_threshold))
+                    self.console.print("[dim]Auto-calculation typically uses 8-20 epochs based on model type[/dim]\n")
+
+                    manual_reinforced_epochs = IntPrompt.ask(
+                        "[bold yellow]Reinforced epochs[/bold yellow]",
+                        default=10
+                    )
+
+                    self.console.print(f"[green]✓ Manual reinforced epochs set to: {manual_reinforced_epochs}[/green]\n")
+                else:
+                    self.console.print("[green]✓ Reinforced learning epochs will be auto-calculated[/green]\n")
+
+        # Update RL params with manual reinforced epochs if configured
+        if manual_reinforced_epochs is not None:
+            benchmark_rl_params['reinforced_epochs'] = manual_reinforced_epochs
 
         # ======================== STEP 4: Category Selection ========================
         self.console.print("\n[bold]STEP 4: Select Categories for Benchmark[/bold]\n")
@@ -10225,9 +10399,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("[dim]Performing class imbalance analysis to suggest representative categories...[/dim]\n")
 
             # Analyze categories
+            # CRITICAL: Only analyze categories that were selected for training
             imbalance_analysis = analyze_categories_imbalance(
                 data=original_dataframe,
-                annotation_column=annotation_column
+                annotation_column=annotation_column,
+                filter_categories=metadata_categories  # Only analyze training-selected categories
             )
 
             if not imbalance_analysis:
@@ -10396,15 +10572,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     # Transform to multi-label format: list of "key_value" strings
                     # E.g., {'sentiment': 'positive', 'theme': 'politics'} → ['sentiment_positive', 'theme_politics']
+                    # CRITICAL: Exclude 'null' string values
                     label_list = []
                     for key, value in filtered_annotation.items():
-                        if isinstance(value, str) and value:
+                        if isinstance(value, str) and value and value != 'null':
                             # Combine key and value into single label string
                             label_list.append(f"{key}_{value}")
                         elif isinstance(value, list):
                             # Handle list values (shouldn't happen in this flow, but be defensive)
                             for v in value:
-                                if isinstance(v, str) and v:
+                                if isinstance(v, str) and v and v != 'null':
                                     label_list.append(f"{key}_{v}")
 
                     if not label_list:
@@ -10434,9 +10611,48 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Run benchmark for each model
             benchmark_results = {}
 
-            # Create unified session ID for the entire benchmark run
-            import datetime
-            benchmark_session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Reuse the session ID from the training session (self.current_session_id)
+            # This ensures all benchmark results go to the same session directory
+            # If session_id doesn't exist yet, create one
+            if hasattr(self, 'current_session_id') and self.current_session_id:
+                benchmark_session_id = self.current_session_id
+            else:
+                # Fallback: create session_id if not yet initialized
+                import datetime
+                benchmark_session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                self.current_session_id = benchmark_session_id
+
+            # Initialize global progress tracking for benchmark
+            import time
+            global_start_time = time.time()
+            global_total_models = len(all_models_to_test)
+
+            # Calculate total epochs accounting for all categories
+            # Each model must be trained on each category, so total = models × categories × epochs
+            num_categories = 1 if selected_benchmark_categories is None else len(selected_benchmark_categories)
+            global_total_epochs = global_total_models * num_categories * benchmark_epochs
+            global_completed_epochs = 0
+
+            # ============================================================
+            # CRITICAL: Validate and filter insufficient labels BEFORE training
+            # ============================================================
+            try:
+                benchmark_file, was_filtered = self._validate_and_filter_insufficient_labels(
+                    input_file=str(benchmark_file),
+                    strategy=bundle.strategy,
+                    min_samples=2,
+                    auto_remove=False  # Ask user for confirmation
+                )
+                if was_filtered:
+                    self.console.print(f"[green]✓ Using filtered benchmark dataset[/green]\n")
+            except ValueError as e:
+                # User cancelled or validation failed
+                self.console.print(f"[red]{e}[/red]")
+                return None
+            except Exception as e:
+                self.logger.warning(f"Label validation failed: {e}")
+                # Continue with original file if validation fails
+                pass
 
             # Run benchmark for each model
             for idx, model_id in enumerate(all_models_to_test, 1):
@@ -10458,6 +10674,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     trainer = ModelTrainer(config=config)
 
+                    # Create progress callback to track completed epochs
+                    def progress_callback(**metrics):
+                        """Callback to increment global completed epochs counter"""
+                        nonlocal global_completed_epochs
+                        global_completed_epochs += 1
+
                     # Prepare training params
                     train_params = {
                         'input_file': str(benchmark_file),
@@ -10468,7 +10690,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'training_strategy': bundle.strategy,
                         'output_dir': str(model_output_dir),
                         'is_benchmark': True,  # Flag to enable benchmark mode log structure
-                        'session_id': benchmark_session_id  # Unified session ID for all models in benchmark
+                        'session_id': benchmark_session_id,  # Unified session ID for all models in benchmark
+                        'progress_callback': progress_callback,  # Add callback for epoch tracking
+                        # Global progress tracking parameters
+                        'global_total_models': global_total_models,
+                        'global_current_model': idx,
+                        'global_total_epochs': global_total_epochs,
+                        'global_completed_epochs': global_completed_epochs,
+                        'global_start_time': global_start_time
                     }
 
                     # Add language filtering for per-language models
@@ -10487,15 +10716,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         train_params['rl_f1_threshold'] = benchmark_rl_params.get('f1_threshold', 0.70)
                         train_params['rl_oversample_factor'] = benchmark_rl_params.get('oversample_factor', 2.0)
                         train_params['rl_class_weight_factor'] = benchmark_rl_params.get('class_weight_factor', 2.0)
+                        # Pass manual reinforced epochs if configured
+                        if benchmark_rl_params.get('reinforced_epochs') is not None:
+                            train_params['reinforced_epochs'] = benchmark_rl_params['reinforced_epochs']
 
                     # Train
                     result = trainer.train(train_params)
 
+                    # NOTE: global_completed_epochs is tracked internally by the trainer via display.global_completed_epochs
+                    # Each epoch increments the counter automatically, accounting for all categories and reinforced learning
+                    # No manual increment needed here - the next model will receive the updated count via the display object
+
                     benchmark_results[model_id] = result
 
+                    # Extract metrics with backward compatibility for different key names
+                    f1_score = result.get('f1_macro', result.get('f1', result.get('best_f1_macro', 0)))
+                    accuracy = result.get('accuracy', result.get('best_accuracy', 0))
+
                     self.console.print(f"\n[green]✓ Training Complete[/green]")
-                    self.console.print(f"  • Overall F1-Score: [bold green]{result.get('f1_macro', result.get('best_f1_macro', 0)):.3f}[/bold green]")
-                    self.console.print(f"  • Overall Accuracy: [bold green]{result.get('accuracy', 0):.3f}[/bold green]")
+                    self.console.print(f"  • Overall F1-Score: [bold green]{f1_score:.3f}[/bold green]")
+                    self.console.print(f"  • Overall Accuracy: [bold green]{accuracy:.3f}[/bold green]")
                     if 'training_time' in result:
                         self.console.print(f"  • Time: [cyan]{result['training_time']:.1f}s[/cyan]")
 
@@ -10521,6 +10761,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("[bold cyan]         📊 STEP 6: BENCHMARK RESULTS                           [/bold cyan]")
         self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
+        # Display ranking methodology explanation
+        self.console.print("[bold yellow]📋 How Models Are Ranked:[/bold yellow]")
+        self.console.print("\n[bold]Sophisticated Combined Metric System[/bold] (mirrors epoch selection):\n")
+        self.console.print("  [cyan]1. Combined Score[/cyan] (Primary Criterion)")
+        self.console.print("     • Binary Classification: [green]70% × F1_minority + 30% × F1_macro[/green]")
+        self.console.print("       → Prioritizes minority class detection (e.g., detecting defects, fraud)")
+        self.console.print("     • Multi-Class: [green]F1_macro[/green] (balanced across all classes)\n")
+
+        self.console.print("  [cyan]2. Language Balance Penalty[/cyan] (for multilingual data)")
+        self.console.print("     • Measures performance consistency across languages")
+        self.console.print("     • Penalty = [yellow]min(CV × 0.2, 0.2)[/yellow] where CV = coefficient of variation")
+        self.console.print("     • Example: Model with F1=90% (EN) + F1=30% (FR) → [red]penalized[/red]")
+        self.console.print("     • Example: Model with F1=70% (EN) + F1=65% (FR) → [green]minimal penalty[/green]\n")
+
+        self.console.print("  [cyan]3. Tiebreakers[/cyan]")
+        self.console.print("     • [green]Accuracy[/green] (when combined scores equal)")
+        self.console.print("     • [green]Training Time[/green] (faster is better when score + accuracy equal)\n")
+
+        self.console.print("[dim]💡 This ensures models are ranked the same way best epochs are selected during training[/dim]\n")
+
         # Check if we have multi-category results
         has_category_details = any('category_metrics' in result and result['category_metrics']
                                    for result in benchmark_results.values())
@@ -10529,16 +10789,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Display detailed per-category results
             self.console.print("[bold]Overall Rankings:[/bold]\n")
 
-            # Create comparison DataFrame
-            comparison_df = compare_model_results(benchmark_results)
+            # Create comparison DataFrame with sophisticated ranking
+            comparison_df = compare_model_results(benchmark_results, use_sophisticated_ranking=True)
 
             # Overall results table
-            results_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+            results_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED, title="[bold]Ranked Results[/bold]")
             results_table.add_column("Rank", style="yellow", width=6)
             results_table.add_column("Model", style="cyan", width=35)
-            results_table.add_column("Avg F1", style="green", width=10)
-            results_table.add_column("Avg Acc", style="green", width=10)
-            results_table.add_column("Time (s)", style="blue", width=10)
+            results_table.add_column("Combined\nScore", style="bold green", width=10, justify="right")
+            results_table.add_column("Avg F1", style="green", width=10, justify="right")
+            results_table.add_column("Avg Acc", style="green", width=10, justify="right")
+            results_table.add_column("Time (s)", style="blue", width=10, justify="right")
 
             for _, row in comparison_df.iterrows():
                 # Add emoji for top 3
@@ -10551,9 +10812,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 else:
                     rank_str = f"   {row['rank']}"
 
+                # Highlight combined score if different from f1_macro
+                combined_score = row.get('combined_score', row['f1_macro'])
+                if abs(combined_score - row['f1_macro']) > 0.001:
+                    combined_str = f"[bold]{combined_score:.3f}[/bold]"
+                else:
+                    combined_str = f"{combined_score:.3f}"
+
                 results_table.add_row(
                     rank_str,
                     row['model'],
+                    combined_str,
                     f"{row['f1_macro']:.3f}",
                     f"{row['accuracy']:.3f}",
                     f"{row['training_time']:.1f}"
@@ -10610,16 +10879,17 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         else:
             # Simple display for single-category or no details available
-            # Create comparison DataFrame
-            comparison_df = compare_model_results(benchmark_results)
+            # Create comparison DataFrame with sophisticated ranking
+            comparison_df = compare_model_results(benchmark_results, use_sophisticated_ranking=True)
 
-            # Display results
-            results_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+            # Display results with combined score
+            results_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED, title="[bold]Ranked Results[/bold]")
             results_table.add_column("Rank", style="yellow", width=6)
             results_table.add_column("Model", style="cyan", width=45)
-            results_table.add_column("F1-Score", style="green", width=10)
-            results_table.add_column("Accuracy", style="green", width=10)
-            results_table.add_column("Time (s)", style="blue", width=10)
+            results_table.add_column("Combined\nScore", style="bold green", width=10, justify="right")
+            results_table.add_column("F1-Macro", style="green", width=10, justify="right")
+            results_table.add_column("Accuracy", style="green", width=10, justify="right")
+            results_table.add_column("Time (s)", style="blue", width=10, justify="right")
 
             for _, row in comparison_df.iterrows():
                 # Add emoji for top 3
@@ -10632,9 +10902,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 else:
                     rank_str = f"   {row['rank']}"
 
+                # Highlight combined score if different from f1_macro
+                combined_score = row.get('combined_score', row['f1_macro'])
+                if abs(combined_score - row['f1_macro']) > 0.001:
+                    # Different → show in bold
+                    combined_str = f"[bold]{combined_score:.3f}[/bold]"
+                else:
+                    combined_str = f"{combined_score:.3f}"
+
                 results_table.add_row(
                     rank_str,
                     row['model'],
+                    combined_str,
                     f"{row['f1_macro']:.3f}",
                     f"{row['accuracy']:.3f}",
                     f"{row['training_time']:.1f}"
@@ -10642,13 +10921,31 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             self.console.print(results_table)
 
+            # Display ranking explanations for top 3 models
+            self.console.print("\n[bold cyan]📊 Top 3 Models - Ranking Details:[/bold cyan]\n")
+            for _, row in comparison_df.head(3).iterrows():
+                emoji = "🥇" if row['rank'] == 1 else "🥈" if row['rank'] == 2 else "🥉"
+                self.console.print(f"{emoji} [bold]{row['model']}[/bold]")
+                if 'ranking_explanation' in row and row['ranking_explanation']:
+                    self.console.print(f"   → {row['ranking_explanation']}")
+
+                # Show class-specific F1 if binary classification
+                if 'f1_class_1' in row and row['f1_class_1'] > 0:
+                    self.console.print(f"   → F1_class_0: {row['f1_class_0']:.3f} | F1_class_1: {row['f1_class_1']:.3f}")
+
+                # Show language penalty if applicable
+                if 'language_balance_penalty' in row and row['language_balance_penalty'] > 0:
+                    self.console.print(f"   → Language imbalance penalty: [yellow]-{row['language_balance_penalty']:.1%}[/yellow]")
+
+                self.console.print()
+
         # ======================== Consolidate Session CSVs ========================
         # Create consolidated CSV files at session root
         try:
             from llm_tool.utils.benchmark_utils import consolidate_session_csvs
 
-            # Session directory is in training_logs/{session_id}
-            session_dir = Path("training_logs") / benchmark_session_id
+            # Session directory is in logs/training_arena/{session_id}/training_metrics
+            session_dir = Path("logs/training_arena") / benchmark_session_id / "training_metrics"
 
             if session_dir.exists():
                 self.console.print("\n[bold cyan]📊 Consolidating session metrics...[/bold cyan]")
@@ -10892,11 +11189,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(f"  • [cyan]Datasets logged:[/cyan] {datasets_logged}")
 
             self.console.print(f"\n  📋 [cyan]Reports:[/cyan]")
-            self.console.print(f"     - Model Catalog:      {self.current_session_manager.logs_dir / 'model_catalog.csv'} ← ALL models with full details")
+            self.console.print(f"     - Model Catalog:      {self.current_session_manager.training_data_logs_dir / 'model_catalog.csv'} ← ALL models with full details")
             self.console.print(f"     - Session Summary:    {self.current_session_manager.session_dir / 'SESSION_SUMMARY.txt'} ← Complete overview")
-            self.console.print(f"     - Quick overview:     {self.current_session_manager.logs_dir / 'quick_summary.csv'}")
-            self.console.print(f"     - Detailed breakdown: {self.current_session_manager.logs_dir / 'split_summary.csv'}")
-            self.console.print(f"     - Complete data:      {self.current_session_manager.logs_dir / 'distribution_report.json'}")
+            self.console.print(f"     - Quick overview:     {self.current_session_manager.training_data_logs_dir / 'quick_summary.csv'}")
+            self.console.print(f"     - Detailed breakdown: {self.current_session_manager.training_data_logs_dir / 'split_summary.csv'}")
+            self.console.print(f"     - Complete data:      {self.current_session_manager.training_data_logs_dir / 'distribution_report.json'}")
 
             if training_context:
                 self.console.print(f"\n  [dim]💡 Reports include complete training context: mode, models trained, and benchmark results.[/dim]")
@@ -11314,6 +11611,166 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         except ValueError as e:
             self.console.print(f"      [red]Error: {e}[/red]")
             return None
+
+    def _validate_and_filter_insufficient_labels(
+        self,
+        input_file: str,
+        strategy: str,
+        min_samples: int = 2,
+        auto_remove: bool = False
+    ) -> Tuple[str, bool]:
+        """
+        Validate that all labels have at least min_samples.
+        If not, prompt user to remove insufficient labels.
+
+        Args:
+            input_file: Path to JSONL training file
+            strategy: 'multi-label' or 'single-label' (multi-class)
+            min_samples: Minimum samples required per label (default: 2 for train+val split)
+            auto_remove: If True, automatically remove insufficient labels without prompting
+
+        Returns:
+            Tuple of (filtered_file_path, was_modified)
+        """
+        import json
+        from collections import Counter
+        from pathlib import Path
+        from rich.table import Table
+        from rich import box
+        from rich.prompt import Confirm
+
+        input_path = Path(input_file)
+        if not input_path.exists():
+            return str(input_file), False
+
+        # Read dataset and count labels
+        label_counter = Counter()
+        records = []
+
+        try:
+            with open(input_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    records.append(record)
+
+                    # Extract labels based on strategy
+                    labels_data = record.get('labels', record.get('label'))
+
+                    if strategy == 'multi-label':
+                        # Labels is a list of strings
+                        if isinstance(labels_data, list):
+                            for label in labels_data:
+                                label_counter[str(label)] += 1
+                        elif isinstance(labels_data, str):
+                            label_counter[labels_data] += 1
+                    else:
+                        # Single-label: labels is a string
+                        if labels_data:
+                            label_counter[str(labels_data)] += 1
+
+        except Exception as e:
+            self.logger.warning(f"Could not validate labels: {e}")
+            return str(input_file), False
+
+        # Find insufficient labels
+        insufficient_labels = {
+            label: count for label, count in label_counter.items()
+            if count < min_samples
+        }
+
+        if not insufficient_labels:
+            # All labels have sufficient samples
+            return str(input_file), False
+
+        # Display warning
+        self.console.print(f"\n[bold red]⚠️  INSUFFICIENT SAMPLES DETECTED[/bold red]\n")
+        self.console.print(f"[yellow]The following labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]\n")
+
+        table = Table(border_style="red", show_header=True, header_style="bold red", box=box.ROUNDED)
+        table.add_column("Label", style="yellow bold", width=40)
+        table.add_column("Samples", style="red", justify="right", width=15)
+        table.add_column("Status", style="red", width=20)
+
+        for label, count in sorted(insufficient_labels.items(), key=lambda x: x[1]):
+            table.add_row(
+                label,
+                str(count),
+                "❌ BLOCKED"
+            )
+
+        self.console.print(table)
+        self.console.print()
+
+        # Ask user what to do
+        if not auto_remove:
+            self.console.print("[bold]Options:[/bold]")
+            self.console.print("  • [green]Remove[/green]: Automatically remove all samples with these labels")
+            self.console.print("  • [red]Cancel[/red]: Stop training and fix dataset manually\n")
+
+            should_remove = Confirm.ask(
+                "Remove insufficient labels automatically?",
+                default=False
+            )
+
+            if not should_remove:
+                self.console.print("[yellow]❌ Training cancelled. Please fix dataset manually.[/yellow]")
+                raise ValueError(f"Dataset contains {len(insufficient_labels)} label(s) with insufficient samples (< {min_samples})")
+
+        # Filter dataset
+        self.console.print(f"\n[yellow]🔄 Filtering dataset to remove insufficient labels...[/yellow]")
+
+        filtered_records = []
+        removed_count = 0
+
+        for record in records:
+            labels_data = record.get('labels', record.get('label'))
+
+            if strategy == 'multi-label':
+                # Filter list of labels
+                if isinstance(labels_data, list):
+                    original_labels = labels_data
+                    filtered_labels = [
+                        label for label in labels_data
+                        if str(label) not in insufficient_labels
+                    ]
+
+                    if filtered_labels:
+                        # Keep record with filtered labels
+                        record_copy = record.copy()
+                        record_copy['labels'] = filtered_labels
+                        filtered_records.append(record_copy)
+                    else:
+                        # All labels removed - skip record
+                        removed_count += 1
+                else:
+                    # Single label in multi-label format - check if sufficient
+                    if str(labels_data) not in insufficient_labels:
+                        filtered_records.append(record)
+                    else:
+                        removed_count += 1
+            else:
+                # Single-label: only keep if label is sufficient
+                if labels_data and str(labels_data) not in insufficient_labels:
+                    filtered_records.append(record)
+                else:
+                    removed_count += 1
+
+        # Save filtered dataset
+        filtered_path = input_path.parent / f"{input_path.stem}_filtered{input_path.suffix}"
+
+        with open(filtered_path, 'w', encoding='utf-8') as f:
+            for record in filtered_records:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+
+        self.console.print(f"[green]✓ Filtered dataset saved:[/green] {filtered_path.name}")
+        self.console.print(f"  • [cyan]Original samples:[/cyan] {len(records)}")
+        self.console.print(f"  • [cyan]Filtered samples:[/cyan] {len(filtered_records)}")
+        self.console.print(f"  • [yellow]Removed samples:[/yellow] {removed_count}")
+        self.console.print(f"  • [red]Removed labels:[/red] {len(insufficient_labels)}\n")
+
+        return str(filtered_path), True
 
     def _validate_split_ratios(self, train: float, validation: float, test: float) -> Tuple[float, float, float]:
         """Validate and normalize split ratios."""
@@ -12119,6 +12576,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         rl_f1_threshold = 0.70
         rl_oversample_factor = 2.0
         rl_class_weight_factor = 2.0
+        manual_rl_epochs = None  # Initialize here to avoid UnboundLocalError
 
         if enable_reinforced_learning:
             # Ask if user wants to configure parameters
@@ -12197,13 +12655,58 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print("[yellow]⚠️  Invalid input. Using default 2.0[/yellow]")
                     rl_class_weight_factor = 2.0
 
+                # Reinforced Epochs
+                self.console.print("\n[bold]4️⃣  Reinforced Learning Epochs[/bold]")
+                self.console.print("   [dim]Number of additional epochs to run when F1 < threshold[/dim]")
+                self.console.print("   • Default: [green]Auto-calculated[/green] (8-20 epochs based on model type)")
+                self.console.print("   • Manual: [yellow]Choose fixed number[/yellow] (applies to all models)\n")
+
+                use_auto_epochs = Confirm.ask(
+                    "Use auto-calculated epochs?",
+                    default=True
+                )
+
+                manual_rl_epochs = None
+                if not use_auto_epochs:
+                    manual_rl_epochs = IntPrompt.ask(
+                        "[bold yellow]Reinforced epochs[/bold yellow]",
+                        default=10
+                    )
+
                 # Summary
                 self.console.print("\n[bold green]✓ Reinforced Learning Configuration:[/bold green]")
                 self.console.print(f"  • F1 Threshold: [cyan]{rl_f1_threshold:.2f}[/cyan]")
                 self.console.print(f"  • Oversampling Factor: [cyan]{rl_oversample_factor:.1f}×[/cyan]")
-                self.console.print(f"  • Loss Weight Factor: [cyan]{rl_class_weight_factor:.1f}×[/cyan]\n")
+                self.console.print(f"  • Loss Weight Factor: [cyan]{rl_class_weight_factor:.1f}×[/cyan]")
+                if manual_rl_epochs:
+                    self.console.print(f"  • Reinforced Epochs: [cyan]{manual_rl_epochs}[/cyan] (manual)")
+                else:
+                    self.console.print(f"  • Reinforced Epochs: [cyan]Auto-calculated[/cyan]")
+                self.console.print()
             else:
                 self.console.print("\n[green]✓ Using recommended defaults (F1=0.70, Oversample=2.0×, Weight=2.0×)[/green]\n")
+
+                # Ask if user wants to configure RL epochs manually (like in benchmark mode)
+                configure_rl_epochs = Confirm.ask(
+                    "[bold yellow]Configure reinforced learning epochs manually?[/bold yellow]\n"
+                    "[dim](Default: auto-calculated based on model performance)[/dim]",
+                    default=False
+                )
+
+                if configure_rl_epochs:
+                    self.console.print("\n[bold cyan]ℹ️  Reinforced Learning Epochs:[/bold cyan]")
+                    self.console.print("[dim]These epochs will be used when F1 < {:.2f}[/dim]".format(rl_f1_threshold))
+                    self.console.print("[dim]Auto-calculation typically uses 8-20 epochs based on model type[/dim]\n")
+
+                    manual_rl_epochs = IntPrompt.ask(
+                        "[bold yellow]Reinforced epochs[/bold yellow]",
+                        default=10
+                    )
+
+                    self.console.print(f"[green]✓ Manual reinforced epochs set to: {manual_rl_epochs}[/green]\n")
+                else:
+                    self.console.print("[green]✓ Reinforced learning epochs will be auto-calculated[/green]\n")
+                    manual_rl_epochs = None
 
         # STEP 4: Epochs
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
@@ -12242,7 +12745,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Reinforced learning parameters
             'rl_f1_threshold': rl_f1_threshold,
             'rl_oversample_factor': rl_oversample_factor,
-            'rl_class_weight_factor': rl_class_weight_factor
+            'rl_class_weight_factor': rl_class_weight_factor,
+            'manual_rl_epochs': manual_rl_epochs if manual_rl_epochs else None
         }
 
         # Include models_by_language if training per-language
@@ -12417,6 +12921,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             "confirmed_languages": list(languages) if languages else None  # Pass all detected languages
         }
 
+        # Add reinforced learning parameters if enabled
+        if enable_reinforced_learning and quick_params:
+            extra_config["rl_f1_threshold"] = quick_params.get('rl_f1_threshold', 0.70)
+            extra_config["rl_oversample_factor"] = quick_params.get('rl_oversample_factor', 2.0)
+            extra_config["rl_class_weight_factor"] = quick_params.get('rl_class_weight_factor', 2.0)
+            # Pass manual reinforced epochs if configured
+            if quick_params.get('manual_rl_epochs') is not None:
+                extra_config["reinforced_epochs"] = quick_params['manual_rl_epochs']
+
         # Add models_by_language if user selected per-language models
         if models_by_language:
             extra_config["models_by_language"] = models_by_language
@@ -12487,8 +13000,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 import csv
                 temp_dir = Path(tempfile.mkdtemp(prefix="onevsall_"))
 
-                # Get filter logger for tracking
-                filter_logger = get_filter_logger()
+                # Get filter logger for tracking (with session context if available)
+                filter_logger = get_filter_logger(session_id=getattr(self, 'current_session_id', None))
                 location = "advanced_cli.one_vs_all_binary_dataset_creation"
 
                 for label_name in sorted(all_labels_set):
@@ -12827,9 +13340,40 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     }
             else:
                 self.console.print("[yellow]⚠️  No key files found, falling back to standard multi-label training[/yellow]")
+
+                # ============================================================
+                # CRITICAL: Validate and filter insufficient labels BEFORE training
+                # ============================================================
+                input_file_to_use = str(bundle.primary_file)
+                if bundle.primary_file:
+                    try:
+                        filtered_file, was_filtered = self._validate_and_filter_insufficient_labels(
+                            input_file=str(bundle.primary_file),
+                            strategy=bundle.strategy,
+                            min_samples=2,
+                            auto_remove=False  # Ask user for confirmation
+                        )
+                        if was_filtered:
+                            input_file_to_use = filtered_file
+                            self.console.print(f"[green]✓ Using filtered training dataset[/green]\n")
+                    except ValueError as e:
+                        # User cancelled or validation failed
+                        self.console.print(f"[red]{e}[/red]")
+                        return {
+                            'runtime_params': runtime_params,
+                            'models_trained': [],
+                            'best_model': None,
+                            'best_f1': None,
+                            'error': str(e)
+                        }
+                    except Exception as e:
+                        self.logger.warning(f"Label validation failed: {e}")
+                        # Continue with original file if validation fails
+                        pass
+
                 # Fall through to standard training
                 result = trainer.train({
-                    'input_file': str(bundle.primary_file),
+                    'input_file': input_file_to_use,
                     'model_name': model_name,
                     'num_epochs': epochs,
                     'output_dir': str(output_dir),
@@ -12843,6 +13387,37 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 })
         else:
             # Standard training (multi-class or multi-label)
+
+            # ============================================================
+            # CRITICAL: Validate and filter insufficient labels BEFORE training
+            # ============================================================
+            if bundle.primary_file:
+                try:
+                    filtered_file, was_filtered = self._validate_and_filter_insufficient_labels(
+                        input_file=str(bundle.primary_file),
+                        strategy=bundle.strategy,
+                        min_samples=2,
+                        auto_remove=False  # Ask user for confirmation
+                    )
+                    if was_filtered:
+                        # Update bundle to use filtered file
+                        bundle.primary_file = Path(filtered_file)
+                        self.console.print(f"[green]✓ Using filtered training dataset[/green]\n")
+                except ValueError as e:
+                    # User cancelled or validation failed
+                    self.console.print(f"[red]{e}[/red]")
+                    return {
+                        'runtime_params': runtime_params,
+                        'models_trained': [],
+                        'best_model': None,
+                        'best_f1': None,
+                        'error': str(e)
+                    }
+                except Exception as e:
+                    self.logger.warning(f"Label validation failed: {e}")
+                    # Continue with original file if validation fails
+                    pass
+
             config = bundle.to_trainer_config(output_dir, extra_config)
             config['session_id'] = session_id
             config['split_config'] = bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None
@@ -13174,6 +13749,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         results = []
         selector = ModelSelector()
 
+        # Initialize global progress tracking
+        import time
+        global_start_time = time.time()
+        global_total_models = len(selected_models)
+        global_completed_epochs = 0
+
         for idx, model_name in enumerate(selected_models, 1):
             self.console.print(f"[bold]Model {idx}/{len(selected_models)}: {model_name}[/bold]")
 
@@ -13256,6 +13837,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         logger=self.logger
                     )
 
+                # Calculate total expected epochs (base epochs for all models)
+                # Note: May increase if reinforced learning is triggered
+                global_total_epochs = global_total_models * n_epochs
+
+                # Create progress callback to track completed epochs
+                def progress_callback(**metrics):
+                    """Callback to increment global completed epochs counter"""
+                    nonlocal global_completed_epochs
+                    global_completed_epochs += 1
+
                 result = model.run_training(
                     train_dataloader=train_loader,
                     test_dataloader=test_loader,
@@ -13264,7 +13855,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     random_state=42,
                     save_model_as=temp_model_name,
                     pos_weight=None,  # CRITICAL: No pos_weight initially - let RL handle it
-                    metrics_output_dir="training_logs",
+                    metrics_output_dir="logs/training_arena",
                     best_model_criteria="combined",
                     f1_class_1_weight=0.7,
                     reinforced_learning=use_reinforcement,
@@ -13278,6 +13869,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     label_value=category_name,  # Pass the selected category name for proper display
                     language=train_language,
                     session_id=session_id,
+                    progress_callback=progress_callback,  # Add callback for global progress tracking
+                    global_total_models=global_total_models,
+                    global_current_model=idx,
+                    global_total_epochs=global_total_epochs,
+                    global_completed_epochs=global_completed_epochs,
+                    global_start_time=global_start_time
                 )
 
                 # Extract metrics
@@ -13620,6 +14217,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         total_benchmarks = len(selected_labels) * len(selected_models)
         current = 0
 
+        # Initialize global progress tracking
+        import time
+        global_start_time = time.time()
+        global_total_models = total_benchmarks  # Total number of model+label combinations
+        global_completed_epochs = 0
+
         for label_name in selected_labels:
             self.console.print(f"\n[bold cyan]{'━' * 80}[/bold cyan]")
             self.console.print(f"[bold cyan]  Benchmarking Label:[/bold cyan] [bold white]{label_name}[/bold white]")
@@ -13831,6 +14434,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             logger=self.logger
                         )
 
+                    # Calculate total expected epochs (base epochs for all models)
+                    # Note: May increase if reinforced learning is triggered
+                    global_total_epochs = global_total_models * n_epochs
+
+                    # Create progress callback to track completed epochs
+                    def progress_callback(**metrics):
+                        """Callback to increment global completed epochs counter"""
+                        nonlocal global_completed_epochs
+                        global_completed_epochs += 1
+
                     result = model.run_training(
                         train_dataloader=train_loader,
                         test_dataloader=test_loader,
@@ -13839,7 +14452,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         random_state=42,
                         save_model_as=temp_model_name,
                         pos_weight=None,  # CRITICAL: No pos_weight initially - let RL handle it
-                        metrics_output_dir="training_logs",
+                        metrics_output_dir="logs/training_arena",
                         best_model_criteria="combined",
                         f1_class_1_weight=0.7,
                         reinforced_learning=use_reinforcement,
@@ -13854,6 +14467,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         language=train_language,
                         class_names=value_names if num_classes > 2 else None,
                         session_id=session_id,
+                        progress_callback=progress_callback,  # Add callback for global progress tracking
+                        global_total_models=global_total_models,
+                        global_current_model=current,
+                        global_total_epochs=global_total_epochs,
+                        global_completed_epochs=global_completed_epochs,
+                        global_start_time=global_start_time
                     )
 
                     # Extract metrics
@@ -13992,9 +14611,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             self.console.print(f"\n[green]✓ Results saved to:[/green] {results_csv}")
 
-            # Create per-label summary CSVs in training_logs/{label_name}/
+            # Create per-label summary CSVs in logs/training_arena/{session_id}/training_metrics/{label_name}/
             from pathlib import Path
-            training_logs_base = Path("training_logs")
+            # Use the current session's training metrics directory
+            training_logs_base = Path("logs/training_arena") / session_id / "training_metrics"
 
             for label_name in selected_labels:
                 label_results = [r for r in all_results if r['label'] == label_name]
@@ -14111,6 +14731,36 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             "batch_size": batch_size,
             "learning_rate": learning_rate,
         }
+
+        # ============================================================
+        # CRITICAL: Validate and filter insufficient labels BEFORE training
+        # ============================================================
+        if bundle.primary_file:
+            try:
+                filtered_file, was_filtered = self._validate_and_filter_insufficient_labels(
+                    input_file=str(bundle.primary_file),
+                    strategy=bundle.strategy,
+                    min_samples=2,
+                    auto_remove=False  # Ask user for confirmation
+                )
+                if was_filtered:
+                    # Update bundle to use filtered file
+                    bundle.primary_file = Path(filtered_file)
+                    self.console.print(f"[green]✓ Using filtered training dataset[/green]\n")
+            except ValueError as e:
+                # User cancelled or validation failed
+                self.console.print(f"[red]{e}[/red]")
+                return {
+                    'runtime_params': runtime_params,
+                    'models_trained': [],
+                    'best_model': None,
+                    'best_f1': None,
+                    'error': str(e)
+                }
+            except Exception as e:
+                self.logger.warning(f"Label validation failed: {e}")
+                # Continue with original file if validation fails
+                pass
 
         config = bundle.to_trainer_config(output_dir, extra)
         config['session_id'] = session_id
@@ -15292,7 +15942,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         bundle: TrainingDataBundle,
         mode: str,
         model_config: Dict[str, Any],
-        execution_status: Optional[Dict[str, Any]] = None
+        execution_status: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None
     ) -> Path:
         """
         Save comprehensive training session metadata for reproducibility and resume capability.
@@ -15316,7 +15967,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         import json
         from datetime import datetime
 
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # Use provided session_id or create new one
+        timestamp = session_id or datetime.now().strftime('%Y%m%d_%H%M%S')
 
         # Build comprehensive metadata
         metadata = {
@@ -15324,7 +15976,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'timestamp': timestamp,
                 'tool_version': 'LLMTool v1.0',
                 'workflow': f'Training Arena - {mode.capitalize()}',
-                'session_id': f'train_{timestamp}'
+                'session_id': timestamp
             },
             'dataset_config': {
                 'primary_file': str(bundle.primary_file) if bundle.primary_file else None,
@@ -15365,12 +16017,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             }
         }
 
-        # Ensure training_sessions directory exists
-        metadata_dir = self.settings.paths.logs_dir / "training_sessions"
+        # Use centralized training arena structure
+        # logs/training_arena/{session_id}/training_session_metadata/
+        from pathlib import Path
+        metadata_dir = Path("logs/training_arena") / timestamp / "training_session_metadata"
         metadata_dir.mkdir(parents=True, exist_ok=True)
 
         # Save metadata JSON
-        metadata_filename = f"training_metadata_{timestamp}.json"
+        metadata_filename = "training_metadata.json"
         metadata_path = metadata_dir / metadata_filename
 
         with open(metadata_path, 'w', encoding='utf-8') as f:
@@ -16822,9 +17476,114 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
         input()
 
-    def _smart_annotate(self):
-        """Smart guided annotation wizard with all options"""
+    def _create_annotator_session_directories(self, session_id: str) -> dict:
+        """
+        Create organized directory structure for annotation session.
+
+        Structure mirroring Training Arena (Mode 3):
+        logs/annotator/{session_id}/
+        ├── annotated_data/          # Annotated files (.csv, .xlsx, etc.)
+        ├── metadata/                 # Metadata JSON files
+        └── validation_exports/       # Validation tool exports
+            ├── doccano/             # Doccano JSONL exports
+            └── labelstudio/         # Label Studio JSONL exports
+
+        Parameters
+        ----------
+        session_id : str
+            Session identifier (e.g., 'sentiment_analysis_20251008_143022')
+
+        Returns
+        -------
+        dict
+            Dictionary with all directory paths
+        """
+        from pathlib import Path
+
+        # Base directory for annotator logs (parallel to training_arena)
+        base_dir = Path("logs") / "annotator" / session_id
+
+        # Create subdirectories
+        dirs = {
+            'base': base_dir,
+            'annotated_data': base_dir / 'annotated_data',
+            'metadata': base_dir / 'metadata',
+            'validation_exports': base_dir / 'validation_exports',
+            'doccano': base_dir / 'validation_exports' / 'doccano',
+            'labelstudio': base_dir / 'validation_exports' / 'labelstudio',
+        }
+
+        # Create all directories
+        for dir_path in dirs.values():
+            dir_path.mkdir(parents=True, exist_ok=True)
+
+        return dirs
+
+    def _create_annotator_factory_session_directories(self, session_id: str) -> dict:
+        """
+        Create organized directory structure for Annotator Factory session.
+
+        Structure combining annotation + training (Mode 1 + Mode 3):
+        logs/annotator_factory/{session_id}/
+        ├── annotated_data/          # Annotated files (.csv, .xlsx, etc.)
+        ├── metadata/                 # Metadata JSON files
+        ├── validation_exports/       # Validation tool exports
+        │   ├── doccano/
+        │   └── labelstudio/
+        ├── training_metrics/         # Training metrics (like Mode 3)
+        └── training_data/           # Training data reports (like Mode 3)
+
+        Parameters
+        ----------
+        session_id : str
+            Session identifier (e.g., 'sentiment_pipeline_20251008_143022')
+
+        Returns
+        -------
+        dict
+            Dictionary with all directory paths
+        """
+        from pathlib import Path
+
+        # Base directory for annotator_factory logs
+        base_dir = Path("logs") / "annotator_factory" / session_id
+
+        # Create subdirectories (annotation + training)
+        dirs = {
+            'base': base_dir,
+            'annotated_data': base_dir / 'annotated_data',
+            'metadata': base_dir / 'metadata',
+            'validation_exports': base_dir / 'validation_exports',
+            'doccano': base_dir / 'validation_exports' / 'doccano',
+            'labelstudio': base_dir / 'validation_exports' / 'labelstudio',
+            'training_metrics': base_dir / 'training_metrics',  # For model training results
+            'training_data': base_dir / 'training_data',  # For data distribution reports
+        }
+
+        # Create all directories
+        for dir_path in dirs.values():
+            dir_path.mkdir(parents=True, exist_ok=True)
+
+        return dirs
+
+    def _smart_annotate(self, session_id: str = None):
+        """Smart guided annotation wizard with all options
+
+        Parameters
+        ----------
+        session_id : str, optional
+            Session identifier for organizing outputs. If None, a timestamp-based ID is generated.
+        """
         import pandas as pd
+        from datetime import datetime
+
+        # Generate session_id if not provided (for backward compatibility)
+        if session_id is None:
+            session_id = f"annotation_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Create session directories
+        session_dirs = self._create_annotator_session_directories(session_id)
+
         self.console.print("\n[bold cyan]🎯 Smart Annotate - Guided Wizard[/bold cyan]\n")
     
         # Step 1: Data Selection
@@ -17556,13 +18315,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # EXECUTE ANNOTATION
         # ============================================================
     
-        # Prepare output path
-        annotations_dir = self.settings.paths.data_dir / 'annotations'
-        annotations_dir.mkdir(parents=True, exist_ok=True)
+        # CRITICAL: Use new organized structure with dataset-specific subfolder
+        # Structure: logs/annotator/{session_id}/annotated_data/{dataset_name}/
         safe_model_name = model_name.replace(':', '_').replace('/', '_')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        # Create dataset-specific subdirectory (like {category} in Training Arena)
+        dataset_name = data_path.stem
+        dataset_subdir = session_dirs['annotated_data'] / dataset_name
+        dataset_subdir.mkdir(parents=True, exist_ok=True)
+
         output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
-        default_output_path = annotations_dir / output_filename
+        default_output_path = dataset_subdir / output_filename
     
         self.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
         self.console.print(f"   {default_output_path}")
@@ -17695,8 +18459,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             }
 
             # Save metadata JSON (PRE-ANNOTATION SAVE POINT 1)
+            # Use dataset-specific subdirectory for metadata too
+            metadata_subdir = session_dirs['metadata'] / dataset_name
+            metadata_subdir.mkdir(parents=True, exist_ok=True)
+
             metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
-            metadata_path = annotations_dir / metadata_filename
+            metadata_path = metadata_subdir / metadata_filename
 
             with open(metadata_path, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, indent=2, ensure_ascii=False)
@@ -17887,7 +18655,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     prompt_configs=prompt_configs,
                     data_path=data_path,
                     timestamp=timestamp,
-                    sample_size=export_sample_size
+                    sample_size=export_sample_size,
+                    session_dirs=session_dirs
                 )
     
             # Export to Label Studio if requested
@@ -17914,7 +18683,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         data_path=data_path,
                         timestamp=timestamp,
                         sample_size=export_sample_size,
-                        prediction_mode=prediction_mode
+                        prediction_mode=prediction_mode,
+                        session_dirs=session_dirs
                     )
     
             self.console.print("\n[dim]Press Enter to return to menu...[/dim]")
@@ -18347,7 +19117,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             new_metadata['output']['output_path'] = str(default_output_path)
 
             new_metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
-            new_metadata_path = annotations_dir / new_metadata_filename
+            new_metadata_path = session_dirs['metadata'] / new_metadata_filename
 
             with open(new_metadata_path, 'w', encoding='utf-8') as f:
                 json.dump(new_metadata, f, indent=2, ensure_ascii=False)
@@ -18654,7 +19424,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def _export_to_doccano_jsonl(self, output_file: str, text_column: str,
                                   prompt_configs: list, data_path: Path, timestamp: str,
-                                  sample_size=None):
+                                  sample_size=None, session_dirs=None):
         """Export annotations to Doccano JSONL format
 
         Parameters
@@ -18745,9 +19515,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             else:
                 self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows[/cyan]")
 
-            # Prepare JSONL output
-            doccano_dir = self.settings.paths.data_dir / 'doccano_exports'
-            doccano_dir.mkdir(parents=True, exist_ok=True)
+            # Prepare JSONL output - Use organized structure if session_dirs provided
+            if session_dirs:
+                # Create dataset-specific subdirectory for exports
+                dataset_name = data_path.stem
+                doccano_dir = session_dirs['doccano'] / dataset_name
+                doccano_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                # Fallback to old structure for backward compatibility
+                doccano_dir = self.settings.paths.data_dir / 'doccano_exports'
+                doccano_dir.mkdir(parents=True, exist_ok=True)
 
             jsonl_filename = f"{data_path.stem}_doccano_{timestamp}.jsonl"
             jsonl_path = doccano_dir / jsonl_filename
@@ -18835,7 +19612,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def _export_to_labelstudio_jsonl(self, output_file: str, text_column: str,
                                       prompt_configs: list, data_path: Path, timestamp: str,
-                                      sample_size=None, prediction_mode='with'):
+                                      sample_size=None, prediction_mode='with', session_dirs=None):
         """Export annotations to Label Studio JSONL format
 
         Parameters
@@ -18931,9 +19708,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             else:
                 self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows[/cyan]")
 
-            # Prepare JSONL output
-            labelstudio_dir = self.settings.paths.data_dir / 'labelstudio_exports'
-            labelstudio_dir.mkdir(parents=True, exist_ok=True)
+            # Prepare JSONL output - Use organized structure if session_dirs provided
+            if session_dirs:
+                # Create dataset-specific subdirectory for exports
+                dataset_name = data_path.stem
+                labelstudio_dir = session_dirs['labelstudio'] / dataset_name
+                labelstudio_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                # Fallback to old structure for backward compatibility
+                labelstudio_dir = self.settings.paths.data_dir / 'labelstudio_exports'
+                labelstudio_dir.mkdir(parents=True, exist_ok=True)
 
             jsonl_filename = f"{data_path.stem}_labelstudio_{timestamp}.jsonl"
             jsonl_path = labelstudio_dir / jsonl_filename

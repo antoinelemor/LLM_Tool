@@ -826,7 +826,7 @@ class MultiLabelTrainer:
                 'accuracy': metrics.get('accuracy', 0),
                 'precision': safe_get_metric(metrics, 'precision'),
                 'recall': safe_get_metric(metrics, 'recall'),
-                'f1_score': metrics.get('macro_f1', 0),
+                'f1_score': metrics.get('f1_macro', metrics.get('macro_f1', 0)),  # CRITICAL: Try f1_macro first
                 'support': safe_get_metric(metrics, 'support')
             })
 
@@ -839,7 +839,7 @@ class MultiLabelTrainer:
                         'accuracy': lang_metrics.get('accuracy', 0),
                         'precision': safe_get_metric(lang_metrics, 'precision'),
                         'recall': safe_get_metric(lang_metrics, 'recall'),
-                        'f1_score': lang_metrics.get('macro_f1', 0),
+                        'f1_score': lang_metrics.get('f1_macro', lang_metrics.get('macro_f1', 0)),  # CRITICAL: Try f1_macro first
                         'support': lang_metrics.get('n_samples', 0)
                     })
 
@@ -863,7 +863,12 @@ class MultiLabelTrainer:
                          class_names: Optional[List[str]] = None,
                          session_id: Optional[str] = None,
                          is_benchmark: bool = False,
-                         model_name_for_logging: Optional[str] = None) -> ModelInfo:
+                         model_name_for_logging: Optional[str] = None,
+                         global_total_models: Optional[int] = None,
+                         global_current_model: Optional[int] = None,
+                         global_total_epochs: Optional[int] = None,
+                         global_completed_epochs: Optional[int] = None,
+                         global_start_time: Optional[float] = None) -> ModelInfo:
         """
         Train a single model for one label.
 
@@ -974,8 +979,10 @@ class MultiLabelTrainer:
         # This enables automatic per-language metric tracking even without track_languages=True
         val_language_info = [s.lang if isinstance(s.lang, str) else None for s in val_samples] if val_samples else None
 
-        # CRITICAL: Use standard "training_logs" base dir
-        # bert_base.py will automatically create: training_logs/{label_value}/{model_type}/
+        # CRITICAL: Use standard "logs/training_arena" base dir
+        # bert_base.py will automatically create:
+        # Benchmark: logs/training_arena/{session_id}/training_metrics/benchmark/{category}/{language}/{model}/
+        # Normal: logs/training_arena/{session_id}/training_metrics/normal_training/{category}/{language}/{model}/
         # This ensures consistent structure across ALL training modes
         scores = model.run_training(
             train_loader,
@@ -985,38 +992,84 @@ class MultiLabelTrainer:
             save_model_as=model_name,
             reinforced_learning=self.config.reinforced_learning,
             n_epochs_reinforced=self.config.n_epochs_reinforced,
+            reinforced_epochs=self.config.reinforced_epochs,  # Manual override if configured
             track_languages=True,  # Always enable to get per-language metrics
             language_info=val_language_info,  # Pass language info for each validation sample
-            metrics_output_dir='training_logs',  # CRITICAL: Base dir - bert_base.py creates subdirs
+            metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
             label_key=label_key,  # Pass the parsed key (e.g., 'themes', 'sentiment')
             label_value=label_value,  # Pass the parsed value (e.g., 'transportation', 'positive')
             language=language,  # Pass the language (e.g., 'EN', 'FR', 'MULTI')
             session_id=session_id,
             is_benchmark=is_benchmark,  # Benchmark mode flag
-            model_name_for_logging=model_name_for_logging  # Model name for benchmark logging
+            model_name_for_logging=model_name_for_logging,  # Model name for benchmark logging
+            global_total_models=global_total_models,
+            global_current_model=global_current_model,
+            global_total_epochs=global_total_epochs,
+            global_completed_epochs=global_completed_epochs,
+            global_start_time=global_start_time
             # NOTE: num_labels and class_names are already set on model object (lines 808-812)
         )
 
-        # calculate final metrics
-        # scores is a tuple of (best_metric_val, best_model_path, best_scores)
-        # where best_scores contains [precision, recall, f1, support]
-        if scores and len(scores) == 3:
-            # Extract best_scores which is the third element
-            best_scores = scores[2]  # This contains [precision, recall, f1, support]
-            if best_scores and len(best_scores) >= 4:
-                precision, recall, f1, support = best_scores[:4]
+        # CRITICAL FIX: Use last_training_summary from model for complete metrics
+        # The model stores a detailed dict with all metrics including f1_0, f1_1, accuracy, etc.
+        training_summary = getattr(model, 'last_training_summary', {})
+
+        if training_summary:
+            # Use the rich summary dict created by bert_base.py
+            performance_metrics = {
+                'precision': training_summary.get('precision', []),
+                'recall': training_summary.get('recall', []),
+                'f1': training_summary.get('f1', []),
+                'support': training_summary.get('support', []),
+                'f1_macro': training_summary.get('f1_macro', training_summary.get('macro_f1', 0)),  # CRITICAL: Use f1_macro for consistency
+                'macro_f1': training_summary.get('f1_macro', training_summary.get('macro_f1', 0)),  # Keep backward compatibility
+                'accuracy': training_summary.get('accuracy', 0),
+            }
+
+            # Add per-class metrics for binary classification (crucial for benchmark ranking)
+            if 'f1_0' in training_summary:
+                performance_metrics['f1_0'] = training_summary['f1_0']
+            if 'f1_1' in training_summary:
+                performance_metrics['f1_1'] = training_summary['f1_1']
+            if 'precision_0' in training_summary:
+                performance_metrics['precision_0'] = training_summary['precision_0']
+            if 'precision_1' in training_summary:
+                performance_metrics['precision_1'] = training_summary['precision_1']
+            if 'recall_0' in training_summary:
+                performance_metrics['recall_0'] = training_summary['recall_0']
+            if 'recall_1' in training_summary:
+                performance_metrics['recall_1'] = training_summary['recall_1']
+
+            # Add language metrics if available
+            if 'language_metrics' in training_summary:
+                performance_metrics['language_metrics'] = training_summary['language_metrics']
+
+            # CRITICAL: Add training_time if available
+            if 'training_time' in training_summary:
+                performance_metrics['training_time'] = training_summary['training_time']
+        else:
+            # Fallback: extract from tuple (old behavior)
+            # scores is a tuple of (best_metric_val, best_model_path, best_scores)
+            # where best_scores contains [precision, recall, f1, support]
+            if scores and len(scores) == 3:
+                # Extract best_scores which is the third element
+                best_scores = scores[2]  # This contains [precision, recall, f1, support]
+                if best_scores and len(best_scores) >= 4:
+                    precision, recall, f1, support = best_scores[:4]
+                else:
+                    precision, recall, f1, support = [], [], [], []
             else:
                 precision, recall, f1, support = [], [], [], []
-        else:
-            precision, recall, f1, support = [], [], [], []
 
-        performance_metrics = {
-            'precision': precision.tolist() if hasattr(precision, 'tolist') else precision,
-            'recall': recall.tolist() if hasattr(recall, 'tolist') else recall,
-            'f1': f1.tolist() if hasattr(f1, 'tolist') else f1,
-            'support': support.tolist() if hasattr(support, 'tolist') else support,
-            'macro_f1': np.mean(f1) if len(f1) > 0 else 0
-        }
+            f1_macro_val = np.mean(f1) if len(f1) > 0 else 0
+            performance_metrics = {
+                'precision': precision.tolist() if hasattr(precision, 'tolist') else precision,
+                'recall': recall.tolist() if hasattr(recall, 'tolist') else recall,
+                'f1': f1.tolist() if hasattr(f1, 'tolist') else f1,
+                'support': support.tolist() if hasattr(support, 'tolist') else support,
+                'f1_macro': f1_macro_val,  # CRITICAL: Use f1_macro for consistency
+                'macro_f1': f1_macro_val   # Keep backward compatibility
+            }
 
         model_info = ModelInfo(
             model_name=model_name,
@@ -1052,7 +1105,12 @@ class MultiLabelTrainer:
              confirmed_languages: Optional[List[str]] = None,
              session_id: Optional[str] = None,
              is_benchmark: bool = False,
-             model_name_for_logging: Optional[str] = None) -> Dict[str, ModelInfo]:
+             model_name_for_logging: Optional[str] = None,
+             global_total_models: Optional[int] = None,
+             global_current_model: Optional[int] = None,
+             global_total_epochs: Optional[int] = None,
+             global_completed_epochs: Optional[int] = None,
+             global_start_time: Optional[float] = None) -> Dict[str, ModelInfo]:
         """
         Main training method with automatic data handling.
 
@@ -1158,7 +1216,12 @@ class MultiLabelTrainer:
 
         # Use train_all_models with the calculated ratios
         return self.train_all_models(all_samples, actual_train_ratio, actual_val_ratio, session_id=session_id,
-                                    is_benchmark=is_benchmark, model_name_for_logging=model_name_for_logging)
+                                    is_benchmark=is_benchmark, model_name_for_logging=model_name_for_logging,
+                                    global_total_models=global_total_models,
+                                    global_current_model=global_current_model,
+                                    global_total_epochs=global_total_epochs,
+                                    global_completed_epochs=global_completed_epochs,
+                                    global_start_time=global_start_time)
 
     def _convert_to_samples(self, data: List[Dict]) -> List[MultiLabelSample]:
         """Convert list of dicts to MultiLabelSample objects."""
@@ -1214,7 +1277,12 @@ class MultiLabelTrainer:
                                  val_ratio: float = 0.1,
                                  session_id: Optional[str] = None,
                                  is_benchmark: bool = False,
-                                 model_name_for_logging: Optional[str] = None) -> Dict[str, ModelInfo]:
+                                 model_name_for_logging: Optional[str] = None,
+                                 global_total_models: Optional[int] = None,
+                                 global_current_model: Optional[int] = None,
+                                 global_total_epochs: Optional[int] = None,
+                                 global_completed_epochs: Optional[int] = None,
+                                 global_start_time: Optional[float] = None) -> Dict[str, ModelInfo]:
         """
         Train multi-class models for detected groups.
 
@@ -1280,7 +1348,12 @@ class MultiLabelTrainer:
                 class_names=class_names,
                 session_id=session_id,
                 is_benchmark=is_benchmark,
-                model_name_for_logging=model_name_for_logging
+                model_name_for_logging=model_name_for_logging,
+                global_total_models=global_total_models,
+                global_current_model=global_current_model,
+                global_total_epochs=global_total_epochs,
+                global_completed_epochs=global_completed_epochs,
+                global_start_time=global_start_time
             )
 
             trained_models[model_info.model_name] = model_info
@@ -1296,7 +1369,12 @@ class MultiLabelTrainer:
                         val_ratio: float = 0.1,
                         session_id: Optional[str] = None,
                         is_benchmark: bool = False,
-                        model_name_for_logging: Optional[str] = None) -> Dict[str, ModelInfo]:
+                        model_name_for_logging: Optional[str] = None,
+                        global_total_models: Optional[int] = None,
+                        global_current_model: Optional[int] = None,
+                        global_total_epochs: Optional[int] = None,
+                        global_completed_epochs: Optional[int] = None,
+                        global_start_time: Optional[float] = None) -> Dict[str, ModelInfo]:
         """
         Train all models for all labels.
 
@@ -1316,14 +1394,20 @@ class MultiLabelTrainer:
 
             # Train multi-class models
             return self._train_multiclass_models(samples, train_ratio, val_ratio, session_id=session_id,
-                                                is_benchmark=is_benchmark, model_name_for_logging=model_name_for_logging)
+                                                is_benchmark=is_benchmark, model_name_for_logging=model_name_for_logging,
+                                                global_total_models=global_total_models,
+                                                global_current_model=global_current_model,
+                                                global_total_epochs=global_total_epochs,
+                                                global_completed_epochs=global_completed_epochs,
+                                                global_start_time=global_start_time)
 
         # Otherwise, continue with standard multi-label (one-vs-all) training
         # prepare datasets
-        # Create centralized directory for distribution reports in training_logs/
+        # Create centralized directory for distribution reports in logs/training_arena/
+        # Use session_id if provided, otherwise create timestamp
         from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        reports_dir = os.path.join('training_logs', f"{timestamp}_distribution_reports")
+        timestamp = session_id if session_id else datetime.now().strftime("%Y%m%d_%H%M%S")
+        reports_dir = os.path.join('logs/training_arena', timestamp, 'training_data')
 
         # Detect if we have multiple languages in the dataset
         # If yes, we need to stratify by language to ensure minority classes
@@ -1395,6 +1479,27 @@ class MultiLabelTrainer:
         if self.verbose:
             self.logger.info(f"Starting training of {len(training_jobs)} models")
 
+        # Initialize global progress tracking
+        # Use provided parameters if available (benchmark mode), otherwise create new (standalone mode)
+        import time
+        if global_total_models is None:
+            total_models = len(training_jobs)
+            global_total_models = total_models
+        else:
+            total_models = global_total_models
+
+        if global_start_time is None:
+            global_start_time = time.time()
+
+        if global_total_epochs is None:
+            global_total_epochs = total_models * self.config.n_epochs
+
+        if global_completed_epochs is None:
+            global_completed_epochs = 0
+
+        if global_current_model is None:
+            global_current_model = 1
+
         # train models
         trained_models = {}
 
@@ -1402,7 +1507,7 @@ class MultiLabelTrainer:
             # parallel training
             with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
                 futures = []
-                for job in training_jobs:
+                for idx, job in enumerate(training_jobs, 1):
                     future = executor.submit(
                         self.train_single_model,
                         job['label_name'],
@@ -1411,7 +1516,12 @@ class MultiLabelTrainer:
                         job['language'],
                         session_id=job.get('session_id'),
                         is_benchmark=job.get('is_benchmark', False),
-                        model_name_for_logging=job.get('model_name_for_logging')
+                        model_name_for_logging=job.get('model_name_for_logging'),
+                        global_total_models=global_total_models,
+                        global_current_model=global_current_model if len(training_jobs) == 1 else idx,
+                        global_total_epochs=global_total_epochs,
+                        global_completed_epochs=0,  # Can't track in parallel
+                        global_start_time=global_start_time
                     )
                     futures.append(future)
 
@@ -1421,7 +1531,10 @@ class MultiLabelTrainer:
                     trained_models[model_info.model_name] = model_info
         else:
             # sequential training
-            for job in tqdm(training_jobs, desc="Training models", leave=False, disable=True):
+            for idx, job in enumerate(tqdm(training_jobs, desc="Training models", leave=False, disable=True), 1):
+                # In benchmark mode with single job, use global_current_model; otherwise use idx
+                current_model_idx = global_current_model if len(training_jobs) == 1 else idx
+
                 model_info = self.train_single_model(
                     job['label_name'],
                     job['train_samples'],
@@ -1429,9 +1542,16 @@ class MultiLabelTrainer:
                     job['language'],
                     session_id=job.get('session_id'),
                     is_benchmark=job.get('is_benchmark', False),
-                    model_name_for_logging=job.get('model_name_for_logging')
+                    model_name_for_logging=job.get('model_name_for_logging'),
+                    global_total_models=global_total_models,
+                    global_current_model=current_model_idx,
+                    global_total_epochs=global_total_epochs,
+                    global_completed_epochs=global_completed_epochs,
+                    global_start_time=global_start_time
                 )
                 trained_models[model_info.model_name] = model_info
+                # Update completed epochs after model training
+                global_completed_epochs += self.config.n_epochs
 
         self.trained_models = trained_models
 
@@ -1444,7 +1564,7 @@ class MultiLabelTrainer:
                 from pathlib import Path
                 from llm_tool.utils.benchmark_utils import consolidate_session_csvs
 
-                session_dir = Path("training_logs") / session_id
+                session_dir = Path("logs/training_arena") / session_id / "training_metrics"
                 if session_dir.exists():
                     consolidate_session_csvs(session_dir, session_id)
             except Exception as e:
@@ -1474,7 +1594,8 @@ class MultiLabelTrainer:
                 'label': model_info.label_name,
                 'language': model_info.language,
                 'path': model_info.model_path,
-                'macro_f1': model_info.performance_metrics.get('macro_f1', 0),
+                'f1_macro': model_info.performance_metrics.get('f1_macro', model_info.performance_metrics.get('macro_f1', 0)),  # CRITICAL: Try f1_macro first
+                'macro_f1': model_info.performance_metrics.get('f1_macro', model_info.performance_metrics.get('macro_f1', 0)),  # Keep backward compatibility
                 'training_config': model_info.training_config
             }
 
@@ -1501,12 +1622,17 @@ class MultiLabelTrainer:
 
         models = {}
         for model_name, info in summary['models'].items():
+            # CRITICAL: Support both f1_macro and macro_f1 for consistency
+            f1_val = info.get('f1_macro', info.get('macro_f1', 0))
             model_info = ModelInfo(
                 model_name=model_name,
                 label_name=info['label'],
                 language=info.get('language'),
                 model_path=info['path'],
-                performance_metrics={'macro_f1': info.get('macro_f1', 0)},
+                performance_metrics={
+                    'f1_macro': f1_val,
+                    'macro_f1': f1_val  # Keep backward compatibility
+                },
                 training_config=info.get('training_config', {})
             )
             models[model_name] = model_info
@@ -1632,6 +1758,7 @@ def train_multi_label_models(
 
     print(f"\nTrained {len(models)} models:")
     for model_name, info in models.items():
-        print(f"  - {model_name}: macro_f1={info.performance_metrics.get('macro_f1', 0):.3f}")
+        f1_val = info.performance_metrics.get('f1_macro', info.performance_metrics.get('macro_f1', 0))
+        print(f"  - {model_name}: f1_macro={f1_val:.3f}")
 
     return models

@@ -718,7 +718,12 @@ class ModelTrainer:
                           output_dir: Optional[str] = None,
                           label_column: str = 'label',
                           training_strategy: str = 'single-label',
-                          category_name: Optional[str] = None) -> TrainingResult:
+                          category_name: Optional[str] = None,
+                          global_total_models: Optional[int] = None,
+                          global_current_model: Optional[int] = None,
+                          global_total_epochs: Optional[int] = None,
+                          global_completed_epochs: Optional[int] = None,
+                          global_start_time: Optional[float] = None) -> TrainingResult:
         """Train a single model"""
         from tqdm import tqdm
         print(f"\n🏋️  Training model: {model_name}")
@@ -907,6 +912,21 @@ class ModelTrainer:
             class_names_for_display = list(self.label_encoder.classes_) if hasattr(self, 'label_encoder') and self.label_encoder is not None else None
 
             # Train (using test_dataloader as validation for compatibility with bert_base)
+            # Initialize global progress tracking for single model training
+            import time as time_module
+
+            # Use provided global progress parameters if available (benchmark mode), otherwise use defaults (quick mode)
+            if global_start_time is None:
+                global_start_time = time_module.time()
+            if global_total_models is None:
+                global_total_models = 1
+            if global_current_model is None:
+                global_current_model = 1
+            if global_total_epochs is None:
+                global_total_epochs = self.config.num_epochs
+            if global_completed_epochs is None:
+                global_completed_epochs = 0
+
             best_metric, best_model_path, best_scores = model_instance.run_training(
                 train_dataloader=train_dataloader,
                 test_dataloader=val_dataloader,  # bert_base expects test_dataloader for validation
@@ -914,12 +934,17 @@ class ModelTrainer:
                 lr=self.config.learning_rate,
                 random_state=42,
                 save_model_as=str(output_dir / 'model'),
-                metrics_output_dir='training_logs',  # CRITICAL: Base dir - bert_base.py creates subdirs
+                metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
                 label_key=label_key,      # Pass parsed label key
                 label_value=label_value,  # Pass parsed label value
                 track_languages=track_languages,  # CRITICAL: Enable language tracking
                 language_info=val_languages,  # CRITICAL: Pass language info for validation set
-                class_names=class_names_for_display  # CRITICAL: Pass class names for table display
+                class_names=class_names_for_display,  # CRITICAL: Pass class names for table display
+                global_total_models=global_total_models,
+                global_current_model=global_current_model,
+                global_total_epochs=global_total_epochs,
+                global_completed_epochs=global_completed_epochs,
+                global_start_time=global_start_time
             )
 
             # Log final model path
@@ -954,14 +979,31 @@ class ModelTrainer:
             else:
                 # No separate test set - use validation metrics from training
                 self.logger.info(f"📊 Using validation metrics as final evaluation (no separate test set)")
-                # best_scores contains the metrics from the best epoch on validation set
-                accuracy = best_scores.get('accuracy', 0.0)
-                precision = best_scores.get('precision', 0.0)
-                recall = best_scores.get('recall', 0.0)
-                f1_weighted = best_scores.get('f1_weighted', 0.0)
-                f1_macro = best_scores.get('f1_macro', 0.0)
-                cm = best_scores.get('confusion_matrix', np.array([]))
-                report = best_scores.get('classification_report', {})
+                # CRITICAL FIX: Use last_training_summary which is a dict, not best_scores (tuple)
+                # best_scores is a numpy tuple, but last_training_summary is the dict created by bert_base.py
+                training_summary = getattr(model_instance, 'last_training_summary', {})
+                if training_summary:
+                    accuracy = training_summary.get('accuracy', 0.0)
+                    precision = training_summary.get('precision', [0.0])[0] if isinstance(training_summary.get('precision'), list) else training_summary.get('precision', 0.0)
+                    recall = training_summary.get('recall', [0.0])[0] if isinstance(training_summary.get('recall'), list) else training_summary.get('recall', 0.0)
+                    f1_weighted = training_summary.get('f1_weighted', 0.0)
+                    f1_macro = training_summary.get('macro_f1', 0.0)
+                    cm = training_summary.get('confusion_matrix', np.array([]))
+                    report = training_summary.get('classification_report', {})
+                else:
+                    # Fallback: extract from numpy tuple if summary not available
+                    if best_scores is not None and len(best_scores) >= 4:
+                        accuracy = np.sum([p * s for p, s in zip(best_scores[0], best_scores[3])]) / np.sum(best_scores[3]) if best_scores[3] is not None and np.sum(best_scores[3]) > 0 else 0
+                        precision = np.mean(best_scores[0]) if best_scores[0] is not None else 0
+                        recall = np.mean(best_scores[1]) if best_scores[1] is not None else 0
+                        f1_weighted = np.mean(best_scores[2]) if best_scores[2] is not None else 0
+                        f1_macro = np.mean(best_scores[2]) if best_scores[2] is not None else 0
+                        cm = np.array([])
+                        report = {}
+                    else:
+                        accuracy = precision = recall = f1_weighted = f1_macro = 0.0
+                        cm = np.array([])
+                        report = {}
 
             # Count parameters
             num_params = sum(p.numel() for p in model_instance.model.parameters())
@@ -1291,6 +1333,9 @@ class ModelTrainer:
             ml_config.model_class = BertBase  # Force BertBase to ensure run_training_enhanced is used
             # Use the model specified by the user
             ml_config.model_name = config.get('model_name', self.config.model_name)
+            # Pass manual reinforced epochs if provided
+            if 'reinforced_epochs' in config and config['reinforced_epochs'] is not None:
+                ml_config.reinforced_epochs = config['reinforced_epochs']
 
             ml_trainer = MultiLabelTrainer(config=ml_config, verbose=True)
 
@@ -1358,6 +1403,9 @@ class ModelTrainer:
                         self.logger.info(f"  • {group_name}: {', '.join(value_names)}")
 
             # Train models - CRITICAL: Pass converted samples with dict labels, not original samples
+            # CRITICAL: Start timer for training time measurement
+            training_start_time = time.time()
+
             trained_models = ml_trainer.train(
                 train_samples=ml_train_samples,
                 val_samples=ml_val_samples,
@@ -1367,8 +1415,16 @@ class ModelTrainer:
                 confirmed_languages=config.get('confirmed_languages'),  # Pass all detected languages
                 session_id=config.get('session_id'),  # Pass unified session ID for benchmark
                 is_benchmark=config.get('is_benchmark', False),  # Pass benchmark flag
-                model_name_for_logging=config.get('model_name')  # Pass model name for logging
+                model_name_for_logging=config.get('model_name'),  # Pass model name for logging
+                global_total_models=config.get('global_total_models'),
+                global_current_model=config.get('global_current_model'),
+                global_total_epochs=config.get('global_total_epochs'),
+                global_completed_epochs=config.get('global_completed_epochs'),
+                global_start_time=config.get('global_start_time')
             )
+
+            # CRITICAL: Calculate total training time
+            total_training_time = time.time() - training_start_time
 
             # Aggregate results
             if trained_models:
@@ -1389,20 +1445,69 @@ class ModelTrainer:
                         'model_path': model_info.model_path
                     }
 
-                results = {
-                    'f1_macro': avg_f1,
-                    'accuracy': avg_acc,
-                    'model_path': config.get('output_dir', 'models/best_model'),
-                    'training_time': 0,
-                    'trained_models': {k: v.model_path for k, v in trained_models.items()},
-                    'category_metrics': category_metrics  # NEW: Detailed metrics per category
-                }
+                # CRITICAL FIX: If single category, return its detailed metrics directly
+                # This ensures benchmark display works correctly for single-label datasets
+                if len(trained_models) == 1:
+                    # Single category - return its metrics directly (not averaged)
+                    single_model = list(trained_models.values())[0]
+                    perf = single_model.performance_metrics
+
+                    # CRITICAL: Get training_time from performance_metrics or use calculated time
+                    training_time = perf.get('training_time', total_training_time)
+
+                    results = {
+                        'f1_macro': perf.get('f1_macro', 0),
+                        'f1': perf.get('f1_macro', 0),  # Alias for compatibility
+                        'accuracy': perf.get('accuracy', 0),
+                        'precision': perf.get('precision', 0),
+                        'recall': perf.get('recall', 0),
+                        'model_path': single_model.model_path,
+                        'training_time': training_time,
+                        'trained_models': {k: v.model_path for k, v in trained_models.items()},
+                        'category_metrics': category_metrics
+                    }
+
+                    # Add per-class metrics if available (binary classification)
+                    if 'f1_0' in perf:
+                        results['f1_0'] = perf['f1_0']
+                        results['f1_class_0'] = perf['f1_0']
+                    if 'f1_1' in perf:
+                        results['f1_1'] = perf['f1_1']
+                        results['f1_class_1'] = perf['f1_1']
+                    if 'precision_0' in perf:
+                        results['precision_0'] = perf['precision_0']
+                    if 'precision_1' in perf:
+                        results['precision_1'] = perf['precision_1']
+                    if 'recall_0' in perf:
+                        results['recall_0'] = perf['recall_0']
+                    if 'recall_1' in perf:
+                        results['recall_1'] = perf['recall_1']
+
+                    # Add language metrics if available
+                    if 'language_metrics' in perf:
+                        results['language_metrics'] = perf['language_metrics']
+                else:
+                    # Multiple categories - return averaged metrics
+                    # CRITICAL: Average training time across all models or use total time
+                    avg_training_time = np.mean([m.performance_metrics.get('training_time', 0) for m in trained_models.values()])
+                    if avg_training_time == 0:
+                        avg_training_time = total_training_time
+
+                    results = {
+                        'f1_macro': avg_f1,
+                        'f1': avg_f1,  # Alias for compatibility
+                        'accuracy': avg_acc,
+                        'model_path': config.get('output_dir', 'models/best_model'),
+                        'training_time': avg_training_time,
+                        'trained_models': {k: v.model_path for k, v in trained_models.items()},
+                        'category_metrics': category_metrics  # NEW: Detailed metrics per category
+                    }
             else:
                 results = {
                     'f1_macro': 0.0,
                     'accuracy': 0.0,
                     'model_path': '',
-                    'training_time': 0
+                    'training_time': total_training_time
                 }
         else:
             # Load data for single-label training (uses encoding)
@@ -1516,7 +1621,12 @@ class ModelTrainer:
                             output_dir=lang_output_dir,
                             label_column='label',
                             training_strategy=training_strategy,
-                            category_name=config.get('category_name')
+                            category_name=config.get('category_name'),
+                            global_total_models=config.get('global_total_models'),
+                            global_current_model=config.get('global_current_model'),
+                            global_total_epochs=config.get('global_total_epochs'),
+                            global_completed_epochs=config.get('global_completed_epochs'),
+                            global_start_time=config.get('global_start_time')
                         )
 
                         language_results[lang_code] = {
@@ -1569,7 +1679,12 @@ class ModelTrainer:
                     output_dir=config.get('output_dir', 'models/best_model'),
                     label_column='label',  # load_data returns 'label' column
                     training_strategy=training_strategy,
-                    category_name=config.get('category_name')  # Pass category name for display
+                    category_name=config.get('category_name'),  # Pass category name for display
+                    global_total_models=config.get('global_total_models'),
+                    global_current_model=config.get('global_current_model'),
+                    global_total_epochs=config.get('global_total_epochs'),
+                    global_completed_epochs=config.get('global_completed_epochs'),
+                    global_start_time=config.get('global_start_time')
                 )
 
         # Return results (handle both single-model and per-language cases)
@@ -1585,14 +1700,38 @@ class ModelTrainer:
                 'language_results': results.get('language_results', {})
             }
         else:
-            return {
-                'best_model': model_name,
-                'best_f1_macro': results.get('f1', results.get('f1_macro', 0.0)),
-                'accuracy': results.get('accuracy', 0.0),
-                'model_path': results.get('model_path', ''),
-                'training_time': results.get('training_time', 0),
-                'metrics': results
-            }
+            # Handle both TrainingResult objects and dictionaries
+            if isinstance(results, TrainingResult):
+                # Convert TrainingResult object to dictionary format
+                return {
+                    'best_model': model_name,
+                    'best_f1_macro': results.best_f1_macro,
+                    'accuracy': results.best_accuracy,
+                    'model_path': results.model_path,
+                    'training_time': results.training_time,
+                    'metrics': {
+                        'f1_macro': results.best_f1_macro,
+                        'f1_weighted': results.best_f1_weighted,
+                        'accuracy': results.best_accuracy,
+                        'precision': results.precision,
+                        'recall': results.recall,
+                        'best_epoch': results.best_epoch,
+                        'validation_loss': results.validation_loss,
+                        'classification_report': results.classification_report,
+                        'confusion_matrix': results.confusion_matrix,
+                        'training_history': results.training_history
+                    }
+                }
+            else:
+                # results is already a dictionary
+                return {
+                    'best_model': model_name,
+                    'best_f1_macro': results.get('f1', results.get('f1_macro', 0.0)),
+                    'accuracy': results.get('accuracy', 0.0),
+                    'model_path': results.get('model_path', ''),
+                    'training_time': results.get('training_time', 0),
+                    'metrics': results
+                }
 
     async def train_async(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Async wrapper for training (for pipeline integration)"""
@@ -1767,14 +1906,20 @@ class ModelTrainer:
         )
 
         # Setup metrics output directory
-        # CRITICAL: Always use 'training_logs' as base directory for consistency across ALL training modes
-        # bert_base.py will automatically organize into: training_logs/{label_value}/{model_type}/
+        # CRITICAL: Always use 'logs/training_arena' as base directory for consistency across ALL training modes
+        # bert_base.py will automatically organize into:
+        # Benchmark: logs/training_arena/{session_id}/training_metrics/benchmark/{category}/{language}/{model}/
+        # Normal: logs/training_arena/{session_id}/training_metrics/normal_training/{category}/{language}/{model}/
         metrics_dir = output_dir / 'metrics'
         metrics_dir.mkdir(exist_ok=True)
 
         # Train with enhanced tracking
         # Extract language info from samples if available
         val_language_info = [s.lang for s in val_samples if hasattr(s, 'lang')] if track_languages else None
+
+        # Initialize global progress tracking for single model training
+        import time as time_module
+        global_start_time = time_module.time()
 
         # CRITICAL FIX: Use run_training (not run_training_enhanced which doesn't exist) with language_info
         best_metric, best_model_path, best_scores = model.run_training(
@@ -1783,11 +1928,16 @@ class ModelTrainer:
             n_epochs=self.config.num_epochs,
             lr=self.config.learning_rate,
             save_model_as=str(output_dir / 'model'),
-            metrics_output_dir='training_logs',  # CRITICAL: Use standard base dir - bert_base.py creates subdirs
+            metrics_output_dir='logs/training_arena',  # CRITICAL: Use standard base dir - bert_base.py creates subdirs
             track_languages=track_languages,
             language_info=val_language_info,  # CRITICAL: Pass language info for per-language metrics
             reinforced_learning=self.config.reinforced_learning if hasattr(self.config, 'reinforced_learning') else False,
-            session_id=config.get('session_id')
+            session_id=config.get('session_id'),
+            global_total_models=1,  # Quick mode trains single model
+            global_current_model=1,
+            global_total_epochs=self.config.num_epochs,
+            global_completed_epochs=0,
+            global_start_time=global_start_time
         )
 
         # Log final model path
@@ -1800,9 +1950,13 @@ class ModelTrainer:
         test_predictions = model.predict(test_loader, model.model)
         test_probs = model.predict(test_loader, model.model, proba=True)
 
-        # Get language-specific metrics if available
+        # Get language-specific metrics if available - CRITICAL FIX: Use last_training_summary
         language_metrics = {}
-        if track_languages and hasattr(model, 'performance_tracker'):
+        training_summary = getattr(model, 'last_training_summary', {})
+
+        if track_languages and training_summary:
+            language_metrics = training_summary.get('language_metrics', {})
+        elif track_languages and hasattr(model, 'performance_tracker'):
             tracker = model.performance_tracker
             if tracker and hasattr(tracker, 'get_language_metrics'):
                 language_metrics = tracker.get_language_metrics()
@@ -1815,6 +1969,10 @@ class ModelTrainer:
         precision, recall, f1_weighted, _ = precision_recall_fscore_support(
             test_labels, test_predictions, average='weighted'
         )
+        # Get per-class F1 scores
+        precision_per_class, recall_per_class, f1_per_class, support_per_class = precision_recall_fscore_support(
+            test_labels, test_predictions, average=None
+        )
         _, _, f1_macro, _ = precision_recall_fscore_support(
             test_labels, test_predictions, average='macro'
         )
@@ -1824,15 +1982,17 @@ class ModelTrainer:
             output_dict=True
         )
 
-        return {
+        # CRITICAL FIX: Return keys matching both old and new formats
+        result = {
             'model_name': model_name,
             'accuracy': accuracy,
-            'f1': f1_macro,
+            'f1': f1_macro,  # Legacy key
+            'f1_macro': f1_macro,  # New key for consistency
             'f1_weighted': f1_weighted,
             'precision': precision,
             'recall': recall,
-            'model_path': best_model_path if best_model_path else str(output_dir),  # CRITICAL: Use actual saved model path
-            'output_dir': str(output_dir),  # Keep output_dir for backward compatibility
+            'model_path': best_model_path if best_model_path else str(output_dir),
+            'output_dir': str(output_dir),
             'best_metric': best_metric,
             'best_scores': best_scores,
             'training_time': 0,  # TODO: Extract from training logs
@@ -1840,6 +2000,19 @@ class ModelTrainer:
             'classification_report': report,
             'language_metrics': language_metrics
         }
+
+        # Add per-class F1 scores if binary classification
+        if len(f1_per_class) == 2:
+            result['f1_0'] = f1_per_class[0]
+            result['f1_1'] = f1_per_class[1]
+            result['f1_class_0'] = f1_per_class[0]
+            result['f1_class_1'] = f1_per_class[1]
+            result['precision_0'] = precision_per_class[0]
+            result['precision_1'] = precision_per_class[1]
+            result['recall_0'] = recall_per_class[0]
+            result['recall_1'] = recall_per_class[1]
+
+        return result
 
     def _train_multi_label(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Handle multi-label training with multiple files

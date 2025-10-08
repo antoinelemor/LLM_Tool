@@ -117,13 +117,18 @@ def calculate_class_imbalance(labels: List[Any]) -> Dict[str, float]:
     }
 
 
-def analyze_categories_imbalance(data: pd.DataFrame, annotation_column: str) -> Dict[str, Dict]:
+def analyze_categories_imbalance(
+    data: pd.DataFrame,
+    annotation_column: str,
+    filter_categories: Optional[List[str]] = None
+) -> Dict[str, Dict]:
     """
     Analyze class imbalance for all categories in annotation data.
 
     Args:
         data: DataFrame with annotations
         annotation_column: Column containing annotations (JSON or dict format)
+        filter_categories: Optional list of category names to analyze (ignores others)
 
     Returns:
         Dict mapping category names to their imbalance metrics
@@ -148,13 +153,19 @@ def analyze_categories_imbalance(data: pd.DataFrame, annotation_column: str) -> 
 
         # Collect values for each category
         for key, value in annotation.items():
+            # CRITICAL: Skip categories not in filter_categories (if provided)
+            if filter_categories is not None and key not in filter_categories:
+                continue
+
             if key not in categories_data:
                 categories_data[key] = []
 
             # Handle different value formats
+            # CRITICAL: Skip 'null' string values
             if isinstance(value, list):
-                categories_data[key].extend(value)
-            elif value:  # Skip None/empty
+                clean_values = [v for v in value if v and v != 'null']
+                categories_data[key].extend(clean_values)
+            elif value and value != 'null':  # Skip None/empty/'null'
                 categories_data[key].append(value)
 
     # Calculate imbalance for each category
@@ -354,34 +365,186 @@ def create_benchmark_dataset(
     return output_path
 
 
-def compare_model_results(results: Dict[str, Dict]) -> pd.DataFrame:
+def compare_model_results(
+    results: Dict[str, Dict],
+    f1_class_1_weight: float = 0.7,
+    use_sophisticated_ranking: bool = True
+) -> pd.DataFrame:
     """
-    Compare results from multiple models and create ranking.
+    Compare results from multiple models and create sophisticated ranking.
+
+    The ranking system mirrors the epoch selection criteria used during training,
+    ensuring consistency between how epochs and models are evaluated.
+
+    Ranking Methodology (when use_sophisticated_ranking=True):
+    --------------------------------------------------------
+    1. COMBINED METRIC CALCULATION (similar to best epoch selection):
+       For binary classification:
+       - Combined Score = (f1_class_1_weight × F1_class_1) + ((1-f1_class_1_weight) × F1_macro)
+       - Default: 70% weight on minority class F1, 30% on macro F1
+       - This prioritizes models that detect the minority class well
+
+       For multi-class classification:
+       - Combined Score = F1_macro (balanced across all classes)
+
+    2. LANGUAGE BALANCE PENALTY (if multilingual data):
+       - Calculates coefficient of variation (CV) across language-specific F1 scores
+       - Penalizes models that perform well in one language but poorly in another
+       - Penalty = min(CV × 0.2, 0.2) → up to 20% score reduction
+       - Example: Model with F1=0.9 (EN) and F1=0.3 (FR) gets penalized
+
+    3. ACCURACY AS TIEBREAKER:
+       - When combined scores are equal, higher accuracy wins
+       - Ensures models with similar F1 are differentiated
+
+    4. TRAINING TIME AS FINAL TIEBREAKER:
+       - When combined score AND accuracy are equal, faster model wins
+       - Promotes efficiency in production deployments
 
     Args:
-        results: Dict mapping model_id to training results
+        results: Dict mapping model_id to training results dict containing:
+                - f1_macro or best_f1_macro: Macro-averaged F1 score
+                - accuracy or best_accuracy: Overall accuracy
+                - f1_0, f1_1: Class-specific F1 scores (binary)
+                - precision_0, precision_1, recall_0, recall_1: Per-class metrics
+                - language_metrics: Dict of {language: metrics} (optional)
+                - training_time: Time in seconds
+        f1_class_1_weight: Weight for F1 class 1 in combined metric (0.0-1.0)
+                          Default 0.7 means 70% class 1, 30% macro F1
+        use_sophisticated_ranking: If True, uses combined metric with language penalties.
+                                  If False, simple F1 macro ranking (legacy behavior)
 
     Returns:
-        DataFrame with model comparison and ranking
+        DataFrame with columns:
+        - rank: 1-based rank (1=best)
+        - model: model identifier
+        - combined_score: The sophisticated combined metric used for ranking
+        - f1_macro: Macro F1 score
+        - f1_class_1: F1 for minority class (binary only)
+        - accuracy: Overall accuracy
+        - precision, recall: Overall metrics
+        - training_time: Training duration
+        - ranking_explanation: Text explaining why this rank was assigned
+
+    Example:
+        >>> results = {
+        ...     'xlm-roberta-base': {
+        ...         'f1_macro': 0.75, 'f1_0': 0.85, 'f1_1': 0.65,
+        ...         'accuracy': 0.78, 'training_time': 120.5,
+        ...         'language_metrics': {'EN': {'f1_1': 0.70}, 'FR': {'f1_1': 0.60}}
+        ...     },
+        ...     'bert-base': {
+        ...         'f1_macro': 0.73, 'f1_0': 0.80, 'f1_1': 0.66,
+        ...         'accuracy': 0.76, 'training_time': 95.2
+        ...     }
+        ... }
+        >>> df = compare_model_results(results)
+        >>> print(df[['rank', 'model', 'combined_score', 'f1_macro']])
     """
+    import numpy as np
+
     comparison_data = []
 
     for model_id, result in results.items():
+        # Extract base metrics - handle multiple possible key names for backward compatibility
+        # Priority: f1_macro > f1 > best_f1_macro (different return formats from model_trainer.py)
+        f1_macro = result.get('f1_macro', result.get('f1', result.get('best_f1_macro', 0)))
+        f1_0 = result.get('f1_0', result.get('f1_class_0', result.get('best_f1_0', 0)))
+        f1_1 = result.get('f1_1', result.get('f1_class_1', result.get('best_f1_1', 0)))
+        accuracy = result.get('accuracy', result.get('best_accuracy', 0))
+        precision = result.get('precision', result.get('macro_precision', 0))
+        recall = result.get('recall', result.get('macro_recall', 0))
+        training_time = result.get('training_time', 0)
+
+        # Get language-specific metrics if available
+        language_metrics = result.get('language_metrics', {})
+
+        # Calculate combined metric (matching epoch selection logic)
+        if use_sophisticated_ranking:
+            # Detect if binary classification (has f1_1) or multi-class
+            is_binary = f1_1 > 0 or 'f1_1' in result or 'best_f1_1' in result
+
+            if is_binary and f1_macro > 0:
+                # Binary: weighted combination of F1_class_1 and macro F1
+                combined_score = f1_class_1_weight * f1_1 + (1.0 - f1_class_1_weight) * f1_macro
+            else:
+                # Multi-class: use macro F1 directly
+                combined_score = f1_macro
+
+            # Apply language balance penalty if multilingual
+            language_penalty = 0.0
+            if language_metrics and len(language_metrics) > 1:
+                # Extract F1 scores across languages
+                if is_binary:
+                    # Binary: use F1_class_1 per language
+                    f1_values = [
+                        lang_data.get('f1_1', 0)
+                        for lang_data in language_metrics.values()
+                        if lang_data.get('support_1', 0) > 0  # Only languages with positive examples
+                    ]
+                else:
+                    # Multi-class: use macro F1 per language
+                    # CRITICAL: Try f1_macro first (new standard), fallback to macro_f1
+                    f1_values = [
+                        lang_data.get('f1_macro', lang_data.get('macro_f1', 0))
+                        for lang_data in language_metrics.values()
+                    ]
+
+                # Calculate coefficient of variation (CV) as imbalance measure
+                if len(f1_values) > 1:
+                    mean_f1 = np.mean(f1_values)
+                    std_f1 = np.std(f1_values)
+
+                    if mean_f1 > 0:
+                        cv = std_f1 / mean_f1  # Coefficient of variation
+                        # Penalty: up to 20% reduction based on variance
+                        language_penalty = min(cv * 0.2, 0.2)
+
+            # Apply penalty to combined score
+            combined_score = combined_score * (1 - language_penalty)
+
+            # Generate ranking explanation
+            explanation_parts = []
+            if is_binary:
+                explanation_parts.append(
+                    f"Combined: {f1_class_1_weight:.0%}×F1₁({f1_1:.3f}) + "
+                    f"{(1-f1_class_1_weight):.0%}×F1ₘ({f1_macro:.3f})"
+                )
+            else:
+                explanation_parts.append(f"F1 Macro: {f1_macro:.3f}")
+
+            if language_penalty > 0:
+                explanation_parts.append(f"Lang penalty: -{language_penalty:.1%}")
+
+            ranking_explanation = "; ".join(explanation_parts)
+        else:
+            # Legacy: simple F1 macro ranking
+            combined_score = f1_macro
+            ranking_explanation = f"Simple F1 Macro: {f1_macro:.3f}"
+
         row = {
             'model': model_id,
-            'f1_macro': result.get('f1_macro', result.get('best_f1_macro', 0)),
-            'accuracy': result.get('accuracy', result.get('best_accuracy', 0)),
-            'precision': result.get('precision', 0),
-            'recall': result.get('recall', 0),
-            'training_time': result.get('training_time', 0),
+            'combined_score': combined_score,
+            'f1_macro': f1_macro,
+            'f1_class_0': f1_0,
+            'f1_class_1': f1_1,
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'training_time': training_time,
+            'language_balance_penalty': language_penalty if use_sophisticated_ranking else 0,
+            'ranking_explanation': ranking_explanation
         }
         comparison_data.append(row)
 
     # Create DataFrame
     df = pd.DataFrame(comparison_data)
 
-    # Sort by F1 (primary), then accuracy (secondary)
-    df = df.sort_values(['f1_macro', 'accuracy'], ascending=False)
+    # Sophisticated ranking: Combined score (primary), Accuracy (secondary), Time (tertiary)
+    df = df.sort_values(
+        ['combined_score', 'accuracy', 'training_time'],
+        ascending=[False, False, True]  # Lower time is better
+    )
 
     # Add rank
     df.insert(0, 'rank', range(1, len(df) + 1))
@@ -398,7 +561,7 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
     - {session_id}_best_models.csv: Best models from all categories
 
     Args:
-        session_dir: Path to the session directory (e.g., training_logs/20251007_141900)
+        session_dir: Path to the session directory (e.g., logs/training_arena/20251007_141900/training_metrics)
         session_id: Session ID timestamp string
 
     Returns:
@@ -407,33 +570,114 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
     import glob
     import os
 
-    # Find all training.csv and best.csv files recursively
+    # Find all training.csv, reinforced.csv, and best.csv files recursively
     training_csvs = list(session_dir.rglob("training.csv"))
+    reinforced_csvs = list(session_dir.rglob("reinforced.csv"))
     best_csvs = list(session_dir.rglob("best.csv"))
+
+    # Detect if this is benchmark mode by checking if any file contains "benchmark" in path
+    # Note: We save consolidated files at session root if ANY benchmark files exist
+    is_benchmark_mode = False
+    for csv_path in training_csvs + reinforced_csvs + best_csvs:
+        if 'benchmark' in str(csv_path) or '/benchmark/' in str(csv_path):
+            is_benchmark_mode = True
+            break
+
+    # Determine output directory
+    # For benchmark mode: save to session root (parent of training_metrics)
+    # For normal mode: save to session_dir (training_metrics directory)
+    if is_benchmark_mode:
+        output_dir = session_dir.parent
+    else:
+        output_dir = session_dir
 
     consolidated_files = {}
 
-    # Consolidate training metrics
-    if training_csvs:
+    # Consolidate training metrics (both normal training.csv and reinforced.csv)
+    if training_csvs or reinforced_csvs:
         all_training_data = []
 
+        # CRITICAL: Extract legends from CSV files (lines starting with #)
+        collected_legends = set()  # Use set to avoid duplicates
+
+        # Process normal training files
         for csv_path in training_csvs:
             try:
+                # CRITICAL: Extract legend from first line if it exists
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    first_line = f.readline().strip()
+                    if first_line.startswith('#'):
+                        collected_legends.add(first_line)
+
                 df = pd.read_csv(csv_path)
 
                 # Extract metadata from path
-                # Path structure: session_dir/[benchmark/]category/[language/][model/]training.csv
+                # Path structure: session_dir/[benchmark|normal_training]/category/[language/][model/]training.csv
                 rel_path = csv_path.relative_to(session_dir)
                 parts = list(rel_path.parts[:-1])  # Exclude 'training.csv'
 
                 # Add path-based metadata
                 metadata = {}
+                metadata['phase'] = 'normal'  # Mark as normal training (vs reinforced)
 
-                # Check if benchmark mode
+                # Check if benchmark or normal_training mode
                 if parts and parts[0] == 'benchmark':
                     metadata['mode'] = 'benchmark'
                     parts = parts[1:]  # Remove 'benchmark' from parts
+                elif parts and parts[0] == 'normal_training':
+                    metadata['mode'] = 'normal'
+                    parts = parts[1:]  # Remove 'normal_training' from parts
                 else:
+                    # Legacy: old structure without benchmark or normal_training prefix
+                    metadata['mode'] = 'normal'
+
+                # Extract category, language, model from remaining parts
+                if len(parts) >= 1:
+                    metadata['category'] = parts[0]
+                if len(parts) >= 2:
+                    metadata['language'] = parts[1]
+                if len(parts) >= 3:
+                    metadata['model'] = parts[2]
+
+                # Add metadata columns to dataframe
+                for key, value in metadata.items():
+                    df[key] = value
+
+                all_training_data.append(df)
+
+            except Exception as e:
+                logging.warning(f"Failed to read {csv_path}: {e}")
+                continue
+
+        # Process reinforced training files
+        for csv_path in reinforced_csvs:
+            try:
+                # CRITICAL: Extract legend from first line if it exists
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    first_line = f.readline().strip()
+                    if first_line.startswith('#'):
+                        collected_legends.add(first_line)
+
+                df = pd.read_csv(csv_path)
+
+                # Extract metadata from path
+                # Path structure: session_dir/[benchmark|normal_training]/category/[language/][model/]reinforced.csv
+                rel_path = csv_path.relative_to(session_dir)
+                parts = list(rel_path.parts[:-1])  # Exclude 'reinforced.csv'
+
+                # Add path-based metadata
+                metadata = {}
+                metadata['phase'] = 'reinforced'  # Mark as reinforced training
+
+                # Check if benchmark or normal_training mode
+                if parts and parts[0] == 'benchmark':
+                    metadata['mode'] = 'benchmark'
+                    parts = parts[1:]  # Remove 'benchmark' from parts
+                elif parts and parts[0] == 'normal_training':
+                    metadata['mode'] = 'normal'
+                    parts = parts[1:]  # Remove 'normal_training' from parts
+                else:
+                    # Legacy: old structure without benchmark or normal_training prefix
                     metadata['mode'] = 'normal'
 
                 # Extract category, language, model from remaining parts
@@ -459,40 +703,64 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
             consolidated_df = pd.concat(all_training_data, ignore_index=True)
 
             # Reorder columns to put metadata first
-            metadata_cols = ['mode', 'category', 'language', 'model']
+            metadata_cols = ['phase', 'mode', 'category', 'language', 'model']
             other_cols = [col for col in consolidated_df.columns if col not in metadata_cols]
 
             # Only include metadata columns that exist
             existing_metadata_cols = [col for col in metadata_cols if col in consolidated_df.columns]
             consolidated_df = consolidated_df[existing_metadata_cols + other_cols]
 
-            # Save consolidated training metrics
-            training_output = session_dir / f"{session_id}_training_metrics.csv"
-            consolidated_df.to_csv(training_output, index=False)
+            # Save consolidated training metrics (to output_dir determined above)
+            training_output = output_dir / f"{session_id}_training_metrics.csv"
+
+            # CRITICAL: Write legends as comment lines first
+            with open(training_output, 'w', encoding='utf-8', newline='') as f:
+                # Write all collected legends
+                for legend in sorted(collected_legends):
+                    f.write(f"{legend}\n")
+
+            # Append the CSV data
+            consolidated_df.to_csv(training_output, mode='a', index=False)
             consolidated_files['training'] = training_output
             logging.info(f"Created consolidated training metrics: {training_output}")
             logging.info(f"  • Total rows: {len(consolidated_df)}")
+            logging.info(f"  • Normal training rows: {len(consolidated_df[consolidated_df['phase'] == 'normal']) if 'phase' in consolidated_df.columns else 'N/A'}")
+            logging.info(f"  • Reinforced training rows: {len(consolidated_df[consolidated_df['phase'] == 'reinforced']) if 'phase' in consolidated_df.columns else 'N/A'}")
 
     # Consolidate best models
     if best_csvs:
         all_best_data = []
 
+        # CRITICAL: Extract legends from CSV files (lines starting with #)
+        best_legends = set()  # Use set to avoid duplicates
+
         for csv_path in best_csvs:
             try:
+                # CRITICAL: Extract legend from first line if it exists
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    first_line = f.readline().strip()
+                    if first_line.startswith('#'):
+                        best_legends.add(first_line)
+
                 df = pd.read_csv(csv_path)
 
                 # Extract metadata from path
+                # Path structure: session_dir/[benchmark|normal_training]/category/[language/][model/]best.csv
                 rel_path = csv_path.relative_to(session_dir)
                 parts = list(rel_path.parts[:-1])  # Exclude 'best.csv'
 
                 # Add path-based metadata
                 metadata = {}
 
-                # Check if benchmark mode
+                # Check if benchmark or normal_training mode
                 if parts and parts[0] == 'benchmark':
                     metadata['mode'] = 'benchmark'
                     parts = parts[1:]
+                elif parts and parts[0] == 'normal_training':
+                    metadata['mode'] = 'normal'
+                    parts = parts[1:]
                 else:
+                    # Legacy: old structure without benchmark or normal_training prefix
                     metadata['mode'] = 'normal'
 
                 # Extract category, language, model from remaining parts
@@ -525,9 +793,47 @@ def consolidate_session_csvs(session_dir: Path, session_id: str) -> Dict[str, Pa
             existing_metadata_cols = [col for col in metadata_cols if col in consolidated_df.columns]
             consolidated_df = consolidated_df[existing_metadata_cols + other_cols]
 
-            # Save consolidated best models
-            best_output = session_dir / f"{session_id}_best_models.csv"
-            consolidated_df.to_csv(best_output, index=False)
+            # Filter to keep ONLY the best model per (category, language, model) combination
+            # Identify the grouping columns that exist
+            grouping_cols = [col for col in ['category', 'language', 'model'] if col in consolidated_df.columns]
+
+            if grouping_cols:
+                # CRITICAL: Identify the metric column to use for ranking
+                # Priority: combined_score > f1_macro > accuracy
+                metric_col = None
+                for possible_metric in ['combined_score', 'f1_macro', 'val_f1_macro', 'best_f1_macro', 'accuracy', 'val_accuracy', 'best_accuracy']:
+                    if possible_metric in consolidated_df.columns:
+                        metric_col = possible_metric
+                        break
+
+                if metric_col:
+                    # Sort by grouping columns and metric (descending)
+                    consolidated_df = consolidated_df.sort_values(
+                        by=grouping_cols + [metric_col],
+                        ascending=[True] * len(grouping_cols) + [False]
+                    )
+
+                    # Keep only the first (best) entry for each group
+                    consolidated_df = consolidated_df.drop_duplicates(subset=grouping_cols, keep='first')
+
+                    logging.info(f"Filtered to best models using metric: {metric_col}")
+                    logging.info(f"  • Grouping by: {', '.join(grouping_cols)}")
+                else:
+                    logging.warning("No metric column found for filtering best models")
+            else:
+                logging.warning("No grouping columns found for filtering best models")
+
+            # Save consolidated best models (to output_dir determined above)
+            best_output = output_dir / f"{session_id}_best_models.csv"
+
+            # CRITICAL: Write legends as comment lines first
+            with open(best_output, 'w', encoding='utf-8', newline='') as f:
+                # Write all collected legends
+                for legend in sorted(best_legends):
+                    f.write(f"{legend}\n")
+
+            # Append the CSV data
+            consolidated_df.to_csv(best_output, mode='a', index=False)
             consolidated_files['best'] = best_output
             logging.info(f"Created consolidated best models: {best_output}")
             logging.info(f"  • Total models: {len(consolidated_df)}")

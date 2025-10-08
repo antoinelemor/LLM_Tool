@@ -138,7 +138,7 @@ class LoggingConfig:
     format: str = "[%(levelname)s] %(message)s"
     file_logging: bool = True
     console_logging: bool = True
-    log_file: str = "llm_tool.log"
+    log_file: str = "application/llm_tool.log"  # Organized in application subfolder
     max_bytes: int = 10485760  # 10MB
     backup_count: int = 5
 
@@ -197,6 +197,8 @@ class Settings:
 
         if self.logging.file_logging:
             log_file = self.paths.logs_dir / self.logging.log_file
+            # Ensure log directory exists
+            log_file.parent.mkdir(parents=True, exist_ok=True)
             from logging.handlers import RotatingFileHandler
             handlers.append(RotatingFileHandler(
                 log_file,
@@ -401,6 +403,60 @@ class Settings:
             'paths': {k: str(v) for k, v in asdict(self.paths).items()},
             'logging': asdict(self.logging)
         }
+
+    def get_system_recommendations(self) -> Dict[str, Any]:
+        """
+        Get system resource recommendations for optimal configuration.
+
+        Returns
+        -------
+        dict
+            Dictionary with recommended settings based on system resources
+        """
+        try:
+            from ..utils.system_resources import detect_resources
+            resources = detect_resources()
+            return resources.get_recommendation()
+        except Exception as e:
+            logging.warning(f"Could not detect system resources: {e}")
+            return {
+                'device': 'cpu',
+                'batch_size': 8,
+                'num_workers': 2,
+                'use_fp16': False,
+                'gradient_accumulation_steps': 1
+            }
+
+    def apply_system_recommendations(self, force: bool = False):
+        """
+        Apply system resource recommendations to settings.
+
+        Parameters
+        ----------
+        force : bool
+            If True, override existing settings. If False, only set if values are default.
+        """
+        recommendations = self.get_system_recommendations()
+
+        # Update training config with recommendations
+        if force or self.training.batch_size == 16:  # Default value
+            self.training.batch_size = recommendations['batch_size']
+
+        if force or not self.training.fp16:
+            self.training.fp16 = recommendations['use_fp16']
+
+        if force or self.training.gradient_accumulation_steps == 1:
+            self.training.gradient_accumulation_steps = recommendations['gradient_accumulation_steps']
+
+        # Update data config with recommended workers
+        if force or self.data.max_workers == 4:  # Default value
+            self.data.max_workers = recommendations['num_workers']
+
+        # Update local model config with recommended device
+        if force or self.local_model.device == "auto":
+            self.local_model.device = recommendations['device']
+
+        logging.info(f"Applied system recommendations: {recommendations}")
 
     def __repr__(self) -> str:
         """String representation of settings"""

@@ -742,7 +742,7 @@ class ModelSelector:
                     val_loader,
                     n_epochs=epochs,
                     save_model_as=f"benchmark_{model_name.lower()}",
-                    metrics_output_dir='training_logs',  # CRITICAL: Base dir - bert_base.py creates subdirs
+                    metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
                     track_languages=language_info is not None,
                     language_info=language_info,
                     label_key=None,  # Model selector benchmark mode

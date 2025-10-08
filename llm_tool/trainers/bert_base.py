@@ -110,7 +110,10 @@ class TrainingDisplay:
 
     def __init__(self, model_name: str, label_key: str = None, label_value: str = None,
                  language: str = None, n_epochs: int = 10, is_reinforced: bool = False,
-                 num_labels: int = 2, class_names: list = None, detected_languages: list = None):
+                 num_labels: int = 2, class_names: list = None, detected_languages: list = None,
+                 global_total_models: int = None, global_current_model: int = None,
+                 global_total_epochs: int = None, global_completed_epochs: int = None,
+                 global_start_time: float = None):
         self.model_name = model_name
         self.label_key = label_key
         self.label_value = label_value
@@ -119,6 +122,13 @@ class TrainingDisplay:
         self.n_epochs = n_epochs
         self.is_reinforced = is_reinforced
         self.num_labels = num_labels
+
+        # Global progress tracking (for benchmark and multi-model training)
+        self.global_total_models = global_total_models
+        self.global_current_model = global_current_model
+        self.global_total_epochs = global_total_epochs
+        self.global_completed_epochs = global_completed_epochs or 0
+        self.global_start_time = global_start_time
 
         # Class names for display (no truncation - let table handle width)
         if class_names:
@@ -201,6 +211,63 @@ class TrainingDisplay:
                 table.add_row("Languages:", "Multilingual")
             else:
                 table.add_row("Language:", self.language)
+
+        return table
+
+    def create_global_progress_section(self) -> Table:
+        """Create global progress section showing overall training progress across all models."""
+        if self.global_total_models is None:
+            return None
+
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column(style="bold yellow", width=20)
+        table.add_column(style="bold white")
+
+        # Global header
+        table.add_row("🌍 GLOBAL PROGRESS", "")
+
+        # Models progress
+        if self.global_current_model is not None and self.global_total_models is not None:
+            model_pct = (self.global_current_model / self.global_total_models) * 100 if self.global_total_models > 0 else 0
+            model_bar = self._create_bar(model_pct, width=40)
+            table.add_row("Models:", f"{self.global_current_model}/{self.global_total_models} {model_bar}")
+
+        # Total epochs progress (with estimated indicator if reinforced learning is enabled)
+        if self.global_total_epochs is not None and self.global_completed_epochs is not None:
+            # Check if reinforced learning is enabled to show "minimum" indicator
+            reinforced_enabled = hasattr(self.config, 'reinforced_learning') and self.config.reinforced_learning
+
+            # Calculate percentage based on actual completed vs current total
+            epoch_pct = (self.global_completed_epochs / self.global_total_epochs) * 100 if self.global_total_epochs > 0 else 0
+            # Cap at 100% for display purposes
+            epoch_pct = min(epoch_pct, 100.0)
+            epoch_bar = self._create_bar(epoch_pct, width=40)
+
+            # Add "min." indicator if reinforced learning is enabled and epochs might increase
+            epoch_label = f"{self.global_completed_epochs}/{self.global_total_epochs}"
+            if reinforced_enabled and self.global_completed_epochs < self.global_total_epochs:
+                epoch_label += " min."
+
+            table.add_row("Total Epochs:", f"{epoch_label} {epoch_bar}")
+
+        # Global timing
+        if self.global_start_time is not None:
+            elapsed = time.time() - self.global_start_time
+            elapsed_str = self._format_time(elapsed)
+            table.add_row("Elapsed Time:", elapsed_str)
+
+            # Estimate remaining time based on completed epochs
+            if self.global_completed_epochs > 0 and self.global_total_epochs > 0:
+                avg_time_per_epoch = elapsed / self.global_completed_epochs
+                remaining_epochs = self.global_total_epochs - self.global_completed_epochs
+                estimated_remaining = avg_time_per_epoch * remaining_epochs
+                remaining_str = self._format_time(estimated_remaining)
+                table.add_row("Est. Remaining:", remaining_str)
+
+                # Total estimated time
+                total_estimated = elapsed + estimated_remaining
+                total_str = self._format_time(total_estimated)
+                table.add_row("Est. Total Time:", total_str)
 
         return table
 
@@ -444,7 +511,17 @@ class TrainingDisplay:
 
     def create_panel(self) -> Panel:
         """Create the complete panel with all sections."""
-        sections = [self.create_header()]
+        sections = []
+
+        # Add global progress section at the top if available
+        global_section = self.create_global_progress_section()
+        if global_section:
+            sections.append(global_section)
+            sections.append(Text())  # Spacer
+            sections.append(Text("─" * 80, style="dim"))  # Separator line
+            sections.append(Text())  # Spacer
+
+        sections.append(self.create_header())
         sections.append(Text())  # Spacer
         sections.append(self.create_progress_section())
         sections.append(Text())  # Spacer
@@ -827,7 +904,7 @@ class BertBase(BertABC):
             random_state: int = 42,
             save_model_as: str | None = None,
             pos_weight: torch.Tensor | None = None,
-            metrics_output_dir: str = "./training_logs",
+            metrics_output_dir: str = "./logs/training_arena",
             best_model_criteria: str = "combined",
             f1_class_1_weight: float = 0.7,
             reinforced_learning: bool = False,
@@ -845,7 +922,13 @@ class BertBase(BertABC):
             class_names: Optional[List[str]] = None,  # Multi-class: list of class names (e.g., ['natural_sciences', 'no', 'social_sciences'])
             session_id: Optional[str] = None,  # Session timestamp for organizing logs by session
             is_benchmark: bool = False,  # Whether this is benchmark mode (adds benchmark folder to path)
-            model_name_for_logging: Optional[str] = None  # Model name for benchmark logging (e.g., 'bert-base-uncased')
+            model_name_for_logging: Optional[str] = None,  # Model name for benchmark logging (e.g., 'bert-base-uncased')
+            progress_callback: Optional[callable] = None,  # Callback function called after each epoch with (epoch, metrics)
+            global_total_models: Optional[int] = None,  # Total number of models in this training session
+            global_current_model: Optional[int] = None,  # Current model number (1-indexed)
+            global_total_epochs: Optional[int] = None,  # Total epochs across all models
+            global_completed_epochs: Optional[int] = None,  # Completed epochs across all models
+            global_start_time: Optional[float] = None  # Start time of the entire training session
     ) -> Tuple[Any, Any, Any, Any]:
         """
         Train, evaluate, and (optionally) save a BERT model. This method also logs training and validation
@@ -881,7 +964,7 @@ class BertBase(BertABC):
             If not None, weights the loss to favor certain classes more heavily
             (useful in binary classification).
 
-        metrics_output_dir: str, default="./training_logs"
+        metrics_output_dir: str, default="./logs/training_arena"
             Directory for saving CSV logs: training_metrics.csv and best_models.csv.
 
         best_model_criteria: str, default="combined"
@@ -926,8 +1009,8 @@ class BertBase(BertABC):
         self._reinforced_already_triggered = False
 
         # NEW STRUCTURE:
-        # Normal mode:    training_logs/{session_id}/{category}/
-        # Benchmark mode: training_logs/{session_id}/benchmark/{category}/{language}/{model}/
+        # Normal mode:    logs/training_arena/{session_id}/training_metrics/{category}/
+        # Benchmark mode: logs/training_arena/{session_id}/training_metrics/benchmark/{category}/{language}/{model}/
         # session_timestamp: Date and time of the training session (e.g., 20251007_103025)
         # category: The label/category being trained (e.g., specific_themes, sentiment)
         # language: Language code (e.g., EN, FR, MULTI) - only in benchmark mode
@@ -950,14 +1033,15 @@ class BertBase(BertABC):
         category_name = category_name.replace("/", "_").replace(" ", "_")
 
         # Build directory structure based on mode
-        session_dir = os.path.join(metrics_output_dir, session_id)
+        # New structure: logs/training_arena/{session_id}/training_metrics/...
+        session_dir = os.path.join(metrics_output_dir, session_id, "training_metrics")
 
         # Also create the same structure for model outputs in models/ directory
         models_base = "models"
         model_session_dir = os.path.join(models_base, session_id)
 
         if is_benchmark:
-            # Benchmark mode: add benchmark, category, language, and model folders
+            # Benchmark mode: benchmark/category/language/model folders
             benchmark_dir = os.path.join(session_dir, "benchmark")
             category_dir = os.path.join(benchmark_dir, category_name)
 
@@ -977,9 +1061,25 @@ class BertBase(BertABC):
                 category_dir = os.path.join(category_dir, model_clean)
                 model_category_dir = os.path.join(model_category_dir, model_clean)
         else:
-            # Normal mode: just session_id/category
-            category_dir = os.path.join(session_dir, category_name)
-            model_category_dir = os.path.join(model_session_dir, category_name)
+            # Normal mode: normal_training/category/language/model folders (same structure as benchmark)
+            normal_training_dir = os.path.join(session_dir, "normal_training")
+            category_dir = os.path.join(normal_training_dir, category_name)
+
+            # Model directory with same structure
+            model_normal_dir = os.path.join(model_session_dir, "normal_training")
+            model_category_dir = os.path.join(model_normal_dir, category_name)
+
+            # Add language folder if language is specified
+            if language:
+                lang_clean = language.upper().replace("/", "_").replace(" ", "_")
+                category_dir = os.path.join(category_dir, lang_clean)
+                model_category_dir = os.path.join(model_category_dir, lang_clean)
+
+            # Add model folder if model name is specified
+            if model_name_for_logging:
+                model_clean = model_name_for_logging.replace("/", "_").replace(" ", "_")
+                category_dir = os.path.join(category_dir, model_clean)
+                model_category_dir = os.path.join(model_category_dir, model_clean)
 
         os.makedirs(category_dir, exist_ok=True)
         os.makedirs(model_category_dir, exist_ok=True)
@@ -1018,8 +1118,8 @@ class BertBase(BertABC):
         # Note: Reinforcement learning now supports multi-class classification
 
         # Initialize CSV headers now that we know num_labels
+        # CRITICAL: Use standardized class indices (_0, _1, _2) instead of label names
         csv_headers = [
-            "model_identifier",
             "model_name",
             "label_key",        # Multi-label: key (e.g., 'themes', 'sentiment')
             "label_value",      # Multi-label: value (e.g., 'transportation', 'positive')
@@ -1032,14 +1132,13 @@ class BertBase(BertABC):
         ]
 
         # Add per-class metric headers dynamically based on num_labels
-        # CRITICAL: Include class names in headers for multi-label/multi-class clarity
+        # CRITICAL: Use standardized indices (_0, _1, _2) for ML consistency
         for i in range(num_labels):
-            class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
             csv_headers.extend([
-                f"precision{class_suffix}",
-                f"recall{class_suffix}",
-                f"f1{class_suffix}",
-                f"support{class_suffix}"
+                f"precision_{i}",
+                f"recall_{i}",
+                f"f1_{i}",
+                f"support_{i}"
             ])
 
         csv_headers.append("macro_f1")
@@ -1059,14 +1158,16 @@ class BertBase(BertABC):
             for lang in langs_for_headers:
                 csv_headers.append(f"{lang}_accuracy")
                 for i in range(num_labels):
-                    class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
                     csv_headers.extend([
-                        f"{lang}_precision{class_suffix}",
-                        f"{lang}_recall{class_suffix}",
-                        f"{lang}_f1{class_suffix}",
-                        f"{lang}_support{class_suffix}"
+                        f"{lang}_precision_{i}",
+                        f"{lang}_recall_{i}",
+                        f"{lang}_f1_{i}",
+                        f"{lang}_support_{i}"
                     ])
                 csv_headers.append(f"{lang}_macro_f1")
+
+        # Build class legend for CSV metadata
+        class_legend = "CLASS_LEGEND: " + ", ".join([f"{i}={class_names[i]}" if class_names and i < len(class_names) else f"{i}=class_{i}" for i in range(num_labels)])
 
         # Check if file exists to decide whether to write headers
         if os.path.exists(training_metrics_csv):
@@ -1081,12 +1182,14 @@ class BertBase(BertABC):
         with open(training_metrics_csv, mode=mode, newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if write_headers:
-                # Write column headers only (metadata is in the columns themselves)
+                # Write legend as comment row (starts with #)
+                f.write(f"# {class_legend}\n")
+                # Write column headers
                 writer.writerow(csv_headers)
 
         # Initialize best_models.csv headers now that we know num_labels
+        # CRITICAL: Use standardized class indices (_0, _1, _2) and add combined_score
         best_models_headers = [
-            "model_identifier",
             "model_type",
             "label_key",        # Multi-label: key (e.g., 'themes', 'sentiment')
             "label_value",      # Multi-label: value (e.g., 'transportation', 'positive')
@@ -1095,18 +1198,18 @@ class BertBase(BertABC):
             "epoch",
             "train_loss",
             "val_loss",
+            "combined_score",   # CRITICAL: Combined score for ranking (weighted F1)
             "accuracy",         # Overall accuracy
         ]
 
         # Add per-class metric headers dynamically based on num_labels
-        # CRITICAL: Include class names in headers for multi-label/multi-class clarity
+        # CRITICAL: Use standardized indices (_0, _1, _2) for ML consistency
         for i in range(num_labels):
-            class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
             best_models_headers.extend([
-                f"precision{class_suffix}",
-                f"recall{class_suffix}",
-                f"f1{class_suffix}",
-                f"support{class_suffix}"
+                f"precision_{i}",
+                f"recall_{i}",
+                f"f1_{i}",
+                f"support_{i}"
             ])
 
         best_models_headers.append("macro_f1")
@@ -1126,12 +1229,11 @@ class BertBase(BertABC):
             for lang in langs_for_headers:
                 best_models_headers.append(f"{lang}_accuracy")
                 for i in range(num_labels):
-                    class_suffix = f"_{class_names[i]}" if class_names and i < len(class_names) else f"_{i}"
                     best_models_headers.extend([
-                        f"{lang}_precision{class_suffix}",
-                        f"{lang}_recall{class_suffix}",
-                        f"{lang}_f1{class_suffix}",
-                        f"{lang}_support{class_suffix}"
+                        f"{lang}_precision_{i}",
+                        f"{lang}_recall_{i}",
+                        f"{lang}_f1_{i}",
+                        f"{lang}_support_{i}"
                     ])
                 best_models_headers.append(f"{lang}_macro_f1")
 
@@ -1153,7 +1255,9 @@ class BertBase(BertABC):
         with open(best_models_csv, mode=mode, newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if write_headers:
-                # Write column headers only (metadata is in the columns themselves)
+                # Write legend as comment row (starts with #)
+                f.write(f"# {class_legend}\n")
+                # Write column headers
                 writer.writerow(best_models_headers)
 
         # Potentially store label names (if dict_labels is available)
@@ -1240,7 +1344,12 @@ class BertBase(BertABC):
             is_reinforced=False,
             num_labels=num_labels,
             class_names=class_names,
-            detected_languages=detected_languages
+            detected_languages=detected_languages,
+            global_total_models=global_total_models,
+            global_current_model=global_current_model,
+            global_total_epochs=global_total_epochs,
+            global_completed_epochs=global_completed_epochs,
+            global_start_time=global_start_time
         )
 
         # Start Live display - this will remain fixed and update in place
@@ -1510,7 +1619,9 @@ class BertBase(BertABC):
                                 lang_metrics_dict[f'f1_{i}'] = 0
                                 lang_metrics_dict[f'support_{i}'] = 0
 
-                        lang_metrics_dict['macro_f1'] = lang_macro_f1
+                        # CRITICAL: Store both f1_macro and macro_f1 for consistency
+                        lang_metrics_dict['f1_macro'] = lang_macro_f1
+                        lang_metrics_dict['macro_f1'] = lang_macro_f1  # Keep backward compatibility
 
                         language_metrics[lang_upper] = lang_metrics_dict
 
@@ -1530,8 +1641,10 @@ class BertBase(BertABC):
                     averages: Optional[Dict[str, float]] = None
                     if language_metrics:
                         avg_acc = sum(m['accuracy'] for m in language_metrics.values()) / len(language_metrics)
-                        avg_f1 = sum(m['macro_f1'] for m in language_metrics.values()) / len(language_metrics)
-                        averages = {'accuracy': avg_acc, 'macro_f1': avg_f1}
+                        # CRITICAL: Both keys are now available in metrics, use f1_macro
+                        avg_f1 = sum(m.get('f1_macro', m.get('macro_f1', 0)) for m in language_metrics.values()) / len(language_metrics)
+                        # Store both keys for consistency
+                        averages = {'accuracy': avg_acc, 'f1_macro': avg_f1, 'macro_f1': avg_f1}
 
                         epoch_record = {
                             'epoch': i_epoch + 1,
@@ -1548,8 +1661,8 @@ class BertBase(BertABC):
                     # Get timestamp for this entry
                     current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
+                    # CRITICAL: model_identifier removed, using standardized column names
                     row = [
-                        model_identifier if model_identifier else "",
                         self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
                         label_key if label_key else "",         # Add label_key
                         label_value if label_value else "",     # Add label_value
@@ -1592,12 +1705,41 @@ class BertBase(BertABC):
                                         language_metrics[lang][f'f1_{i}'],
                                         language_metrics[lang][f'support_{i}']
                                     ])
-                                row.append(language_metrics[lang]['macro_f1'])
+                                # CRITICAL: Use fallback for f1_macro
+                                row.append(language_metrics[lang].get('f1_macro', language_metrics[lang].get('macro_f1', 0)))
                             else:
                                 # Default values: 1 accuracy + num_labels*4 metrics + 1 macro_f1
                                 row.extend([0] * (1 + num_labels * 4 + 1))
 
                     writer.writerow(row)
+
+                # Call progress callback if provided
+                if progress_callback is not None:
+                    callback_metrics = {
+                        'epoch': i_epoch + 1,
+                        'train_loss': avg_train_loss,
+                        'val_loss': avg_val_loss,
+                        'accuracy': accuracy,
+                        'f1_macro': macro_f1
+                    }
+                    # Add per-class F1 scores
+                    for i in range(num_labels):
+                        callback_metrics[f'f1_{i}'] = f1_scores[i]
+                    # Add binary compatibility
+                    if num_labels == 2:
+                        callback_metrics['f1_score'] = f1_1  # Binary: use f1_1 as main f1_score
+                    else:
+                        callback_metrics['f1_score'] = macro_f1  # Multi-class: use macro_f1
+
+                    try:
+                        progress_callback(**callback_metrics)
+                    except Exception as e:
+                        # Don't fail training if callback fails
+                        self.logger.warning(f"Progress callback failed: {e}")
+
+                # Update global completed epochs in display
+                if global_total_models is not None:
+                    display.global_completed_epochs += 1
 
                 # Compute "combined" metric if best_model_criteria is "combined"
                 if best_model_criteria == "combined":
@@ -1616,7 +1758,8 @@ class BertBase(BertABC):
                                                if m.get('support_1', 0) > 0]  # Only count languages with positive examples
                         else:
                             # Multi-class: Calculate variance in macro_f1 across languages
-                            f1_class1_values = [m.get('macro_f1', 0) for m in language_metrics.values()]
+                            # CRITICAL: Use f1_macro with fallback to macro_f1
+                            f1_class1_values = [m.get('f1_macro', m.get('macro_f1', 0)) for m in language_metrics.values()]
 
                         if len(f1_class1_values) > 1:
                             # Calculate coefficient of variation (std / mean) as a measure of imbalance
@@ -1770,8 +1913,19 @@ class BertBase(BertABC):
                             # Get timestamp
                             current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
+                            # CRITICAL: Calculate combined_score for ranking
+                            # Binary: 0.7 × F1_class_1 + 0.3 × F1_macro
+                            # Multi-class: F1_macro
+                            if num_labels == 2:
+                                # Binary classification
+                                f1_class_1 = f1_scores[1] if len(f1_scores) > 1 else 0
+                                combined_score = f1_class_1_weight * f1_class_1 + (1.0 - f1_class_1_weight) * macro_f1
+                            else:
+                                # Multi-class classification
+                                combined_score = macro_f1
+
+                            # CRITICAL: model_identifier removed, combined_score added
                             row = [
-                                model_identifier if model_identifier else "",
                                 model_type,
                                 label_key if label_key else "",         # Add label_key
                                 label_value if label_value else "",     # Add label_value
@@ -1780,6 +1934,7 @@ class BertBase(BertABC):
                                 i_epoch + 1,
                                 avg_train_loss,
                                 avg_val_loss,
+                                combined_score,                         # CRITICAL: Combined score for ranking
                                 accuracy,                               # Add accuracy
                             ]
 
@@ -1817,7 +1972,8 @@ class BertBase(BertABC):
                                             language_metrics[lang].get(f'f1_{i}', 0),
                                             language_metrics[lang].get(f'support_{i}', 0)
                                         ])
-                                    row.append(language_metrics[lang]['macro_f1'])
+                                    # CRITICAL: Use fallback for f1_macro
+                                    row.append(language_metrics[lang].get('f1_macro', language_metrics[lang].get('macro_f1', 0)))
                                 else:
                                     # Fill with empty values to maintain CSV structure
                                     # 1 accuracy + num_labels*4 metrics + 1 macro_f1
@@ -1936,6 +2092,11 @@ class BertBase(BertABC):
                     reinforced_triggered = True
                     self._reinforced_already_triggered = True  # Mark as triggered to prevent re-triggering
 
+                    # Update global total epochs to account for additional reinforced learning epochs
+                    if self.global_total_epochs is not None:
+                        self.global_total_epochs += n_epochs_reinforced
+                        display.global_total_epochs = self.global_total_epochs
+
                     # ========== INLINE REINFORCED TRAINING (ROBUST SOLUTION) ==========
                     # Instead of calling separate function, run reinforced training INLINE
                     # within the SAME Live context to ensure display updates properly
@@ -2049,7 +2210,9 @@ class BertBase(BertABC):
                             weight_tensor = torch.ones(num_labels, dtype=torch.float)
 
                     if 'n_epochs' in reinforced_params:
-                        n_epochs_reinforced = reinforced_params['n_epochs']
+                        # Use manual reinforced_epochs if provided, otherwise use auto-calculated
+                        if reinforced_epochs is None:
+                            n_epochs_reinforced = reinforced_params['n_epochs']
                         display.n_epochs = n_epochs_reinforced
 
                     # Load best model as starting point (suppress logs to avoid interfering with Rich display)
@@ -2257,7 +2420,9 @@ class BertBase(BertABC):
                                         lang_metrics_dict[f'f1_{i}'] = 0
                                         lang_metrics_dict[f'support_{i}'] = 0
 
-                                lang_metrics_dict['macro_f1'] = lang_macro_f1
+                                # CRITICAL: Store both f1_macro and macro_f1 for consistency
+                                lang_metrics_dict['f1_macro'] = lang_macro_f1
+                                lang_metrics_dict['macro_f1'] = lang_macro_f1  # Keep backward compatibility
 
                                 language_metrics[lang_upper] = lang_metrics_dict
 
@@ -2315,6 +2480,34 @@ class BertBase(BertABC):
                             writer = csv.writer(f)
                             writer.writerow(reinforced_row)
 
+                        # Call progress callback if provided (reinforced learning)
+                        if progress_callback is not None:
+                            callback_metrics = {
+                                'epoch': n_epochs + epoch + 1,  # Add normal epochs to reinforced epoch number
+                                'train_loss': avg_train_loss,
+                                'val_loss': avg_val_loss,
+                                'accuracy': accuracy,
+                                'f1_macro': macro_f1
+                            }
+                            # Add per-class F1 scores
+                            for i in range(num_labels):
+                                callback_metrics[f'f1_{i}'] = f1_scores[i]
+                            # Add binary compatibility
+                            if num_labels == 2:
+                                callback_metrics['f1_score'] = f1_1  # Binary: use f1_1 as main f1_score
+                            else:
+                                callback_metrics['f1_score'] = macro_f1  # Multi-class: use macro_f1
+
+                            try:
+                                progress_callback(**callback_metrics)
+                            except Exception as e:
+                                # Don't fail training if callback fails
+                                self.logger.warning(f"Progress callback failed (reinforced): {e}")
+
+                        # Update global completed epochs in display (reinforced)
+                        if global_total_models is not None:
+                            display.global_completed_epochs += 1
+
                         # Check if this is a new best model
                         if num_labels == 2:
                             combined_metric = (1 - f1_class_1_weight) * f1_0 + f1_class_1_weight * f1_1
@@ -2358,8 +2551,19 @@ class BertBase(BertABC):
                                     writer = csv.writer(f)
                                     current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
+                                    # CRITICAL: Calculate combined_score for ranking
+                                    # Binary: 0.7 × F1_class_1 + 0.3 × F1_macro
+                                    # Multi-class: F1_macro
+                                    if num_labels == 2:
+                                        # Binary classification
+                                        f1_class_1 = f1_scores[1] if len(f1_scores) > 1 else 0
+                                        combined_score = f1_class_1_weight * f1_class_1 + (1.0 - f1_class_1_weight) * macro_f1
+                                    else:
+                                        # Multi-class classification
+                                        combined_score = macro_f1
+
+                                    # CRITICAL: model_identifier removed, combined_score added
                                     row = [
-                                        model_identifier if model_identifier else "",
                                         self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
                                         label_key if label_key else "",
                                         label_value if label_value else "",
@@ -2368,6 +2572,7 @@ class BertBase(BertABC):
                                         epoch + 1,  # reinforced epoch number
                                         avg_train_loss,
                                         avg_val_loss,
+                                        combined_score,                         # CRITICAL: Combined score for ranking
                                         accuracy,
                                     ]
 
@@ -2403,7 +2608,8 @@ class BertBase(BertABC):
                                                     lm[f'precision_{i}'], lm[f'recall_{i}'],
                                                     lm[f'f1_{i}'], lm[f'support_{i}']
                                                 ])
-                                            row.append(lm['macro_f1'])
+                                            # CRITICAL: Use fallback for f1_macro
+                                            row.append(lm.get('f1_macro', lm.get('macro_f1', 0)))
                                         else:
                                             row.extend([''] * (1 + num_labels * 4 + 1))
 
@@ -2446,6 +2652,9 @@ class BertBase(BertABC):
 
         # Finally, if reinforced training was triggered and found a better model, it might have placed it
         # in a temporary folder. The method already handles rename at the end. So at this point we are done.
+        # CRITICAL: Calculate total training time
+        total_training_time = time.time() - training_start_time
+
         # Return enhanced scores dictionary for benchmark compatibility
         if best_scores is not None:
             # Convert to dictionary format for new benchmark
@@ -2454,7 +2663,8 @@ class BertBase(BertABC):
                 'recall': best_scores[1].tolist() if hasattr(best_scores[1], 'tolist') else best_scores[1],
                 'f1': best_scores[2].tolist() if hasattr(best_scores[2], 'tolist') else best_scores[2],
                 'support': best_scores[3].tolist() if hasattr(best_scores[3], 'tolist') else best_scores[3],
-                'macro_f1': np.mean(best_scores[2]) if best_scores[2] is not None else 0,
+                'f1_macro': np.mean(best_scores[2]) if best_scores[2] is not None else 0,  # CRITICAL: Use f1_macro not macro_f1 for consistency
+                'macro_f1': np.mean(best_scores[2]) if best_scores[2] is not None else 0,  # Keep backward compatibility
                 'accuracy': np.sum([p * s for p, s in zip(best_scores[0], best_scores[3])]) / np.sum(best_scores[3]) if best_scores[3] is not None else 0,
                 'f1_0': best_scores[2][0] if len(best_scores[2]) > 0 else 0,
                 'f1_1': best_scores[2][1] if len(best_scores[2]) > 1 else 0,
@@ -2464,7 +2674,8 @@ class BertBase(BertABC):
                 'recall_1': best_scores[1][1] if len(best_scores[1]) > 1 else 0,
                 'val_loss': val_loss_values[-1] if val_loss_values else 0,
                 'best_model_path': best_model_path,
-                'reinforced_triggered': reinforced_triggered
+                'reinforced_triggered': reinforced_triggered,
+                'training_time': total_training_time  # CRITICAL: Add training time to summary
             }
 
             # Add language metrics if available
