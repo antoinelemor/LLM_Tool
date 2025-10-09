@@ -135,22 +135,8 @@ N/A (initial release)
 
 ### Planned for 1.1.0
 - [ ] Web UI for annotation workflow
-- [ ] REST API mode for programmatic access
 - [ ] Docker containerization
-- [ ] Active learning integration
 - [ ] Improved multi-GPU training support
-
-### Planned for 1.2.0
-- [ ] Support for additional model architectures (T5, GPT-2)
-- [ ] Sequence tagging (NER) support
-- [ ] Batch inference optimization
-- [ ] Cloud deployment templates (AWS, GCP, Azure)
-
-### Planned for 2.0.0
-- [ ] Real-time annotation streaming
-- [ ] Federated learning support
-- [ ] Custom model architecture builder
-- [ ] Advanced AutoML features
 
 ---
 

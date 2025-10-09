@@ -987,7 +987,7 @@ class ModelTrainer:
                 n_epochs=self.config.num_epochs,
                 lr=self.config.learning_rate,
                 random_state=42,
-                save_model_as=str(output_dir / 'model'),
+                save_model_as='model',  # Just the model name, bert_base.py will construct full path
                 metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
                 label_key=label_key,      # Pass parsed label key
                 label_value=label_value,  # Pass parsed label value
@@ -2062,7 +2062,7 @@ class ModelTrainer:
             test_dataloader=val_loader,
             n_epochs=self.config.num_epochs,
             lr=self.config.learning_rate,
-            save_model_as=str(output_dir / 'model'),
+            save_model_as='model',  # Just the model name, bert_base.py will construct full path
             metrics_output_dir='logs/training_arena',  # CRITICAL: Use standard base dir - bert_base.py creates subdirs
             track_languages=track_languages,
             language_info=val_language_info,  # CRITICAL: Pass language info for per-language metrics

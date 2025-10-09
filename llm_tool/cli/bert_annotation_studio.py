@@ -768,6 +768,21 @@ class BERTAnnotationStudio:
         for candidate in candidates:
             for key, lang_code in MODEL_LANGUAGE_MAP.items():
                 if key in candidate:
+                    # For xlm-roberta, try to get languages from training metadata
+                    if key == 'xlm-roberta' and lang_code == 'MULTI':
+                        # Check if there's a training metadata file that contains language info
+                        metadata_path = model_dir / "training_metadata.json"
+                        if metadata_path.exists():
+                            try:
+                                with open(metadata_path, "r") as f:
+                                    metadata = json.load(f)
+                                    languages = metadata.get("confirmed_languages", [])
+                                    if languages:
+                                        return "/".join([lang.upper() for lang in languages])
+                            except:
+                                pass
+                        # Fallback to MULTI if no specific languages found
+                        return "MULTI"  # Default when languages are unknown
                     return lang_code
 
         return "MULTI" if "xlm" in base_model.lower() else "EN"

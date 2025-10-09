@@ -1214,13 +1214,11 @@ class BertBase(BertABC):
         # CRITICAL: Use standardized class indices (_0, _1, _2) instead of label names
         csv_headers = [
             "model_name",
-            "label_key",        # Multi-label: key (e.g., 'themes', 'sentiment')
-            "label_value",      # Multi-label: value (e.g., 'transportation', 'positive')
-            "language",         # Language of the data (e.g., 'EN', 'FR', 'MULTI')
             "timestamp",
             "epoch",
             "train_loss",
             "val_loss",
+            "combined_score",   # Combined score for ranking
             "accuracy",         # Overall accuracy
         ]
 
@@ -1284,9 +1282,6 @@ class BertBase(BertABC):
         # CRITICAL: Use standardized class indices (_0, _1, _2) and add combined_score
         best_models_headers = [
             "model_type",
-            "label_key",        # Multi-label: key (e.g., 'themes', 'sentiment')
-            "label_value",      # Multi-label: value (e.g., 'transportation', 'positive')
-            "language",         # Language of the data (e.g., 'EN', 'FR', 'MULTI')
             "timestamp",
             "epoch",
             "train_loss",
@@ -1765,64 +1760,7 @@ class BertBase(BertABC):
                             epoch_record['averages'] = averages
                         language_performance_history.append(epoch_record)
 
-                # Append to training_metrics.csv (normal training phase)
-                with open(training_metrics_csv, mode='a', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-
-                    # Get timestamp for this entry
-                    current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-                    # CRITICAL: model_identifier removed, using standardized column names
-                    row = [
-                        self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
-                        label_key if label_key else "",         # Add label_key
-                        label_value if label_value else "",     # Add label_value
-                        language if language else "",           # Add language
-                        current_timestamp,
-                        i_epoch + 1,
-                        avg_train_loss,
-                        avg_val_loss,
-                        accuracy,                               # Add accuracy
-                    ]
-
-                    # Add per-class metrics for all classes
-                    for i in range(num_labels):
-                        row.extend([
-                            precisions[i],
-                            recalls[i],
-                            f1_scores[i],
-                            supports[i]
-                        ])
-
-                    row.append(macro_f1)
-
-                    # Add language metrics ONLY for the current training language
-                    if track_languages and language_info is not None:
-                        # Determine which languages to include (must match headers logic)
-                        if language and language != 'MULTI':
-                            # Single language training: only write data for THIS language
-                            langs_for_data = [language.upper()]
-                        else:
-                            # Multilingual or unspecified: write data for all detected languages
-                            langs_for_data = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
-
-                        for lang in langs_for_data:
-                            if language_metrics and lang in language_metrics:
-                                row.append(language_metrics[lang]['accuracy'])
-                                for i in range(num_labels):
-                                    row.extend([
-                                        language_metrics[lang][f'precision_{i}'],
-                                        language_metrics[lang][f'recall_{i}'],
-                                        language_metrics[lang][f'f1_{i}'],
-                                        language_metrics[lang][f'support_{i}']
-                                    ])
-                                # CRITICAL: Use fallback for f1_macro
-                                row.append(language_metrics[lang].get('f1_macro', language_metrics[lang].get('macro_f1', 0)))
-                            else:
-                                # Default values: 1 accuracy + num_labels*4 metrics + 1 macro_f1
-                                row.extend([0] * (1 + num_labels * 4 + 1))
-
-                    writer.writerow(row)
+                # NOTE: CSV writing will be done after combined_metric calculation
 
                 # Update global completed epochs in display and model
                 # CRITICAL: Do this BEFORE calling callback so it gets the updated count
@@ -1901,6 +1839,63 @@ class BertBase(BertABC):
                 display.epoch_time = epoch_time
                 display.total_time = time.time() - training_start_time
 
+                # NOW write to training_metrics.csv with the calculated combined_metric
+                with open(training_metrics_csv, mode='a', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+
+                    # Get timestamp for this entry
+                    current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                    # Build row with combined_metric
+                    row = [
+                        self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
+                        current_timestamp,
+                        i_epoch + 1,
+                        avg_train_loss,
+                        avg_val_loss,
+                        combined_metric,    # Use the actual combined_metric calculated above
+                        accuracy,
+                    ]
+
+                    # Add per-class metrics for all classes
+                    for i in range(num_labels):
+                        row.extend([
+                            precisions[i],
+                            recalls[i],
+                            f1_scores[i],
+                            supports[i]
+                        ])
+
+                    row.append(macro_f1)
+
+                    # Add language metrics ONLY for the current training language
+                    if track_languages and language_info is not None:
+                        # Determine which languages to include (must match headers logic)
+                        if language and language != 'MULTI':
+                            # Single language training: only write data for THIS language
+                            langs_for_data = [language.upper()]
+                        else:
+                            # Multilingual or unspecified: write data for all detected languages
+                            langs_for_data = sorted(list(set([lang.upper() if isinstance(lang, str) and lang else None for lang in language_info if isinstance(lang, str) and lang])))
+
+                        for lang in langs_for_data:
+                            if language_metrics and lang in language_metrics:
+                                row.append(language_metrics[lang]['accuracy'])
+                                for i in range(num_labels):
+                                    row.extend([
+                                        language_metrics[lang][f'precision_{i}'],
+                                        language_metrics[lang][f'recall_{i}'],
+                                        language_metrics[lang][f'f1_{i}'],
+                                        language_metrics[lang][f'support_{i}']
+                                    ])
+                                # CRITICAL: Use fallback for f1_macro
+                                row.append(language_metrics[lang].get('f1_macro', language_metrics[lang].get('macro_f1', 0)))
+                            else:
+                                # Default values: 1 accuracy + num_labels*4 metrics + 1 macro_f1
+                                row.extend([0] * (1 + num_labels * 4 + 1))
+
+                    writer.writerow(row)
+
                 # Check if this is a new best model
                 if combined_metric > best_metric_val:
                     # We found a new best model
@@ -1945,6 +1940,37 @@ class BertBase(BertABC):
                         torch.save(model_to_save.state_dict(), output_model_file)
                         model_to_save.config.to_json_file(output_config_file)
                         self.tokenizer.save_vocabulary(best_model_path)
+
+                        # Save training metadata for annotation studio
+                        metadata_file = os.path.join(best_model_path, "training_metadata.json")
+
+                        # Combine all language sources to get complete language list
+                        all_languages = set()
+                        if self.detected_languages:
+                            all_languages.update(self.detected_languages)
+                        if language_info:
+                            all_languages.update([lang.upper() for lang in language_info if lang])
+                        if language and language != 'MULTI':
+                            all_languages.add(language.upper())
+
+                        training_metadata = {
+                            "model_type": model_type,
+                            "training_approach": training_approach,
+                            "num_labels": num_labels,
+                            "label_names": label_names if label_names else [],
+                            "label_key": label_key if label_key else None,
+                            "label_value": label_value if label_value else None,
+                            "language": language if language else None,
+                            "confirmed_languages": sorted(list(all_languages)) if all_languages else [],
+                            "epoch": i_epoch + 1,
+                            "combined_metric": combined_metric,
+                            "macro_f1": macro_f1,
+                            "accuracy": accuracy,
+                            "training_phase": "normal",
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
+                        with open(metadata_file, 'w', encoding='utf-8') as f:
+                            json.dump(training_metadata, f, indent=2, ensure_ascii=False)
                     else:
                         best_model_path = None
 
@@ -2035,29 +2061,19 @@ class BertBase(BertABC):
                             # Get timestamp
                             current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-                            # CRITICAL: Calculate combined_score for ranking
-                            # Binary: 0.7 × F1_class_1 + 0.3 × F1_macro
-                            # Multi-class: F1_macro
-                            if num_labels == 2:
-                                # Binary classification
-                                f1_class_1 = f1_scores[1] if len(f1_scores) > 1 else 0
-                                combined_score = f1_class_1_weight * f1_class_1 + (1.0 - f1_class_1_weight) * macro_f1
-                            else:
-                                # Multi-class classification
-                                combined_score = macro_f1
+                            # CRITICAL: Use the actual combined_metric that determined this is the best model
+                            # This is the exact same sophisticated score used for model selection
+                            # NOT a recalculation - we use the value that was already calculated
 
-                            # CRITICAL: model_identifier removed, combined_score added
+                            # Create row matching the headers exactly
                             row = [
                                 model_type,
-                                label_key if label_key else "",         # Add label_key
-                                label_value if label_value else "",     # Add label_value
-                                language if language else "",           # Add language
                                 current_timestamp,
                                 i_epoch + 1,
                                 avg_train_loss,
                                 avg_val_loss,
-                                combined_score,                         # CRITICAL: Combined score for ranking
-                                accuracy,                               # Add accuracy
+                                combined_metric,                        # CRITICAL: The actual combined_metric used for selection
+                                accuracy,                               # Overall accuracy
                             ]
 
                             # Add per-class metrics for all classes
@@ -2162,6 +2178,35 @@ class BertBase(BertABC):
                 model_to_save.config.to_json_file(output_config_file)
                 self.tokenizer.save_vocabulary(final_path)
                 best_model_path = final_path
+
+                # Save training metadata for annotation studio
+                metadata_file = os.path.join(final_path, "training_metadata.json")
+
+                # Combine all language sources to get complete language list
+                all_languages = set()
+                if self.detected_languages:
+                    all_languages.update(self.detected_languages)
+                if language_info:
+                    all_languages.update([lang.upper() for lang in language_info if lang])
+                if language and language != 'MULTI':
+                    all_languages.add(language.upper())
+
+                training_metadata = {
+                    "model_type": model_type,
+                    "training_approach": training_approach,
+                    "num_labels": num_labels,
+                    "label_names": label_names if label_names else [],
+                    "label_key": label_key if label_key else None,
+                    "label_value": label_value if label_value else None,
+                    "language": language if language else None,
+                    "confirmed_languages": sorted(list(all_languages)) if all_languages else [],
+                    "final_epoch": num_train_epochs,
+                    "combined_metric": best_metric_val,
+                    "training_phase": "normal",
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+                with open(metadata_file, 'w', encoding='utf-8') as f:
+                    json.dump(training_metadata, f, indent=2, ensure_ascii=False)
 
                 # Log model save confirmation
                 self.logger.info(f"✅ Model saved to: {final_path}")
@@ -2727,6 +2772,37 @@ class BertBase(BertABC):
                                 model_to_save.config.to_json_file(output_config_file)
                                 self.tokenizer.save_vocabulary(temp_reinforced_path)
 
+                                # Save training metadata for annotation studio
+                                metadata_file = os.path.join(temp_reinforced_path, "training_metadata.json")
+
+                                # Combine all language sources to get complete language list
+                                all_languages = set()
+                                if self.detected_languages:
+                                    all_languages.update(self.detected_languages)
+                                if language_info:
+                                    all_languages.update([lang.upper() for lang in language_info if lang])
+                                if language and language != 'MULTI':
+                                    all_languages.add(language.upper())
+
+                                training_metadata = {
+                                    "model_type": self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
+                                    "training_approach": training_approach,
+                                    "num_labels": num_labels,
+                                    "label_names": label_names if label_names else [],
+                                    "label_key": label_key if label_key else None,
+                                    "label_value": label_value if label_value else None,
+                                    "language": language if language else None,
+                                    "confirmed_languages": sorted(list(all_languages)) if all_languages else [],
+                                    "epoch": epoch + 1,
+                                    "combined_metric": combined_metric,
+                                    "macro_f1": macro_f1,
+                                    "accuracy": accuracy,
+                                    "training_phase": "reinforced",
+                                    "timestamp": datetime.datetime.now().isoformat()
+                                }
+                                with open(metadata_file, 'w', encoding='utf-8') as f:
+                                    json.dump(training_metadata, f, indent=2, ensure_ascii=False)
+
                                 best_model_path = temp_reinforced_path
 
                                 # Update best_scores
@@ -2737,28 +2813,18 @@ class BertBase(BertABC):
                                     writer = csv.writer(f)
                                     current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-                                    # CRITICAL: Calculate combined_score for ranking
-                                    # Binary: 0.7 × F1_class_1 + 0.3 × F1_macro
-                                    # Multi-class: F1_macro
-                                    if num_labels == 2:
-                                        # Binary classification
-                                        f1_class_1 = f1_scores[1] if len(f1_scores) > 1 else 0
-                                        combined_score = f1_class_1_weight * f1_class_1 + (1.0 - f1_class_1_weight) * macro_f1
-                                    else:
-                                        # Multi-class classification
-                                        combined_score = macro_f1
+                                    # CRITICAL: Use the actual combined_metric that was calculated earlier
+                                    # This is the exact same sophisticated score used for model selection
+                                    # NOT a recalculation - we use the value that determined this is the best model
 
-                                    # CRITICAL: model_identifier removed, combined_score added
+                                    # Create row matching the headers exactly
                                     row = [
                                         self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
-                                        label_key if label_key else "",
-                                        label_value if label_value else "",
-                                        language if language else "",
                                         current_timestamp,
                                         epoch + 1,  # reinforced epoch number
                                         avg_train_loss,
                                         avg_val_loss,
-                                        combined_score,                         # CRITICAL: Combined score for ranking
+                                        combined_metric,                        # CRITICAL: The actual combined_metric used for selection
                                         accuracy,
                                     ]
 

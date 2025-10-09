@@ -13672,7 +13672,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'input_file': str(key_file_path),
                     'model_name': model_name,
                     'num_epochs': epochs,
-                    'output_dir': str(output_dir / f"key_{key_name}"),
+                    'output_dir': str(output_dir),  # bert_base.py will construct correct path
                     'text_column': bundle.text_column,
                     'label_column': bundle.label_column,
                     'training_strategy': 'single-label',
@@ -13832,7 +13832,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'input_file': str(key_file_path),
                         'model_name': model_name,
                         'num_epochs': epochs,
-                        'output_dir': str(output_dir / f"key_{key_name}"),
+                        'output_dir': str(output_dir),  # bert_base.py will construct correct path
                         'text_column': bundle.text_column,
                         'label_column': bundle.label_column,
                         'training_strategy': 'single-label',  # Each key file is single-label

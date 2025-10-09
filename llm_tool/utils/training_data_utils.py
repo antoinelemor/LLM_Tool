@@ -408,12 +408,18 @@ class TrainingDataSessionManager:
             warnings = data.get('warnings', [])
             split_indicator = "CUSTOM" if dataset_name in custom_splits else "DEFAULT"
 
-            # Detect if this is a one-vs-all or multilabel dataset
+            # Detect if this is a one-vs-all or multilabel dataset based on metadata
             # These should be expanded into individual binary classifiers
-            is_multilabel_collection = ('multilabel' in dataset_name.lower() or
-                                       'onevsall' in dataset_name.lower())
+            # Check the training_approach from metadata to determine if it's really one-vs-all
+            is_multilabel_collection = False
+            if training_approach == 'one-vs-all':
+                # Only expand if explicitly one-vs-all approach
+                is_multilabel_collection = True
+            elif 'multilabel' in dataset_name.lower() and training_approach != 'multi-class':
+                # For multilabel datasets, only expand if not explicitly multi-class
+                is_multilabel_collection = True
 
-            if is_multilabel_collection and num_classes > 10:
+            if is_multilabel_collection and num_classes > 2:
                 # This is a collection of binary classifiers - expand it
                 # Each "class" in the distribution represents a unique label combination
                 # that will be used to train a binary classifier
@@ -747,9 +753,16 @@ class TrainingDataSessionManager:
                 split_config = config_metadata.get('split_config', {})
                 if split_config:
                     f.write(f"\n  Data Split Configuration:\n")
-                    f.write(f"    Train:               {split_config.get('train', 'N/A')}\n")
-                    f.write(f"    Validation:          {split_config.get('val', 'N/A')}\n")
-                    f.write(f"    Test:                {split_config.get('test', 'N/A')}\n")
+                    # Extract actual split ratios from defaults or custom configs
+                    defaults = split_config.get('defaults', {})
+                    train_ratio = defaults.get('train', 0.8)
+                    val_ratio = defaults.get('val', 0.2)
+                    test_ratio = defaults.get('test', 0.0)
+
+                    # Format as percentages
+                    f.write(f"    Train:               {train_ratio*100:.0f}%\n")
+                    f.write(f"    Validation:          {val_ratio*100:.0f}%\n")
+                    f.write(f"    Test:                {test_ratio*100:.0f}%\n")
             else:
                 f.write("  No configuration metadata available\n")
 

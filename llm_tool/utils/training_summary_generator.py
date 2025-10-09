@@ -113,8 +113,12 @@ class TrainingSummaryGenerator:
             csv_path = self._generate_csv_summary()
             jsonl_path = self._generate_jsonl_summary()
 
+            # Step 3: Generate best models summary
+            best_models_path = self.generate_best_models_final_csv()
+
             logger.info(f"Generated comprehensive summaries for session {self.session_id}")
             logger.info(f"  Standard names: training_summary_final.csv/jsonl")
+            logger.info(f"  Best models: best_models_final.csv")
             logger.info(f"  Versioned names: {self.csv_versioned_path.name}, {self.jsonl_versioned_path.name}")
             logger.info(f"  Location: {self.session_dir}")
 
@@ -546,7 +550,17 @@ class TrainingSummaryGenerator:
 
             # If we have raw metrics, use them as base
             if "_raw_metrics_df" in self.session_data:
-                metrics_df = self.session_data["_raw_metrics_df"]
+                metrics_df = self.session_data["_raw_metrics_df"].copy()
+
+                # Remove unnecessary columns
+                columns_to_remove = []
+                if 'language' in metrics_df.columns:
+                    columns_to_remove.append('language')
+                if 'label_key' in metrics_df.columns:
+                    columns_to_remove.append('label_key')
+
+                if columns_to_remove:
+                    metrics_df = metrics_df.drop(columns=columns_to_remove, errors='ignore')
 
                 # Add session-level information to each row
                 metrics_df['session_id'] = self.session_id
@@ -580,9 +594,12 @@ class TrainingSummaryGenerator:
                     metrics_df['rl_f1_threshold'] = rl_config.get("f1_threshold", "")
                     metrics_df['rl_epochs'] = rl_config.get("reinforced_epochs", "")
 
-                # Save to both standard and versioned paths
-                metrics_df.to_csv(self.csv_summary_path, index=False)
-                metrics_df.to_csv(self.csv_versioned_path, index=False)
+                # Prepare label legend
+                label_legend = self._prepare_label_legend()
+
+                # Save CSV with label legend in header
+                self._save_csv_with_legend(metrics_df, self.csv_summary_path, label_legend)
+                self._save_csv_with_legend(metrics_df, self.csv_versioned_path, label_legend)
                 logger.info(f"Generated CSV summary with {len(metrics_df)} rows")
 
             else:
@@ -802,6 +819,68 @@ class TrainingSummaryGenerator:
         if "errors" not in self.session_data:
             self.session_data["errors"] = []
         self.session_data["errors"].append(f"{datetime.now().isoformat()}: {error_msg}")
+
+    def _prepare_label_legend(self) -> str:
+        """Prepare label legend for CSV headers."""
+        legend_lines = []
+
+        # Get unique labels from dataset info
+        if "dataset_info" in self.session_data and "summary" in self.session_data["dataset_info"]:
+            label_dist = self.session_data["dataset_info"]["summary"].get("overall_label_distribution", {})
+            if label_dist:
+                legend_lines.append("# LABEL LEGEND:")
+                for idx, label in enumerate(sorted(label_dist.keys()), 1):
+                    legend_lines.append(f"# {idx}. {label}: {label_dist[label]} samples")
+                legend_lines.append("#")
+
+        return "\n".join(legend_lines) if legend_lines else ""
+
+    def _save_csv_with_legend(self, df: pd.DataFrame, path: Path, legend: str) -> None:
+        """Save CSV with optional legend header."""
+        with open(path, 'w', encoding='utf-8') as f:
+            # Write legend as comments if available
+            if legend:
+                f.write(legend + "\n")
+
+            # Write the dataframe
+            df.to_csv(f, index=False)
+
+    def generate_best_models_final_csv(self) -> Path:
+        """Generate best_models_final.csv with only the best models and all metrics."""
+        best_models_path = self.session_dir / "best_models_final.csv"
+
+        try:
+            if "_best_models_df" in self.session_data and not self.session_data["_best_models_df"].empty:
+                best_df = self.session_data["_best_models_df"].copy()
+
+                # Remove unnecessary columns if they exist
+                columns_to_remove = ['language', 'label_key']
+                best_df = best_df.drop(columns=[col for col in columns_to_remove if col in best_df.columns], errors='ignore')
+
+                # Add session info
+                best_df['session_id'] = self.session_id
+                best_df['training_mode'] = self.session_data.get("time_info", {}).get("mode", "unknown")
+                best_df['timestamp'] = datetime.now().isoformat()
+
+                # Prepare label legend
+                label_legend = self._prepare_label_legend()
+
+                # Save with legend
+                self._save_csv_with_legend(best_df, best_models_path, label_legend)
+
+                logger.info(f"Generated best_models_final.csv with {len(best_df)} best models")
+            else:
+                # Create empty file with headers only if no best models
+                pd.DataFrame(columns=['session_id', 'model_name', 'accuracy', 'f1_score', 'status']).to_csv(best_models_path, index=False)
+                logger.warning("No best models found, created empty best_models_final.csv")
+
+            return best_models_path
+
+        except Exception as e:
+            logger.error(f"Failed to generate best_models_final.csv: {e}")
+            # Create minimal file
+            pd.DataFrame([{'session_id': self.session_id, 'status': 'error', 'message': str(e)}]).to_csv(best_models_path, index=False)
+            return best_models_path
 
 
 def generate_training_summaries(session_id: str, session_dir: Optional[Path] = None) -> Tuple[Path, Path]:
