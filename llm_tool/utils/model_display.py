@@ -45,7 +45,7 @@ MODEL_METADATA = {
     # ========================================================================
     'xlm-roberta-base': {
         'name': 'xlm-roberta-base',
-        'languages': ['MULTI'],
+        'languages': ['EN', 'FR', 'DE', 'ES', 'IT', 'PT', 'NL', 'PL', 'RU', 'ZH', 'JA', 'KO', 'AR', 'HI', 'TR', 'SV', 'DA', 'NO', 'FI', 'CS', 'UK', 'EL', 'RO', 'HU', 'BG', 'HR', 'SR', 'SK', 'SL', 'LT', 'LV', 'ET', 'MT', 'GA', 'EU', 'CA', 'GL', 'CY', 'MK', 'SQ', 'IS', 'KA', 'HY', 'AZ', 'KK', 'UZ', 'TG', 'KY', 'TK', 'MN', 'VI', 'TH', 'ID', 'MS', 'TL', 'SW', 'YO', 'IG', 'XH', 'ZU', 'AF', 'NE', 'ML', 'TA', 'TE', 'KN', 'PA', 'GU', 'OR', 'BN', 'AS', 'MR', 'SI', 'MY', 'KM', 'LO', 'BO', 'DZ', 'FA', 'UR', 'PS', 'SD', 'UG', 'AM', 'SO', 'HA', 'RW', 'SN', 'LG', 'WO', 'FF', 'DY', 'BM', 'AK', 'TW', 'EE', 'FO', 'IK', 'SM', 'MH', 'HT', 'KU', 'HE', 'BE', 'TT', 'GN', 'NV', 'MI', 'FJ', 'HO', 'MG', '+50'],
         'max_length': 512,
         'size': 'Base',
         'multilingual': True,
@@ -53,7 +53,7 @@ MODEL_METADATA = {
     },
     'xlm-roberta-large': {
         'name': 'xlm-roberta-large',
-        'languages': ['MULTI'],
+        'languages': ['EN', 'FR', 'DE', 'ES', 'IT', 'PT', 'NL', 'PL', 'RU', 'ZH', 'JA', 'KO', 'AR', 'HI', 'TR', 'SV', 'DA', 'NO', 'FI', 'CS', 'UK', 'EL', 'RO', 'HU', 'BG', 'HR', 'SR', 'SK', 'SL', 'LT', 'LV', 'ET', 'MT', 'GA', 'EU', 'CA', 'GL', 'CY', 'MK', 'SQ', 'IS', 'KA', 'HY', 'AZ', 'KK', 'UZ', 'TG', 'KY', 'TK', 'MN', 'VI', 'TH', 'ID', 'MS', 'TL', 'SW', 'YO', 'IG', 'XH', 'ZU', 'AF', 'NE', 'ML', 'TA', 'TE', 'KN', 'PA', 'GU', 'OR', 'BN', 'AS', 'MR', 'SI', 'MY', 'KM', 'LO', 'BO', 'DZ', 'FA', 'UR', 'PS', 'SD', 'UG', 'AM', 'SO', 'HA', 'RW', 'SN', 'LG', 'WO', 'FF', 'DY', 'BM', 'AK', 'TW', 'EE', 'FO', 'IK', 'SM', 'MH', 'HT', 'KU', 'HE', 'BE', 'TT', 'GN', 'NV', 'MI', 'FJ', 'HO', 'MG', '+50'],
         'max_length': 512,
         'size': 'Large',
         'multilingual': True,
@@ -61,7 +61,7 @@ MODEL_METADATA = {
     },
     'microsoft/mdeberta-v3-base': {
         'name': 'microsoft/mdeberta-v3-base',
-        'languages': ['MULTI'],
+        'languages': ['EN', 'FR', 'DE', 'ES', 'IT', 'PT', 'NL', 'PL', 'RU', 'ZH', 'JA', 'KO', 'AR', 'HI', 'TR', 'SV', 'DA', 'NO', 'FI', 'CS', 'UK', 'EL', 'RO', 'HU', 'BG', 'HR', 'SR', 'SK', 'SL', 'LT', 'LV', 'ET', 'MT', 'GA', 'EU', 'CA', 'GL', 'CY', 'MK', 'SQ', 'IS', 'KA', 'HY', 'AZ', 'KK', 'UZ', 'TG', 'KY', 'TK', 'MN', 'VI', 'TH', 'ID', 'MS', 'TL', 'SW', 'YO', 'IG', 'XH', 'ZU', 'AF', 'NE', 'ML', 'TA', 'TE', 'KN', 'PA', 'GU', 'OR', 'BN', 'AS', 'MR', 'SI', 'MY', 'KM', 'LO', 'BO', 'DZ', 'FA', 'UR', 'PS', 'SD', 'UG', 'AM', 'SO', 'HA', 'RW', 'SN', 'LG', 'WO', 'FF', 'DY', 'BM', 'AK', 'TW', 'EE', 'FO', 'IK', 'SM', 'MH', 'HT', 'KU', 'HE', 'BE', 'TT', 'GN', 'NV', 'MI', 'FJ', 'HO', 'MG', '+50'],
         'max_length': 512,
         'size': 'Base',
         'multilingual': True,
@@ -69,7 +69,7 @@ MODEL_METADATA = {
     },
     'bert-base-multilingual-cased': {
         'name': 'bert-base-multilingual-cased',
-        'languages': ['MULTI'],
+        'languages': ['EN', 'FR', 'DE', 'ES', 'IT', 'PT', 'NL', 'PL', 'RU', 'ZH', 'JA', 'KO', 'AR', 'HI', 'TR', 'SV', 'DA', 'NO', 'FI', 'CS', 'UK', 'EL', 'RO', 'HU', 'BG', 'HR', 'SR', 'SK', 'SL', 'LT', 'LV', 'ET', 'MT', 'GA', 'EU', 'CA', 'GL', 'CY', 'MK', 'SQ', 'IS', 'KA', 'HY', 'AZ', 'KK', 'UZ', 'TG', 'KY', 'TK', 'MN', 'VI', 'TH', 'ID', 'MS', 'TL', 'SW', 'YO', 'IG', 'XH', 'ZU', 'AF', 'NE', 'ML', 'TA', 'TE', 'KN', 'PA', 'GU', 'OR', 'BN', 'AS', 'MR', 'SI', 'MY', 'KM', 'LO', 'BO', 'DZ', 'FA', 'UR', 'PS', 'SD', 'UG', 'AM', 'SO', 'HA', 'RW', 'SN', 'LG', 'WO', 'FF', 'DY', 'BM', 'AK', 'TW', 'EE', 'FO', 'IK', 'SM', 'MH', 'HT', 'KU', 'HE', 'BE', 'TT', 'GN', 'NV', 'MI', 'FJ', 'HO', 'MG'],
         'max_length': 512,
         'size': 'Base',
         'multilingual': True,
@@ -513,7 +513,7 @@ MODEL_METADATA = {
     # ========================================================================
     'markussagen/xlm-roberta-longformer-base-4096': {
         'name': 'markussagen/xlm-roberta-longformer-base-4096',
-        'languages': ['MULTI'],
+        'languages': ['EN', 'FR', 'DE', 'ES', 'IT', 'PT', 'NL', 'PL', 'RU', 'ZH', 'JA', 'KO', 'AR', 'HI', 'TR', 'SV', 'DA', 'NO', 'FI', 'CS', 'UK', 'EL', 'RO', 'HU', 'BG', 'HR', 'SR', 'SK', 'SL', 'LT', 'LV', 'ET', 'MT', 'GA', 'EU', 'CA', 'GL', 'CY', 'MK', 'SQ', 'IS', 'KA', 'HY', 'AZ', 'KK', 'UZ', 'TG', 'KY', 'TK', 'MN', 'VI', 'TH', 'ID', 'MS', 'TL', 'SW', 'YO', 'IG', 'XH', 'ZU', 'AF', 'NE', 'ML', 'TA', 'TE', 'KN', 'PA', 'GU', 'OR', 'BN', 'AS', 'MR', 'SI', 'MY', 'KM', 'LO', 'BO', 'DZ', 'FA', 'UR', 'PS', 'SD', 'UG', 'AM', 'SO', 'HA', 'RW', 'SN', 'LG', 'WO', 'FF', 'DY', 'BM', 'AK', 'TW', 'EE', 'FO', 'IK', 'SM', 'MH', 'HT', 'KU', 'HE', 'BE', 'TT', 'GN', 'NV', 'MI', 'FJ', 'HO', 'MG', '+50'],
         'max_length': 4096,
         'size': 'Base',
         'multilingual': True,
@@ -521,7 +521,7 @@ MODEL_METADATA = {
     },
     'google/long-t5-local-base': {
         'name': 'google/long-t5-local-base',
-        'languages': ['MULTI'],
+        'languages': ['EN', 'FR', 'DE', 'ES', 'IT', 'PT', 'NL', 'PL', 'RU', 'ZH', 'JA', 'KO', 'AR', 'HI', 'TR', 'SV', 'DA', 'NO', 'FI', 'CS', 'UK', 'EL', 'RO', 'HU', 'BG', 'HR', 'SR', 'SK', 'SL', 'LT', 'LV', 'ET', 'MT', 'GA', 'EU', 'CA', 'GL', 'CY', 'MK', 'SQ', 'IS', 'KA', 'HY', 'AZ', 'KK', 'UZ', 'TG', 'KY', 'TK', 'MN', 'VI', 'TH', 'ID', 'MS', 'TL', 'SW', 'YO', 'IG', 'XH', 'ZU', 'AF', 'NE', 'ML', 'TA', 'TE', 'KN', 'PA', 'GU', 'OR', 'BN', 'AS', 'MR', 'SI', 'MY', 'KM', 'LO', 'BO', 'DZ', 'FA', 'UR', 'PS', 'SD', 'UG', 'AM', 'SO', 'HA', 'RW', 'SN', 'LG', 'WO', 'FF', 'DY', 'BM', 'AK', 'TW', 'EE', 'FO', 'IK', 'SM', 'MH', 'HT', 'KU', 'HE', 'BE', 'TT', 'GN', 'NV', 'MI', 'FJ', 'HO', 'MG', '+50'],
         'max_length': 4096,
         'size': 'Base',
         'multilingual': True,
@@ -529,7 +529,7 @@ MODEL_METADATA = {
     },
     'google/long-t5-tglobal-base': {
         'name': 'google/long-t5-tglobal-base',
-        'languages': ['MULTI'],
+        'languages': ['EN', 'FR', 'DE', 'ES', 'IT', 'PT', 'NL', 'PL', 'RU', 'ZH', 'JA', 'KO', 'AR', 'HI', 'TR', 'SV', 'DA', 'NO', 'FI', 'CS', 'UK', 'EL', 'RO', 'HU', 'BG', 'HR', 'SR', 'SK', 'SL', 'LT', 'LV', 'ET', 'MT', 'GA', 'EU', 'CA', 'GL', 'CY', 'MK', 'SQ', 'IS', 'KA', 'HY', 'AZ', 'KK', 'UZ', 'TG', 'KY', 'TK', 'MN', 'VI', 'TH', 'ID', 'MS', 'TL', 'SW', 'YO', 'IG', 'XH', 'ZU', 'AF', 'NE', 'ML', 'TA', 'TE', 'KN', 'PA', 'GU', 'OR', 'BN', 'AS', 'MR', 'SI', 'MY', 'KM', 'LO', 'BO', 'DZ', 'FA', 'UR', 'PS', 'SD', 'UG', 'AM', 'SO', 'HA', 'RW', 'SN', 'LG', 'WO', 'FF', 'DY', 'BM', 'AK', 'TW', 'EE', 'FO', 'IK', 'SM', 'MH', 'HT', 'KU', 'HE', 'BE', 'TT', 'GN', 'NV', 'MI', 'FJ', 'HO', 'MG', '+50'],
         'max_length': 4096,
         'size': 'Base',
         'multilingual': True,
@@ -667,8 +667,13 @@ def display_all_models(
     for idx, (model_id, meta, score) in enumerate(scored_models, 1):
         # Determine language display
         langs = meta.get('languages', [])
-        if 'MULTI' in langs:
-            lang_display = "Multi"
+        if len(langs) > 10:  # Multilingual models with many languages
+            # Show key languages and total count
+            key_langs = ['EN', 'FR', 'DE', 'ES', 'IT', 'PT', 'ZH', 'JA', 'AR', 'RU']
+            shown_langs = [l for l in key_langs if l in langs][:5]  # Show max 5 key languages
+            lang_display = ', '.join(shown_langs) + f' +{len(langs)-5}'
+        elif 'MULTI' in langs:  # Legacy support
+            lang_display = "Multi (100+)"
         else:
             lang_display = ', '.join(langs)
 

@@ -2514,10 +2514,13 @@ class AdvancedCLI:
         session_dirs = self._create_annotator_factory_session_directories(session_id)
 
         # Step 1: Data Source Selection
-        self.console.print("[bold]Step 1/7: Data Source Selection[/bold]\n")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 1:[/bold cyan] [bold white]Data Source Selection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Choose between file-based datasets or SQL database sources.[/dim]\n")
 
         # Ask user to choose between files and SQL database
-        self.console.print("[yellow]Choose data source:[/yellow]")
+        self.console.print("[yellow]Available data sources:[/yellow]")
         self.console.print("  1. 📁 Files (CSV/Excel/JSON/etc.) - Auto-detected or manual")
         self.console.print("  2. 🗄️  SQL Database (PostgreSQL/MySQL/SQLite/SQL Server)\n")
 
@@ -2681,8 +2684,10 @@ class AdvancedCLI:
             self.console.print(f"[green]✓ Selected: {data_path.name} ({data_format})[/green]")
 
         # Step 2: Column Selection with Intelligent Detection (SAME AS MODE 1)
-        self.console.print("\n[bold]Step 2/7: Column Selection with Intelligent Detection[/bold]")
-        self.console.print("[dim]Analyzing columns...[/dim]\n")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 2:[/bold cyan] [bold white]Column Selection with Intelligent Detection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]🔍 Analyzing columns, detecting types, and providing recommendations...[/dim]\n")
 
         # Load sample data for intelligent detection (SAME AS MODE 1 DATABASE ANNOTATOR)
         import pandas as pd
@@ -2815,8 +2820,10 @@ class AdvancedCLI:
         }
     
         # Step 3: Model Selection
-        self.console.print("\n[bold]Step 3/7: Model Selection[/bold]")
-        self.console.print("[dim]Tested API models: OpenAI & Anthropic[/dim]\n")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 3:[/bold cyan] [bold white]Model Selection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Choose from local (Ollama) or cloud (OpenAI/Anthropic) models for annotation.[/dim]\n")
     
         selected_llm = self._select_llm_interactive()
         provider = selected_llm.provider
@@ -2828,7 +2835,10 @@ class AdvancedCLI:
             api_key = self._get_or_prompt_api_key(provider, model_name)
     
         # Step 4: Prompt Configuration
-        self.console.print("\n[bold]Step 4/7: Prompt Configuration[/bold]")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Prompt Configuration[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Select from existing prompts or create new annotation instructions.[/dim]")
     
         # Auto-detect prompts
         detected_prompts = self._detect_prompts_in_folder()
@@ -2947,53 +2957,18 @@ class AdvancedCLI:
                 }]
     
     
-        # Step 4b: Language Column Detection (FROM QUICK START)
-        self.console.print("\n[bold]Step 4b/7: Language Column Detection[/bold]")
-
+        # Language detection moved to training phase
+        # Language columns will be detected and handled automatically after annotation
         lang_column = None
         available_columns = column_info.get('all_columns', []) if column_info else []
         if available_columns:
-            # Detect potential language columns
+            # Silently detect potential language columns for metadata
             potential_lang_cols = [col for col in available_columns
                                   if col.lower() in ['lang', 'language', 'langue', 'lng', 'iso_lang']]
-    
+
+            # If language column exists, note it for later use but don't ask user
             if potential_lang_cols:
-                self.console.print(f"\n[bold cyan]🌍 Found language column(s):[/bold cyan]")
-                for col in potential_lang_cols:
-                    self.console.print(f"  • [cyan]{col}[/cyan]")
-    
-                use_lang_col = Confirm.ask("Use a language column for training metadata?", default=True)
-                if use_lang_col:
-                    if len(potential_lang_cols) == 1:
-                        lang_column = potential_lang_cols[0]
-                        self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
-                    else:
-                        lang_column = Prompt.ask(
-                            "Which language column to use?",
-                            choices=potential_lang_cols,
-                            default=potential_lang_cols[0]
-                        )
-                else:
-                    # Ask if automatic language detection is needed
-                    auto_detect = Confirm.ask(
-                        "[yellow]⚠️  Language information is needed for training. Enable automatic language detection?[/yellow]",
-                        default=True
-                    )
-                    if auto_detect:
-                        self.console.print("[dim]Language will be automatically detected for each text during annotation.[/dim]")
-                        lang_column = None  # Will trigger auto-detection later
-                    else:
-                        self.console.print("[yellow]⚠️  Warning: Proceeding without language information may affect training quality.[/yellow]")
-                        lang_column = None
-            else:
-                # No language column detected
-                has_lang = Confirm.ask("Does your dataset have a language column?", default=False)
-                if has_lang:
-                    lang_column = Prompt.ask(
-                        "Language column name",
-                        choices=available_columns,
-                        default=available_columns[0] if available_columns else "language"
-                    )
+                lang_column = potential_lang_cols[0]  # Use first one if found
         # Step 5: Multi-prompt prefix configuration
         prompt_configs = []
         if len(selected_prompts) > 1:
@@ -3020,7 +2995,10 @@ class AdvancedCLI:
             prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
     
         # Step 6: Advanced Options
-        self.console.print("\n[bold]Step 5/7: Advanced Options[/bold]")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Advanced Options[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Configure processing settings for optimal performance.[/dim]")
     
         # ============================================================
         # DATASET SCOPE
@@ -3226,7 +3204,10 @@ class AdvancedCLI:
                 top_k = self._int_prompt_with_validation("Top K", 40, 1, 100)
     
         # Step 7: Execute
-        self.console.print("\n[bold]Step 6/7: Review & Execute[/bold]")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Review & Execute[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Review your configuration and start the annotation process.[/dim]")
     
         # Display comprehensive summary
         summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
@@ -3574,9 +3555,12 @@ class AdvancedCLI:
         try:
             self.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
     
-            # Create pipeline controller
+            # Create pipeline controller with session_id for organized logging
             from ..pipelines.pipeline_controller import PipelineController
-            pipeline_with_progress = PipelineController(settings=self.settings)
+            pipeline_with_progress = PipelineController(
+                settings=self.settings,
+                session_id=session_id  # Pass session_id for organized logging
+            )
     
             # Use RichProgressManager for elegant display
             from ..utils.rich_progress_manager import RichProgressManager
@@ -3741,7 +3725,9 @@ class AdvancedCLI:
             self._post_annotation_training_workflow(
                 output_file=output_file,
                 text_column=text_column,
-                prompt_configs=prompt_configs
+                prompt_configs=prompt_configs,
+                session_id=session_id,
+                session_dirs=session_dirs  # Pass session directories for organized logging
             )
 
             # Export to Doccano JSONL if requested
@@ -4094,7 +4080,10 @@ class AdvancedCLI:
                 from ..utils.rich_progress_manager import RichProgressManager
                 from ..pipelines.enhanced_pipeline_wrapper import EnhancedPipelineWrapper
 
-                pipeline_with_progress = PipelineController(settings=self.settings)
+                pipeline_with_progress = PipelineController(
+                    settings=self.settings,
+                    session_id=session_id  # Pass session_id for organized logging
+                )
 
                 with RichProgressManager(show_json_every=1, compact_mode=False) as progress_manager:
                     enhanced_pipeline = EnhancedPipelineWrapper(pipeline_with_progress, progress_manager)
@@ -4227,7 +4216,9 @@ class AdvancedCLI:
             self._post_annotation_training_workflow(
                 output_file=output_file,
                 text_column=text_column,
-                prompt_configs=prompt_configs_for_training
+                prompt_configs=prompt_configs_for_training,
+                session_id=session_id,
+                session_dirs=session_dirs if 'session_dirs' in locals() else None
             )
 
         else:
@@ -4239,43 +4230,43 @@ class AdvancedCLI:
         self,
         output_file: str,
         text_column: str,
-        prompt_configs: list
+        prompt_configs: list,
+        session_id: str = None,
+        session_dirs: dict = None
     ):
         """
         Comprehensive post-annotation training workflow.
-        Inspired by Training Arena (Mode 3) but adapted for annotated data.
+        Integrated with Training Arena for complete training capabilities.
 
         Features:
-        - Language detection & analysis (with low-percentage reclassification)
-        - Text length analysis for long-document model recommendation
-        - Model recommendation based on languages & text length
-        - Training strategy selection (multilingual/specialized/hybrid)
-        - Benchmark mode option for specific categories
-        - Full training pipeline integration
+        - Session management with organized outputs
+        - Dataset wizard with intelligent column detection
+        - Language strategy selection (multilingual/specialized/hybrid)
+        - Text length analysis for long-document models
+        - Model catalog with 50+ models
+        - Benchmark mode for testing multiple models
+        - Comprehensive metrics and training summaries
         """
         try:
-            self.console.print("\n[bold cyan]🎓 Post-Annotation Training[/bold cyan]")
-            self.console.print("[dim]Intelligent model training from your LLM annotations[/dim]\n")
+            # Use the Training Arena workflow for post-annotation training
+            self.console.print("\n[bold cyan]🎓 Post-Annotation Training with Training Arena[/bold cyan]")
+            self.console.print("[dim]Using the complete Training Arena workflow for LLM-JSON format data[/dim]\n")
 
-            # Ask if user wants to train a model
-            train_model = Confirm.ask(
-                "[bold]Would you like to train a classifier model from these annotations?[/bold]",
-                default=True
+            # Import and use the Training Arena integration
+            from llm_tool.cli.training_arena_module import integrate_training_arena_in_annotator_factory
+
+            # Pass session_dirs for organized structure
+            training_results = integrate_training_arena_in_annotator_factory(
+                cli_instance=self,
+                output_file=output_file,
+                text_column=text_column,
+                session_id=session_id,
+                session_dirs=session_dirs  # Pass session directories for organized logging
             )
 
-            if not train_model:
-                self.console.print("[yellow]Skipping training. Annotations are ready for manual use or export.[/yellow]")
-                return
-
-            # Load annotated data
-            import pandas as pd
-            df = pd.read_csv(output_file)
-
-            # Filter to annotated rows only
-            annotation_cols = [col for col in df.columns if col in ['label', 'labels', 'category', 'annotation', 'predicted_label']]
-            if not annotation_cols:
-                self.console.print("[yellow]⚠️  No annotation columns found. Cannot proceed with training.[/yellow]")
-                return
+            # The integration handles everything including asking if user wants to train
+            # and running the complete Training Arena workflow
+            return
 
             annotation_col = annotation_cols[0]
             df_annotated = df[df[annotation_col].notna()].copy()
@@ -6134,10 +6125,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Execute with real-time progress tracking
             print("\n🚀 Starting pipeline...\n")
 
-            # Create pipeline controller
+            # Create pipeline controller with session ID for test
             from ..pipelines.pipeline_controller import PipelineController
+
+            # Use a test session ID for isolated testing
+            test_session_id = f"test_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
             pipeline_with_progress = PipelineController(
-                settings=self.settings
+                settings=self.settings,
+                session_id=test_session_id  # Pass session_id for organized logging
             )
 
             # Use the enhanced Rich progress manager with JSON display
@@ -9746,7 +9742,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         info.append(f"{model_id}\n\n", style="bold white")
 
         info.append(f"Languages: ", style="bold yellow")
-        langs = ', '.join(meta.get('languages', ['?']))
+        langs_list = meta.get('languages', ['?'])
+        if len(langs_list) > 10:  # Multilingual models with many languages
+            # Show key languages and total count
+            key_langs = ['EN', 'FR', 'DE', 'ES', 'IT', 'PT', 'ZH', 'JA', 'AR', 'RU']
+            shown_langs = [l for l in key_langs if l in langs_list][:6]  # Show max 6 key languages
+            langs = ', '.join(shown_langs) + f' + {len(langs_list)-6} more languages (Total: {len(langs_list)})'
+        else:
+            langs = ', '.join(langs_list)
         info.append(f"{langs}\n", style="white")
 
         info.append(f"Max Tokens: ", style="bold blue")
@@ -16889,6 +16892,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Create subdirectories
         dirs = {
             'base': base_dir,
+            'session_root': base_dir,  # Root directory for the session
             'annotated_data': base_dir / 'annotated_data',
             'metadata': base_dir / 'metadata',
             'validation_exports': base_dir / 'validation_exports',
@@ -16934,6 +16938,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Create subdirectories (annotation + training)
         dirs = {
             'base': base_dir,
+            'session_root': base_dir,  # Root directory for the session (used by Training Arena integration)
             'annotated_data': base_dir / 'annotated_data',
             'metadata': base_dir / 'metadata',
             'validation_exports': base_dir / 'validation_exports',
@@ -17101,8 +17106,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             return
     
         # Step 3: Model Selection
-        self.console.print("\n[bold]Step 3/7: Model Selection[/bold]")
-        self.console.print("[dim]Tested API models: OpenAI & Anthropic[/dim]\n")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 3:[/bold cyan] [bold white]Model Selection[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Choose from local (Ollama) or cloud (OpenAI/Anthropic) models for annotation.[/dim]\n")
     
         selected_llm = self._select_llm_interactive()
         provider = selected_llm.provider
@@ -17114,7 +17121,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             api_key = self._get_or_prompt_api_key(provider, model_name)
     
         # Step 4: Prompt Configuration
-        self.console.print("\n[bold]Step 4/7: Prompt Configuration[/bold]")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Prompt Configuration[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Select from existing prompts or create new annotation instructions.[/dim]")
     
         # Auto-detect prompts
         detected_prompts = self._detect_prompts_in_folder()
@@ -17233,53 +17243,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 }]
     
     
-        # Step 4b: Language Column Detection (FROM QUICK START)
-        self.console.print("\n[bold]Step 4b/7: Language Column Detection[/bold]")
-
+        # Language detection moved to training phase
+        # Language columns will be detected and handled automatically after annotation
         lang_column = None
         available_columns = column_info.get('all_columns', []) if column_info else []
         if available_columns:
-            # Detect potential language columns
+            # Silently detect potential language columns for metadata
             potential_lang_cols = [col for col in available_columns
                                   if col.lower() in ['lang', 'language', 'langue', 'lng', 'iso_lang']]
-    
+
+            # If language column exists, note it for later use but don't ask user
             if potential_lang_cols:
-                self.console.print(f"\n[bold cyan]🌍 Found language column(s):[/bold cyan]")
-                for col in potential_lang_cols:
-                    self.console.print(f"  • [cyan]{col}[/cyan]")
-    
-                use_lang_col = Confirm.ask("Use a language column for training metadata?", default=True)
-                if use_lang_col:
-                    if len(potential_lang_cols) == 1:
-                        lang_column = potential_lang_cols[0]
-                        self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
-                    else:
-                        lang_column = Prompt.ask(
-                            "Which language column to use?",
-                            choices=potential_lang_cols,
-                            default=potential_lang_cols[0]
-                        )
-                else:
-                    # Ask if automatic language detection is needed
-                    auto_detect = Confirm.ask(
-                        "[yellow]⚠️  Language information is needed for training. Enable automatic language detection?[/yellow]",
-                        default=True
-                    )
-                    if auto_detect:
-                        self.console.print("[dim]Language will be automatically detected for each text during annotation.[/dim]")
-                        lang_column = None  # Will trigger auto-detection later
-                    else:
-                        self.console.print("[yellow]⚠️  Warning: Proceeding without language information may affect training quality.[/yellow]")
-                        lang_column = None
-            else:
-                # No language column detected
-                has_lang = Confirm.ask("Does your dataset have a language column?", default=False)
-                if has_lang:
-                    lang_column = Prompt.ask(
-                        "Language column name",
-                        choices=available_columns,
-                        default=available_columns[0] if available_columns else "language"
-                    )
+                lang_column = potential_lang_cols[0]  # Use first one if found
         # Step 5: Multi-prompt prefix configuration
         prompt_configs = []
         if len(selected_prompts) > 1:
@@ -17306,7 +17281,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
     
         # Step 6: Advanced Options
-        self.console.print("\n[bold]Step 5/7: Advanced Options[/bold]")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Advanced Options[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Configure processing settings for optimal performance.[/dim]")
     
         # ============================================================
         # DATASET SCOPE
@@ -17512,7 +17490,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 top_k = self._int_prompt_with_validation("Top K", 40, 1, 100)
     
         # Step 7: Execute
-        self.console.print("\n[bold]Step 6/7: Review & Execute[/bold]")
+        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Review & Execute[/bold white]")
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[dim]Review your configuration and start the annotation process.[/dim]")
     
         # Display comprehensive summary
         summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
@@ -17860,9 +17841,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         try:
             self.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
     
-            # Create pipeline controller
+            # Create pipeline controller with session_id for organized logging
             from ..pipelines.pipeline_controller import PipelineController
-            pipeline_with_progress = PipelineController(settings=self.settings)
+            pipeline_with_progress = PipelineController(
+                settings=self.settings,
+                session_id=session_id  # Pass session_id for organized logging
+            )
     
             # Use RichProgressManager for elegant display
             from ..utils.rich_progress_manager import RichProgressManager
@@ -18027,7 +18011,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self._post_annotation_training_workflow(
                 output_file=output_file,
                 text_column=text_column,
-                prompt_configs=prompt_configs
+                prompt_configs=prompt_configs,
+                session_id=session_id,
+                session_dirs=session_dirs  # Pass session directories for organized logging
             )
 
             # Export to Doccano JSONL if requested
@@ -18514,7 +18500,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
 
             from ..pipelines.pipeline_controller import PipelineController
-            pipeline_with_progress = PipelineController(settings=self.settings)
+
+            # Extract session_id from metadata or create new one
+            resume_session_id = metadata.get("session_id") if metadata else None
+
+            pipeline_with_progress = PipelineController(
+                settings=self.settings,
+                session_id=resume_session_id  # Pass session_id for organized logging
+            )
 
             from ..utils.rich_progress_manager import RichProgressManager
             from ..pipelines.enhanced_pipeline_wrapper import EnhancedPipelineWrapper
@@ -18571,7 +18564,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self._post_annotation_training_workflow(
                 output_file=output_file,
                 text_column=data_source.get('text_column', 'text'),
-                prompt_configs=prompt_configs_for_training
+                prompt_configs=prompt_configs_for_training,
+                session_id=session_id,
+                session_dirs=None  # No session_dirs in resume context
             )
 
             # Export to Doccano JSONL if enabled in preferences
@@ -20861,7 +20856,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 from ..utils.rich_progress_manager import RichProgressManager
                 from ..pipelines.enhanced_pipeline_wrapper import EnhancedPipelineWrapper
 
-                pipeline_with_progress = PipelineController(settings=self.settings)
+                pipeline_with_progress = PipelineController(
+                    settings=self.settings,
+                    session_id=session_id  # Pass session_id for organized logging
+                )
 
                 with RichProgressManager(
                     show_json_every=1,
@@ -20998,7 +20996,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self._post_annotation_training_workflow(
                 output_file=str(pipeline_output_file),
                 text_column=text_column,
-                prompt_configs=prompt_configs
+                prompt_configs=prompt_configs,
+                session_id=None,
+                session_dirs=None  # No session context in this flow
             )
 
             # Export to Doccano JSONL if requested

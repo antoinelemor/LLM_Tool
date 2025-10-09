@@ -79,12 +79,13 @@ class PipelineState:
 class PipelineController:
     """Main controller for orchestrating the complete pipeline"""
 
-    def __init__(self, settings: Optional[Settings] = None, progress_callback=None):
+    def __init__(self, settings: Optional[Settings] = None, progress_callback=None, session_id: Optional[str] = None):
         """Initialize the pipeline controller
 
         Args:
             settings: Optional settings object
             progress_callback: Optional callback function(phase, progress, message) for progress updates
+            session_id: Optional session ID for organized logging
         """
         self.settings = settings or get_settings()
         self.language_detector = LanguageDetector()
@@ -94,6 +95,7 @@ class PipelineController:
         self.state: Optional[PipelineState] = None
         self.logger = logging.getLogger(__name__)
         self.progress_callback = progress_callback
+        self.session_id = session_id  # Store session ID for organized logging
 
         # Import components lazily to avoid circular dependencies
         self._annotation_module = None
@@ -941,9 +943,21 @@ class PipelineController:
 
     def _save_pipeline_state(self):
         """Save the current pipeline state to disk"""
-        state_file = self.settings.paths.logs_dir / f"pipeline_state_{int(self.state.start_time)}.json"
+        # Determine save location based on session_id
+        if self.session_id:
+            # Organized structure: logs/annotator_factory/{session_id}/pipeline_state/
+            pipeline_state_dir = self.settings.paths.logs_dir / "annotator_factory" / self.session_id / "pipeline_state"
+            pipeline_state_dir.mkdir(parents=True, exist_ok=True)
+
+            # Use descriptive filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            state_file = pipeline_state_dir / f"pipeline_state_{timestamp}.json"
+        else:
+            # Fallback to old location for backward compatibility
+            state_file = self.settings.paths.logs_dir / f"pipeline_state_{int(self.state.start_time)}.json"
 
         state_dict = {
+            'session_id': self.session_id,  # Include session_id in state
             'current_phase': self.state.current_phase.value,
             'phases_completed': [p.value for p in self.state.phases_completed],
             'start_time': self.state.start_time,

@@ -1097,6 +1097,22 @@ class BertBase(BertABC):
                 self.logger.warning(f"  ⚠️ NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
         self.logger.debug("=" * 80)
 
+        # Define model_type and training_approach early to avoid UnboundLocalError
+        model_type = self.model_name if hasattr(self, 'model_name') else self.__class__.__name__
+
+        # Determine training approach based on context
+        # Multi-class: multiple classes for one key
+        # One-vs-all: binary classifiers for each value in a multi-label setting
+        if label_value:
+            # We're training for a specific value in one-vs-all approach
+            training_approach = "one-vs-all"
+        elif class_names and len(class_names) > 2:
+            # We have multiple classes - multi-class approach
+            training_approach = "multi-class"
+        else:
+            # Binary classification or default
+            training_approach = "binary"
+
         # NEW STRUCTURE:
         # Normal mode:    logs/training_arena/{session_id}/training_metrics/{category}/
         # Benchmark mode: logs/training_arena/{session_id}/training_metrics/benchmark/{category}/{language}/{model}/
@@ -1977,7 +1993,6 @@ class BertBase(BertABC):
                     # Check if this is truly the best model for this model type
                     # Read existing best_models.csv to check if we already have a better model
                     should_update_best = True
-                    model_type = self.model_name if hasattr(self, 'model_name') else self.__class__.__name__
 
                     if os.path.exists(best_models_csv) and os.path.getsize(best_models_csv) > 0:
                         # Read existing best models to check if this model type already has a better score
