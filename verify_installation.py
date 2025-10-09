@@ -1,13 +1,39 @@
 #!/usr/bin/env python3
 """
-Installation Verification Script
+PROJECT:
+-------
+LLMTool
 
-This script verifies that LLM Tool is correctly installed and all
-dependencies are available.
+TITLE:
+------
+verify_installation.py
 
-Run this after installation to ensure everything is working properly.
+MAIN OBJECTIVE:
+---------------
+Verification script to ensure LLM Tool is correctly installed with all dependencies
+available and CLI commands accessible.
 
-Author: Antoine Lemor
+Dependencies:
+-------------
+- sys
+- importlib.util
+- subprocess
+
+MAIN FEATURES:
+--------------
+1) Python version verification (3.9+)
+2) LLM Tool package verification
+3) Core dependencies check (pandas, numpy, rich, etc.)
+4) LLM dependencies check (openai, ollama, transformers, torch)
+5) Training dependencies check (datasets, sklearn, scipy, nltk)
+6) Optional dependencies check (anthropic, google.generativeai, etc.)
+7) GPU support detection (CUDA, MPS)
+8) CLI commands verification
+9) Comprehensive summary report
+
+Author:
+-------
+Antoine Lemor
 """
 
 import sys

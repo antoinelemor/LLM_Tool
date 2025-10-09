@@ -304,19 +304,27 @@ class LLMDetector:
                             if len(parts) >= 1:
                                 name = parts[0]
 
-                                # Extract size - look for GB/MB/KB in any part
+                                # Extract size - look for GB/MB/KB/TB in any part
+                                # Format from ollama: "NAME  ID  2.0 GB  MODIFIED"
                                 size = None
-                                for part in parts[1:]:
+                                import re
+                                for i, part in enumerate(parts[1:]):
                                     part_upper = part.upper()
-                                    if 'GB' in part_upper or 'MB' in part_upper or 'KB' in part_upper:
-                                        # Format nicely: "27GB" -> "27 GB", "1.5GB" -> "1.5 GB"
-                                        import re
+                                    # Check if this part is a size unit (GB, MB, KB, TB)
+                                    if part_upper in ['GB', 'MB', 'KB', 'TB']:
+                                        # The number should be in the previous element
+                                        if i > 0:
+                                            number_part = parts[1:][i-1]  # Get previous element in the sliced list
+                                            # Validate it's a number
+                                            if re.match(r'^\d+\.?\d*$', number_part):
+                                                size = f"{number_part} {part_upper}"
+                                                break
+                                    # Also handle cases like "2.0GB" (no space)
+                                    elif 'GB' in part_upper or 'MB' in part_upper or 'KB' in part_upper or 'TB' in part_upper:
                                         match = re.match(r'([\d.]+)\s*([KMGT]B)', part_upper)
                                         if match:
                                             size = f"{match.group(1)} {match.group(2)}"
-                                        else:
-                                            size = part
-                                        break
+                                            break
 
                                 models.append(ModelInfo(
                                     name=name,
@@ -1020,6 +1028,152 @@ class DataDetector:
             result['issues'].append(f"Analysis error: {str(e)}")
 
         return result
+
+    @staticmethod
+    def detect_id_column_candidates(df: 'pd.DataFrame', text_column: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Detect potential ID columns with detailed statistics.
+        Returns list of candidates sorted by suitability (uniqueness).
+
+        Args:
+            df: DataFrame to analyze
+            text_column: Text column name to exclude from ID candidates
+
+        Returns:
+            List of dicts with keys: name, dtype, unique_ratio, nunique, has_nulls
+        """
+        if not HAS_PANDAS:
+            return []
+
+        candidates = []
+        total_rows = len(df)
+
+        if total_rows == 0:
+            return []
+
+        for col in df.columns:
+            # Skip text column
+            if text_column and col == text_column:
+                continue
+
+            # Calculate uniqueness metrics
+            try:
+                nunique = df[col].nunique(dropna=False)
+                unique_ratio = nunique / total_rows
+                has_nulls = df[col].isna().any()
+                dtype = str(df[col].dtype)
+
+                # Consider columns with high uniqueness (>95%) as good ID candidates
+                # Also prioritize columns with "id" in the name
+                col_lower = col.lower()
+                has_id_in_name = 'id' in col_lower or col_lower.endswith('_id')
+
+                # Only include if:
+                # - High uniqueness (>95%) OR
+                # - Has 'id' in name AND reasonable uniqueness (>80%)
+                if unique_ratio > 0.95 or (has_id_in_name and unique_ratio > 0.80):
+                    candidates.append({
+                        'name': col,
+                        'dtype': dtype,
+                        'unique_ratio': unique_ratio,
+                        'nunique': nunique,
+                        'total': total_rows,
+                        'has_nulls': has_nulls,
+                        'has_id_in_name': has_id_in_name
+                    })
+            except Exception:
+                # Skip columns that cause issues
+                continue
+
+        # Sort by uniqueness (descending), then by has_id_in_name
+        candidates.sort(key=lambda x: (x['unique_ratio'], x['has_id_in_name']), reverse=True)
+
+        return candidates
+
+    @staticmethod
+    def display_and_select_id_column(
+        console: 'Console',
+        df: 'pd.DataFrame',
+        text_column: Optional[str] = None,
+        step_label: str = "Identifier Column Selection"
+    ) -> Optional[str]:
+        """
+        Display ID column candidates in a nice table and let user select one.
+        Provides clear explanation of why ID columns are useful.
+
+        Args:
+            console: Rich console for display
+            df: DataFrame to analyze
+            text_column: Text column to exclude from ID candidates
+            step_label: Label for the step
+
+        Returns:
+            Selected column name, or None if user wants to auto-generate
+        """
+        if not HAS_PANDAS or not HAS_RICH:
+            return None
+
+        from rich.table import Table
+        from rich.prompt import Prompt
+        from rich import box
+
+        # Detect candidates
+        candidates = DataDetector.detect_id_column_candidates(df, text_column)
+
+        console.print(f"\n[bold]{step_label}[/bold]")
+        console.print()
+        console.print("[bold cyan]📋 What is an ID column?[/bold cyan]")
+        console.print("  • [green]Tracks each text[/green] through the annotation process")
+        console.print("  • [green]Links results back[/green] to your original data")
+        console.print("  • [green]Resumes annotation[/green] if interrupted (continues where you left off)")
+        console.print("  • [yellow]Not mandatory[/yellow] - we can generate one automatically")
+        console.print()
+
+        if not candidates:
+            console.print("[yellow]ℹ️  No unique ID columns detected[/yellow]")
+            console.print("[dim]  → An 'llm_annotation_id' column will be created automatically[/dim]")
+            return None
+
+        # Display candidates
+        id_table = Table(title="Candidate ID Columns", box=box.ROUNDED)
+        id_table.add_column("#", style="cyan", width=6)
+        id_table.add_column("Column", style="green", width=32)
+        id_table.add_column("Type", style="yellow", width=14)
+        id_table.add_column("Unique %", style="cyan", width=12, justify="right")
+
+        for idx, candidate in enumerate(candidates, 1):
+            id_table.add_row(
+                str(idx),
+                candidate['name'],
+                candidate['dtype'],
+                f"{candidate['unique_ratio'] * 100:.1f}%"
+            )
+
+        # Add "None" option
+        id_table.add_row("0", "[dim]None (auto-generate)[/dim]", "", "")
+
+        console.print(id_table)
+        console.print()
+
+        # Prompt for selection
+        max_choice = len(candidates)
+        choices = [str(i) for i in range(0, max_choice + 1)]
+
+        choice = Prompt.ask(
+            "[bold yellow]Select ID column[/bold yellow]",
+            choices=choices,
+            default="0" if not candidates else "1"
+        )
+
+        if choice == "0":
+            console.print("[dim]✓ An 'llm_annotation_id' will be generated automatically[/dim]")
+            return None
+
+        selected_idx = int(choice) - 1
+        selected_column = candidates[selected_idx]['name']
+        console.print(f"[green]✓ ID column: '{selected_column}'[/green]")
+
+        return selected_column
 
     @staticmethod
     def suggest_text_column(dataset: DatasetInfo) -> Optional[str]:
@@ -2513,9 +2667,33 @@ class AdvancedCLI:
         # Create session directories
         session_dirs = self._create_annotator_factory_session_directories(session_id)
 
-        # Step 1: Data Source Selection
-        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 1:[/bold cyan] [bold white]Data Source Selection[/bold white]")
+        # Display Annotator Factory STEP 1 banner
+        from llm_tool.cli.banners import BANNERS, STEP_NUMBERS, STEP_LABEL
+        from rich.align import Align
+
+        self.console.print()
+
+        # Display "STEP" label in ASCII art
+        for line in STEP_LABEL.split('\n'):
+            self.console.print(Align.center(f"[bold {BANNERS['llm_annotator']['color']}]{line}[/bold {BANNERS['llm_annotator']['color']}]"))
+
+        # Display "1/3" in ASCII art
+        for line in STEP_NUMBERS['1/3'].split('\n'):
+            self.console.print(Align.center(f"[bold {BANNERS['llm_annotator']['color']}]{line}[/bold {BANNERS['llm_annotator']['color']}]"))
+
+        self.console.print()
+
+        # Display main banner (centered)
+        for line in BANNERS['llm_annotator']['ascii'].split('\n'):
+            self.console.print(Align.center(f"[bold {BANNERS['llm_annotator']['color']}]{line}[/bold {BANNERS['llm_annotator']['color']}]"))
+
+        # Display tagline (centered)
+        self.console.print(Align.center(f"[{BANNERS['llm_annotator']['color']}]{BANNERS['llm_annotator']['tagline']}[/{BANNERS['llm_annotator']['color']}]"))
+        self.console.print()
+
+        # Step 1.1: Data Source Selection
+        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+        self.console.print("[bold cyan]  STEP 1.1:[/bold cyan] [bold white]Data Source Selection[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Choose between file-based datasets or SQL database sources.[/dim]\n")
 
@@ -2683,160 +2861,90 @@ class AdvancedCLI:
 
             self.console.print(f"[green]✓ Selected: {data_path.name} ({data_format})[/green]")
 
-        # Step 2: Column Selection with Intelligent Detection (SAME AS MODE 1)
-        self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 2:[/bold cyan] [bold white]Column Selection with Intelligent Detection[/bold white]")
-        self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[dim]🔍 Analyzing columns, detecting types, and providing recommendations...[/dim]\n")
+        # Step 1.2: Text Column Selection (MODERNIZED - Same format as quick start)
+        self.console.print("\n[bold]Step 1.2/4: Text Column Selection[/bold]\n")
 
-        # Load sample data for intelligent detection (SAME AS MODE 1 DATABASE ANNOTATOR)
+        # Detect text columns using the advanced detection system
+        column_info = self._detect_text_columns(data_path)
         import pandas as pd
         df_sample = pd.read_csv(data_path, nrows=100) if data_path.suffix == '.csv' else pd.read_excel(data_path, nrows=100)
 
-        # Detect text columns intelligently (SAME LOGIC AS MODE 1)
-        text_candidates = []
-        id_candidates = []
+        if column_info['text_candidates']:
+            self.console.print("[dim]Detected text columns (sorted by confidence):[/dim]")
 
-        for col_name in df_sample.columns:
-            # Check if it's a potential ID column
-            col_lower = col_name.lower()
-            if any(id_keyword in col_lower for id_keyword in ['id', 'key', 'index', 'number', 'num', 'pk']):
-                # Check if values are unique
-                is_unique = df_sample[col_name].nunique() == len(df_sample[col_name].dropna())
-                if is_unique:
-                    id_candidates.append({
-                        'name': col_name,
-                        'type': str(df_sample[col_name].dtype),
-                        'confidence': 'high' if 'id' in col_lower else 'medium'
-                    })
+            # Create table for text candidates ONLY
+            col_table = Table(border_style="blue")
+            col_table.add_column("#", style="cyan", width=3)
+            col_table.add_column("Column", style="white")
+            col_table.add_column("Confidence", style="yellow")
+            col_table.add_column("Avg Length", style="green")
+            col_table.add_column("Sample", style="dim")
 
-            # Check if it's a text column (object/string type)
-            if df_sample[col_name].dtype == 'object':
-                # Get non-null samples
-                non_null = df_sample[col_name].dropna()
-                if len(non_null) == 0:
-                    continue
+            for i, candidate in enumerate(column_info['text_candidates'][:10], 1):
+                # Color code confidence
+                conf_color = {
+                    "high": "[green]High[/green]",
+                    "medium": "[yellow]Medium[/yellow]",
+                    "low": "[orange1]Low[/orange1]",
+                    "very_low": "[red]Very Low[/red]"
+                }
+                conf_display = conf_color.get(candidate['confidence'], candidate['confidence'])
 
-                # Calculate average length
-                avg_length = non_null.astype(str).str.len().mean()
-                sample_value = str(non_null.iloc[0])[:80] if len(non_null) > 0 else ""
+                col_table.add_row(
+                    str(i),
+                    candidate['name'],
+                    conf_display,
+                    f"{candidate['avg_length']:.0f} chars",
+                    candidate['sample'][:50] + "..." if len(candidate['sample']) > 50 else candidate['sample']
+                )
 
-                # Determine confidence based on average length
-                if avg_length > 100:
-                    confidence = "high"
-                elif avg_length > 50:
-                    confidence = "medium"
-                elif avg_length > 20:
-                    confidence = "low"
-                else:
-                    continue  # Skip very short text
+            self.console.print(col_table)
 
-                text_candidates.append({
-                    'name': col_name,
-                    'confidence': confidence,
-                    'avg_length': avg_length,
-                    'sample': sample_value
-                })
+            # Show all columns list
+            self.console.print(f"\n[dim]All columns ({len(column_info['all_columns'])}): {', '.join(column_info['all_columns'])}[/dim]")
 
-        # Sort candidates (SAME AS MODE 1)
-        confidence_order = {"high": 0, "medium": 1, "low": 2}
-        text_candidates.sort(key=lambda x: (confidence_order[x['confidence']], -x['avg_length']))
-        id_candidates.sort(key=lambda x: (confidence_order.get(x['confidence'], 3)))
-
-        # Display columns with intelligent suggestions (SAME TABLE AS MODE 1)
-        col_table = Table(title=f"Columns in Dataset", box=box.ROUNDED)
-        col_table.add_column("#", style="cyan", justify="right", width=4)
-        col_table.add_column("Column Name", style="green", width=25)
-        col_table.add_column("Type", style="yellow", width=20)
-        col_table.add_column("Detection", style="magenta", width=30)
-
-        detected_text_col = None
-        detected_id_col = None
-        columns_list = list(df_sample.columns)
-
-        for idx, col_name in enumerate(columns_list, 1):
-            col_type = str(df_sample[col_name].dtype)
-            detection = ""
-
-            # Check if it's a suggested text column
-            text_match = next((tc for tc in text_candidates if tc['name'] == col_name), None)
-            if text_match:
-                if text_match['confidence'] == 'high':
-                    detection = "📝 Text (High confidence)"
-                    if detected_text_col is None:
-                        detected_text_col = idx
-                elif text_match['confidence'] == 'medium':
-                    detection = "📝 Text (Medium)"
-                else:
-                    detection = "📝 Text (Low)"
-
-            # Check if it's a suggested ID column
-            id_match = next((ic for ic in id_candidates if ic['name'] == col_name), None)
-            if id_match:
-                if id_match['confidence'] == 'high':
-                    detection = "🔑 ID (Recommended)"
-                    if detected_id_col is None:
-                        detected_id_col = idx
-                else:
-                    detection = "🔑 ID (Possible)"
-
-            col_table.add_row(str(idx), col_name, col_type, detection)
-
-        self.console.print(col_table)
-
-        # Select text column with intelligent default (SAME AS MODE 1)
-        if detected_text_col:
-            self.console.print(f"\n[cyan]💡 Suggested text column: '{columns_list[detected_text_col-1]}' (detected automatically)[/cyan]")
-
-        text_col_choice = Prompt.ask(
-            "\n[cyan]Select TEXT column (to annotate)[/cyan]",
-            choices=[str(i) for i in range(1, len(columns_list) + 1)],
-            default=str(detected_text_col) if detected_text_col else "1"
-        )
-        text_column = columns_list[int(text_col_choice) - 1]
-
-        # Select ID column with intelligent default (SAME AS MODE 1)
-        identifier_column = None
-        if Confirm.ask("\n[cyan]Do you want to select an ID column?[/cyan]", default=True):
-            if detected_id_col:
-                self.console.print(f"\n[cyan]💡 Suggested ID column: '{columns_list[detected_id_col-1]}' (unique values detected)[/cyan]")
-
-            id_col_choice = Prompt.ask(
-                "\n[cyan]Select ID column[/cyan]",
-                choices=[str(i) for i in range(1, len(columns_list) + 1)],
-                default=str(detected_id_col) if detected_id_col else "1"
+            # Ask user to select
+            default_col = column_info['text_candidates'][0]['name'] if column_info['text_candidates'] else "text"
+            text_column = Prompt.ask(
+                "\n[bold yellow]Enter column name[/bold yellow] (or choose from above)",
+                default=default_col
             )
-            identifier_column = columns_list[int(id_col_choice) - 1]
+        else:
+            # No candidates detected, show all columns
+            if column_info['all_columns']:
+                self.console.print(f"\n[yellow]Could not auto-detect text columns.[/yellow]")
+                self.console.print(f"[dim]Available columns: {', '.join(column_info['all_columns'])}[/dim]")
+            text_column = Prompt.ask("Text column name", default="text")
 
-        self.console.print(f"\n[green]✓ Text column: {text_column}[/green]")
-        if identifier_column:
-            self.console.print(f"[green]✓ ID column: {identifier_column}[/green]")
+        # Step 1.2b: ID Column Selection (MODERNIZED with new system)
+        identifier_column = DataDetector.display_and_select_id_column(
+            self.console,
+            df_sample,
+            text_column=text_column,
+            step_label="Step 1.2b/4: Identifier Column Selection"
+        )
 
         # Store column info for later use
-        column_info = {
-            'all_columns': columns_list,
-            'text_candidates': text_candidates,
-            'df': df_sample
-        }
-    
-        # Step 3: Model Selection
+        column_info['df'] = df_sample
+
+        # Step 1.3: Model Selection
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 3:[/bold cyan] [bold white]Model Selection[/bold white]")
+        self.console.print("[bold cyan]  STEP 1.3:[/bold cyan] [bold white]Model Selection[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Choose from local (Ollama) or cloud (OpenAI/Anthropic) models for annotation.[/dim]\n")
-    
+
         selected_llm = self._select_llm_interactive()
         provider = selected_llm.provider
         model_name = selected_llm.name
-    
+
         # Get API key if needed
         api_key = None
         if selected_llm.requires_api_key:
             api_key = self._get_or_prompt_api_key(provider, model_name)
-    
-        # Step 4: Prompt Configuration
+
+        # Step 1.4: Prompt Configuration
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Prompt Configuration[/bold white]")
+        self.console.print("[bold cyan]  STEP 1.4:[/bold cyan] [bold white]Prompt Configuration[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Select from existing prompts or create new annotation instructions.[/dim]")
     
@@ -2969,7 +3077,7 @@ class AdvancedCLI:
             # If language column exists, note it for later use but don't ask user
             if potential_lang_cols:
                 lang_column = potential_lang_cols[0]  # Use first one if found
-        # Step 5: Multi-prompt prefix configuration
+        # Multi-prompt prefix configuration (if needed)
         prompt_configs = []
         if len(selected_prompts) > 1:
             self.console.print("\n[bold]Multi-Prompt Mode:[/bold] Configure key prefixes")
@@ -2994,9 +3102,9 @@ class AdvancedCLI:
             # Single prompt - no prefix needed
             prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
     
-        # Step 6: Advanced Options
+        # Step 1.5: Advanced Options
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Advanced Options[/bold white]")
+        self.console.print("[bold cyan]  STEP 1.5:[/bold cyan] [bold white]Advanced Options[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Configure processing settings for optimal performance.[/dim]")
     
@@ -3203,9 +3311,9 @@ class AdvancedCLI:
                 self.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
                 top_k = self._int_prompt_with_validation("Top K", 40, 1, 100)
     
-        # Step 7: Execute
+        # Step 1.6: Execute
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Review & Execute[/bold white]")
+        self.console.print("[bold cyan]  STEP 1.6:[/bold cyan] [bold white]Review & Execute[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Review your configuration and start the annotation process.[/dim]")
     
@@ -4252,8 +4360,8 @@ class AdvancedCLI:
             self.console.print("\n[bold cyan]🎓 Post-Annotation Training with Training Arena[/bold cyan]")
             self.console.print("[dim]Using the complete Training Arena workflow for LLM-JSON format data[/dim]\n")
 
-            # Import and use the Training Arena integration
-            from llm_tool.cli.training_arena_module import integrate_training_arena_in_annotator_factory
+            # Import and use the COMPLETE Training Arena integration
+            from llm_tool.cli.training_arena_integrated import integrate_training_arena_in_annotator_factory
 
             # Pass session_dirs for organized structure
             training_results = integrate_training_arena_in_annotator_factory(
@@ -5141,23 +5249,6 @@ class AdvancedCLI:
                 else:
                     print(f"File not found: {path}")
 
-    def _check_return_to_menu(self, step_name: str = "this step") -> bool:
-        """Ask user if they want to return to main menu. Returns True if user wants to go back."""
-        if HAS_RICH and self.console:
-            go_back = Confirm.ask(
-                f"[dim]Return to main menu? (or press Enter to continue {step_name})[/dim]",
-                default=False
-            )
-        else:
-            response = input(f"Return to main menu? [y/N] (or Enter to continue {step_name}): ").strip().lower()
-            go_back = response in ['y', 'yes']
-
-        if go_back:
-            if HAS_RICH and self.console:
-                self.console.print("[yellow]↩ Returning to main menu...[/yellow]\n")
-            else:
-                print("↩ Returning to main menu...\n")
-        return go_back
 
     def _generate_auto_prompt(self, dataset_path: str, text_column: str) -> str:
         """Generate intelligent prompt based on dataset analysis"""
@@ -7696,61 +7787,38 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print(f"[red]✗ Column '{label_column}' not found in dataset![/red]")
             self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
-        # Step 6: ID Column Selection with Sophisticated Strategy
+        # Step 6: ID Column Selection with Modernized Interface
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Identifier Column Selection (Optional)[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[dim]Optional: Select an ID column to track samples and link results to your original data.[/dim]\n")
 
-        id_columns = self._detect_id_columns(all_columns)
-        id_column = None
+        # Load dataframe to detect ID candidates
+        try:
+            if data_path.suffix.lower() == '.csv':
+                df_for_id_check = pd.read_csv(data_path, nrows=1000)
+            elif data_path.suffix.lower() == '.json':
+                df_for_id_check = pd.read_json(data_path, lines=False, nrows=1000)
+            elif data_path.suffix.lower() == '.jsonl':
+                df_for_id_check = pd.read_json(data_path, lines=True, nrows=1000)
+            elif data_path.suffix.lower() in ['.xlsx', '.xls']:
+                df_for_id_check = pd.read_excel(data_path, nrows=1000)
+            elif data_path.suffix.lower() == '.parquet':
+                df_for_id_check = pd.read_parquet(data_path).head(1000)
+            else:
+                df_for_id_check = pd.read_csv(data_path, nrows=1000)  # Fallback
 
-        if len(id_columns) > 1:
-            self.console.print(f"[bold cyan]📋 Found {len(id_columns)} ID columns:[/bold cyan]")
-            for i, col in enumerate(id_columns, 1):
-                self.console.print(f"  {i}. [cyan]{col}[/cyan]")
-
-            self.console.print("\n[bold]ID Strategy:[/bold]")
-            self.console.print("[dim]IDs are used to track samples and link results to your original data.[/dim]")
-            self.console.print("• [cyan]single[/cyan]: Use one column as ID")
-            self.console.print("• [cyan]combine[/cyan]: Combine multiple columns (e.g., 'promesse_id+sentence_id')")
-            self.console.print("• [cyan]none[/cyan]: Generate automatic IDs")
-
-            id_strategy = Prompt.ask("ID strategy", choices=["single", "combine", "none"], default="single")
-
-            if id_strategy == "none":
-                self.console.print("[dim]An automatic ID will be generated[/dim]")
-                id_column = None
-            elif id_strategy == "combine":
-                self.console.print("\n[bold]Select columns to combine:[/bold]")
-                self.console.print("[dim]Enter column numbers separated by commas (e.g., '1,2')[/dim]")
-
-                while True:
-                    selection = Prompt.ask("Columns to combine")
-                    try:
-                        indices = [int(x.strip()) - 1 for x in selection.split(',')]
-                        if all(0 <= i < len(id_columns) for i in indices):
-                            selected_cols = [id_columns[i] for i in indices]
-                            id_column = "+".join(selected_cols)
-                            self.console.print(f"[green]✓ Will combine: {' + '.join(selected_cols)}[/green]")
-                            break
-                        else:
-                            self.console.print("[red]Invalid column numbers. Try again.[/red]")
-                    except (ValueError, IndexError):
-                        self.console.print("[red]Invalid format. Use comma-separated numbers (e.g., '1,2')[/red]")
-            else:  # single
-                id_column = Prompt.ask("Which ID column to use?", choices=id_columns, default=id_columns[0])
-        elif len(id_columns) == 1:
-            self.console.print(f"[green]✓ ID column detected: '{id_columns[0]}'[/green]")
-            if all_columns:
-                self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
-            id_column = Prompt.ask("Identifier column (optional)", default=id_columns[0])
-        else:
-            self.console.print("[dim]No ID columns detected - automatic IDs will be generated[/dim]")
+            # Use modernized ID selection function
+            id_column = DataDetector.display_and_select_id_column(
+                self.console,
+                df_for_id_check,
+                text_column=text_column,
+                step_label=""  # Empty since we already printed the header
+            )
+        except Exception as e:
+            self.logger.warning(f"Could not load dataframe for ID detection: {e}")
+            self.console.print(f"[yellow]⚠ Could not analyze ID columns: {e}[/yellow]")
+            self.console.print("[dim]An automatic ID will be generated[/dim]")
             id_column = None
-
-        if id_column:
-            self.console.print(f"[green]✓ Identifier strategy: {id_column}[/green]")
 
         # Model selection will be done later when training mode is chosen
         # Store languages and text characteristics for later use
@@ -9368,34 +9436,35 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[dim]Optional: Select ID and language columns if available in your dataset.[/dim]\n")
 
-            # Use ID column already detected in analysis
-            id_column = None
-            if analysis['id_column_candidates']:
-                id_column = analysis['id_column_candidates'][0]
-                self.console.print(f"[green]✓ ID column detected: '{id_column}'[/green]")
-                # Allow user to override if they want
-                if all_columns:
-                    self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
-                while True:
-                    override_id = Prompt.ask("\n[bold yellow]Identifier column (optional)[/bold yellow]", default=id_column)
-                    if not override_id or override_id in all_columns:
-                        if override_id and override_id != id_column:
-                            id_column = override_id
-                        break
-                    self.console.print(f"[red]✗ Column '{override_id}' not found in dataset![/red]")
-                    self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
-            else:
-                self.console.print("[dim]No ID columns detected - automatic IDs will be generated[/dim]")
-                if all_columns:
-                    self.console.print(f"[dim]  Available columns: {', '.join(all_columns)}[/dim]")
-                while True:
-                    id_column_input = Prompt.ask("\n[bold yellow]Identifier column (optional)[/bold yellow]", default="")
-                    if not id_column_input or id_column_input in all_columns:
-                        if id_column_input:
-                            id_column = id_column_input
-                        break
-                    self.console.print(f"[red]✗ Column '{id_column_input}' not found in dataset![/red]")
-                    self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
+            # Use modernized ID selection - load dataframe if needed
+            try:
+                if not isinstance(df, pd.DataFrame):
+                    # Need to load dataframe for ID detection
+                    if data_path.suffix.lower() == '.csv':
+                        df = pd.read_csv(data_path, nrows=1000)
+                    elif data_path.suffix.lower() == '.json':
+                        df = pd.read_json(data_path, lines=False, nrows=1000)
+                    elif data_path.suffix.lower() == '.jsonl':
+                        df = pd.read_json(data_path, lines=True, nrows=1000)
+                    elif data_path.suffix.lower() in ['.xlsx', '.xls']:
+                        df = pd.read_excel(data_path, nrows=1000)
+                    elif data_path.suffix.lower() == '.parquet':
+                        df = pd.read_parquet(data_path).head(1000)
+                    else:
+                        df = pd.read_csv(data_path, nrows=1000)
+
+                # Use new unified ID selection
+                id_column = DataDetector.display_and_select_id_column(
+                    self.console,
+                    df,
+                    text_column=text_column,
+                    step_label="Identifier Column (Optional)"
+                )
+            except Exception as e:
+                self.logger.warning(f"Could not detect ID columns: {e}")
+                self.console.print(f"[yellow]⚠ Could not analyze ID columns[/yellow]")
+                self.console.print("[dim]An automatic ID will be generated[/dim]")
+                id_column = None
 
             # Language column handling - check if already processed in Step 5
             # Skip if we already did language detection (either with column or auto-detection)
@@ -9894,7 +9963,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                         for idx, model_id in enumerate(lang_recommended[:10], 1):
                             meta = MODEL_METADATA.get(model_id, {})
-                            langs = ', '.join(meta.get('languages', ['?']))
+                            from llm_tool.utils.model_display import format_language_display
+                            langs = format_language_display(meta.get('languages', ['?']), max_width=15)
                             max_len = str(meta.get('max_length', '?'))
                             size = meta.get('size', '?')
                             desc = meta.get('description', '')[:44] + '..' if len(meta.get('description', '')) > 44 else meta.get('description', '')
@@ -10006,7 +10076,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     for idx, model_id in enumerate(recommended_models_list[:10], 1):
                         meta = MODEL_METADATA.get(model_id, {})
-                        langs = ', '.join(meta.get('languages', ['?']))
+                        from llm_tool.utils.model_display import format_language_display
+                        langs = format_language_display(meta.get('languages', ['?']), max_width=15)
                         max_len = str(meta.get('max_length', '?'))
                         size = meta.get('size', '?')
                         desc = meta.get('description', '')[:44] + '..' if len(meta.get('description', '')) > 44 else meta.get('description', '')
@@ -12507,7 +12578,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     for idx, model_id in enumerate(lang_recommended[:10], 1):
                         meta = MODEL_METADATA.get(model_id, {})
-                        langs = ', '.join(meta.get('languages', ['?']))
+                        from llm_tool.utils.model_display import format_language_display
+                        langs = format_language_display(meta.get('languages', ['?']), max_width=15)
                         max_len = str(meta.get('max_length', '?'))
                         size = meta.get('size', '?')
                         desc = meta.get('description', '')[:43]
@@ -12573,7 +12645,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                     for idx, model_id in enumerate(sorted_model_ids, 1):
                         meta = MODEL_METADATA.get(model_id, {})
-                        langs = ', '.join(meta.get('languages', ['?']))
+                        from llm_tool.utils.model_display import format_language_display
+                        langs = format_language_display(meta.get('languages', ['?']), max_width=15)
                         max_len = str(meta.get('max_length', '?'))
                         size = meta.get('size', '?')
                         desc = meta.get('description', '')[:48]
@@ -12670,7 +12743,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 for idx, model_id in enumerate(recommended_models_list[:10], 1):
                     meta = MODEL_METADATA.get(model_id, {})
-                    langs = ', '.join(meta.get('languages', ['?']))
+                    from llm_tool.utils.model_display import format_language_display
+                    langs = format_language_display(meta.get('languages', ['?']), max_width=15)
                     max_len = str(meta.get('max_length', '?'))
                     size = meta.get('size', '?')
                     desc = meta.get('description', '')[:43]
@@ -12741,7 +12815,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 for idx, model_id in enumerate(sorted_model_ids, 1):
                     meta = MODEL_METADATA.get(model_id, {})
-                    langs = ', '.join(meta.get('languages', ['?']))
+                    from llm_tool.utils.model_display import format_language_display
+                    langs = format_language_display(meta.get('languages', ['?']), max_width=15)
                     max_len = str(meta.get('max_length', '?'))
                     size = meta.get('size', '?')
                     desc = meta.get('description', '')[:48]
@@ -17082,28 +17157,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(f"[dim]Available columns: {', '.join(column_info['all_columns'])}[/dim]")
             text_column = Prompt.ask("Text column name", default="text")
     
-        # Step 2b: ID Column Selection (FROM QUICK START)
-        self.console.print("\n[bold]Step 2b/7: Identifier Column Selection[/bold]")
-    
-        # Get available columns
-        available_columns = column_info['all_columns'] if column_info and column_info.get('all_columns') else []
-    
-        # Auto-detect potential ID columns
-        suggested_id = None
-        if available_columns:
-            for col in available_columns:
-                lowered = col.lower()
-                if lowered == 'id' or lowered.endswith('_id') or 'identifier' in lowered:
-                    suggested_id = col
-                    break
-    
-        identifier_column = self._prompt_for_identifier_column(available_columns, suggested_id)
-    
-        self.console.print(f"[green]✓ Identifier strategy: {identifier_column}[/green]")
-    
-        # Check if user wants to return to menu
-        if self._check_return_to_menu("with column configuration"):
-            return
+        # Step 2b: ID Column Selection (MODERNIZED)
+        # Load dataframe to detect ID candidates
+        if data_format == 'csv':
+            df_for_id = pd.read_csv(data_path, nrows=1000)
+        elif data_format == 'json':
+            df_for_id = pd.read_json(data_path, lines=False, nrows=1000)
+        elif data_format == 'jsonl':
+            df_for_id = pd.read_json(data_path, lines=True, nrows=1000)
+        elif data_format == 'excel':
+            df_for_id = pd.read_excel(data_path, nrows=1000)
+        else:
+            df_for_id = pd.read_csv(data_path, nrows=1000)  # Fallback
+
+        # Use new unified ID selection function
+        identifier_column = DataDetector.display_and_select_id_column(
+            self.console,
+            df_for_id,
+            text_column=text_column,
+            step_label="Step 2b/7: Identifier Column Selection"
+        )
     
         # Step 3: Model Selection
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -17255,7 +17328,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # If language column exists, note it for later use but don't ask user
             if potential_lang_cols:
                 lang_column = potential_lang_cols[0]  # Use first one if found
-        # Step 5: Multi-prompt prefix configuration
+        # Multi-prompt prefix configuration (if needed)
         prompt_configs = []
         if len(selected_prompts) > 1:
             self.console.print("\n[bold]Multi-Prompt Mode:[/bold] Configure key prefixes")
@@ -17280,9 +17353,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Single prompt - no prefix needed
             prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
     
-        # Step 6: Advanced Options
+        # Step 1.5: Advanced Options
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Advanced Options[/bold white]")
+        self.console.print("[bold cyan]  STEP 1.5:[/bold cyan] [bold white]Advanced Options[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Configure processing settings for optimal performance.[/dim]")
     
@@ -17489,9 +17562,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
                 top_k = self._int_prompt_with_validation("Top K", 40, 1, 100)
     
-        # Step 7: Execute
+        # Step 1.6: Execute
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Review & Execute[/bold white]")
+        self.console.print("[bold cyan]  STEP 1.6:[/bold cyan] [bold white]Review & Execute[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Review your configuration and start the annotation process.[/dim]")
     

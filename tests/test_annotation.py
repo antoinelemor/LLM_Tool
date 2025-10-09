@@ -1,6 +1,36 @@
 #!/usr/bin/env python3
 """
-Test the annotation pipeline with real data
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+test_annotation.py
+
+MAIN OBJECTIVE:
+---------------
+Test the annotation pipeline with real data using a small dataset and Ollama for
+sentiment classification.
+
+Dependencies:
+-------------
+- sys
+- os
+- json
+- llm_tool.pipelines.pipeline_controller
+
+MAIN FEATURES:
+--------------
+1) Configure annotation with local Ollama model
+2) Test annotation pipeline with CSV data
+3) Verify successful annotation output
+4) Display sample annotations
+5) Show annotation results summary
+
+Author:
+-------
+Antoine Lemor
 """
 
 import sys

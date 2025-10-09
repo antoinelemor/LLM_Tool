@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,7 +10,41 @@ bert_annotation_studio.py
 
 MAIN OBJECTIVE:
 ---------------
-Advanced annotation mode using trained BERT models with sophisticated features
+Advanced annotation mode using trained BERT models with sophisticated features including
+pipeline configuration, multi-model inference, language detection, and parallel processing.
+
+Dependencies:
+-------------
+- os
+- json
+- re
+- collections
+- pathlib
+- typing
+- datetime
+- time
+- pandas
+- numpy
+- rich
+- sqlalchemy
+- transformers
+- llm_tool.trainers.parallel_inference
+- llm_tool.cli.advanced_cli
+- llm_tool.utils.system_resources
+- llm_tool.utils.language_detector
+
+MAIN FEATURES:
+--------------
+1) Trained BERT model selection and management
+2) Multi-model pipeline configuration with ordering and reduction
+3) Dataset loading and column mapping
+4) Language detection and validation
+5) Text correction and preprocessing
+6) Parallel inference with batch processing
+7) Multiple data source support (CSV, Excel, JSON, Parquet, PostgreSQL)
+8) Export options (CSV, JSON, Label Studio, Doccano)
+9) Step-by-step wizard interface
+10) Performance monitoring and progress tracking
 
 Author:
 -------
@@ -84,45 +119,45 @@ class BERTAnnotationStudio:
         self._display_welcome()
 
         try:
-            self._render_step_header(1, "Select Trained Models", "Pick the fine-tuned checkpoints you want to apply.")
+            self._render_step_header(1, "Select Trained Models", "🎯 Pick the fine-tuned checkpoints you want to apply.")
             selected_models = self._select_trained_models()
             if not selected_models:
                 return
 
-            self._render_step_header(2, "Configure Pipeline", "Order models, set priorities, optionally enable reduction.")
+            self._render_step_header(2, "Configure Pipeline", "⚙️ Order models, set priorities, optionally enable reduction.")
             pipeline_plan = self._configure_pipeline(selected_models)
             if not pipeline_plan:
                 return
 
-            self._render_step_header(3, "Choose Dataset", "Load the texts you want to annotate.")
+            self._render_step_header(3, "Choose Dataset", "📁 Load the texts you want to annotate.")
             data_source = self._select_data_source()
             if data_source is None:
                 return
 
-            self._render_step_header(4, "Inspect & Map Columns", "Tell the studio where the text and identifiers live.")
+            self._render_step_header(4, "Inspect & Map Columns", "🔍 Tell the studio where the text and identifiers live.")
             df, column_mapping = self._load_and_analyze_data(data_source, pipeline_plan)
             if df is None or column_mapping is None:
                 return
 
-            self._render_step_header(5, "Name Output Columns", "Define how prediction columns will be named.")
+            self._render_step_header(5, "Name Output Columns", "📝 Define how prediction columns will be named.")
             pipeline_plan = self._configure_output_columns(pipeline_plan, df, column_mapping)
 
-            self._render_step_header(6, "Language Detection", "Verify language compatibility for your dataset.")
+            self._render_step_header(6, "Language Detection", "🌍 Verify language compatibility for your dataset.")
             models_for_language = [entry["info"] for entry in pipeline_plan]
             language_info = self._detect_and_validate_language(df, column_mapping, models_for_language)
             if language_info is None:
                 return
 
-            self._render_step_header(7, "Text Correction", "Optional preprocessing applied before inference.")
+            self._render_step_header(7, "Text Correction", "✏️ Optional preprocessing applied before inference.")
             correction_config = self._configure_correction()
 
-            self._render_step_header(8, "Annotation Options", "Parallelism, batching strategy, and dataset coverage.")
+            self._render_step_header(8, "Annotation Options", "⚡ Parallelism, batching strategy, and dataset coverage.")
             annotation_config = self._configure_annotation_options(pipeline_plan, df, column_mapping)
 
-            self._render_step_header(9, "Export Options", "Choose what gets written to disk.")
+            self._render_step_header(9, "Export Options", "💾 Choose what gets written to disk.")
             export_config = self._configure_export_options()
 
-            self._render_step_header(10, "Review & Launch", "Final checks before the annotation run.")
+            self._render_step_header(10, "Review & Launch", "🚀 Final checks before the annotation run.")
             if self._confirm_and_execute(
                 pipeline_plan, data_source, df, column_mapping,
                 language_info, correction_config, annotation_config, export_config
@@ -143,19 +178,16 @@ class BERTAnnotationStudio:
         # This keeps the interface consistent across all modes
         pass
 
-    def _render_step_header(self, step_no: int, title: str, subtitle: Optional[str] = None) -> None:
-        """Render a centered step header similar to Training Arena."""
-        total = max(self._total_steps, step_no)
-        header = Panel(
-            Align.center(subtitle or "", vertical="middle"),
-            title=f"Step {step_no}/{total} • {title}",
-            border_style="bright_cyan",
-            box=box.ROUNDED,
-            padding=(1, 2),
-        )
-        self.console.print()
-        self.console.print(Align.center(header))
-        self.console.print()
+    def _render_step_header(self, step_no: int, title: str, description: Optional[str] = None) -> None:
+        """Render a step header in Training Arena style with separator lines."""
+        separator = "[bold cyan]" + "━" * 86 + "[/bold cyan]"
+
+        self.console.print(f"\n{separator}")
+        self.console.print(f"[bold cyan]  STEP {step_no}:[/bold cyan] [bold white]{title}[/bold white]")
+        self.console.print(separator)
+
+        if description:
+            self.console.print(f"[dim]{description}[/dim]")
 
     def _configure_pipeline(self, models: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
         """Ask for execution order and optional reduction rules."""
@@ -184,16 +216,9 @@ class BERTAnnotationStudio:
 
             self.console.print(Align.center(summary))
 
-            ordering_panel = Panel.fit(
-                Align.center(
-                    "[1] Keep current priority (same order as selection)\n"
-                    "[2] Sort alphabetically (A → Z by model name)",
-                    vertical="middle",
-                ),
-                title="Ordering Strategy",
-                border_style="cyan",
-            )
-            self.console.print(Align.center(ordering_panel))
+            self.console.print("\n[bold cyan]Ordering Strategy:[/bold cyan]")
+            self.console.print("[dim][1] Keep current priority (same order as selection)")
+            self.console.print("[2] Sort alphabetically (A → Z by model name)[/dim]\n")
 
             order_choice = Prompt.ask(
                 "[cyan]Ordering mode[/cyan]",
@@ -217,19 +242,10 @@ class BERTAnnotationStudio:
         if len(plan) <= 1:
             return plan
 
-        reduction_blurb = Panel(
-            Align.center(
-                "Reduction mode lets you cascade models.\n"
-                "Pick a reducer model that scans the full dataset, then run other models only on the rows it flags as positive.\n"
-                "Useful to focus heavyweight models on the most relevant samples.",
-                vertical="middle",
-            ),
-            title="Reduction Mode (optional)",
-            border_style="magenta",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(reduction_blurb))
+        self.console.print("\n[bold magenta]Reduction Mode (optional):[/bold magenta]")
+        self.console.print("[dim]Reduction mode lets you cascade models.")
+        self.console.print("Pick a reducer model that scans the full dataset, then run other models only on the rows it flags as positive.")
+        self.console.print("Useful to focus heavyweight models on the most relevant samples.[/dim]\n")
 
         if not Confirm.ask("Enable reduction mode?", default=False):
             return plan
@@ -392,14 +408,10 @@ class BERTAnnotationStudio:
             body_lines.append("Columns will look like:")
             body_lines.extend(f"  • {col}" for col in example_columns)
 
-            panel = Panel(
-                "\n".join(body_lines),
-                title="Output Column Naming",
-                border_style="cyan",
-                padding=(1, 2),
-                box=box.ROUNDED,
-            )
-            self.console.print(Align.center(panel))
+            self.console.print("\n[bold cyan]Output Column Naming:[/bold cyan]")
+            for line in body_lines:
+                self.console.print(f"[dim]{line}[/dim]")
+            self.console.print()
 
             while True:
                 raw_name = Prompt.ask(
@@ -538,30 +550,11 @@ class BERTAnnotationStudio:
             self.console.print("[yellow]No trained models found[/yellow]")
             return None
 
-        intro_panel = Panel(
-            Align.center(
-                "Pick one or several trained checkpoints. You can run them sequentially or cascade them later.\n"
-                "Tip: combine a high-recall model with specialised models to refine positives.",
-                vertical="middle",
-            ),
-            title="Model Selection",
-            border_style="cyan",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(intro_panel))
-
-        help_panel = Panel.fit(
-            Align.center(
-                "Select the model(s) that will be used to annotate your texts.\n"
-                "You can chain multiple models: each will add its dedicated columns.",
-                vertical="middle",
-            ),
-            title="🎯 Selection Mode",
-            title_align="center",
-            border_style="cyan",
-        )
-        self.console.print(Align.center(help_panel))
+        self.console.print("\n[cyan]Pick one or several trained checkpoints. You can run them sequentially or cascade them later.")
+        self.console.print("Tip: combine a high-recall model with specialised models to refine positives.[/cyan]")
+        self.console.print("\n[bold]🎯 Selection Mode:[/bold]")
+        self.console.print("[dim]Select the model(s) that will be used to annotate your texts.")
+        self.console.print("You can chain multiple models: each will add its dedicated columns.[/dim]")
 
         model_table = Table(title="Available Trained Models", box=box.ROUNDED, show_lines=False)
         model_table.add_column("#", style="cyan", width=4, justify="center")
@@ -587,17 +580,10 @@ class BERTAnnotationStudio:
 
         self.console.print(Align.center(model_table))
 
-        mode_panel = Panel.fit(
-            Align.center(
-                "[1] Single model (pick one)\n"
-                "[2] Multiple models (enter list: e.g., 1,3,5)\n"
-                "[3] All available models",
-                vertical="middle",
-            ),
-            title="Selection Options",
-            border_style="magenta",
-        )
-        self.console.print(Align.center(mode_panel))
+        self.console.print("\n[bold magenta]Selection Options:[/bold magenta]")
+        self.console.print("[dim][1] Single model (pick one)")
+        self.console.print("[2] Multiple models (enter list: e.g., 1,3,5)")
+        self.console.print("[3] All available models[/dim]\n")
 
         selection_mode = Prompt.ask(
             "[cyan]Choose a mode[/cyan]",
@@ -984,18 +970,9 @@ class BERTAnnotationStudio:
         text_column = column_mapping['text']
         current_id = column_mapping.get('id')
 
-        guidance_panel = Panel(
-            Align.center(
-                "Every row needs a stable identifier so you can reconcile predictions with the original data.\n"
-                "Pick an existing unique column, combine several columns, or generate a brand new one.",
-                vertical="middle",
-            ),
-            title="Why an ID column matters",
-            border_style="bright_cyan",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(guidance_panel))
+        self.console.print("\n[bold cyan]Why an ID column matters:[/bold cyan]")
+        self.console.print("[dim]Every row needs a stable identifier so you can reconcile predictions with the original data.")
+        self.console.print("Pick an existing unique column, combine several columns, or generate a brand new one.[/dim]\n")
 
         def select_candidate_id() -> Optional[str]:
             candidates = []
@@ -1171,19 +1148,10 @@ class BERTAnnotationStudio:
         summary.add_row("GPU available", "Yes" if gpu_available else "No")
         self.console.print(Align.center(summary))
 
-        notes_panel = Panel(
-            Align.center(
-                "• Batch size: texts processed before the model updates.\n"
-                "• Chunk size: payload sent to each worker (keeps transfers efficient).\n"
-                "• CPU workers handle batches in parallel while GPU workers focus on larger batches.\n"
-                "• Increase GPU batch size only if you have enough GPU memory.",
-                vertical="middle",
-            ),
-            border_style="cyan",
-            padding=(1, 1),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(notes_panel))
+        self.console.print("\n[dim]• Batch size: texts processed before the model updates.")
+        self.console.print("• Chunk size: payload sent to each worker (keeps transfers efficient).")
+        self.console.print("• CPU workers handle batches in parallel while GPU workers focus on larger batches.")
+        self.console.print("• Increase GPU batch size only if you have enough GPU memory.[/dim]\n")
 
         return Confirm.ask("[cyan]Confirm this configuration?[/cyan]", default=True)
 
@@ -1195,17 +1163,7 @@ class BERTAnnotationStudio:
             "← Back"
         ]
 
-        intro_panel = Panel(
-            Align.center(
-                "Load the dataset you want to annotate. You can browse local files or connect to a database.",
-                vertical="middle",
-            ),
-            title="Dataset Source",
-            border_style="cyan",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(intro_panel))
+        self.console.print("\n[cyan]Load the dataset you want to annotate. You can browse local files or connect to a database.[/cyan]\n")
 
         source_table = Table(box=box.ROUNDED)
         source_table.add_column("#", style="cyan", width=4)
@@ -1628,18 +1586,9 @@ class BERTAnnotationStudio:
 
             self.console.print(col_table)
 
-            text_help = Panel(
-                Align.center(
-                    "Pick the column that stores the raw text to annotate.\n"
-                    "Tip: go for the column that contains full sentences or messages rather than IDs or metadata.",
-                    vertical="middle",
-                ),
-                title="Text Column",
-                border_style="cyan",
-                padding=(1, 2),
-                box=box.ROUNDED,
-            )
-            self.console.print(Align.center(text_help))
+            self.console.print("\n[bold cyan]Text Column:[/bold cyan]")
+            self.console.print("[dim]Pick the column that stores the raw text to annotate.")
+            self.console.print("Tip: go for the column that contains full sentences or messages rather than IDs or metadata.[/dim]\n")
 
             detected_text_idx = df.columns.tolist().index(text_candidates[0]['name']) + 1 if text_candidates else 1
 
@@ -1665,19 +1614,11 @@ class BERTAnnotationStudio:
                         f"{candidate['unique_ratio'] * 100:.1f}%"
                     )
                 id_table.add_row("0", "[dim]None[/dim]", "", "")
-                id_help = Panel(
-                    Align.center(
-                        "An ID column keeps track of each row after annotation.\n"
-                        "Choose a column with UNIQUE values (customer_id, tweet_id, ...). "
-                        "If none match, you can generate one in the next step.",
-                        vertical="middle",
-                    ),
-                    title="Identifier Column",
-                    border_style="magenta",
-                    padding=(1, 2),
-                    box=box.ROUNDED,
-                )
-                self.console.print(Align.center(id_help))
+
+                self.console.print("\n[bold magenta]Identifier Column:[/bold magenta]")
+                self.console.print("[dim]An ID column keeps track of each row after annotation.")
+                self.console.print("Choose a column with UNIQUE values (customer_id, tweet_id, ...).")
+                self.console.print("If none match, you can generate one in the next step.[/dim]\n")
                 self.console.print(id_table)
 
                 id_choice = Prompt.ask(
@@ -1688,18 +1629,9 @@ class BERTAnnotationStudio:
                 if id_choice != "0":
                     id_column = id_candidates[int(id_choice) - 1]['name']
             else:
-                id_help = Panel(
-                    Align.center(
-                        "No highly unique column detected.\n"
-                        "You will be able to craft a unique identifier (combine columns or auto-generate) in the next step.",
-                        vertical="middle",
-                    ),
-                    title="Identifier Column",
-                    border_style="magenta",
-                    padding=(1, 2),
-                    box=box.ROUNDED,
-                )
-                self.console.print(Align.center(id_help))
+                self.console.print("\n[bold magenta]Identifier Column:[/bold magenta]")
+                self.console.print("[dim]No highly unique column detected.")
+                self.console.print("You will be able to craft a unique identifier (combine columns or auto-generate) in the next step.[/dim]\n")
 
             column_mapping = {'text': text_column, 'id': id_column, 'language': None}
             self.console.print(f"\n[green]✓ Text column: {text_column}[/green]")
@@ -1731,18 +1663,8 @@ class BERTAnnotationStudio:
             for entry in (models_or_plan or [])
         ]
 
-        guidance = Panel(
-            Align.center(
-                "We analyse a sample of texts to infer the language. "
-                "If you already track language codes, you can reuse that column to avoid auto-detection.",
-                vertical="middle",
-            ),
-            title="Language Detection",
-            border_style="cyan",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(guidance))
+        self.console.print("\n[cyan]We analyse a sample of texts to infer the language.")
+        self.console.print("If you already track language codes, you can reuse that column to avoid auto-detection.[/cyan]\n")
 
         candidate_language_columns: List[Dict[str, Any]] = []
         for col in df.columns:
@@ -1851,18 +1773,8 @@ class BERTAnnotationStudio:
 
     def _configure_correction(self) -> Dict[str, Any]:
         """Configure optional text preprocessing."""
-        guidance = Panel(
-            Align.center(
-                "Light cleaning can boost model confidence on messy data.\n"
-                "Toggle the options you want to apply before inference.",
-                vertical="middle",
-            ),
-            title="Text Correction",
-            border_style="cyan",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(guidance))
+        self.console.print("\n[cyan]Light cleaning can boost model confidence on messy data.")
+        self.console.print("Toggle the options you want to apply before inference.[/cyan]\n")
 
         enable_correction = Confirm.ask("[cyan]Enable preprocessing?[/cyan]", default=True)
 
@@ -1889,17 +1801,7 @@ class BERTAnnotationStudio:
         recommended_batch = max(8, recommendations.get('batch_size', 16))
         total_rows = len(df)
 
-        intro_panel = Panel(
-            Align.center(
-                "Tune how inference workers run and decide how much of the dataset to annotate.",
-                vertical="middle",
-            ),
-            title="Annotation Options",
-            border_style="cyan",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(intro_panel))
+        self.console.print("\n[cyan]Tune how inference workers run and decide how much of the dataset to annotate.[/cyan]\n")
 
         resource_table = Table(title="Detected Resources", box=box.ROUNDED)
         resource_table.add_column("Component", style="cyan", width=16)
@@ -1982,17 +1884,9 @@ class BERTAnnotationStudio:
 
             self.console.print("[yellow]Reconfiguration requested by user.[/yellow]\n")
 
-        coverage_panel = Panel(
-            Align.center(
-                f"Rows detected: {total_rows:,}\n\nAnnotate the full dataset, just the first rows, or a random sample.",
-                vertical="middle",
-            ),
-            title="Dataset Coverage",
-            border_style="magenta",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(coverage_panel))
+        self.console.print("\n[bold magenta]Dataset Coverage:[/bold magenta]")
+        self.console.print(f"[dim]Rows detected: {total_rows:,}")
+        self.console.print("Annotate the full dataset, just the first rows, or a random sample.[/dim]\n")
 
         coverage_choice = Prompt.ask("[cyan]Coverage mode[/cyan]", choices=["1", "2", "3"], default="1")
 
@@ -2014,1007 +1908,3 @@ class BERTAnnotationStudio:
         return annotation_config
 
 
-    def _select_data_source(self) -> Optional[Dict[str, Any]]:
-        """Select data source"""
-        self.console.print("\n[bold cyan]Step 2/8: Select Data Source[/bold cyan]\n")
-
-        source_choices = [
-            "📁 Local file (CSV, TSV, Excel, JSON, JSONL, Parquet, RData/RDS)",
-            "🗄️  SQL database (PostgreSQL/MySQL/SQLite/SQL Server/Custom)",
-            "← Back"
-        ]
-
-        source_table = Table(box=box.ROUNDED)
-        source_table.add_column("#", style="cyan", width=4)
-        source_table.add_column("Data Source", style="green", width=70)
-
-        for idx, choice in enumerate(source_choices, 1):
-            source_table.add_row(str(idx), choice)
-
-        self.console.print(source_table)
-
-        choice = Prompt.ask("\n[cyan]Select data source[/cyan]", choices=["1", "2", "3"], default="1")
-
-        if choice == "3":
-            return None
-        if choice == "1":
-            return self._select_file_source()
-        return self._select_sql_source()
-
-    def _select_file_source(self) -> Optional[Dict[str, Any]]:
-        """Select file source with auto-detection"""
-        from llm_tool.cli.advanced_cli import DataDetector, DatasetInfo
-
-        # Auto-detect datasets in data directory
-        data_dir = self.data_dir
-        detector = DataDetector()
-        detected_datasets = detector.scan_directory(data_dir)
-
-        if detected_datasets:
-            self.console.print(f"\n[bold cyan]📊 Found {len(detected_datasets)} dataset(s) in {data_dir}:[/bold cyan]\n")
-
-            # Create table with dataset preview
-            datasets_table = Table(title="Available Datasets", border_style="cyan", show_header=True, box=box.ROUNDED)
-            datasets_table.add_column("#", style="bold yellow", width=4)
-            datasets_table.add_column("Filename", style="white", width=35)
-            datasets_table.add_column("Format", style="green", width=10)
-            datasets_table.add_column("Size", style="magenta", width=12)
-            datasets_table.add_column("Rows", style="cyan", width=10)
-            datasets_table.add_column("Columns", style="blue", width=10)
-            datasets_table.add_column("Preview", style="dim", width=40)
-
-            for i, ds in enumerate(detected_datasets[:20], 1):
-                # Format size
-                if ds.size_mb < 0.1:
-                    size_str = f"{ds.size_mb * 1024:.1f} KB"
-                else:
-                    size_str = f"{ds.size_mb:.1f} MB"
-
-                # Format rows and columns
-                rows_str = f"{ds.rows:,}" if ds.rows else "?"
-                cols_str = str(len(ds.columns)) if ds.columns else "?"
-
-                # Create preview of columns with text scores
-                preview_parts = []
-                if ds.columns:
-                    # Show up to 3 columns with highest text scores
-                    sorted_cols = sorted(
-                        [(col, ds.text_scores.get(col, 0)) for col in ds.columns],
-                        key=lambda x: x[1],
-                        reverse=True
-                    )[:3]
-                    preview_parts = [f"{col} ({score:.0f})" for col, score in sorted_cols if score > 0]
-
-                preview_str = ", ".join(preview_parts) if preview_parts else "No text columns"
-
-                datasets_table.add_row(
-                    str(i),
-                    ds.path.name,
-                    ds.format.upper(),
-                    size_str,
-                    rows_str,
-                    cols_str,
-                    preview_str[:40] + "..." if len(preview_str) > 40 else preview_str
-                )
-
-            self.console.print(Align.center(datasets_table))
-            self.console.print()
-
-            # Ask user: use detected or manual path
-            use_detected = Confirm.ask("[bold yellow]Use detected dataset?[/bold yellow]", default=True)
-
-            if use_detected:
-                choice = Prompt.ask(
-                    "[cyan]Select dataset[/cyan]",
-                    choices=[str(i) for i in range(1, min(len(detected_datasets) + 1, 21))],
-                    default="1"
-                )
-                selected_dataset = detected_datasets[int(choice) - 1]
-                file_path = selected_dataset.path
-
-                self.console.print(f"\n[green]✓ Selected: {file_path.name}[/green]")
-            else:
-                # Manual path entry
-                file_path = Prompt.ask("\n[cyan]File path[/cyan]")
-                file_path = Path(file_path).expanduser()
-
-                if not file_path.exists():
-                    self.console.print(f"[red]✗ File not found[/red]")
-                    return None
-        else:
-            # No datasets detected - ask for manual path
-            self.console.print("[yellow]⚠ No datasets auto-detected in data directory[/yellow]")
-            file_path = Prompt.ask("\n[cyan]File path[/cyan]")
-            file_path = Path(file_path).expanduser()
-
-            if not file_path.exists():
-                self.console.print(f"[red]✗ File not found[/red]")
-                return None
-
-        # Determine format (support ALL formats from the package)
-        suffix = file_path.suffix.lower()
-        format_map = {
-            '.csv': 'csv',
-            '.xlsx': 'excel',
-            '.xls': 'excel',
-            '.tsv': 'tsv',
-            '.json': 'json',
-            '.jsonl': 'jsonl',
-            '.parquet': 'parquet',
-            '.rdata': 'rdata',
-            '.rds': 'rds'
-        }
-        file_format = format_map.get(suffix, 'unknown')
-
-        if file_format == 'unknown':
-            self.console.print(f"[red]✗ Unsupported format: {suffix}[/red]")
-            return None
-
-        self.console.print(f"[green]✓ Format: {file_format.upper()}[/green]")
-        return {'type': 'file', 'path': str(file_path), 'format': file_format}
-
-    def _select_sql_source(self) -> Optional[Dict[str, Any]]:
-        """Interactive SQL source selector with connection helper."""
-        self.console.print("\n[cyan]Available database types[/cyan]\n")
-
-        db_table = Table(box=box.ROUNDED)
-        db_table.add_column("#", style="cyan", width=4)
-        db_table.add_column("Database", style="green", width=30)
-        db_table.add_column("Driver Hint", style="dim", width=28)
-        db_table.add_row("1", "PostgreSQL", "Requires psycopg2 or pg8000")
-        db_table.add_row("2", "MySQL / MariaDB", "Requires pymysql or mysqlclient")
-        db_table.add_row("3", "SQLite", "Built-in (file path or :memory:)")
-        db_table.add_row("4", "Microsoft SQL Server", "Requires pyodbc")
-        db_table.add_row("5", "Custom SQLAlchemy URL", "Paste full URL")
-        db_table.add_row("6", "← Back", "")
-        self.console.print(db_table)
-
-        choice = Prompt.ask("\n[cyan]Database type[/cyan]", choices=[str(i) for i in range(1, 7)], default="1")
-        if choice == "6":
-            return None
-
-        connection_string = None
-        display_name = ""
-
-        if choice == "1":  # PostgreSQL
-            host = Prompt.ask("Host", default="localhost")
-            port = IntPrompt.ask("Port", default=5432)
-            database = Prompt.ask("Database name")
-            username = Prompt.ask("Username", default="postgres")
-            password = Prompt.ask("Password", password=True)
-            connection_string = f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{database}"
-            display_name = f"PostgreSQL • {database}@{host}:{port}"
-
-        elif choice == "2":  # MySQL
-            host = Prompt.ask("Host", default="localhost")
-            port = IntPrompt.ask("Port", default=3306)
-            database = Prompt.ask("Database name")
-            username = Prompt.ask("Username", default="root")
-            password = Prompt.ask("Password", password=True)
-            connection_string = f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
-            display_name = f"MySQL • {database}@{host}:{port}"
-
-        elif choice == "3":  # SQLite
-            file_path = Prompt.ask("SQLite file path (or :memory:)", default=str(self.data_dir / "database.sqlite"))
-            if file_path != ":memory:":
-                file_path = str(Path(file_path).expanduser())
-            connection_string = f"sqlite:///{file_path}"
-            display_name = f"SQLite • {file_path}"
-
-        elif choice == "4":  # SQL Server
-            host = Prompt.ask("Host", default="localhost")
-            port = IntPrompt.ask("Port", default=1433)
-            database = Prompt.ask("Database name")
-            username = Prompt.ask("Username")
-            password = Prompt.ask("Password", password=True)
-            driver = Prompt.ask("ODBC driver", default="ODBC Driver 17 for SQL Server")
-            connection_string = (
-                f"mssql+pyodbc://{username}:{password}@{host}:{port}/{database}"
-                f"?driver={driver.replace(' ', '+')}"
-            )
-            display_name = f"SQL Server • {database}@{host}:{port}"
-
-        elif choice == "5":  # Custom URL
-            connection_string = Prompt.ask(
-                "Enter SQLAlchemy connection URL",
-                default="postgresql+psycopg2://user:password@host:5432/database"
-            )
-            display_name = "Custom SQL"
-
-        if not connection_string:
-            self.console.print("[red]✗ Invalid connection information[/red]")
-            return None
-
-        self.console.print("\n[cyan]Testing database connection...[/cyan]")
-        try:
-            engine = create_engine(connection_string)
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-            self.console.print("[green]✓ Connection successful[/green]")
-        except Exception as exc:
-            self.console.print(f"[red]✗ Connection failed: {exc}[/red]")
-            self.console.print("[yellow]Tip: ensure the appropriate database driver is installed.[/yellow]")
-            return None
-
-        try:
-            inspector = inspect(engine)
-            schemas = inspector.get_schema_names()
-        except Exception as exc:
-            self.console.print(f"[red]✗ Failed to inspect database: {exc}[/red]")
-            engine.dispose()
-            return None
-
-        schema = inspector.default_schema_name
-        if schemas and len(schemas) > 1:
-            schema_table = Table(box=box.ROUNDED)
-            schema_table.add_column("#", style="cyan", width=4)
-            schema_table.add_column("Schema", style="green", width=30)
-            for idx, sch in enumerate(schemas, 1):
-                schema_table.add_row(str(idx), sch)
-            self.console.print("\n[cyan]Available schemas[/cyan]")
-            self.console.print(Align.center(schema_table))
-            schema_choice = Prompt.ask(
-                "\n[cyan]Schema[/cyan]",
-                choices=[str(i) for i in range(1, len(schemas) + 1)],
-                default=str(schemas.index(schema) + 1 if schema in schemas else 1)
-            )
-            schema = schemas[int(schema_choice) - 1]
-
-        try:
-            tables = inspector.get_table_names(schema=schema)
-        except Exception as exc:
-            self.console.print(f"[red]✗ Failed to list tables: {exc}[/red]")
-            engine.dispose()
-            return None
-
-        tables = sorted(tables)
-
-        table_table = Table(box=box.ROUNDED)
-        table_table.add_column("#", style="cyan", width=4)
-        table_table.add_column("Table", style="green")
-        if tables:
-            for idx, table_name in enumerate(tables[:50], 1):
-                table_table.add_row(str(idx), table_name)
-        self.console.print("\n[cyan]Tables (top 50)[/cyan]")
-        if tables:
-            self.console.print(Align.center(table_table))
-        else:
-            self.console.print("[yellow]No tables found in this schema.[/yellow]")
-
-        use_custom_query = Confirm.ask("\n[cyan]Use a custom SQL query instead of selecting a table?[/cyan]", default=False)
-        query = None
-        selected_table = None
-        limit = None
-
-        if use_custom_query:
-            example = tables[0] if tables else "your_table"
-            query = Prompt.ask(
-                "Enter SQL query",
-                default=f"SELECT * FROM {example} LIMIT 1000"
-            )
-        else:
-            if not tables:
-                self.console.print("[red]✗ Cannot select a table because none were detected[/red]")
-                engine.dispose()
-                return None
-
-            choice_table = Prompt.ask(
-                "\n[cyan]Select table[/cyan]",
-                choices=[str(i) for i in range(1, min(len(tables), 50) + 1)],
-                default="1"
-            )
-            selected_table = tables[int(choice_table) - 1]
-            if Confirm.ask("Apply LIMIT when loading data?", default=True):
-                limit = IntPrompt.ask("Row limit", default=25000)
-
-        engine.dispose()
-
-        return {
-            'type': 'sql',
-            'connection_string': connection_string,
-            'schema': schema,
-            'table': selected_table,
-            'query': query,
-            'limit': limit,
-            'display_name': display_name
-        }
-
-    def _load_and_analyze_data(
-        self,
-        data_source: Dict[str, Any],
-        models_or_plan: List[Dict[str, Any]],
-    ) -> Tuple[Optional[pd.DataFrame], Optional[Dict]]:
-        """Load the dataset and help the user map mandatory columns."""
-        self._language_assignments = None
-        model_infos: List[Dict[str, Any]] = [
-            entry["info"] if isinstance(entry, dict) and "info" in entry else entry
-            for entry in (models_or_plan or [])
-        ]
-
-        try:
-            if data_source['type'] == 'file':
-                file_format = data_source['format']
-                file_path = data_source['path']
-
-                if file_format == 'csv':
-                    df = pd.read_csv(file_path)
-                elif file_format == 'tsv':
-                    df = pd.read_csv(file_path, sep='\t')
-                elif file_format == 'excel':
-                    df = pd.read_excel(file_path)
-                elif file_format == 'json':
-                    df = pd.read_json(file_path)
-                elif file_format == 'jsonl':
-                    df = pd.read_json(file_path, lines=True)
-                elif file_format == 'parquet':
-                    df = pd.read_parquet(file_path)
-                elif file_format in {'rdata', 'rds'}:
-                    try:
-                        import pyreadr  # type: ignore
-                    except ImportError:
-                        self.console.print("[red]✗ pyreadr not installed. Install with: pip install pyreadr[/red]")
-                        return None, None
-
-                    result = pyreadr.read_r(file_path)
-                    if result:
-                        df = list(result.values())[0]
-                    else:
-                        self.console.print("[red]✗ Empty RData/RDS file[/red]")
-                        return None, None
-                else:
-                    self.console.print(f"[red]✗ Unsupported format: {file_format}[/red]")
-                    return None, None
-            else:
-                connection_string = data_source['connection_string']
-                schema = data_source.get('schema')
-                selected_table = data_source.get('table')
-                query = data_source.get('query')
-                limit = data_source.get('limit')
-
-                engine = create_engine(connection_string)
-                try:
-                    if query:
-                        sql_query = text(query)
-                        df = pd.read_sql_query(sql_query, engine)
-                    else:
-                        if not selected_table:
-                            self.console.print("[red]✗ No table selected for SQL source[/red]")
-                            return None, None
-
-                        qualified = f"{schema}.{selected_table}" if schema and schema != "" else selected_table
-                        dialect = engine.dialect.name.lower()
-
-                        if limit:
-                            if dialect in {"mssql", "sybase"}:
-                                sql_query = text(f"SELECT TOP ({int(limit)}) * FROM {qualified}")
-                            else:
-                                sql_query = text(f"SELECT * FROM {qualified} LIMIT {int(limit)}")
-                            df = pd.read_sql_query(sql_query, engine)
-                        else:
-                            try:
-                                df = pd.read_sql_table(selected_table, con=engine, schema=schema)
-                            except Exception:
-                                # Fallback to generic SELECT *
-                                df = pd.read_sql_query(text(f"SELECT * FROM {qualified}"), engine)
-                finally:
-                    engine.dispose()
-
-            self.console.print(f"[green]✓ Loaded {len(df):,} rows, {len(df.columns)} columns[/green]\n")
-
-            # Intelligent column detection
-            text_candidates: List[Dict[str, Any]] = []
-            id_candidates: List[Dict[str, Any]] = []
-
-            for col_name in df.columns:
-                series = df[col_name]
-                dtype = series.dtype
-
-                if dtype == 'object':
-                    non_null = series.dropna()
-                    if len(non_null) > 0:
-                        avg_length = non_null.astype(str).str.len().mean()
-                        if avg_length > 20:
-                            text_candidates.append({'name': col_name, 'avg_length': avg_length})
-
-                # Detect potential ID columns (high uniqueness)
-                unique_ratio = series.nunique(dropna=True) / max(len(series.dropna()), 1)
-                if unique_ratio > 0.98 and dtype in ('object', 'int64', 'int32', 'int16', 'uint64', 'uint32'):
-                    id_candidates.append({'name': col_name, 'dtype': dtype, 'unique_ratio': unique_ratio})
-
-            text_candidates.sort(key=lambda x: -x['avg_length'])
-
-            col_table = Table(title="Available Columns", box=box.ROUNDED, show_lines=False)
-            col_table.add_column("#", style="cyan", width=4)
-            col_table.add_column("Column Name", style="green", width=34)
-            col_table.add_column("Type", style="yellow", width=14)
-            col_table.add_column("Missing %", style="magenta", width=10, justify="right")
-            col_table.add_column("Unique", style="cyan", width=10, justify="right")
-
-            total_rows = len(df)
-            for idx, col_name in enumerate(df.columns, 1):
-                dtype = df[col_name].dtype
-                missing_pct = (df[col_name].isna().sum() / total_rows) * 100 if total_rows else 0
-                unique_count = df[col_name].nunique(dropna=True)
-                col_table.add_row(
-                    str(idx),
-                    col_name,
-                    str(dtype),
-                    f"{missing_pct:.1f}%",
-                    f"{unique_count:,}"
-                )
-
-            self.console.print(col_table)
-
-            text_help = Panel(
-                Align.center(
-                    "Pick the column that stores the raw text to annotate.\n"
-                    "Tip: go for the column that contains full sentences or messages rather than IDs or metadata.",
-                    vertical="middle",
-                ),
-                title="Text Column",
-                border_style="cyan",
-                padding=(1, 2),
-                box=box.ROUNDED,
-            )
-            self.console.print(Align.center(text_help))
-
-            detected_text_idx = df.columns.tolist().index(text_candidates[0]['name']) + 1 if text_candidates else 1
-
-            text_col_idx = Prompt.ask(
-                "[cyan]Select TEXT column[/cyan]",
-                choices=[str(i) for i in range(1, len(df.columns) + 1)],
-                default=str(detected_text_idx)
-            )
-            text_column = df.columns[int(text_col_idx) - 1]
-
-            id_column = None
-            if id_candidates:
-                id_table = Table(title="Candidate ID Columns", box=box.ROUNDED)
-                id_table.add_column("#", style="cyan", width=4)
-                id_table.add_column("Column", style="green", width=30)
-                id_table.add_column("Type", style="yellow", width=12)
-                id_table.add_column("Unique %", style="cyan", width=10, justify="right")
-                for idx, candidate in enumerate(id_candidates, 1):
-                    id_table.add_row(
-                        str(idx),
-                        candidate['name'],
-                        str(candidate['dtype']),
-                        f"{candidate['unique_ratio'] * 100:.1f}%"
-                    )
-                id_table.add_row("0", "[dim]None[/dim]", "", "")
-                id_help = Panel(
-                    Align.center(
-                        "An ID column keeps track of each row after annotation.\n"
-                        "Choose a column with UNIQUE values (customer_id, tweet_id, ...). "
-                        "If none match, you can generate one in the next step.",
-                        vertical="middle",
-                    ),
-                    title="Identifier Column",
-                    border_style="magenta",
-                    padding=(1, 2),
-                    box=box.ROUNDED,
-                )
-                self.console.print(Align.center(id_help))
-                self.console.print(id_table)
-
-                id_choice = Prompt.ask(
-                    "[cyan]Select ID column[/cyan]",
-                    choices=[str(i) for i in range(0, len(id_candidates) + 1)],
-                    default="0"
-                )
-                if id_choice != "0":
-                    id_column = id_candidates[int(id_choice) - 1]['name']
-            else:
-                id_help = Panel(
-                    Align.center(
-                        "No highly unique column detected.\n"
-                        "You will be able to craft a unique identifier (combine columns or auto-generate) in the next step.",
-                        vertical="middle",
-                    ),
-                    title="Identifier Column",
-                    border_style="magenta",
-                    padding=(1, 2),
-                    box=box.ROUNDED,
-                )
-                self.console.print(Align.center(id_help))
-
-            column_mapping = {'text': text_column, 'id': id_column, 'language': None}
-            self.console.print(f"\n[green]✓ Text column: {text_column}[/green]")
-            if id_column:
-                self.console.print(f"[green]✓ ID column: {id_column}[/green]")
-
-            # Use first selected model for text length stats
-            if model_infos:
-                self._display_text_length_stats(df, text_column, model_infos[0])
-            df, column_mapping = self._ensure_unique_identifier(df, column_mapping)
-
-            return df, column_mapping
-
-        except Exception as e:
-            self.console.print(f"[red]✗ Error: {str(e)}[/red]")
-            return None, None
-
-    def _detect_and_validate_language(
-        self,
-        df: pd.DataFrame,
-        column_mapping: Dict[str, Any],
-        models_or_plan: List[Dict[str, Any]],
-    ) -> Optional[Dict]:
-        """Detect dominant languages and confirm model compatibility."""
-        text_column = column_mapping['text']
-        sample_texts = df[text_column].dropna().head(100).astype(str).tolist()
-        model_infos: List[Dict[str, Any]] = [
-            entry["info"] if isinstance(entry, dict) and "info" in entry else entry
-            for entry in (models_or_plan or [])
-        ]
-
-        guidance = Panel(
-            Align.center(
-                "We analyse a sample of texts to infer the language. "
-                "If you already track language codes, you can reuse that column to avoid auto-detection.",
-                vertical="middle",
-            ),
-            title="Language Detection",
-            border_style="cyan",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(guidance))
-
-        candidate_language_columns: List[Dict[str, Any]] = []
-        for col in df.columns:
-            if col == text_column or col == column_mapping.get('id'):
-                continue
-            if df[col].dtype != 'object':
-                continue
-
-            counts = LanguageNormalizer.detect_languages_in_column(df, col)
-            if counts:
-                candidate_language_columns.append({'name': col, 'counts': counts})
-
-        language_column = None
-        language_counts: Dict[str, int] = {}
-        detection_source = "auto"
-
-        if candidate_language_columns:
-            lang_table = Table(title="Detected Language Columns", box=box.ROUNDED)
-            lang_table.add_column("#", style="cyan", width=4)
-            lang_table.add_column("Column", style="green", width=30)
-            lang_table.add_column("Languages", style="magenta", overflow="fold")
-
-            for idx, candidate in enumerate(candidate_language_columns, 1):
-                languages_preview = ", ".join(
-                    f"{lang.upper()} ({count})" for lang, count in sorted(candidate['counts'].items(), key=lambda x: -x[1])
-                )
-                lang_table.add_row(str(idx), candidate['name'], languages_preview[:80] + ("…" if len(languages_preview) > 80 else ""))
-
-            self.console.print("[cyan]Potential language columns detected[/cyan]")
-            self.console.print(lang_table)
-
-            if Confirm.ask("Use one of these columns for language detection?", default=True):
-                lang_choice = Prompt.ask(
-                    "\n[cyan]Select language column[/cyan]",
-                    choices=[str(i) for i in range(1, len(candidate_language_columns) + 1)],
-                    default="1"
-                )
-                selected = candidate_language_columns[int(lang_choice) - 1]
-                language_column = selected['name']
-                language_counts = selected['counts']
-                detection_source = "column"
-
-        if language_column is None:
-            detected_languages = LanguageNormalizer.detect_dataset_languages(sample_texts)
-            if detected_languages:
-                for lang_set in detected_languages:
-                    for lang in lang_set:
-                        language_counts[lang] = language_counts.get(lang, 0) + 1
-            else:
-                language_counts['en'] = len(sample_texts)
-                self.console.print("[yellow]⚠ Unable to confidently detect language, defaulting to English[/yellow]")
-
-        if not language_counts:
-            self.console.print("[red]✗ Unable to infer language[/red]")
-            return None
-
-        sorted_langs = sorted(language_counts.items(), key=lambda x: x[1], reverse=True)
-        primary_lang = sorted_langs[0][0].upper()
-        unique_languages = {lang.upper() for lang in language_counts.keys()}
-
-        counts_table = Table(title="Language Breakdown", box=box.ROUNDED)
-        counts_table.add_column("Language", style="green", width=12)
-        counts_table.add_column("Samples", style="cyan", justify="right", width=10)
-        counts_table.add_column("Share", style="magenta", justify="right", width=10)
-        total_detected = sum(language_counts.values())
-        for lang, count in sorted_langs:
-            share = (count / total_detected * 100) if total_detected else 0
-            counts_table.add_row(lang.upper(), f"{count:,}", f"{share:.1f}%")
-        self.console.print(counts_table)
-
-        if language_column is None:
-            column_mapping['language'] = '__detected_language__' if detection_source != "column" else None
-        else:
-            column_mapping['language'] = language_column
-
-        # Check compatibility for all models
-        model_languages = {m['language'] for m in model_infos}
-        has_multilingual = any(m.get('is_multilingual', False) for m in model_infos)
-
-        # Display model languages
-        model_lang_str = ", ".join(sorted(model_languages))
-        self.console.print(f"[cyan]Model language(s): {model_lang_str} • Primary data language: {primary_lang}[/cyan]")
-
-        # Check if at least one model is compatible
-        is_compatible = has_multilingual or primary_lang in model_languages
-
-        if is_compatible:
-            self.console.print("[green]✓ At least one model is compatible with detected language[/green]")
-        else:
-            self.console.print("[yellow]⚠ Language mismatch between models and data[/yellow]")
-            if language_column and len(unique_languages) > 1:
-                self.console.print("[yellow]• Consider filtering the dataset by language column before annotating.[/yellow]")
-            if not Confirm.ask("Proceed with annotation despite the mismatch?", default=False):
-                return None
-
-        if len(unique_languages) > 1 and not has_multilingual:
-            self.console.print("[yellow]⚠ Multiple languages detected but the model is monolingual.[/yellow]")
-
-        return {
-            'primary_language': primary_lang,
-            'languages': sorted(unique_languages),
-            'counts': {lang.upper(): count for lang, count in language_counts.items()},
-            'language_column': language_column,
-            'detection_source': detection_source
-        }
-
-    def _configure_correction(self) -> Dict[str, Any]:
-        """Configure optional text preprocessing."""
-        guidance = Panel(
-            Align.center(
-                "Light cleaning can boost model confidence on messy data.\n"
-                "Toggle the options you want to apply before inference.",
-                vertical="middle",
-            ),
-            title="Text Correction",
-            border_style="cyan",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(guidance))
-
-        enable_correction = Confirm.ask("[cyan]Enable preprocessing?[/cyan]", default=True)
-
-        if not enable_correction:
-            return {'enabled': False}
-
-        return {
-            'enabled': True,
-            'lowercase': Confirm.ask("  Lowercase?", default=False),
-            'remove_urls': Confirm.ask("  Remove URLs?", default=True),
-            'remove_emails': Confirm.ask("  Remove emails?", default=True),
-            'remove_extra_spaces': Confirm.ask("  Remove extra spaces?", default=True),
-        }
-
-    def _configure_export_options(self) -> Dict[str, Any]:
-        """Configure export"""
-        self.console.print("\n[bold cyan]Step 7/8: Export Options[/bold cyan]\n")
-
-        default_output = f"bert_annotations_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-
-        include_probs = Confirm.ask("Include prediction probability column?", default=True)
-        include_ci = include_probs and Confirm.ask("Include confidence interval columns?", default=True)
-
-        return {
-            'output_file': Prompt.ask("[cyan]Output file[/cyan]", default=default_output),
-            'export_to_tools': False,
-            'include_probabilities': include_probs,
-            'include_confidence_interval': include_ci
-        }
-
-    def _confirm_and_execute(
-        self,
-        plan: List[Dict[str, Any]],
-        data_source: Dict,
-        df: pd.DataFrame,
-        column_mapping: Dict[str, Any],
-        language_info: Dict[str, Any],
-        correction_config: Dict[str, Any],
-        annotation_config: Dict[str, Any],
-        export_config: Dict[str, Any],
-    ) -> bool:
-        if not plan:
-            self.console.print("[red]No models selected for execution.[/red]")
-            return False
-
-        scope_cfg = annotation_config.get('scope', {'type': 'full'})
-        scope_type = scope_cfg.get('type', 'full')
-        total_rows = len(df)
-
-        if scope_type == 'head':
-            size = max(1, min(scope_cfg.get('size', total_rows), total_rows))
-            working_df = df.head(size).copy()
-            scope_label = f"Top {size:,} rows"
-        elif scope_type == 'random':
-            size = max(1, min(scope_cfg.get('size', total_rows), total_rows))
-            seed = scope_cfg.get('seed', 42)
-            working_df = df.sample(n=size, random_state=seed).sort_index().copy()
-            scope_label = f"Random sample ({size:,} rows, seed={seed})"
-        else:
-            working_df = df.copy()
-            scope_label = "Full dataset"
-
-        row_languages = self._get_or_compute_row_languages(working_df, column_mapping, language_info or {})
-
-        summary_table = Table(title="Annotation Plan", box=box.ROUNDED, show_lines=False)
-        summary_table.add_column("#", style="cyan", width=3, justify="center")
-        summary_table.add_column("Model", style="green", overflow="fold")
-        summary_table.add_column("Lang", style="magenta", width=6, justify="center")
-        summary_table.add_column("Output Prefix", style="yellow", width=18, overflow="fold")
-        summary_table.add_column("Scope", style="cyan", overflow="fold")
-
-        for idx, entry in enumerate(plan, 1):
-            model_info = entry['info']
-            prefix = entry.get('prefix') or self._sanitize_model_prefix(model_info['relative_name'])
-            scope_descr = "All rows"
-            scope = entry.get('scope', {})
-            if scope.get('type') == 'positive':
-                parent_prefix = scope.get('parent_prefix') or "?"
-                labels = ", ".join(scope.get('labels', [])) or "positives"
-                scope_descr = f"Positives from {parent_prefix} ({labels})"
-            summary_table.add_row(
-                str(idx),
-                self._condense_relative_name(model_info['relative_name']),
-                model_info['language'],
-                prefix,
-                scope_descr,
-            )
-
-        coverage_panel = Panel(
-            Align.center(
-                f"Source: {scope_label} (original dataset: {total_rows:,} rows)",
-                vertical="middle",
-            ),
-            border_style="magenta",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-        self.console.print(Align.center(summary_table))
-        self.console.print(Align.center(coverage_panel))
-
-        if not Confirm.ask("[cyan]Ready to start inference?[/cyan]", default=True):
-            return False
-
-        include_prob = export_config.get('include_probabilities', True)
-        include_ci = include_prob and export_config.get('include_confidence_interval', True)
-
-        results_df = working_df.copy()
-        text_column = column_mapping['text']
-        model_stats: List[Dict[str, Any]] = []
-
-        for idx, entry in enumerate(plan, 1):
-            model_info = entry['info']
-            prefix = entry.get('prefix') or self._sanitize_model_prefix(model_info['relative_name'])
-            columns = entry.get('columns', {})
-            label_col = columns.get('label', f"{prefix}_label")
-            label_id_col = columns.get('label_id', f"{prefix}_label_id")
-            probability_col = columns.get('probability', f"{prefix}_probability")
-            ci_low_col = columns.get('ci_lower', f"{prefix}_ci_lower")
-            ci_high_col = columns.get('ci_upper', f"{prefix}_ci_upper")
-            lang_col = columns.get('language', f"{prefix}_language")
-            annotated_col = columns.get('annotated', f"{prefix}_annotated")
-
-            if label_col not in results_df.columns:
-                results_df[label_col] = None
-            if label_id_col not in results_df.columns:
-                results_df[label_id_col] = np.nan
-            if include_prob and probability_col not in results_df.columns:
-                results_df[probability_col] = np.nan
-            if include_ci:
-                if ci_low_col not in results_df.columns:
-                    results_df[ci_low_col] = np.nan
-                if ci_high_col not in results_df.columns:
-                    results_df[ci_high_col] = np.nan
-            if lang_col not in results_df.columns:
-                results_df[lang_col] = row_languages.values
-            if annotated_col not in results_df.columns:
-                results_df[annotated_col] = False
-
-            language_mask = pd.Series(True, index=results_df.index)
-            if not model_info.get('is_multilingual'):
-                language_mask = row_languages == model_info['language']
-
-            scope = entry.get('scope', {})
-            target_mask = language_mask.copy()
-            scope_note = "All rows"
-            if scope.get('type') == 'positive':
-                parent_prefix = scope.get('parent_prefix')
-                positive_labels = {lbl.upper() for lbl in scope.get('labels', [])}
-                if parent_prefix:
-                    parent_label_col = f"{parent_prefix}_label"
-                    parent_annotated_col = f"{parent_prefix}_annotated"
-                    if parent_label_col in results_df.columns:
-                        positives = results_df[parent_label_col].astype(str).str.upper().isin(positive_labels)
-                        if parent_annotated_col in results_df.columns:
-                            positives &= results_df[parent_annotated_col].astype(bool)
-                    else:
-                        positives = pd.Series(False, index=results_df.index)
-                    target_mask &= positives
-                    scope_note = f"Positives from {parent_prefix}"
-                else:
-                    target_mask &= False
-                    scope_note = "No parent column found"
-
-            eligible_indices = results_df.index[target_mask]
-            eligible_count = len(eligible_indices)
-            language_eligible = int(language_mask.sum())
-
-            summary_panel = Panel(
-                Align.center(
-                    f"{self._condense_relative_name(model_info['relative_name'])}\n"
-                    f"Language: {model_info['language']} • Eligible rows: {eligible_count:,} (language match: {language_eligible:,})\n"
-                    f"Output prefix: {prefix} • Scope: {scope_note}",
-                    vertical="middle",
-                ),
-                title=f"Model {idx}/{len(plan)}",
-                border_style="green" if eligible_count else "yellow",
-                padding=(1, 2),
-                box=box.ROUNDED,
-            )
-            self.console.print(Align.center(summary_panel))
-
-            if eligible_count == 0:
-                model_stats.append({"prefix": prefix, "name": self._condense_relative_name(model_info['relative_name']), "annotated": 0, "skipped_language": language_eligible})
-                continue
-
-            texts = results_df.loc[eligible_indices, text_column].fillna("").astype(str).tolist()
-            if correction_config.get('enabled'):
-                texts = self._apply_corrections(texts, correction_config)
-
-            progress_columns = [
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(bar_width=None),
-                TextColumn("{task.completed}/{task.total}"),
-                TimeElapsedColumn(),
-                TimeRemainingColumn(),
-            ]
-
-            def run_inference_with_progress() -> np.ndarray:
-                total = len(texts)
-                chunk_size = annotation_config.get('chunk_size', 1024)
-                result_array: Optional[np.ndarray] = None
-
-                with Progress(*progress_columns, console=self.console, transient=True) as progress:
-                    overall_task = progress.add_task("Annotating", total=total)
-                    device_tasks: Dict[str, int] = {}
-
-                    def ensure_task(tag: str) -> int:
-                        if tag not in device_tasks:
-                            device_tasks[tag] = progress.add_task(tag.upper(), total=total)
-                        return device_tasks[tag]
-
-                    def progress_handler(processed: int, device_tag: str) -> None:
-                        progress.update(overall_task, advance=processed)
-                        device_task = ensure_task(device_tag)
-                        progress.update(device_task, advance=processed)
-
-                    result_array = parallel_predict(
-                        texts=texts,
-                        model_path=str(model_info['path']),
-                        lang=model_info['language'],
-                        parallel=annotation_config.get('parallel', True),
-                        device_mode=annotation_config.get('device_mode', 'both'),
-                        batch_size_cpu=annotation_config.get('batch_size_cpu', 32),
-                        batch_size_gpu=annotation_config.get('batch_size_gpu', 64),
-                        show_progress=False,
-                        chunk_size=chunk_size,
-                        progress_handler=progress_handler,
-                    )
-
-                if result_array is None:
-                    raise RuntimeError("Inference did not produce any output.")
-                return result_array
-
-            predictions = run_inference_with_progress()
-            predicted_label_ids = np.argmax(predictions, axis=1)
-            top_probabilities = predictions[np.arange(len(predictions)), predicted_label_ids]
-
-            label_map = model_info['config'].get('id2label', {})
-            predicted_labels = [label_map.get(str(label_id), str(label_id)) for label_id in predicted_label_ids]
-
-            results_df.loc[eligible_indices, label_id_col] = predicted_label_ids
-            results_df.loc[eligible_indices, label_col] = predicted_labels
-            results_df.loc[eligible_indices, annotated_col] = True
-            if include_prob:
-                results_df.loc[eligible_indices, probability_col] = top_probabilities
-            if include_ci:
-                ci_values = [self._compute_confidence_interval(row) for row in predictions]
-                results_df.loc[eligible_indices, ci_low_col] = [ci[0] for ci in ci_values]
-                results_df.loc[eligible_indices, ci_high_col] = [ci[1] for ci in ci_values]
-
-            language_mismatch_mask = ~language_mask
-            if language_mismatch_mask.any():
-                mismatch_indices = results_df.index[language_mismatch_mask]
-                results_df.loc[mismatch_indices, label_id_col] = -1
-                results_df.loc[mismatch_indices, label_col] = "LANGUAGE_MISMATCH"
-                if include_prob:
-                    results_df.loc[mismatch_indices, probability_col] = 0.0
-                if include_ci:
-                    results_df.loc[mismatch_indices, ci_low_col] = 0.0
-                    results_df.loc[mismatch_indices, ci_high_col] = 0.0
-
-            model_stats.append({
-                "prefix": prefix,
-                "name": self._condense_relative_name(model_info['relative_name']),
-                "annotated": eligible_count,
-                "skipped_language": int(language_mismatch_mask.sum()),
-            })
-
-        output_path = Path(export_config['output_file'])
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        suffix = output_path.suffix.lower()
-        try:
-            if suffix in {'.csv', ''}:
-                target_path = output_path if suffix else output_path.with_suffix('.csv')
-                results_df.to_csv(target_path, index=False)
-                output_path = target_path
-            elif suffix in {'.parquet', '.pq'}:
-                results_df.to_parquet(output_path, index=False)
-            elif suffix in {'.json', '.jsonl'}:
-                results_df.to_json(output_path, orient='records', lines=(suffix == '.jsonl'), force_ascii=False)
-            elif suffix in {'.xlsx', '.xls'}:
-                results_df.to_excel(output_path, index=False)
-            else:
-                self.console.print(f"[yellow]⚠ Unsupported export format {suffix}, falling back to CSV[/yellow]")
-                target_path = output_path.with_suffix('.csv')
-                results_df.to_csv(target_path, index=False)
-                output_path = target_path
-        except Exception as exc:
-            self.console.print(f"[red]✗ Failed to export results: {exc}[/red]")
-            return False
-
-        self.console.print(f"\n[green]✓ Saved annotated dataset to {output_path}[/green]")
-        for stat in model_stats:
-            message = f"  • {stat['prefix']}: {stat['annotated']:,} rows annotated"
-            if stat['skipped_language']:
-                message += f", {stat['skipped_language']:,} language mismatches"
-            self.console.print(message)
-
-        return True
-
-    def _apply_corrections(self, texts: List[str], config: Dict) -> List[str]:
-        """Apply corrections"""
-        corrected = []
-        for text in texts:
-            if not isinstance(text, str):
-                corrected.append("")
-                continue
-
-            if config.get('lowercase'):
-                text = text.lower()
-            if config.get('remove_urls'):
-                text = re.sub(r'http[s]?://\S+', '', text)
-            if config.get('remove_emails'):
-                text = re.sub(r'\S+@\S+', '', text)
-            if config.get('remove_extra_spaces'):
-                text = re.sub(r'\s+', ' ', text).strip()
-
-            corrected.append(text)
-
-        return corrected
-
-    @staticmethod
-    def _compute_confidence_interval(probabilities: np.ndarray) -> Tuple[float, float]:
-        """
-        Heuristic confidence interval using margin between top-2 class probabilities.
-        Provides an intuitive sense of certainty without requiring calibration metadata.
-        """
-        if probabilities.size == 0:
-            return 0.0, 0.0
-
-        sorted_probs = np.sort(probabilities)
-        top_prob = float(sorted_probs[-1])
-        second_prob = float(sorted_probs[-2]) if probabilities.size > 1 else 0.0
-        margin = max(top_prob - second_prob, max(0.05 * top_prob, 0.01))
-        lower = max(0.0, top_prob - margin)
-        upper = min(1.0, top_prob + margin)
-        return lower, upper

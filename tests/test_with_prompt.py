@@ -1,6 +1,36 @@
 #!/usr/bin/env python3
 """
-Test the annotation pipeline with the EN prompt file
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+test_with_prompt.py
+
+MAIN OBJECTIVE:
+---------------
+Test the annotation pipeline with a complex prompt file for Canadian public policy
+annotation including themes, political parties, and sentiment analysis.
+
+Dependencies:
+-------------
+- sys
+- os
+- json
+- llm_tool.pipelines.pipeline_controller
+
+MAIN FEATURES:
+--------------
+1) Load and use external prompt file (prompt_EN_long.txt)
+2) Test annotation with complex multi-field schema
+3) Configure Ollama model with temperature and token settings
+4) Verify annotation with expected keys validation
+5) Display sample annotations with extracted fields
+
+Author:
+-------
+Antoine Lemor
 """
 
 import sys

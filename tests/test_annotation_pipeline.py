@@ -1,3 +1,42 @@
+#!/usr/bin/env python3
+"""
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+test_annotation_pipeline.py
+
+MAIN OBJECTIVE:
+---------------
+Pytest test suite for annotation pipeline with stubbed LLM clients to verify
+LLMAnnotator and PipelineController functionality without external dependencies.
+
+Dependencies:
+-------------
+- asyncio
+- json
+- pathlib
+- pandas
+- pytest
+- llm_tool.annotators.llm_annotator
+- llm_tool.pipelines.pipeline_controller
+
+MAIN FEATURES:
+--------------
+1) Dummy local client for stable test results
+2) Sample dataset fixture generation
+3) LLMAnnotator test with mocked Ollama client
+4) PipelineController annotation phase test
+5) Monkeypatch-based mocking for isolation
+6) Output file verification
+
+Author:
+-------
+Antoine Lemor
+"""
+
 import asyncio
 import json
 from pathlib import Path

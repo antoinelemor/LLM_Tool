@@ -1,16 +1,36 @@
 #!/usr/bin/env python3
 """
-Quick Start Example: LLM Annotation with Ollama
+PROJECT:
+-------
+LLMTool
 
-This example demonstrates how to use LLM Tool for zero-shot annotation
-using a local Ollama model.
+TITLE:
+------
+quickstart_annotation.py
 
-Prerequisites:
-- Ollama installed (https://ollama.ai)
-- A model pulled (e.g., ollama pull llama3.2)
-- LLM Tool installed (pip install -e .)
+MAIN OBJECTIVE:
+---------------
+Quick start example demonstrating zero-shot annotation using a local Ollama model
+for sentiment analysis tasks.
 
-Author: Antoine Lemor
+Dependencies:
+-------------
+- llm_tool.annotators.llm_annotator
+- llm_tool.annotators.local_models
+- json
+
+MAIN FEATURES:
+--------------
+1) Ollama client initialization and model availability check
+2) Schema-based annotation with sentiment and confidence
+3) Batch text annotation with error handling
+4) Results saving to JSON
+5) Sentiment distribution visualization
+6) Sample data demonstration
+
+Author:
+-------
+Antoine Lemor
 """
 
 from llm_tool.annotators.llm_annotator import LLMAnnotator

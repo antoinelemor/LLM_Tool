@@ -1,3 +1,39 @@
+#!/usr/bin/env python3
+"""
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+test_training_data_builder.py
+
+MAIN OBJECTIVE:
+---------------
+Pytest test suite for TrainingDatasetBuilder to verify training data generation
+for different formats (category CSV, binary long format, LLM annotations).
+
+Dependencies:
+-------------
+- json
+- pathlib
+- pandas
+- llm_tool.trainers.training_data_builder
+
+MAIN FEATURES:
+--------------
+1) Test category CSV format training data building
+2) Test binary long format with multi-label support
+3) Test LLM annotations JSON format parsing
+4) Verify output file generation and structure
+5) Validate multi-label dataset creation
+6) Check label column and value correctness
+
+Author:
+-------
+Antoine Lemor
+"""
+
 import json
 from pathlib import Path
 

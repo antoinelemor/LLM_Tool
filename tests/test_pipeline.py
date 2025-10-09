@@ -1,6 +1,38 @@
 #!/usr/bin/env python3
 """
-Test script to verify the pipeline works programmatically
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+test_pipeline.py
+
+MAIN OBJECTIVE:
+---------------
+Test script to verify that the pipeline components (PipelineController, LLMAnnotator,
+ModelTrainer, AnnotationValidator) can be initialized and work programmatically.
+
+Dependencies:
+-------------
+- sys
+- os
+- llm_tool.pipelines.pipeline_controller
+- llm_tool.annotators.llm_annotator
+- llm_tool.trainers.model_trainer
+- llm_tool.validators.annotation_validator
+
+MAIN FEATURES:
+--------------
+1) Test individual component initialization
+2) Test PipelineController initialization
+3) Test pipeline state initialization
+4) Verify all components load successfully
+5) Provide usage instructions for CLI
+
+Author:
+-------
+Antoine Lemor
 """
 
 import sys

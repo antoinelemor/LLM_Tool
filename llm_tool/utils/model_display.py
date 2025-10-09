@@ -538,6 +538,55 @@ MODEL_METADATA = {
 }
 
 
+def format_language_display(languages: List[str], max_width: int = 15) -> str:
+    """
+    Format language list for compact display.
+
+    Args:
+        languages: List of language codes
+        max_width: Maximum character width for display
+
+    Returns:
+        Formatted string with truncation if needed
+
+    Examples:
+        ['EN'] -> 'EN'
+        ['EN', 'FR'] -> 'EN, FR'
+        ['EN', 'FR', 'DE', ...] -> 'EN, FR, DE...'
+        [100+ languages] -> 'Multi (100+)'
+    """
+    if not languages:
+        return "?"
+
+    # For very multilingual models (10+ languages), show compact format
+    if len(languages) > 10:
+        return f"Multi ({len(languages)}+)"
+
+    # For few languages, try to show them all
+    lang_str = ', '.join(languages)
+
+    # If it fits, return as-is
+    if len(lang_str) <= max_width:
+        return lang_str
+
+    # Otherwise, truncate with ellipsis
+    # Show as many languages as fit, then add "..."
+    shown_langs = []
+    current_len = 0
+    for lang in languages:
+        test_len = current_len + len(lang) + (2 if shown_langs else 0)  # +2 for ", "
+        if test_len + 3 > max_width:  # +3 for "..."
+            break
+        shown_langs.append(lang)
+        current_len = test_len
+
+    if shown_langs:
+        return ', '.join(shown_langs) + '...'
+    else:
+        # Even first language doesn't fit, just show count
+        return f"{len(languages)} langs"
+
+
 def calculate_model_relevance_score(
     model_meta: Dict[str, Any],
     user_languages: Set[str],
@@ -560,24 +609,37 @@ def calculate_model_relevance_score(
 
     # Language match (highest priority)
     model_langs = set(model_meta.get('languages', []))
+    is_multilingual_model = model_meta.get('multilingual', False) or len(model_langs) > 3
 
     # Check if user is specifically looking for multilingual models
     if user_languages == {'MULTI'}:
         # User explicitly wants multilingual models only
-        if 'MULTI' in model_langs:
+        if is_multilingual_model:
             score += 100  # Perfect match - multilingual model for multilingual request
         else:
             score += 0  # Monolingual model not relevant for multilingual request
-    elif 'MULTI' in model_langs:
-        # Multilingual models are always relevant, bonus if multiple user languages
-        score += 50
-        if len(user_languages) > 1:
-            score += 20  # Bonus for multilingual datasets
-    else:
-        # Exact language match
+    elif is_multilingual_model:
+        # Multilingual models: lower base score for single language requests
         matching_langs = user_languages & model_langs
         if matching_langs:
-            score += 100  # Perfect match
+            # Multilingual model supports the language, but not optimal for single-language use
+            if len(user_languages) == 1:
+                score += 60  # Decent match, but prefer language-specific models
+            else:
+                score += 80  # Good match for multiple languages
+                score += min(len(matching_langs) * 5, 20)  # Bonus for supporting multiple user languages
+        else:
+            score += 0  # No language match
+    else:
+        # Monolingual/few-language models: BEST for single-language tasks
+        matching_langs = user_languages & model_langs
+        if matching_langs:
+            if len(user_languages) == 1:
+                # Perfect match: monolingual model for monolingual data
+                score += 120  # BONUS for language-specific models when user selects ONE language
+            else:
+                # Monolingual model but user has multiple languages
+                score += 40  # Partial match - not ideal
         else:
             score += 0  # No match, low relevance
 
