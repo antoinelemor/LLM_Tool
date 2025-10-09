@@ -1351,10 +1351,18 @@ class BertBase(BertABC):
                 # Write column headers
                 writer.writerow(best_models_headers)
 
-        # Potentially store label names (if dict_labels is available)
-        if self.dict_labels is None:
-            label_names = None
-        else:
+        # CRITICAL: Extract label names from multiple sources to ensure they're always available
+        # Priority: 1) class_names parameter (multi-class), 2) self.class_names, 3) self.dict_labels
+        label_names = None
+
+        # First, try class_names parameter (passed for multi-class training)
+        if class_names is not None and len(class_names) > 0:
+            label_names = [str(name) for name in class_names]
+        # Second, try self.class_names attribute
+        elif hasattr(self, 'class_names') and self.class_names is not None and len(self.class_names) > 0:
+            label_names = [str(name) for name in self.class_names]
+        # Third, extract from self.dict_labels (binary/multi-label training)
+        elif self.dict_labels is not None:
             # Sort by index - handle both simple values and dict values
             try:
                 label_names = [str(x[0]) for x in sorted(self.dict_labels.items(), key=lambda x: x[1])]
@@ -1378,6 +1386,12 @@ class BertBase(BertABC):
                 output_attentions=False,
                 output_hidden_states=False
             )
+
+        # Add label mappings to model config so they're saved with the model
+        if label_names:
+            model.config.id2label = {i: name for i, name in enumerate(label_names)}
+            model.config.label2id = {name: i for i, name in enumerate(label_names)}
+
         model.to(self.device)
 
         optimizer = AdamW(model.parameters(), lr=lr, eps=1e-8)
@@ -1916,6 +1930,13 @@ class BertBase(BertABC):
                         os.makedirs(best_model_path, exist_ok=True)
 
                         model_to_save = model.module if hasattr(model, 'module') else model
+
+                        # CRITICAL: Ensure label mappings are in config before saving
+                        # This ensures annotation studio reducer mode can access label names
+                        if label_names:
+                            model_to_save.config.id2label = {i: name for i, name in enumerate(label_names)}
+                            model_to_save.config.label2id = {name: i for i, name in enumerate(label_names)}
+
                         output_model_file = os.path.join(best_model_path, WEIGHTS_NAME)
                         output_config_file = os.path.join(best_model_path, CONFIG_NAME)
 
@@ -2123,6 +2144,13 @@ class BertBase(BertABC):
 
                 os.makedirs(final_path, exist_ok=True)
                 model_to_save = model.module if hasattr(model, 'module') else model
+
+                # CRITICAL: Ensure label mappings are in config before saving
+                # This ensures annotation studio reducer mode can access label names
+                if label_names:
+                    model_to_save.config.id2label = {i: name for i, name in enumerate(label_names)}
+                    model_to_save.config.label2id = {name: i for i, name in enumerate(label_names)}
+
                 output_model_file = os.path.join(final_path, WEIGHTS_NAME)
                 output_config_file = os.path.join(final_path, CONFIG_NAME)
                 torch.save(model_to_save.state_dict(), output_model_file)
@@ -2680,6 +2708,13 @@ class BertBase(BertABC):
                                 os.makedirs(temp_reinforced_path, exist_ok=True)
 
                                 model_to_save = model.module if hasattr(model, 'module') else model
+
+                                # CRITICAL: Ensure label mappings are in config before saving
+                                # This ensures annotation studio reducer mode can access label names
+                                if label_names:
+                                    model_to_save.config.id2label = {i: name for i, name in enumerate(label_names)}
+                                    model_to_save.config.label2id = {name: i for i, name in enumerate(label_names)}
+
                                 output_model_file = os.path.join(temp_reinforced_path, WEIGHTS_NAME)
                                 output_config_file = os.path.join(temp_reinforced_path, CONFIG_NAME)
 
