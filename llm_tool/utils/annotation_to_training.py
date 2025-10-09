@@ -602,6 +602,11 @@ class AnnotationToTrainingConverter:
         Create a single-label JSONL dataset for ONE annotation key only.
         This is used for multi-class training where each key gets its own model.
 
+        IMPORTANT: Samples without a valid value for the specified annotation_key
+        are EXCLUDED from the output (not converted to artificial NO_{key} class).
+        Only samples with actual values (including the string 'null' which is valid)
+        are included in the training dataset.
+
         Args:
             csv_path: Path to annotated CSV
             output_path: Path for output JSONL file
@@ -723,44 +728,47 @@ class AnnotationToTrainingConverter:
                     continue
 
                 # Extract value for THIS KEY ONLY
-                # CRITICAL FIX: Include ALL samples, even without this key
-                # For multiclass: samples without key → negative class "NO_{key}"
+                # For multiclass: SKIP samples without valid value (don't create artificial NO_{key} class)
                 value = None
                 if annotation_key in annotation:
                     value = annotation[annotation_key]
 
                 # Check if value is present and valid
-                # CRITICAL FIX: 'null' is a valid class value, not an empty value!
-                # Only treat None and empty string as invalid
+                # CRITICAL: 'null' (string) is a valid class value, not an empty value!
+                # Only treat None (Python None) and empty string as invalid
                 has_valid_value = False
                 if value is not None and value != '':
                     has_valid_value = True
 
-                # Create label based on strategy
-                # CRITICAL FIX: For single-key datasets (multiclass), store as STRING not list
-                # CRITICAL FIX: Preserve 'null' as a valid class value
+                # SKIP samples without valid value for this key
+                # For multiclass training, we only want samples with actual labels
                 if not has_valid_value:
-                    # No value for this key → negative class
-                    if label_strategy == "key_value":
-                        label_string = f"NO_{annotation_key}"
-                    else:
-                        label_string = "NO_VALUE"
-                elif isinstance(value, list):
+                    filtered_items.append({
+                        'index': idx,
+                        'reason': 'null_value_for_key',
+                        'key': annotation_key
+                    })
+                    continue
+
+                # Process valid values
+                # CRITICAL: Preserve 'null' (string) as a valid class value
+                if isinstance(value, list):
                     # For lists, keep 'null' as a valid value
                     clean_values = [v for v in value if v is not None and v != '']
                     if not clean_values:
-                        # Empty list → negative class
-                        if label_strategy == "key_value":
-                            label_string = f"NO_{annotation_key}"
-                        else:
-                            label_string = "NO_VALUE"
+                        # Empty list → skip this sample
+                        filtered_items.append({
+                            'index': idx,
+                            'reason': 'empty_list_value',
+                            'key': annotation_key
+                        })
+                        continue
+                    # Take first value and convert to string for multiclass
+                    first_value = clean_values[0]
+                    if label_strategy == "key_value":
+                        label_string = f"{annotation_key}_{first_value}"
                     else:
-                        # Take first value and convert to string for multiclass
-                        first_value = clean_values[0]
-                        if label_strategy == "key_value":
-                            label_string = f"{annotation_key}_{first_value}"
-                        else:
-                            label_string = str(first_value)
+                        label_string = str(first_value)
                 else:
                     # Handle string values including 'null' as a valid class
                     if label_strategy == "key_value":

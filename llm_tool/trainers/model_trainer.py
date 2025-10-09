@@ -871,12 +871,14 @@ class ModelTrainer:
                 logger=self.logger
             )
 
-        # Create output directory
+        # Determine output directory path (used for save_model_as parameter)
+        # IMPORTANT: Do NOT create this directory here - it's a placeholder.
+        # The actual model directory is created by bert_base.py when saving, using session_id.
         if output_dir:
             output_dir = Path(output_dir)
         else:
             output_dir = Path(self.config.output_dir) / model_name.replace('/', '_')
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # output_dir.mkdir(parents=True, exist_ok=True)  # Removed - created on-demand by bert_base.py
 
         # Train model
         try:
@@ -2023,8 +2025,9 @@ class ModelTrainer:
         # bert_base.py will automatically organize into:
         # Benchmark: logs/training_arena/{session_id}/training_metrics/benchmark/{category}/{language}/{model}/
         # Normal: logs/training_arena/{session_id}/training_metrics/normal_training/{category}/{language}/{model}/
-        metrics_dir = output_dir / 'metrics'
-        metrics_dir.mkdir(exist_ok=True)
+        # NOTE: metrics_dir is not needed here - bert_base.py handles all metrics directory creation
+        # metrics_dir = output_dir / 'metrics'  # Obsolete - removed
+        # metrics_dir.mkdir(exist_ok=True)  # Obsolete - removed
 
         # Train with enhanced tracking
         # Extract language info from samples if available

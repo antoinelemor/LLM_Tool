@@ -804,6 +804,8 @@ class MultiLabelTrainer:
             model_info: Model information with metrics
             output_path: Path to save metrics
         """
+        # NOTE: Only create directory if needed - metrics are primarily saved by bert_base.py
+        # This method is for additional CSV reports only
         os.makedirs(output_path, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -1687,7 +1689,13 @@ class MultiLabelTrainer:
                 'training_config': model_info.training_config
             }
 
-        os.makedirs(self.config.output_dir, exist_ok=True)
+        # IMPORTANT: Do NOT create output_dir here to avoid creating placeholder directories.
+        # Models are saved by bert_base.py using session_id structure.
+        # Only create directory if we actually need to save the summary.
+        summary_dir = os.path.dirname(summary_path)
+        if summary_dir:
+            os.makedirs(summary_dir, exist_ok=True)
+
         with open(summary_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 

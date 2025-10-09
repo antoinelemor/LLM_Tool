@@ -1172,7 +1172,9 @@ class BertBase(BertABC):
                 model_category_dir = os.path.join(model_category_dir, model_clean)
 
         os.makedirs(category_dir, exist_ok=True)
-        os.makedirs(model_category_dir, exist_ok=True)
+        # IMPORTANT: Do NOT create model_category_dir here to avoid creating
+        # placeholder directories. It will be created only when actually saving a model.
+        # os.makedirs(model_category_dir, exist_ok=True)  # Removed - created on-demand
 
         # CSV files are now general (contain all models for this category)
         training_metrics_csv = os.path.join(category_dir, "training.csv")
@@ -2129,6 +2131,9 @@ class BertBase(BertABC):
             if save_model_as is not None and best_model_path is not None:
                 # Use session-organized directory structure
                 final_path = os.path.join(model_category_dir, save_model_as)
+
+                # Ensure parent directory exists before moving
+                os.makedirs(model_category_dir, exist_ok=True)
 
                 # Remove existing final path if any
                 if os.path.exists(final_path):

@@ -73,6 +73,7 @@ try:
     from rich.columns import Columns
     from rich.syntax import Syntax
     from rich.markdown import Markdown
+    from rich.align import Align
     from rich import print as rprint
     from rich import box
     console = Console()
