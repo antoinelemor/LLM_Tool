@@ -1810,7 +1810,7 @@ class AdvancedCLI:
                 ("2", "🏭 The Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models"),
                 ("3", "🎮 Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
                 ("4", "🤖 BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
-                ("5", "🔍 Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement"),
+                ("5", "🔍 Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement [⚠️ IN DEVELOPMENT]"),
                 ("6", "💾 Profile Manager - Save & Load Configurations"),
                 ("7", "📚 Documentation & Help"),
                 ("0", "❌ Exit")
@@ -1849,7 +1849,7 @@ class AdvancedCLI:
             print("2. The Annotator Factory - LLM Annotations → Training Data → BERT Models")
             print("3. Training Arena - Train 50+ Models (Multi-Label & Benchmarking)")
             print("4. BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU)")
-            print("5. Validation Lab - Quality Scoring & Sampling")
+            print("5. Validation Lab - Quality Scoring & Sampling [⚠️ IN DEVELOPMENT]")
             print("6. Profile Manager - Save & Load Configurations")
             print("7. Documentation & Help")
             print("0. Exit")
@@ -16245,6 +16245,30 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             }
         )
 
+        # ⚠️ DEVELOPMENT WARNING
+        if HAS_RICH and self.console:
+            warning_panel = Panel(
+                Align.center(
+                    "[bold yellow]⚠️  UNDER DEVELOPMENT ⚠️[/bold yellow]\n\n"
+                    "[yellow]This mode is currently in active development and is NOT complete.[/yellow]\n"
+                    "[dim]Some features may not work as expected or may be missing entirely.[/dim]\n"
+                    "[dim]Use at your own risk for testing purposes only.[/dim]",
+                    vertical="middle"
+                ),
+                title="[bold red]Development Status[/bold red]",
+                border_style="red",
+                box=box.DOUBLE,
+                padding=(1, 2),
+            )
+            self.console.print()
+            self.console.print(Align.center(warning_panel))
+            self.console.print()
+
+            # Ask user if they want to continue
+            if not Confirm.ask("[yellow]Do you want to continue anyway?[/yellow]", default=False):
+                self.console.print("[dim]Returning to main menu...[/dim]")
+                return
+
         if HAS_RICH and self.console:
             # Create mode menu
             self.console.print("\n[bold cyan]🎯 Validation Lab Options[/bold cyan]\n")
@@ -16359,7 +16383,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             print("\n=== Validation Lab ===")
             print("Quality control and validation\n")
 
-            annotations_path = input("Annotations file path: ").strip()
+            # ⚠️ DEVELOPMENT WARNING
+            print("\n" + "="*60)
+            print("⚠️  UNDER DEVELOPMENT - NOT COMPLETE ⚠️")
+            print("="*60)
+            print("This mode is currently in active development.")
+            print("Some features may not work as expected or may be missing.")
+            print("Use at your own risk for testing purposes only.")
+            print("="*60 + "\n")
+
+            continue_choice = input("Do you want to continue anyway? (y/N): ").strip().lower()
+            if continue_choice not in ['y', 'yes']:
+                print("Returning to main menu...")
+                return
+
+            annotations_path = input("\nAnnotations file path: ").strip()
             sample_size = int(input("Sample size (default 100): ").strip() or "100")
 
             print("\nRunning validation...")
