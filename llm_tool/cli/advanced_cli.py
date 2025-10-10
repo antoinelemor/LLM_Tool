@@ -1668,12 +1668,16 @@ class AdvancedCLI:
         candidates: List[Path] = []
         metadata_dir = session_dir / "metadata"
         if metadata_dir.exists():
-            candidates.extend(metadata_dir.glob("*_metadata_*.json"))
+            candidates.extend(
+                path for path in metadata_dir.rglob("*_metadata_*.json") if path.is_file()
+            )
 
         legacy_dir = getattr(self.settings.paths, "data_dir", Path("data")) / "annotations"
         if legacy_dir.exists():
             pattern = f"*{session_id}*_metadata_*.json"
-            candidates.extend(legacy_dir.glob(pattern))
+            candidates.extend(
+                path for path in legacy_dir.rglob(pattern) if path.is_file()
+            )
 
         unique_candidates = {path.resolve(): path for path in candidates}
         sorted_candidates = sorted(

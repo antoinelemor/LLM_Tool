@@ -68,6 +68,49 @@ from llm_tool.utils.session_summary import collect_summaries_for_mode, read_summ
 # Constants
 HAS_RICH = True
 
+
+def _normalize_column_choice(
+    user_input: Optional[str],
+    all_columns: List[str],
+    candidate_columns: Optional[List[str]] = None,
+) -> Optional[str]:
+    """
+    Normalize a user-supplied column selection.
+
+    Accepts direct column names (case-sensitive or insensitive) as well as numeric
+    selections that refer to displayed indices. Returns the resolved column name
+    or ``None`` when the input cannot be mapped.
+    """
+    if user_input is None:
+        return None
+
+    choice = str(user_input).strip()
+    if not choice:
+        return None
+
+    if choice in all_columns:
+        return choice
+
+    lower_map = {col.lower(): col for col in all_columns}
+    lowered = choice.lower()
+    if lowered in lower_map:
+        return lower_map[lowered]
+
+    if choice.isdigit():
+        idx = int(choice)
+        one_based_idx = idx - 1
+
+        if candidate_columns and 0 <= one_based_idx < len(candidate_columns):
+            return candidate_columns[one_based_idx]
+
+        if 0 <= one_based_idx < len(all_columns):
+            return all_columns[one_based_idx]
+
+        if 0 <= idx < len(all_columns):
+            return all_columns[idx]
+
+    return None
+
 logger = logging.getLogger(__name__)
 
 
@@ -1245,6 +1288,8 @@ def _training_studio_intelligent_dataset_selector(
     column_info = self._detect_text_columns(data_path)
     all_columns = column_info.get('all_columns', analysis.get('all_columns', []))
 
+    candidate_names = [candidate['name'] for candidate in column_info.get('text_candidates', [])]
+
     if column_info.get('text_candidates'):
         self.console.print("[dim]Detected text columns (sorted by confidence):[/dim]")
 
@@ -1276,20 +1321,34 @@ def _training_studio_intelligent_dataset_selector(
             )
 
         self.console.print(col_table)
-        self.console.print(f"\n[dim]All columns ({len(all_columns)}): {', '.join(all_columns)}[/dim]")
+        if all_columns:
+            self.console.print(f"\n[dim]All columns ({len(all_columns)}): {', '.join(all_columns)}[/dim]")
 
-        default_text_col = column_info['text_candidates'][0]['name']
+        default_text_col = candidate_names[0]
     else:
         self.console.print("[yellow]No text columns auto-detected[/yellow]")
-        self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
+        if all_columns:
+            self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
         default_text_col = "text"
 
     # Ask for text column with validation
     while True:
-        text_column = Prompt.ask("\n[bold yellow]Enter column name[/bold yellow] (or choose from above)", default=default_text_col)
-        if text_column in all_columns:
+        raw_choice = Prompt.ask(
+            "\n[bold yellow]Enter column name[/bold yellow] (or choose from above)",
+            default=default_text_col
+        )
+        normalized_choice = _normalize_column_choice(raw_choice, all_columns, candidate_names)
+
+        if normalized_choice:
+            text_column = normalized_choice
             break
-        self.console.print(f"[red]✗ Column '{text_column}' not found in dataset![/red]")
+
+        if not all_columns:
+            text_column = raw_choice.strip()
+            break
+
+        self.console.print(f"[red]✗ Column selection '{raw_choice}' could not be resolved.[/red]")
+        self.console.print("[dim]Enter the column name or the number shown in the table.[/dim]")
         self.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
     # Step 4b: CRITICAL - Text Length Analysis (MUST be done AFTER text column selection)

@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
@@ -22,6 +22,48 @@ from llm_tool.utils.session_summary import SessionSummary, merge_summary, read_s
 
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S"
+
+
+def _normalize_column_choice(
+    user_input: Optional[str],
+    all_columns: List[str],
+    candidate_columns: Optional[List[str]] = None,
+) -> Optional[str]:
+    """
+    Normalize a user-supplied column selection across the annotation workflows.
+
+    Supports direct column names (case-sensitive or insensitive) and numeric
+    indices that map to displayed column lists.
+    """
+    if user_input is None:
+        return None
+
+    choice = str(user_input).strip()
+    if not choice:
+        return None
+
+    if choice in all_columns:
+        return choice
+
+    lower_map = {col.lower(): col for col in all_columns}
+    lowered = choice.lower()
+    if lowered in lower_map:
+        return lower_map[lowered]
+
+    if choice.isdigit():
+        idx = int(choice)
+        one_based_idx = idx - 1
+
+        if candidate_columns and 0 <= one_based_idx < len(candidate_columns):
+            return candidate_columns[one_based_idx]
+
+        if 0 <= one_based_idx < len(all_columns):
+            return all_columns[one_based_idx]
+
+        if 0 <= idx < len(all_columns):
+            return all_columns[idx]
+
+    return None
 
 
 class AnnotationMode(Enum):
@@ -303,7 +345,10 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # Detect text columns
     column_info = cli._detect_text_columns(data_path)
 
-    if column_info['text_candidates']:
+    candidate_names = [candidate['name'] for candidate in column_info.get('text_candidates', [])]
+    all_columns = column_info.get('all_columns', [])
+
+    if candidate_names:
         cli.console.print("\n[dim]Detected text columns (sorted by confidence):[/dim]")
 
         # Create table for candidates
@@ -335,20 +380,36 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         cli.console.print(col_table)
 
         # Show all columns option
-        cli.console.print(f"\n[dim]All columns ({len(column_info['all_columns'])}): {', '.join(column_info['all_columns'])}[/dim]")
+        if all_columns:
+            cli.console.print(f"\n[dim]All columns ({len(all_columns)}): {', '.join(all_columns)}[/dim]")
 
-        # Ask user to select
-        default_col = column_info['text_candidates'][0]['name'] if column_info['text_candidates'] else "text"
-        text_column = Prompt.ask(
-            "\n[bold yellow]Enter column name[/bold yellow] (or choose from above)",
-            default=default_col
-        )
+        default_col = candidate_names[0]
+        prompt_message = "\n[bold yellow]Enter column name[/bold yellow] (or choose from above)"
     else:
         # No candidates detected, show all columns
-        if column_info['all_columns']:
+        if all_columns:
             cli.console.print(f"\n[yellow]Could not auto-detect text columns.[/yellow]")
-            cli.console.print(f"[dim]Available columns: {', '.join(column_info['all_columns'])}[/dim]")
-        text_column = Prompt.ask("Text column name", default="text")
+            cli.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
+        default_col = "text"
+        prompt_message = "Text column name"
+
+    while True:
+        raw_choice = Prompt.ask(prompt_message, default=default_col)
+        normalized = _normalize_column_choice(raw_choice, all_columns, candidate_names or all_columns)
+
+        if normalized:
+            text_column = normalized
+            break
+
+        if not all_columns:
+            text_column = raw_choice.strip()
+            break
+
+        cli.console.print(f"[red]✗ Column selection '{raw_choice}' could not be resolved.[/red]")
+        if candidate_names:
+            cli.console.print("[dim]Enter the column name or the number shown in the table.[/dim]")
+        if all_columns:
+            cli.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
     # Step 2b: ID Column Selection (MODERNIZED)
     # Load dataframe to detect ID candidates
@@ -1598,7 +1659,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     import pandas as pd
     df_sample = pd.read_csv(data_path, nrows=100) if data_path.suffix == '.csv' else pd.read_excel(data_path, nrows=100)
 
-    if column_info['text_candidates']:
+    candidate_names = [candidate['name'] for candidate in column_info.get('text_candidates', [])]
+    all_columns = column_info.get('all_columns', [])
+
+    if candidate_names:
         cli.console.print("[dim]Detected text columns (sorted by confidence):[/dim]")
 
         # Create table for text candidates ONLY
@@ -1630,20 +1694,36 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         cli.console.print(col_table)
 
         # Show all columns list
-        cli.console.print(f"\n[dim]All columns ({len(column_info['all_columns'])}): {', '.join(column_info['all_columns'])}[/dim]")
+        if all_columns:
+            cli.console.print(f"\n[dim]All columns ({len(all_columns)}): {', '.join(all_columns)}[/dim]")
 
-        # Ask user to select
-        default_col = column_info['text_candidates'][0]['name'] if column_info['text_candidates'] else "text"
-        text_column = Prompt.ask(
-            "\n[bold yellow]Enter column name[/bold yellow] (or choose from above)",
-            default=default_col
-        )
+        default_col = candidate_names[0]
+        prompt_message = "\n[bold yellow]Enter column name[/bold yellow] (or choose from above)"
     else:
         # No candidates detected, show all columns
-        if column_info['all_columns']:
+        if all_columns:
             cli.console.print(f"\n[yellow]Could not auto-detect text columns.[/yellow]")
-            cli.console.print(f"[dim]Available columns: {', '.join(column_info['all_columns'])}[/dim]")
-        text_column = Prompt.ask("Text column name", default="text")
+            cli.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
+        default_col = "text"
+        prompt_message = "Text column name"
+
+    while True:
+        raw_choice = Prompt.ask(prompt_message, default=default_col)
+        normalized = _normalize_column_choice(raw_choice, all_columns, candidate_names or all_columns)
+
+        if normalized:
+            text_column = normalized
+            break
+
+        if not all_columns:
+            text_column = raw_choice.strip()
+            break
+
+        cli.console.print(f"[red]✗ Column selection '{raw_choice}' could not be resolved.[/red]")
+        if candidate_names:
+            cli.console.print("[dim]Enter the column name or the number shown in the table.[/dim]")
+        if all_columns:
+            cli.console.print(f"[dim]Available columns: {', '.join(all_columns)}[/dim]")
 
     # Step 1.2b: ID Column Selection (MODERNIZED with new system)
     identifier_column = DataDetector.display_and_select_id_column(

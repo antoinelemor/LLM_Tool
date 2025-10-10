@@ -55,7 +55,7 @@ from __future__ import annotations
 import os
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Callable, Set
 from datetime import datetime
@@ -81,6 +81,7 @@ from sqlalchemy import create_engine, inspect, text
 # Package imports
 from llm_tool.trainers.parallel_inference import parallel_predict
 from llm_tool.cli.advanced_cli import LanguageNormalizer
+from llm_tool.utils.data_detector import DataDetector
 from llm_tool.utils.system_resources import detect_resources
 from llm_tool.utils.language_detector import LanguageDetector
 from llm_tool.utils.annotation_session_manager import AnnotationStudioSessionManager
@@ -113,7 +114,7 @@ class BERTAnnotationStudio:
         self.models_dir = Path(getattr(self.settings.paths, "models_dir", "models"))
         self.data_dir = Path(getattr(self.settings.paths, "data_dir", "data"))
         self._language_assignments: Optional[pd.Series] = None
-        self._total_steps: int = 10
+        self._total_steps: int = 9
         self._is_factory_context: bool = False
         self._annotated_row_mask: Optional[pd.Series] = None
         self._factory_annotated_count: int = 0
@@ -441,7 +442,6 @@ class BERTAnnotationStudio:
         df: Optional[pd.DataFrame] = None
         column_mapping: Optional[Dict[str, Any]] = None
         language_info: Optional[Dict[str, Any]] = None
-        correction_config: Optional[Dict[str, Any]] = None
         annotation_config: Optional[Dict[str, Any]] = None
         export_config: Optional[Dict[str, Any]] = None
         execution_summary: Optional[Dict[str, Any]] = None
@@ -590,26 +590,10 @@ class BERTAnnotationStudio:
                 )
 
             # ------------------------- STEP 7 -------------------------
-            self._render_step_header(7, "Text Correction", "✏️ Optional preprocessing applied before inference.")
-            step_key = "text_correction"
-            saved_step = self.session_manager.get_step_data(step_key)
-            reuse = self._determine_step_reuse(step_key, 7, saved_step)
-            if reuse and saved_step:
-                correction_config = saved_step
-            else:
-                self.session_manager.mark_step_started(step_key)
-                correction_config = self._configure_correction()
-                self.session_manager.save_step(
-                    step_key,
-                    correction_config or {},
-                    summary="Text correction configured",
-                )
-
-            # ------------------------- STEP 8 -------------------------
-            self._render_step_header(8, "Annotation Options", "⚡ Parallelism, batching strategy, and dataset coverage.")
+            self._render_step_header(7, "Annotation Options", "⚡ Parallelism, batching strategy, and dataset coverage.")
             step_key = "annotation_options"
             saved_step = self.session_manager.get_step_data(step_key)
-            reuse = self._determine_step_reuse(step_key, 8, saved_step)
+            reuse = self._determine_step_reuse(step_key, 7, saved_step)
             if reuse and saved_step:
                 annotation_config = saved_step
             else:
@@ -621,11 +605,11 @@ class BERTAnnotationStudio:
                     summary=f"Parallel: {'yes' if annotation_config.get('parallel') else 'no'}",
                 )
 
-            # ------------------------- STEP 9 -------------------------
-            self._render_step_header(9, "Export Options", "💾 Choose what gets written to disk.")
+            # ------------------------- STEP 8 -------------------------
+            self._render_step_header(8, "Export Options", "💾 Choose what gets written to disk.")
             step_key = "export_options"
             saved_step = self.session_manager.get_step_data(step_key)
-            reuse = self._determine_step_reuse(step_key, 9, saved_step)
+            reuse = self._determine_step_reuse(step_key, 8, saved_step)
             if reuse and saved_step:
                 export_config = saved_step
             else:
@@ -633,11 +617,11 @@ class BERTAnnotationStudio:
                 export_config = self._configure_export_options()
                 self.session_manager.save_step(step_key, export_config, summary="Export destinations configured")
 
-            # ------------------------- STEP 10 ------------------------
-            self._render_step_header(10, "Review & Launch", "🚀 Final checks before the annotation run.")
+            # ------------------------- STEP 9 -------------------------
+            self._render_step_header(9, "Review & Launch", "🚀 Final checks before the annotation run.")
             step_key = "review_launch"
             saved_step = self.session_manager.get_step_data(step_key)
-            reuse = self._determine_step_reuse(step_key, 10, saved_step)
+            reuse = self._determine_step_reuse(step_key, 9, saved_step)
             if reuse and saved_step and saved_step.get("executed"):
                 execution_summary = saved_step
                 if self.console:
@@ -650,7 +634,6 @@ class BERTAnnotationStudio:
                     df,
                     column_mapping,
                     language_info,
-                    correction_config,
                     annotation_config,
                     export_config,
                 )
@@ -1632,6 +1615,97 @@ class BERTAnnotationStudio:
         self.console.print("[yellow]⚠ Unable to load tokenizer for token analysis.[/yellow]")
         return None
 
+    def _analyze_languages(
+        self,
+        df: pd.DataFrame,
+        text_column: str,
+        sample_size: int = 200,
+    ) -> Dict[str, Any]:
+        """Replicate Training Arena language + text statistics analysis."""
+        from llm_tool.utils.language_detector import LanguageDetector
+
+        results: Dict[str, Any] = {
+            'languages_detected': {},
+            'text_length_stats': {
+                'avg_length': 0,
+                'max_length': 0,
+                'min_length': 0,
+                'median_length': 0,
+            },
+            'long_document_percentage': 0,
+            'user_prefers_long_models': False,
+        }
+
+        if text_column not in df.columns:
+            return results
+
+        text_samples = df[text_column].dropna()
+        if text_samples.empty:
+            return results
+
+        sample_texts = text_samples.head(sample_size).tolist()
+        detector = LanguageDetector()
+        language_counts = Counter()
+
+        for text in sample_texts:
+            if isinstance(text, str) and text.strip():
+                detected_lang = detector.detect(text)
+                if isinstance(detected_lang, dict):
+                    lang = detected_lang.get('language')
+                    if lang:
+                        language_counts[lang] += 1
+                elif isinstance(detected_lang, str):
+                    language_counts[detected_lang] += 1
+
+        results['languages_detected'] = dict(language_counts)
+
+        text_lengths = [len(str(text)) for text in text_samples if pd.notna(text)]
+        if text_lengths:
+            import statistics  # pylint: disable=import-outside-toplevel
+
+            avg_length = sum(text_lengths) / len(text_lengths)
+            max_length = max(text_lengths)
+            min_length = min(text_lengths)
+            median_length = statistics.median(text_lengths)
+            results['text_length_stats'] = {
+                'avg_length': avg_length,
+                'max_length': max_length,
+                'min_length': min_length,
+                'median_length': median_length,
+            }
+
+            long_docs = sum(1 for length in text_lengths if length > 2048)
+            results['long_document_percentage'] = (long_docs / len(text_lengths)) * 100
+            results['user_prefers_long_models'] = results['long_document_percentage'] > 20
+
+        return results
+
+    def _present_language_analysis(self, analysis_results: Dict[str, Any]) -> None:
+        """Display language detection results consistently with Training Arena."""
+        languages_detected = analysis_results.get('languages_detected', {})
+        text_stats = analysis_results.get('text_length_stats', {})
+
+        if languages_detected:
+            self.console.print("\n[bold]🌍 Languages Detected:[/bold]")
+            total = sum(languages_detected.values())
+            for lang, count in sorted(languages_detected.items(), key=lambda item: -item[1]):
+                share = (count / total * 100) if total else 0
+                self.console.print(f"  • {lang.upper()}: {count} samples ({share:.1f}%)")
+        else:
+            self.console.print("\n[yellow]⚠ Unable to detect languages automatically from the sample.[/yellow]")
+
+        if text_stats:
+            self.console.print("\n[bold]📊 Text Statistics:[/bold]")
+            self.console.print(f"  • Average length: {text_stats.get('avg_length', 0):.0f} characters")
+            self.console.print(f"  • Median length: {text_stats.get('median_length', 0):.0f} characters")
+            self.console.print(f"  • Max length: {text_stats.get('max_length', 0):.0f} characters")
+
+        long_pct = analysis_results.get('long_document_percentage', 0)
+        if long_pct:
+            self.console.print(f"  • Long documents (>512 tokens): {long_pct:.1f}%")
+            if analysis_results.get('user_prefers_long_models'):
+                self.console.print("[yellow]💡 Consider long-context models (Longformer, BigBird, etc.).[/yellow]")
+
     def _detect_factory_context(self, data_source: Dict[str, Any], df: pd.DataFrame) -> bool:
         """Return True when running inside an Annotator Factory workflow."""
         if not isinstance(data_source, dict):
@@ -2432,62 +2506,124 @@ class BERTAnnotationStudio:
             self.console.print(f"[green]✓ Loaded {len(df):,} rows, {len(df.columns)} columns[/green]\n")
             self._update_factory_context(data_source, df)
 
-            # Intelligent column detection
-            text_candidates: List[Dict[str, Any]] = []
-            id_candidates: List[Dict[str, Any]] = []
+            analysis: Dict[str, Any] = {}
+            if data_source['type'] == 'file':
+                try:
+                    analysis = DataDetector.analyze_file_intelligently(Path(file_path))
+                except Exception as exc:  # pragma: no cover - defensive
+                    self.logger.debug("Failed to analyse dataset structure for suggestions: %s", exc)
 
-            for col_name in df.columns:
-                series = df[col_name]
-                dtype = series.dtype
-
-                if dtype == 'object':
-                    non_null = series.dropna()
-                    if len(non_null) > 0:
-                        avg_length = non_null.astype(str).str.len().mean()
-                        if avg_length > 20:
-                            text_candidates.append({'name': col_name, 'avg_length': avg_length})
-
-                # Detect potential ID columns (high uniqueness)
-                unique_ratio = series.nunique(dropna=True) / max(len(series.dropna()), 1)
-                if unique_ratio > 0.98 and dtype in ('object', 'int64', 'int32', 'int16', 'uint64', 'uint32'):
-                    id_candidates.append({'name': col_name, 'dtype': dtype, 'unique_ratio': unique_ratio})
-
-            text_candidates.sort(key=lambda x: -x['avg_length'])
-
-            col_table = Table(title="Available Columns", box=box.ROUNDED, show_lines=False)
-            col_table.add_column("#", style="cyan", width=4)
-            col_table.add_column("Column Name", style="green", width=34)
-            col_table.add_column("Type", style="yellow", width=14)
-            col_table.add_column("Missing %", style="magenta", width=10, justify="right")
-            col_table.add_column("Unique", style="cyan", width=10, justify="right")
-
+            column_names = list(df.columns)
             total_rows = len(df)
-            for idx, col_name in enumerate(df.columns, 1):
-                dtype = df[col_name].dtype
-                missing_pct = (df[col_name].isna().sum() / total_rows) * 100 if total_rows else 0
-                unique_count = df[col_name].nunique(dropna=True)
-                col_table.add_row(
+
+            overview_table = Table(
+                title=f"Dataset Overview ({len(column_names)} columns, {total_rows:,} rows)",
+                box=box.ROUNDED,
+                show_lines=False,
+            )
+            overview_table.add_column("#", style="cyan", width=4)
+            overview_table.add_column("Column Name", style="green", width=30)
+            overview_table.add_column("Type", style="yellow", width=12)
+            overview_table.add_column("Missing %", style="magenta", justify="right", width=10)
+            overview_table.add_column("Unique", style="cyan", justify="right", width=10)
+            overview_table.add_column("Sample Values", style="white", width=40, overflow="fold")
+
+            for idx, col_name in enumerate(column_names, 1):
+                series = df[col_name]
+                dtype = str(series.dtype)
+                missing_pct = (series.isna().sum() / total_rows * 100) if total_rows else 0.0
+                unique_count = series.nunique(dropna=True)
+                samples = series.dropna().astype(str).head(3).tolist()
+                sample_preview = ", ".join(
+                    f"{sample[:30]}…" if len(sample) > 30 else sample for sample in samples
+                ) or "[empty]"
+                overview_table.add_row(
                     str(idx),
                     col_name,
-                    str(dtype),
+                    dtype,
                     f"{missing_pct:.1f}%",
-                    f"{unique_count:,}"
+                    f"{unique_count:,}",
+                    sample_preview,
                 )
 
-            self._print_table(col_table)
+            self._print_table(overview_table)
+            self.console.print("\n[bold]💡 Helpful Suggestions[/bold] [dim](auto-detected candidates)[/dim]")
+            self.console.print("[dim]You can pick any column from the overview above; these are just shortcuts.[/dim]\n")
 
-            self.console.print("\n[bold cyan]Text Column:[/bold cyan]")
+            text_candidates = analysis.get('text_column_candidates', []) if analysis else []
+            if not text_candidates:
+                for col_name in column_names:
+                    series = df[col_name]
+                    if series.dtype == 'object':
+                        non_null = series.dropna()
+                        if not non_null.empty:
+                            avg_length = non_null.astype(str).str.len().mean()
+                            if avg_length >= 20:
+                                text_candidates.append({'name': col_name, 'avg_length': avg_length})
+                text_candidates.sort(key=lambda item: -item['avg_length'])
+
+            id_candidates: List[Dict[str, Any]] = []
+            for col_name in column_names:
+                series = df[col_name]
+                if series.isna().any():
+                    continue
+                unique_ratio = series.nunique(dropna=False) / max(len(series), 1)
+                if unique_ratio >= 0.98:
+                    id_candidates.append({
+                        'name': col_name,
+                        'unique_ratio': unique_ratio,
+                        'dtype': str(series.dtype),
+                    })
+            id_candidates.sort(key=lambda item: -item['unique_ratio'])
+
+            suggestions_table = Table(box=box.SIMPLE)
+            suggestions_table.add_column("Purpose", style="yellow")
+            suggestions_table.add_column("Top Suggestion", style="green")
+            suggestions_table.add_column("Why?", style="white", overflow="fold")
+
+            text_column_default = None
+            if text_candidates:
+                top_text = text_candidates[0]
+                text_column_default = top_text['name']
+                suggestions_table.add_row(
+                    "📝 Text column",
+                    top_text['name'],
+                    f"Avg length ≈ {top_text.get('avg_length', 0):.0f} characters",
+                )
+            else:
+                suggestions_table.add_row("📝 Text column", "—", "No strong text-like column detected")
+
+            if id_candidates:
+                top_id = id_candidates[0]
+                suggestions_table.add_row(
+                    "🔑 ID column",
+                    top_id['name'],
+                    f"{top_id['unique_ratio']*100:.1f}% unique values ({top_id['dtype']})",
+                )
+            else:
+                suggestions_table.add_row(
+                    "🔑 ID column",
+                    "—",
+                    "No fully unique column found (you can create one next)",
+                )
+
+            self._print_table(suggestions_table)
+
+            self.console.print("[bold cyan]Text Column[/bold cyan]")
             self.console.print("[dim]Pick the column that stores the raw text to annotate.[/dim]")
-            self.console.print("[dim]Tip: go for the column that contains full sentences or messages rather than IDs or metadata.[/dim]\n")
+            self.console.print("[dim]Prefer long-form sentences/messages rather than IDs or metadata.[/dim]\n")
 
-            detected_text_idx = df.columns.tolist().index(text_candidates[0]['name']) + 1 if text_candidates else 1
+            if text_column_default and text_column_default in column_names:
+                default_text_choice = str(column_names.index(text_column_default) + 1)
+            else:
+                default_text_choice = "1"
 
             text_col_idx = Prompt.ask(
                 "[cyan]Select TEXT column[/cyan]",
-                choices=[str(i) for i in range(1, len(df.columns) + 1)],
-                default=str(detected_text_idx)
+                choices=[str(i) for i in range(1, len(column_names) + 1)],
+                default=default_text_choice
             )
-            text_column = df.columns[int(text_col_idx) - 1]
+            text_column = column_names[int(text_col_idx) - 1]
 
             id_column = None
             if id_candidates:
@@ -2500,15 +2636,14 @@ class BERTAnnotationStudio:
                     id_table.add_row(
                         str(idx),
                         candidate['name'],
-                        str(candidate['dtype']),
+                        candidate['dtype'],
                         f"{candidate['unique_ratio'] * 100:.1f}%"
                     )
                 id_table.add_row("0", "[dim]None[/dim]", "", "")
 
-                self.console.print("\n[bold magenta]Identifier Column:[/bold magenta]")
-                self.console.print("[dim]An ID column keeps track of each row after annotation.[/dim]")
-                self.console.print("[dim]Choose a column with UNIQUE values (customer_id, tweet_id, ...).[/dim]")
-                self.console.print("[dim]If none match, you can generate one in the next step.[/dim]\n")
+                self.console.print("\n[bold magenta]Identifier Column[/bold magenta]")
+                self.console.print("[dim]A stable ID keeps predictions aligned with the original dataset.[/dim]")
+                self.console.print("[dim]Choose a column with UNIQUE values or request an auto-generated one.[/dim]\n")
                 self._print_table(id_table)
 
                 id_choice = Prompt.ask(
@@ -2519,8 +2654,8 @@ class BERTAnnotationStudio:
                 if id_choice != "0":
                     id_column = id_candidates[int(id_choice) - 1]['name']
             else:
-                self.console.print("\n[bold magenta]Identifier Column:[/bold magenta]")
-                self.console.print("[dim]No highly unique column detected.[/dim]")
+                self.console.print("\n[bold magenta]Identifier Column[/bold magenta]")
+                self.console.print("[dim]No highly unique column detected automatically.[/dim]")
                 self.console.print("[dim]You will be able to craft a unique identifier (combine columns or auto-generate) in the next step.[/dim]\n")
 
             column_mapping = {'text': text_column, 'id': id_column, 'language': None}
@@ -2528,7 +2663,6 @@ class BERTAnnotationStudio:
             if id_column:
                 self.console.print(f"[green]✓ ID column: {id_column}[/green]")
 
-            # Use first selected model for text length stats
             if model_infos:
                 self._display_text_length_stats(df, text_column, model_infos[0])
             df, column_mapping = self._ensure_unique_identifier(df, column_mapping)
@@ -2552,7 +2686,6 @@ class BERTAnnotationStudio:
             display_label="language detection",
         )
         text_column = column_mapping['text']
-        sample_texts = working_df[text_column].dropna().head(100).astype(str).tolist()
         model_infos: List[Dict[str, Any]] = [
             entry["info"] if isinstance(entry, dict) and "info" in entry else entry
             for entry in (models_or_plan or [])
@@ -2563,89 +2696,83 @@ class BERTAnnotationStudio:
 
         candidate_language_columns: List[Dict[str, Any]] = []
         for col in working_df.columns:
-            if col == text_column or col == column_mapping.get('id'):
+            if col in {text_column, column_mapping.get('id')}:
                 continue
             if working_df[col].dtype != 'object':
                 continue
-
             counts = LanguageNormalizer.detect_languages_in_column(working_df, col)
             if counts:
                 candidate_language_columns.append({'name': col, 'counts': counts})
 
-        language_column = None
+        language_column: Optional[str] = None
+        detection_source = "detector"
         language_counts: Dict[str, int] = {}
-        detection_source = "auto"
 
         if candidate_language_columns:
             lang_table = Table(title="Detected Language Columns", box=box.ROUNDED)
             lang_table.add_column("#", style="cyan", width=4)
             lang_table.add_column("Column", style="green", width=30)
             lang_table.add_column("Languages", style="magenta", overflow="fold")
-
             for idx, candidate in enumerate(candidate_language_columns, 1):
-                languages_preview = ", ".join(
-                    f"{lang.upper()} ({count})" for lang, count in sorted(candidate['counts'].items(), key=lambda x: -x[1])
+                lang_summary = ", ".join(
+                    f"{lang.upper()} ({count})" for lang, count in candidate['counts'].items()
                 )
-                lang_table.add_row(str(idx), candidate['name'], languages_preview[:80] + ("…" if len(languages_preview) > 80 else ""))
-
-            self.console.print("[cyan]Potential language columns detected[/cyan]")
+                lang_table.add_row(str(idx), candidate['name'], lang_summary)
             self._print_table(lang_table)
 
             if Confirm.ask("Use one of these columns for language detection?", default=True):
                 lang_choice = Prompt.ask(
                     "\n[cyan]Select language column[/cyan]",
                     choices=[str(i) for i in range(1, len(candidate_language_columns) + 1)],
-                    default="1"
+                    default="1",
                 )
                 selected = candidate_language_columns[int(lang_choice) - 1]
                 language_column = selected['name']
                 language_counts = selected['counts']
                 detection_source = "column"
 
-        if language_column is None:
-            detected_languages = LanguageNormalizer.detect_dataset_languages(sample_texts)
-            if detected_languages:
-                for lang_set in detected_languages:
-                    for lang in lang_set:
-                        language_counts[lang] = language_counts.get(lang, 0) + 1
-            else:
-                language_counts['en'] = len(sample_texts)
-                self.console.print("[yellow]⚠ Unable to confidently detect language, defaulting to English[/yellow]")
+        analysis_results = self._analyze_languages(working_df, text_column)
+        if language_counts:
+            normalized_counts: Dict[str, int] = {}
+            for lang, count in language_counts.items():
+                norm = LanguageNormalizer.normalize_language(lang) or lang
+                normalized_counts[norm.lower()] = normalized_counts.get(norm.lower(), 0) + count
+            analysis_results['languages_detected'] = normalized_counts
+            language_counts = normalized_counts
+        else:
+            language_counts = analysis_results.get('languages_detected', {})
 
         if not language_counts:
-            self.console.print("[red]✗ Unable to infer language[/red]")
-            return None
+            language_counts = {'en': 1}
+            analysis_results['languages_detected'] = language_counts
+            self.console.print("[yellow]⚠ Unable to confidently detect language, defaulting to English.[/yellow]")
 
-        sorted_langs = sorted(language_counts.items(), key=lambda x: x[1], reverse=True)
-        primary_lang = sorted_langs[0][0].upper()
-        unique_languages = {lang.upper() for lang in language_counts.keys()}
+        self._present_language_analysis(analysis_results)
 
-        counts_table = Table(title="Language Breakdown", box=box.ROUNDED)
-        counts_table.add_column("Language", style="green", width=12)
-        counts_table.add_column("Samples", style="cyan", justify="right", width=10)
-        counts_table.add_column("Share", style="magenta", justify="right", width=10)
-        total_detected = sum(language_counts.values())
-        for lang, count in sorted_langs:
-            share = (count / total_detected * 100) if total_detected else 0
-            counts_table.add_row(lang.upper(), f"{count:,}", f"{share:.1f}%")
-        self._print_table(counts_table)
+        sorted_langs = sorted(language_counts.items(), key=lambda item: item[1], reverse=True)
+        primary_lang = LanguageNormalizer.normalize_language(sorted_langs[0][0]) or sorted_langs[0][0]
+        primary_lang = primary_lang.upper()
+        unique_languages = {
+            (LanguageNormalizer.normalize_language(lang) or lang).upper()
+            for lang in language_counts.keys()
+        }
 
-        if language_column is None:
-            column_mapping['language'] = '__detected_language__' if detection_source != "column" else None
-        else:
+        if detection_source == "column" and language_column:
             column_mapping['language'] = language_column
+            normalized_series = working_df[language_column].map(
+                lambda val: (LanguageNormalizer.normalize_language(val) or str(val).strip() or "UNKNOWN").upper()
+            )
+            if len(normalized_series) == len(df):
+                self._language_assignments = normalized_series
+        else:
+            column_mapping['language'] = '__detected_language__'
 
-        # Check compatibility for all models
         model_languages = {m['language'] for m in model_infos}
         has_multilingual = any(m.get('is_multilingual', False) for m in model_infos)
-
-        # Display model languages
         model_lang_str = ", ".join(sorted(model_languages))
         self.console.print(f"[cyan]Model language(s): {model_lang_str} • Primary data language: {primary_lang}[/cyan]")
 
-        # Check if at least one model is compatible
         is_compatible = has_multilingual or primary_lang in model_languages
-
         if is_compatible:
             self.console.print("[green]✓ At least one model is compatible with detected language[/green]")
         else:
@@ -2663,25 +2790,7 @@ class BERTAnnotationStudio:
             'languages': sorted(unique_languages),
             'counts': {lang.upper(): count for lang, count in language_counts.items()},
             'language_column': language_column,
-            'detection_source': detection_source
-        }
-
-    def _configure_correction(self) -> Dict[str, Any]:
-        """Configure optional text preprocessing."""
-        self.console.print("\n[cyan]Light cleaning can boost model confidence on messy data.[/cyan]")
-        self.console.print("[cyan]Toggle the options you want to apply before inference.[/cyan]\n")
-
-        enable_correction = Confirm.ask("[cyan]Enable preprocessing?[/cyan]", default=True)
-
-        if not enable_correction:
-            return {'enabled': False}
-
-        return {
-            'enabled': True,
-            'lowercase': Confirm.ask("  Lowercase?", default=False),
-            'remove_urls': Confirm.ask("  Remove URLs?", default=True),
-            'remove_emails': Confirm.ask("  Remove emails?", default=True),
-            'remove_extra_spaces': Confirm.ask("  Remove extra spaces?", default=True),
+            'detection_source': detection_source,
         }
 
     def _configure_annotation_options(
@@ -2779,11 +2888,36 @@ class BERTAnnotationStudio:
 
             self.console.print("[yellow]Reconfiguration requested by user.[/yellow]\n")
 
-        self.console.print("\n[bold magenta]Dataset Coverage:[/bold magenta]")
+        self.console.print("\n[bold magenta]Dataset Coverage[/bold magenta]")
         self.console.print(f"[dim]Rows detected: {total_rows:,}[/dim]")
-        self.console.print("[dim]Annotate the full dataset, just the first rows, or a random sample.[/dim]\n")
+        self.console.print("[dim]Choose how much of the dataset you want to annotate in this run.[/dim]\n")
 
-        coverage_choice = Prompt.ask("[cyan]Coverage mode[/cyan]", choices=["1", "2", "3"], default="1")
+        coverage_table = Table(box=box.ROUNDED)
+        coverage_table.add_column("#", style="cyan", width=4)
+        coverage_table.add_column("Mode", style="green", width=18)
+        coverage_table.add_column("When to use it", style="magenta", overflow="fold")
+        coverage_table.add_row(
+            "1",
+            "Full dataset",
+            "Annotate every available row. Ideal once the pipeline is tuned.",
+        )
+        coverage_table.add_row(
+            "2",
+            "First rows",
+            "Annotate the top chunk only. Great for smoke tests or validating column mapping.",
+        )
+        coverage_table.add_row(
+            "3",
+            "Random sample",
+            "Annotate a shuffled subset to estimate quality before scaling to the entire dataset.",
+        )
+        self._print_table(coverage_table)
+
+        coverage_choice = Prompt.ask(
+            "[cyan]Coverage mode (1=full, 2=head, 3=random)[/cyan]",
+            choices=["1", "2", "3"],
+            default="1",
+        )
 
         if coverage_choice == "2":
             default_head = min(1000, max(1, total_rows))
@@ -2801,3 +2935,60 @@ class BERTAnnotationStudio:
 
         annotation_config['scope'] = scope
         return annotation_config
+
+    def _configure_export_options(self) -> Dict[str, Any]:
+        """Gather export preferences for annotated outputs."""
+        default_root = Path("logs") / "annotation_studio"
+        default_root.mkdir(parents=True, exist_ok=True)
+
+        session_folder = self.session_id or "annotation_session"
+        default_output_dir = default_root / session_folder
+        default_output_dir.mkdir(parents=True, exist_ok=True)
+        default_filename = default_output_dir / "annotations.csv"
+
+        self.console.print("\n[bold magenta]Export Configuration[/bold magenta]")
+        self.console.print("[dim]Decide where the annotated dataset should be written and which extras to include.[/dim]\n")
+
+        format_table = Table(box=box.ROUNDED)
+        format_table.add_column("#", style="cyan", width=4)
+        format_table.add_column("Format", style="green", width=12)
+        format_table.add_column("When it shines", style="magenta", overflow="fold")
+        format_table.add_row("1", "CSV", "Universal compatibility with spreadsheets and BI tools.")
+        format_table.add_row("2", "JSONL", "Great for incremental ingestion or downstream ML pipelines.")
+        format_table.add_row("3", "Parquet", "Columnar format for large datasets and analytics engines.")
+        self._print_table(format_table)
+
+        format_choice = Prompt.ask(
+            "[cyan]Select export format[/cyan]",
+            choices=["1", "2", "3"],
+            default="1",
+        )
+        format_map = {"1": "csv", "2": "jsonl", "3": "parquet"}
+        output_format = format_map[format_choice]
+
+        output_path = Prompt.ask(
+            "[cyan]Output file path[/cyan]",
+            default=str(default_filename.with_suffix(f".{output_format}")),
+        ).strip()
+        output_path = str(Path(output_path).expanduser())
+
+        include_probabilities = Confirm.ask(
+            "[cyan]Include prediction probabilities?[/cyan]",
+            default=True,
+        )
+        include_metadata = Confirm.ask(
+            "[cyan]Save model + session metadata JSON alongside the file?[/cyan]",
+            default=True,
+        )
+        archive_session = Confirm.ask(
+            "[cyan]Create a zipped archive of the export folder for sharing?[/cyan]",
+            default=False,
+        )
+
+        return {
+            "output_format": output_format,
+            "output_path": output_path,
+            "include_probabilities": include_probabilities,
+            "include_metadata": include_metadata,
+            "archive_session": archive_session,
+        }
