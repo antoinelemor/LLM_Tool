@@ -2408,9 +2408,6 @@ class AdvancedCLI:
                 if 'best_for' in mode_info:
                     info_table.add_row("✨ Best For:", f"[bright_blue]{mode_info['best_for']}[/bright_blue]")
 
-                if 'duration' in mode_info:
-                    info_table.add_row("⏱️  Duration:", f"[dim]{mode_info['duration']}[/dim]")
-
                 self.console.print(Panel(
                     info_table,
                     title=f"[bold cyan]{title}[/bold cyan]",
@@ -2548,8 +2545,7 @@ class AdvancedCLI:
                 'capabilities': ['Multi-LLM Support (Ollama/OpenAI/Claude)', '100+ Languages', 'Multi-Label Classification', 'Reinforcement Learning'],
                 'input': 'CSV/Excel/JSON/SQL with text column',
                 'output': 'Annotated data + Trained BERT models + Benchmarking metrics + Training summaries',
-                'best_for': 'Complete zero-shot annotation to supervised learning pipeline with automatic optimization',
-                'duration': '~10-60 min (annotation + training + benchmarking)'
+                'best_for': 'Complete zero-shot annotation to supervised learning pipeline with automatic optimization'
             }
         )
 
@@ -6470,8 +6466,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'capabilities': ['Ollama/OpenAI/Claude Support', 'Prompt Wizard', '200K Context', 'Multi-Label Categories', 'NER', 'Pydantic Validation'],
                 'input': 'Raw text data (CSV/Excel/JSON/SQL)',
                 'output': 'Annotated JSON + Doccano JSONL + Label Studio JSON (API or file)',
-                'best_for': 'Zero-shot annotation with LLMs, human review workflows, data labeling for training',
-                'duration': '~2-20 min (depends on dataset size, LLM speed, and context length)'
+                'best_for': 'Zero-shot annotation with LLMs, human review workflows, data labeling for training'
             }
         )
 
@@ -6593,8 +6588,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'capabilities': ['50+ Models (BERT/RoBERTa/DeBERTa/Longformer)', 'Multi-Label Classification', 'Parallel GPU/CPU', 'Class Imbalance Handling', 'Hard Negative Mining'],
                 'input': 'Annotated CSV/JSON/JSONL/SQL with labels (single or multi-label)',
                 'output': 'Trained models + Confusion matrices + F1 scores + Training summaries + Best model selection',
-                'best_for': 'Production-ready model training with automatic optimization and comprehensive evaluation',
-                'duration': '~5-30 min per model (benchmark mode: 30min-3hrs depending on data size)'
+                'best_for': 'Production-ready model training with automatic optimization and comprehensive evaluation'
             }
         )
 
@@ -16845,8 +16839,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'capabilities': ['50+ Trained Models', '100+ Languages', 'Multi-GPU/CPU Parallel', 'Confidence Scoring', 'Language Validation', 'Text Preprocessing'],
                 'input': 'SQL (PostgreSQL/MySQL/SQLite/SQL Server) or Files (CSV/Excel/JSON/JSONL/Parquet/RData)',
                 'output': 'Predictions with probabilities + Confidence intervals + Language tags + Multiple export formats',
-                'best_for': 'High-throughput production inference, multilingual datasets, large-scale annotation with trained models',
-                'duration': '~2-20 min (depends on dataset size, model complexity, and GPU availability)'
+                'best_for': 'High-throughput production inference, multilingual datasets, large-scale annotation with trained models'
             }
         )
 
@@ -16909,8 +16902,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'capabilities': ['Quality Scoring', 'Label Distribution Analysis', 'Stratified Sampling', 'Inter-Annotator Agreement (Cohen\'s Kappa)', 'Schema Validation'],
                 'input': 'Annotated JSON/JSONL files from LLM or BERT Studio',
                 'output': 'Quality reports + Validation metrics + Doccano/Label Studio export files + Sample selection justification',
-                'best_for': 'Quality assurance before training, human validation workflows, detecting annotation issues',
-                'duration': '~2-5 min (analysis + sampling + export)'
+                'best_for': 'Quality assurance before training, human validation workflows, detecting annotation issues'
             }
         )
 
@@ -17100,8 +17092,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'capabilities': ['Save Configs', 'Quick Reload', 'Profile Sharing', 'Version Control'],
                 'input': 'Saved profile from previous runs',
                 'output': 'Executed pipeline with saved configuration',
-                'best_for': 'Rerunning the same pipeline configuration multiple times',
-                'duration': '~1 min + pipeline execution time'
+                'best_for': 'Rerunning the same pipeline configuration multiple times'
             }
         )
 
@@ -17151,8 +17142,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'capabilities': ['API Keys', 'Model Defaults', 'Path Configuration', 'Performance Tuning'],
                 'input': 'Current system settings',
                 'output': 'Updated configuration',
-                'best_for': 'Customizing system behavior and defaults',
-                'duration': '~2-5 min'
+                'best_for': 'Customizing system behavior and defaults'
             }
         )
 
