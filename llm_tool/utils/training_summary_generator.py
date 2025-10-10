@@ -322,10 +322,10 @@ class TrainingSummaryGenerator:
             dataset_info = {}
 
             # Load training data files if available
-            training_data_dir = Path("data/training_data") / self.session_id
+            training_data_dir = self.session_dir / "training_data"
             if not training_data_dir.exists():
-                # Try alternative location
-                training_data_dir = self.session_dir / "training_data"
+                # Backward compatibility with legacy layout
+                training_data_dir = Path("data/training_data") / self.session_id
 
             if training_data_dir.exists():
                 # Analyze each training file

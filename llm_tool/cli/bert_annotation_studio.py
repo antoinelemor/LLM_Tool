@@ -57,7 +57,7 @@ import json
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Callable
+from typing import Dict, List, Any, Optional, Tuple, Callable, Set
 from datetime import datetime
 import time
 import pandas as pd
@@ -113,6 +113,10 @@ class BERTAnnotationStudio:
         self.data_dir = Path(getattr(self.settings.paths, "data_dir", "data"))
         self._language_assignments: Optional[pd.Series] = None
         self._total_steps: int = 10
+        self._is_factory_context: bool = False
+        self._annotated_row_mask: Optional[pd.Series] = None
+        self._factory_annotated_count: int = 0
+        self._factory_notice_shown: Set[str] = set()
 
     def run(self):
         """Main entry point"""
@@ -189,6 +193,10 @@ class BERTAnnotationStudio:
         if description:
             self.console.print(f"[dim]{description}[/dim]")
 
+    def _print_table(self, table: Table) -> None:
+        """Center tables consistently across the interface."""
+        self.console.print(Align.center(table))
+
     def _configure_pipeline(self, models: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
         """Ask for execution order and optional reduction rules."""
         if not models:
@@ -198,23 +206,34 @@ class BERTAnnotationStudio:
         if len(ordered_models) > 1:
             summary = Table(title="Selected Models", box=box.ROUNDED, show_lines=False)
             summary.add_column("#", style="cyan", justify="center", width=4)
-            summary.add_column("Model", style="green", overflow="ellipsis")
-            summary.add_column("Language", style="magenta", justify="center", width=10)
-            summary.add_column("Labels", style="cyan", justify="right", width=8)
+            summary.add_column("Model", style="green", overflow="fold")
+            summary.add_column("Task", style="bright_white", overflow="ellipsis")
+            summary.add_column("Lang", style="magenta", justify="center", width=8)
+            summary.add_column("Labels", style="cyan", justify="right", width=6)
+            summary.add_column("id2label", style="white", overflow="fold")
             summary.add_column("Macro F1", style="bright_white", justify="right", width=10)
 
             for idx, model in enumerate(ordered_models, 1):
                 macro = model['metrics'].get('macro_f1')
                 macro_text = f"{macro:.3f}" if isinstance(macro, (int, float)) else "—"
+                id2label_pairs = model.get("id2label_pairs") or []
+                label_total = model.get("label_count") or len(id2label_pairs)
+                model_display = self._condense_relative_name(model['relative_name'])
+                base_display = self._shorten_base_model(model['base_model'])
+                if base_display and base_display.lower() not in model_display.lower():
+                    model_display = f"{model_display}\n[dim]{base_display}[/dim]"
+                task_display = str(model.get("label_value") or "—")
                 summary.add_row(
                     str(idx),
-                    self._condense_relative_name(model['relative_name']),
+                    model_display,
+                    task_display,
                     model['language'],
-                    str(model['label_count']),
+                    str(label_total),
+                    self._format_id2label_pairs(id2label_pairs),
                     macro_text,
                 )
 
-            self.console.print(Align.center(summary))
+            self._print_table(summary)
 
             self.console.print("\n[bold cyan]Ordering Strategy:[/bold cyan]")
             self.console.print("[dim][1] Keep current priority (same order as selection)[/dim]")
@@ -242,29 +261,44 @@ class BERTAnnotationStudio:
         if len(plan) <= 1:
             return plan
 
-        self.console.print("\n[bold magenta]Reduction Mode (optional):[/bold magenta]")
-        self.console.print("[dim]Reduction mode lets you cascade models.[/dim]")
-        self.console.print("[dim]Pick a reducer model that scans the full dataset, then run other models only on the rows it flags as positive.[/dim]")
-        self.console.print("[dim]Useful to focus heavyweight models on the most relevant samples.[/dim]\n")
+        self.console.print("\n[bold magenta]Reduction Mode (optional)[/bold magenta]")
+        self.console.print("[dim]A reducer scans the full dataset and keeps only the rows that match specific labels.[/dim]")
+        self.console.print("[dim]Child models then run on that focused slice, saving time on expensive checkpoints.[/dim]")
+        schema_lines = [
+            "[bold cyan]Full dataset[/bold cyan]",
+            "        │",
+            "        ▼",
+            "[bold magenta]Reducer[/bold magenta] ── (positive labels) ──▶ [bold green]Child models[/bold green]",
+            "        │                               ├─▶ Child 1",
+            "        └─ (other labels) ──▶ [dim]Skipped[/dim] └─▶ Child 2",
+        ]
+        schema_panel = Panel("\n".join(schema_lines), border_style="magenta", title="Pipeline diagram")
+        self.console.print(Align.center(schema_panel))
+        self.console.print("[dim]Tip: repeat an index to reuse the same child model multiple times with different label filters.[/dim]\n")
 
         if not Confirm.ask("Enable reduction mode?", default=False):
             return plan
 
         while True:
             reducers = [entry for entry in plan]
-            reducer_table = Table(box=box.ROUNDED, title="Reducer Candidates")
+            reducer_table = Table(box=box.ROUNDED, title="Available Reducers")
             reducer_table.add_column("#", style="cyan", justify="center", width=4)
-            reducer_table.add_column("Model", style="green", overflow="ellipsis")
-            reducer_table.add_column("Language", style="magenta", justify="center", width=10)
-            reducer_table.add_column("Labels", style="cyan", justify="right", width=8)
+            reducer_table.add_column("Model", style="green", overflow="fold")
+            reducer_table.add_column("Task", style="bright_white", overflow="ellipsis")
+            reducer_table.add_column("Lang", style="magenta", justify="center", width=8)
+            reducer_table.add_column("Labels", style="cyan", justify="right", width=6)
             for idx, entry in enumerate(reducers, 1):
+                model_info = entry["info"]
+                id2label_pairs = model_info.get("id2label_pairs") or []
+                label_total = model_info.get("label_count") or len(id2label_pairs)
                 reducer_table.add_row(
                     str(idx),
-                    self._condense_relative_name(entry["info"]["relative_name"]),
-                    entry["info"]["language"],
-                    str(entry["info"]["label_count"]),
+                    self._condense_relative_name(model_info["relative_name"]),
+                    str(model_info.get("label_value") or "—"),
+                    model_info["language"],
+                    str(label_total),
                 )
-            self.console.print(Align.center(reducer_table))
+            self._print_table(reducer_table)
 
             choices = [str(i) for i in range(1, len(reducers) + 1)]
             choices.append("0")
@@ -287,7 +321,7 @@ class BERTAnnotationStudio:
             label_table.add_column("Label", style="green")
             for idx, label in enumerate(labels, 1):
                 label_table.add_row(str(idx), label)
-            self.console.print(Align.center(label_table))
+            self._print_table(label_table)
 
             default_label_idx = next((i for i, name in enumerate(labels, 1) if "pos" in name.lower()), 1)
             raw = Prompt.ask(
@@ -304,42 +338,52 @@ class BERTAnnotationStudio:
 
             available_children = [
                 entry for entry in plan
-                if entry["id"] != reducer_entry["id"] and entry["scope"].get("type") == "full"
+                if entry["id"] != reducer_entry["id"]
             ]
 
             if not available_children:
-                self.console.print("[yellow]No remaining models can be attached as reducers.[/yellow]")
+                self.console.print("[yellow]No models are currently available for cascading.[/yellow]")
                 break
 
-            children_table = Table(box=box.ROUNDED, title="Attach Models To Positive Slice")
+            children_table = Table(box=box.ROUNDED, title="Attach Child Models to Positive Slice")
             children_table.add_column("#", style="cyan", justify="center", width=4)
-            children_table.add_column("Model", style="green", overflow="ellipsis")
-            children_table.add_column("Language", style="magenta", justify="center", width=10)
+            children_table.add_column("Model", style="green", overflow="fold")
+            children_table.add_column("Task", style="bright_white", overflow="ellipsis")
+            children_table.add_column("Lang", style="magenta", justify="center", width=8)
+            children_table.add_column("Current scope", style="yellow", overflow="fold")
             for idx, entry in enumerate(available_children, 1):
+                info = entry["info"]
                 children_table.add_row(
                     str(idx),
-                    self._condense_relative_name(entry["info"]["relative_name"]),
-                    entry["info"]["language"],
+                    self._condense_relative_name(info["relative_name"]),
+                    str(info.get("label_value") or "—"),
+                    info["language"],
+                    self._describe_child_scope(entry, plan),
                 )
-            self.console.print(Align.center(children_table))
+            self._print_table(children_table)
+            self.console.print("[dim]Tip: repeat an index to duplicate a child model on this filter.[/dim]")
 
             child_choice_raw = Prompt.ask(
                 "[cyan]Model indices to run on positives (comma-separated)[/cyan]",
                 default="1",
             )
             try:
-                child_indices = self._parse_index_list(child_choice_raw, len(available_children))
+                child_indices = self._parse_index_list(child_choice_raw, len(available_children), allow_duplicates=True)
             except ValueError:
                 self.console.print("[red]Invalid model selection. Try again.[/red]")
                 continue
 
             for idx in child_indices:
                 child_entry = available_children[idx - 1]
-                child_entry["scope"] = {
+                new_scope = {
                     "type": "positive",
                     "parent_id": reducer_entry["id"],
-                    "labels": positive_labels,
+                    "labels": list(positive_labels),
                 }
+                if child_entry["scope"].get("type") == "full":
+                    child_entry["scope"] = new_scope
+                else:
+                    self._clone_plan_entry(child_entry, plan, new_scope)
 
             if Confirm.ask("Configure another reducer?", default=False):
                 continue
@@ -480,7 +524,7 @@ class BERTAnnotationStudio:
         return self._sanitize_model_prefix(base_model)
 
     @staticmethod
-    def _parse_index_list(raw: str, max_index: int) -> List[int]:
+    def _parse_index_list(raw: str, max_index: int, allow_duplicates: bool = False) -> List[int]:
         """Parse a comma-separated list of indices."""
         parts = [chunk.strip() for chunk in raw.replace(";", ",").split(",") if chunk.strip()]
         if not parts:
@@ -492,13 +536,106 @@ class BERTAnnotationStudio:
             value = int(part)
             if value < 1 or value > max_index:
                 raise ValueError(f"{value} is out of range")
-            if value not in indices:
-                indices.append(value)
-        return indices
+            indices.append(value)
+
+        if allow_duplicates:
+            return indices
+
+        deduped: List[int] = []
+        for value in indices:
+            if value not in deduped:
+                deduped.append(value)
+        return deduped
+
+    @staticmethod
+    def _extract_id2label_pairs(config: Dict[str, Any]) -> List[Tuple[int, str]]:
+        """Extract ordered (id, label) pairs from a Hugging Face config."""
+        mapping = config.get("id2label")
+        if isinstance(mapping, dict) and mapping:
+            numeric_pairs: List[Tuple[int, str]] = []
+            fallback_values: List[str] = []
+            for key, value in mapping.items():
+                label_name = str(value)
+                idx: Optional[int] = None
+                if isinstance(key, int):
+                    idx = key
+                elif isinstance(key, str):
+                    if key.isdigit():
+                        idx = int(key)
+                    else:
+                        match = re.search(r"(\\d+)$", key)
+                        if match:
+                            idx = int(match.group(1))
+                if idx is not None:
+                    numeric_pairs.append((idx, label_name))
+                else:
+                    fallback_values.append(label_name)
+            if numeric_pairs:
+                numeric_pairs.sort(key=lambda item: item[0])
+                return numeric_pairs
+            if fallback_values:
+                return [(idx, name) for idx, name in enumerate(fallback_values)]
+
+        if isinstance(mapping, list):
+            return [(idx, str(name)) for idx, name in enumerate(mapping)]
+
+        label2id = config.get("label2id")
+        if isinstance(label2id, dict) and label2id:
+            numeric_pairs = []
+            fallback_values = []
+            for label_name, idx in label2id.items():
+                try:
+                    numeric_pairs.append((int(idx), str(label_name)))
+                except (TypeError, ValueError):
+                    fallback_values.append(str(label_name))
+            if numeric_pairs:
+                numeric_pairs.sort(key=lambda item: item[0])
+                return numeric_pairs
+            if fallback_values:
+                return [(idx, name) for idx, name in enumerate(fallback_values)]
+
+        return []
+
+    @staticmethod
+    def _format_id2label_pairs(pairs: List[Tuple[int, str]]) -> str:
+        """Build a multi-line textual representation of an id2label mapping."""
+        if not pairs:
+            return "—"
+        return "\n".join(f"{idx}: {label}" for idx, label in pairs)
+
+    def _describe_child_scope(self, entry: Dict[str, Any], plan: List[Dict[str, Any]]) -> str:
+        """Provide a human-readable summary of a pipeline entry's current scope."""
+        scope = entry.get("scope", {})
+        scope_type = scope.get("type")
+        if scope_type == "positive":
+            parent_id = scope.get("parent_id")
+            parent = next((item for item in plan if item["id"] == parent_id), None)
+            parent_name = (
+                self._condense_relative_name(parent["info"]["relative_name"])
+                if parent and parent.get("info")
+                else str(parent_id)
+            )
+            labels = scope.get("labels") or []
+            if labels:
+                preview = ", ".join(str(label) for label in labels[:3])
+                if len(labels) > 3:
+                    preview += ", …"
+            else:
+                preview = "all"
+            return f"Filtered by {parent_name} ({preview})"
+        return "Full dataset"
 
     @staticmethod
     def _extract_label_names(model_info: Dict[str, Any]) -> List[str]:
-        """Return label names for a model from its config."""
+        """Return label names for a model from stored info or config."""
+        stored_pairs = model_info.get("id2label_pairs")
+        if isinstance(stored_pairs, list) and stored_pairs:
+            return [str(label) for _, label in stored_pairs]
+
+        metadata_names = model_info.get("metadata_label_names")
+        if isinstance(metadata_names, list) and metadata_names:
+            return [str(name) for name in metadata_names]
+
         config = model_info.get("config", {})
         label_map = config.get("id2label")
         if isinstance(label_map, dict):
@@ -538,6 +675,36 @@ class BERTAnnotationStudio:
         plan.clear()
         plan.extend(new_plan)
 
+    def _clone_plan_entry(
+        self,
+        entry: Dict[str, Any],
+        plan: List[Dict[str, Any]],
+        new_scope: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Create a duplicate plan entry so a model can run in multiple cascades."""
+        existing_ids = {item["id"] for item in plan}
+        clone_id = self._generate_unique_plan_id(entry["id"], existing_ids)
+        clone = {
+            "id": clone_id,
+            "info": entry["info"],
+            "scope": new_scope,
+            "prefix": entry.get("prefix"),
+        }
+        plan.append(clone)
+        return clone
+
+    @staticmethod
+    def _generate_unique_plan_id(base_id: str, existing_ids: set[str]) -> str:
+        """Create a unique identifier for duplicated plan entries."""
+        if base_id not in existing_ids:
+            return base_id
+        counter = 2
+        while True:
+            candidate = f"{base_id}__{counter}"
+            if candidate not in existing_ids:
+                return candidate
+            counter += 1
+
     def _select_trained_models(self) -> Optional[List[Dict[str, Any]]]:
         """Select one or more trained models"""
         if not self.models_dir.exists():
@@ -558,27 +725,38 @@ class BERTAnnotationStudio:
 
         model_table = Table(title="Available Trained Models", box=box.ROUNDED, show_lines=False)
         model_table.add_column("#", style="cyan", width=4, justify="center")
-        model_table.add_column("Model", style="green", width=46, overflow="ellipsis")
-        model_table.add_column("Base", style="yellow", width=18, overflow="ellipsis")
+        model_table.add_column("Model", style="green", overflow="fold")
+        model_table.add_column("Task", style="bright_white", overflow="ellipsis")
         model_table.add_column("Lang", style="magenta", width=8, justify="center")
-        model_table.add_column("Labels", style="cyan", width=8, justify="right")
+        model_table.add_column("Labels", style="cyan", width=6, justify="right")
+        model_table.add_column("id2label", style="white", overflow="fold")
         model_table.add_column("Macro F1", style="bright_white", width=10, justify="right")
         model_table.add_column("Updated", style="dim", width=19)
 
         for idx, model_info in enumerate(model_entries, 1):
             macro = model_info['metrics'].get('macro_f1')
             macro_text = f"{macro:.3f}" if isinstance(macro, (int, float)) else "—"
+            id2label_pairs = model_info.get("id2label_pairs") or []
+            label_total = model_info.get("label_count") or len(id2label_pairs)
+            model_display = self._condense_relative_name(model_info['relative_name'])
+            base_display = self._shorten_base_model(model_info['base_model'])
+            if base_display and base_display.lower() not in model_display.lower():
+                model_display = f"{model_display}\n[dim]{base_display}[/dim]"
+            task_display = model_info.get("label_value") or "—"
+            task_display = str(task_display)
+            id2label_text = self._format_id2label_pairs(id2label_pairs)
             model_table.add_row(
                 str(idx),
-                self._condense_relative_name(model_info['relative_name']),
-                self._shorten_base_model(model_info['base_model']),
+                model_display,
+                task_display,
                 model_info['language'],
-                str(model_info['label_count']),
+                str(label_total),
+                id2label_text,
                 macro_text,
                 model_info['updated_at'].strftime("%Y-%m-%d %H:%M"),
             )
 
-        self.console.print(Align.center(model_table))
+        self._print_table(model_table)
 
         self.console.print("\n[bold magenta]Selection Options:[/bold magenta]")
         self.console.print("[dim][1] Single model (pick one)[/dim]")
@@ -640,11 +818,35 @@ class BERTAnnotationStudio:
 
         summary = Table(title="Selected Models", box=box.ROUNDED, show_lines=False)
         summary.add_column("#", style="cyan", width=4, justify="center")
-        summary.add_column("Model", style="green", overflow="ellipsis")
-        summary.add_column("Language", style="magenta", width=8, justify="center")
+        summary.add_column("Model", style="green", overflow="fold")
+        summary.add_column("Task", style="bright_white", overflow="ellipsis")
+        summary.add_column("Lang", style="magenta", width=8, justify="center")
+        summary.add_column("Labels", style="cyan", width=6, justify="right")
+        summary.add_column("id2label", style="white", overflow="fold")
+        summary.add_column("Macro F1", style="bright_white", width=10, justify="right")
+
         for idx, model in enumerate(chosen_models, 1):
-            summary.add_row(str(idx), self._condense_relative_name(model['relative_name']), model['language'])
-        self.console.print(summary)
+            macro = model['metrics'].get('macro_f1')
+            macro_text = f"{macro:.3f}" if isinstance(macro, (int, float)) else "—"
+            id2label_pairs = model.get("id2label_pairs") or []
+            label_total = model.get("label_count") or len(id2label_pairs)
+            model_display = self._condense_relative_name(model['relative_name'])
+            base_display = self._shorten_base_model(model['base_model'])
+            if base_display and base_display.lower() not in model_display.lower():
+                model_display = f"{model_display}\n[dim]{base_display}[/dim]"
+            task_display = str(model.get("label_value") or "—")
+            summary.add_row(
+                str(idx),
+                model_display,
+                task_display,
+                model['language'],
+                str(label_total),
+                self._format_id2label_pairs(id2label_pairs),
+                macro_text,
+            )
+        self._print_table(summary)
+        if len(chosen_models) > 1:
+            self.console.print("[dim]FYI: models run in the current selection order. You can reorder them in the pipeline configuration step next.[/dim]")
         self.console.print(f"\n[green]✓ {len(chosen_models)} model(s) ready for annotation[/green]")
         return chosen_models
 
@@ -678,16 +880,53 @@ class BERTAnnotationStudio:
                 continue
 
             metrics = self._load_language_metrics(model_dir)
+            training_metadata = self._load_training_metadata(model_dir)
+            metadata_label_names_raw = training_metadata.get("label_names", [])
+            metadata_label_names = (
+                [str(name) for name in metadata_label_names_raw]
+                if isinstance(metadata_label_names_raw, list)
+                else []
+            )
             relative_name = str(model_dir.relative_to(self.models_dir)).replace(os.sep, "/")
             base_model = model_dir.name
             language = self._infer_language(model_dir, base_model, config)
 
-            id2label = config.get("id2label") or {}
-            label_count = len(id2label) if isinstance(id2label, dict) else 0
+            id2label_pairs = self._extract_id2label_pairs(config)
+            if not id2label_pairs and metadata_label_names:
+                id2label_pairs = [(idx, label_name) for idx, label_name in enumerate(metadata_label_names)]
+
+            label_count = len(id2label_pairs)
+            label_map = config.get("id2label")
+            if not label_count and isinstance(label_map, list):
+                id2label_pairs = [(idx, str(name)) for idx, name in enumerate(label_map)]
+                label_count = len(id2label_pairs)
+            if not label_count and isinstance(label_map, dict):
+                label_count = len(label_map)
+
             if not label_count:
                 label2id = config.get("label2id")
                 if isinstance(label2id, dict):
-                    label_count = len(label2id)
+                    numeric_pairs: List[Tuple[int, str]] = []
+                    fallback_labels: List[str] = []
+                    for label_name, label_idx in label2id.items():
+                        try:
+                            numeric_pairs.append((int(label_idx), str(label_name)))
+                        except (TypeError, ValueError):
+                            fallback_labels.append(str(label_name))
+                    if numeric_pairs:
+                        numeric_pairs.sort(key=lambda item: item[0])
+                        id2label_pairs = numeric_pairs
+                        label_count = len(id2label_pairs)
+                    elif fallback_labels:
+                        id2label_pairs = [(idx, name) for idx, name in enumerate(fallback_labels)]
+                        label_count = len(id2label_pairs)
+
+            if not label_count:
+                num_labels = config.get("num_labels")
+                if isinstance(num_labels, int) and num_labels > 0:
+                    label_count = num_labels
+            if label_count and not id2label_pairs:
+                id2label_pairs = [(idx, f"Label {idx}") for idx in range(label_count)]
 
             try:
                 newest_mtime = max(
@@ -697,6 +936,14 @@ class BERTAnnotationStudio:
                 updated_at = datetime.fromtimestamp(newest_mtime)
             except Exception:
                 updated_at = datetime.now()
+
+            label_value = training_metadata.get("label_value") or training_metadata.get("label_key")
+            if not label_value:
+                label_value = config.get("label_value") or config.get("finetuning_task")
+            if not label_value:
+                # fall back to folder name (skip trailing "model" folder if present)
+                parent = model_dir.parent
+                label_value = parent.name if model_dir.name.lower() == "model" else model_dir.name
 
             entries.append(
                 {
@@ -710,6 +957,9 @@ class BERTAnnotationStudio:
                     "metrics": metrics,
                     "updated_at": updated_at,
                     "column_prefix": self._sanitize_model_prefix(relative_name),
+                    "label_value": label_value,
+                    "id2label_pairs": id2label_pairs,
+                    "metadata_label_names": metadata_label_names,
                 }
             )
 
@@ -735,6 +985,21 @@ class BERTAnnotationStudio:
             macro = averages.get("macro_f1") or averages.get("f1_macro")
             return {"macro_f1": macro, "raw": latest}
 
+        return {}
+
+    def _load_training_metadata(self, model_dir: Path) -> Dict[str, Any]:
+        """Load training metadata (task info, label names, etc.) if present."""
+        metadata_path = model_dir / "training_metadata.json"
+        if not metadata_path.exists():
+            return {}
+
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as metadata_file:
+                data = json.load(metadata_file)
+                if isinstance(data, dict):
+                    return data
+        except Exception as exc:
+            self.logger.debug("Could not read training metadata for %s: %s", model_dir, exc)
         return {}
 
     def _infer_language(self, model_dir: Path, base_model: str, config: Dict[str, Any]) -> str:
@@ -827,22 +1092,106 @@ class BERTAnnotationStudio:
         self.console.print("[yellow]⚠ Unable to load tokenizer for token analysis.[/yellow]")
         return None
 
+    def _detect_factory_context(self, data_source: Dict[str, Any], df: pd.DataFrame) -> bool:
+        """Return True when running inside an Annotator Factory workflow."""
+        if not isinstance(data_source, dict):
+            return False
+        if data_source.get('context') == 'annotator_factory' or data_source.get('factory_context'):
+            return True
+        path_candidates: List[Any] = [
+            data_source.get('path') if data_source.get('type') == 'file' else None,
+            data_source.get('directory'),
+        ]
+        for hint in path_candidates:
+            if isinstance(hint, (str, Path)) and "annotator_factory" in str(hint):
+                return True
+        return False
+
+    def _identify_annotated_rows(self, df: pd.DataFrame) -> Optional[pd.Series]:
+        """Build a boolean mask selecting rows that already carry annotations."""
+        mask: Optional[pd.Series] = None
+
+        if 'annotation_status_per_prompt' in df.columns:
+            statuses = df['annotation_status_per_prompt'].fillna('').astype(str).str.lower()
+            status_mask = statuses.str.contains('success') | statuses.str.contains('complete')
+            mask = status_mask
+
+        if 'annotation' in df.columns:
+            annotations = df['annotation'].fillna('').astype(str).str.strip()
+            annotation_mask = annotations != ''
+            mask = annotation_mask if mask is None else (mask | annotation_mask)
+
+        if mask is not None and mask.any():
+            return mask.astype(bool)
+        return None
+
+    def _maybe_limit_to_annotated(
+        self,
+        df: pd.DataFrame,
+        context_key: str,
+        display_label: str,
+    ) -> Tuple[pd.DataFrame, bool]:
+        """
+        Restrict analysis to annotated rows when running inside Annotator Factory.
+
+        Returns the DataFrame to use and whether the filter was applied.
+        """
+        if not self._is_factory_context or self._annotated_row_mask is None:
+            return df, False
+
+        annotated_df = df[self._annotated_row_mask]
+        if annotated_df.empty or len(annotated_df) == len(df):
+            return df, False
+
+        if context_key not in self._factory_notice_shown:
+            self.console.print(
+                f"[dim]Annotator Factory: {display_label} limited to "
+                f"{len(annotated_df):,} annotated rows (out of {len(df):,}).[/dim]"
+            )
+            self._factory_notice_shown.add(context_key)
+
+        return annotated_df, True
+
+    def _update_factory_context(self, data_source: Dict[str, Any], df: pd.DataFrame) -> None:
+        """Refresh Annotator Factory context tracking for the currently loaded dataset."""
+        self._factory_notice_shown = set()
+        self._annotated_row_mask = None
+        self._factory_annotated_count = 0
+        self._is_factory_context = self._detect_factory_context(data_source, df)
+
+        if not self._is_factory_context:
+            return
+
+        mask = self._identify_annotated_rows(df)
+        if mask is None:
+            self._is_factory_context = False
+            return
+
+        self._annotated_row_mask = mask
+        self._factory_annotated_count = int(mask.sum())
+
     def _display_text_length_stats(self, df: pd.DataFrame, text_column: str, model_info: Dict[str, Any]) -> None:
         """Show descriptive statistics for text length (characters, words, tokens)."""
-        series = df[text_column].fillna("").astype(str)
+        analysis_df, _ = self._maybe_limit_to_annotated(
+            df,
+            context_key="text_length",
+            display_label="text length analysis",
+        )
+        series = analysis_df[text_column].fillna("").astype(str)
         if series.empty:
             self.console.print("[yellow]⚠ Unable to calculate lengths (empty column).[/yellow]")
             return
 
-        total_rows = len(series)
+        total_rows = len(df[text_column])
+        subset_rows = len(series)
         max_full_analysis = 10000
         sample_size = 5000
         analysis_series = series
         sampled = False
 
-        if total_rows > max_full_analysis:
+        if subset_rows > max_full_analysis:
             sampled = Confirm.ask(
-                f"[cyan]{total_rows:,} rows detected. Analyze a random sample of {sample_size}?[/cyan]",
+                f"[cyan]{subset_rows:,} rows detected. Analyze a random sample of {sample_size}?[/cyan]",
                 default=True
             )
             if sampled:
@@ -912,7 +1261,7 @@ class BERTAnnotationStudio:
                 stats_table.add_row(">512 tokens", f"{over_512_tok:.1f}%")
                 stats_table.add_row(">1024 tokens", f"{over_1024_tok:.1f}%")
 
-        self.console.print(stats_table)
+        self._print_table(stats_table)
 
         if sampled:
             self.console.print(
@@ -993,7 +1342,7 @@ class BERTAnnotationStudio:
             table.add_column("Estimated uniqueness", style="magenta", justify="right")
             for idx, (col, ratio) in enumerate(candidates[:20], 1):
                 table.add_row(str(idx), col, f"{ratio*100:.1f}%")
-            self.console.print(table)
+            self._print_table(table)
             choice = Prompt.ask(
                 "Select a column (or 0 to cancel)",
                 choices=[str(i) for i in range(0, min(len(candidates), 20) + 1)],
@@ -1146,7 +1495,7 @@ class BERTAnnotationStudio:
         summary.add_row("Chunk size", str(chunk_size))
         summary.add_row("Total CPU cores", str(total_cpus))
         summary.add_row("GPU available", "Yes" if gpu_available else "No")
-        self.console.print(Align.center(summary))
+        self._print_table(summary)
 
         self.console.print("\n[dim]• Batch size: texts processed before the model updates.[/dim]")
         self.console.print("[dim]• Chunk size: payload sent to each worker (keeps transfers efficient).[/dim]")
@@ -1172,7 +1521,7 @@ class BERTAnnotationStudio:
         for idx, choice in enumerate(source_choices, 1):
             source_table.add_row(str(idx), choice)
 
-        self.console.print(Align.center(source_table))
+        self._print_table(source_table)
 
         choice = Prompt.ask("\n[cyan]Select data source[/cyan]", choices=["1", "2", "3"], default="1")
 
@@ -1238,7 +1587,7 @@ class BERTAnnotationStudio:
                     preview_str[:40] + "..." if len(preview_str) > 40 else preview_str
                 )
 
-            self.console.print(Align.center(datasets_table))
+            self._print_table(datasets_table)
             self.console.print()
 
             # Ask user: use detected or manual path
@@ -1308,7 +1657,7 @@ class BERTAnnotationStudio:
         db_table.add_row("4", "Microsoft SQL Server", "Requires pyodbc")
         db_table.add_row("5", "Custom SQLAlchemy URL", "Paste full URL")
         db_table.add_row("6", "← Back", "")
-        self.console.print(db_table)
+        self._print_table(db_table)
 
         choice = Prompt.ask("\n[cyan]Database type[/cyan]", choices=[str(i) for i in range(1, 7)], default="1")
         if choice == "6":
@@ -1393,7 +1742,7 @@ class BERTAnnotationStudio:
             for idx, sch in enumerate(schemas, 1):
                 schema_table.add_row(str(idx), sch)
             self.console.print("\n[cyan]Available schemas[/cyan]")
-            self.console.print(Align.center(schema_table))
+            self._print_table(schema_table)
             schema_choice = Prompt.ask(
                 "\n[cyan]Schema[/cyan]",
                 choices=[str(i) for i in range(1, len(schemas) + 1)],
@@ -1418,7 +1767,7 @@ class BERTAnnotationStudio:
                 table_table.add_row(str(idx), table_name)
         self.console.print("\n[cyan]Tables (top 50)[/cyan]")
         if tables:
-            self.console.print(Align.center(table_table))
+            self._print_table(table_table)
         else:
             self.console.print("[yellow]No tables found in this schema.[/yellow]")
 
@@ -1541,6 +1890,7 @@ class BERTAnnotationStudio:
                     engine.dispose()
 
             self.console.print(f"[green]✓ Loaded {len(df):,} rows, {len(df.columns)} columns[/green]\n")
+            self._update_factory_context(data_source, df)
 
             # Intelligent column detection
             text_candidates: List[Dict[str, Any]] = []
@@ -1584,7 +1934,7 @@ class BERTAnnotationStudio:
                     f"{unique_count:,}"
                 )
 
-            self.console.print(col_table)
+            self._print_table(col_table)
 
             self.console.print("\n[bold cyan]Text Column:[/bold cyan]")
             self.console.print("[dim]Pick the column that stores the raw text to annotate.[/dim]")
@@ -1619,7 +1969,7 @@ class BERTAnnotationStudio:
                 self.console.print("[dim]An ID column keeps track of each row after annotation.[/dim]")
                 self.console.print("[dim]Choose a column with UNIQUE values (customer_id, tweet_id, ...).[/dim]")
                 self.console.print("[dim]If none match, you can generate one in the next step.[/dim]\n")
-                self.console.print(id_table)
+                self._print_table(id_table)
 
                 id_choice = Prompt.ask(
                     "[cyan]Select ID column[/cyan]",
@@ -1656,8 +2006,13 @@ class BERTAnnotationStudio:
         models_or_plan: List[Dict[str, Any]],
     ) -> Optional[Dict]:
         """Detect dominant languages and confirm model compatibility."""
+        working_df, _ = self._maybe_limit_to_annotated(
+            df,
+            context_key="language_detection",
+            display_label="language detection",
+        )
         text_column = column_mapping['text']
-        sample_texts = df[text_column].dropna().head(100).astype(str).tolist()
+        sample_texts = working_df[text_column].dropna().head(100).astype(str).tolist()
         model_infos: List[Dict[str, Any]] = [
             entry["info"] if isinstance(entry, dict) and "info" in entry else entry
             for entry in (models_or_plan or [])
@@ -1667,13 +2022,13 @@ class BERTAnnotationStudio:
         self.console.print("[cyan]If you already track language codes, you can reuse that column to avoid auto-detection.[/cyan]\n")
 
         candidate_language_columns: List[Dict[str, Any]] = []
-        for col in df.columns:
+        for col in working_df.columns:
             if col == text_column or col == column_mapping.get('id'):
                 continue
-            if df[col].dtype != 'object':
+            if working_df[col].dtype != 'object':
                 continue
 
-            counts = LanguageNormalizer.detect_languages_in_column(df, col)
+            counts = LanguageNormalizer.detect_languages_in_column(working_df, col)
             if counts:
                 candidate_language_columns.append({'name': col, 'counts': counts})
 
@@ -1694,7 +2049,7 @@ class BERTAnnotationStudio:
                 lang_table.add_row(str(idx), candidate['name'], languages_preview[:80] + ("…" if len(languages_preview) > 80 else ""))
 
             self.console.print("[cyan]Potential language columns detected[/cyan]")
-            self.console.print(lang_table)
+            self._print_table(lang_table)
 
             if Confirm.ask("Use one of these columns for language detection?", default=True):
                 lang_choice = Prompt.ask(
@@ -1733,7 +2088,7 @@ class BERTAnnotationStudio:
         for lang, count in sorted_langs:
             share = (count / total_detected * 100) if total_detected else 0
             counts_table.add_row(lang.upper(), f"{count:,}", f"{share:.1f}%")
-        self.console.print(counts_table)
+        self._print_table(counts_table)
 
         if language_column is None:
             column_mapping['language'] = '__detected_language__' if detection_source != "column" else None
@@ -1812,7 +2167,7 @@ class BERTAnnotationStudio:
             resource_table.add_row("GPU Memory", f"{resources.gpu.total_memory_gb:.1f} GB")
         resource_table.add_row("CPU", f"{resources.cpu.physical_cores} cores / {resources.cpu.logical_cores} threads")
         resource_table.add_row("RAM Available", f"{resources.memory.available_gb:.1f} GB / {resources.memory.total_gb:.1f} GB")
-        self.console.print(Align.center(resource_table))
+        self._print_table(resource_table)
 
         annotation_config: Dict[str, Any] = {}
         while True:
@@ -1825,7 +2180,7 @@ class BERTAnnotationStudio:
                 strategy_table.add_row("2", "GPU only", "Force workloads onto the GPU for maximum throughput.")
             strategy_table.add_row("3", "CPU only", "Run on CPU workers only, ideal for CPU-only servers.")
             strategy_table.add_row("4", "Manual", "Specify device mode, worker counts, and batch sizes yourself.")
-            self.console.print(Align.center(strategy_table))
+            self._print_table(strategy_table)
 
             valid_choices = ["1", "3", "4"] if not gpu_available else ["1", "2", "3", "4"]
             strategy_choice = Prompt.ask("[cyan]Select parallelisation strategy[/cyan]", choices=valid_choices, default="1")

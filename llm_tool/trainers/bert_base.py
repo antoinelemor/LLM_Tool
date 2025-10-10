@@ -1977,7 +1977,12 @@ class BertBase(BertABC):
                         if self.detected_languages:
                             all_languages.update(self.detected_languages)
                         if language_info:
-                            all_languages.update([lang.upper() for lang in language_info if lang])
+                            normalized_langs = {
+                                lang.upper()
+                                for lang in language_info
+                                if isinstance(lang, str) and lang
+                            }
+                            all_languages.update(normalized_langs)
                         if language and language != 'MULTI':
                             all_languages.add(language.upper())
 
@@ -2214,7 +2219,12 @@ class BertBase(BertABC):
                 if self.detected_languages:
                     all_languages.update(self.detected_languages)
                 if language_info:
-                    all_languages.update([lang.upper() for lang in language_info if lang])
+                    normalized_langs = {
+                        lang.upper()
+                        for lang in language_info
+                        if isinstance(lang, str) and lang
+                    }
+                    all_languages.update(normalized_langs)
                 if language and language != 'MULTI':
                     all_languages.add(language.upper())
 
@@ -2807,7 +2817,12 @@ class BertBase(BertABC):
                                 if self.detected_languages:
                                     all_languages.update(self.detected_languages)
                                 if language_info:
-                                    all_languages.update([lang.upper() for lang in language_info if lang])
+                                    normalized_langs = {
+                                        lang.upper()
+                                        for lang in language_info
+                                        if isinstance(lang, str) and lang
+                                    }
+                                    all_languages.update(normalized_langs)
                                 if language and language != 'MULTI':
                                     all_languages.add(language.upper())
 

@@ -3090,11 +3090,6 @@ class AdvancedCLI:
 
                 # Call Training Arena's training method
                 try:
-                    from llm_tool.trainers.training_data_builder import TrainingDatasetBuilder
-
-                    # Prepare training dataset
-                    builder = TrainingDatasetBuilder()
-
                     # Convert annotated data to training format
                     training_data_path = Path(output_file).parent / f"{Path(output_file).stem}_training.csv"
 

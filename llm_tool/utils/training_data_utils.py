@@ -55,22 +55,18 @@ class TrainingDataSessionManager:
 
     New centralized structure:
         logs/training_arena/{session_id}/
-        ├── training_data/              # Dataset analysis and reports
-        │   ├── model_catalog.csv
+        ├── training_data/              # Datasets plus analysis reports
+        │   ├── multiclass_*.jsonl      # Training-ready assets
+        │   ├── multilabel_*.jsonl
+        │   ├── model_catalog.csv       # Metadata and summaries
         │   ├── SESSION_SUMMARY.txt
         │   ├── quick_summary.csv
         │   ├── split_summary.csv
         │   └── distribution_report.json
-        ├── training_metrics/           # Training metrics (from trainer)
+        ├── training_metrics/           # Training metrics (from trainers)
         │   └── (populated by ModelTrainer)
         └── training_session_metadata/  # Session parameters
             └── training_metadata.json
-
-        data/training_data/{session_id}/
-        └── training_data/              # Actual JSONL dataset files
-            ├── multiclass_*.jsonl
-            ├── multilabel_*.jsonl
-            └── onevsall_*.jsonl
     """
 
     def __init__(self, session_id: Optional[str] = None, logs_base_dir: Optional[Path] = None,
@@ -93,18 +89,14 @@ class TrainingDataSessionManager:
             self.session_dir = Path(logs_base_dir)
             parent = self.session_dir.parent if self.session_dir.parent != self.session_dir else self.session_dir
             self.logs_base_dir = parent
-            # Datasets are already managed inside the session directory.
-            self.data_base_dir = self.session_dir
-            self.datasets_dir = self.session_dir / "training_data"
         else:
             # Standard Training Arena structure
             self.logs_base_dir = Path(logs_base_dir) if logs_base_dir else Path("logs/training_arena")
             self.session_dir = self.logs_base_dir / self.session_id
-            self.data_base_dir = Path("data/training_data")
-            self.datasets_dir = self.data_base_dir / self.session_id / "training_data"
-
+        training_root = self.session_dir / "training_data"
+        self.datasets_dir = training_root
         set_training_logs_base(self.logs_base_dir, session_dir=self.session_dir)
-        self.training_data_logs_dir = self.session_dir / "training_data"
+        self.training_data_logs_dir = training_root
         self.training_metrics_dir = self.session_dir / "training_metrics"
         self.metadata_dir = self.session_dir / "training_session_metadata"
 
