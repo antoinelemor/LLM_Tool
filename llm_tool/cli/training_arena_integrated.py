@@ -1028,8 +1028,7 @@ def _training_studio_intelligent_dataset_selector(
         text_mask = df[temp_text_column].notna()
 
         if lang_column:
-            self.console.print("
-[dim]Using existing language column '{}' for analysis.[/dim]".format(lang_column))
+            self.console.print("[dim]Using existing language column '{}' for analysis.[/dim]".format(lang_column))
             lang_series = df.loc[text_mask, lang_column].apply(
                 lambda x: str(x).strip().lower() if pd.notna(x) and str(x).strip() else None
             )
@@ -1039,8 +1038,7 @@ def _training_studio_intelligent_dataset_selector(
                     lang_counts[value] = lang_counts.get(value, 0) + 1
 
         if apply_auto_detection and not lang_counts:
-            self.console.print("
-[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
+            self.console.print("[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
             from llm_tool.utils.language_detector import LanguageDetector
             from tqdm import tqdm
 
