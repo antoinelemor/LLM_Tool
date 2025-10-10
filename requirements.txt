@@ -25,9 +25,9 @@ click==8.3.0
 colorama==0.4.6
 cryptography==46.0.2
 datamodel-code-generator==0.26.1
-datasets==4.1.1
+datasets==4.0.0
 defusedxml==0.7.1
-dill==0.4.0
+dill==0.3.8
 distro==1.9.0
 Django==5.1.13
 django-annoying==0.10.6
@@ -58,7 +58,7 @@ expiringdict==1.2.2
 Faker==37.8.0
 filelock==3.19.1
 frozenlist==1.7.0
-fsspec==2025.9.0
+fsspec==2025.3.0
 genson==1.3.0
 google-api-core==2.25.2
 google-auth==2.41.1
@@ -98,6 +98,7 @@ label-studio-sdk==2.0.4
 langdetect==1.0.9
 launchdarkly-server-sdk==8.2.1
 lingua-language-detector==2.1.1
+-e git+https://github.com/antoinelemor/LLM_Tool.git@c67cbdba0c5571756a2020c2a3d1741a4f7d40a5#egg=llm_tool
 lockfile==0.12.2
 loguru==0.7.3
 lxml==6.0.2
@@ -140,6 +141,7 @@ PyJWT==2.10.1
 pyreadr==0.5.3
 pyRFC3339==2.1.0
 python-dateutil==2.9.0.post0
+python-dotenv==1.1.1
 python-json-logger==2.0.4
 pytokens==0.1.10
 pytz==2022.7.1

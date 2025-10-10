@@ -1619,9 +1619,9 @@ class BERTAnnotationStudio:
         self,
         df: pd.DataFrame,
         text_column: str,
-        sample_size: int = 200,
+        sample_size: int = 200,  # kept for signature compatibility; full dataset is analysed regardless
     ) -> Dict[str, Any]:
-        """Replicate Training Arena language + text statistics analysis."""
+        """Analyse language usage across the entire dataset and cache per-row assignments."""
         from llm_tool.utils.language_detector import LanguageDetector
 
         results: Dict[str, Any] = {
@@ -1639,34 +1639,48 @@ class BERTAnnotationStudio:
         if text_column not in df.columns:
             return results
 
-        text_samples = df[text_column].dropna()
-        if text_samples.empty:
+        text_series = df[text_column]
+        if text_series.empty:
             return results
 
-        sample_texts = text_samples.head(sample_size).tolist()
+        texts = text_series.fillna("").astype(str)
+        if texts.empty:
+            return results
+
         detector = LanguageDetector()
-        language_counts = Counter()
+        if detector.method is None:
+            detected_series = pd.Series(["UNKNOWN"] * len(df), index=df.index)
+        else:
+            detections = detector.detect_batch(texts.tolist(), parallel=len(texts) > 50)
+            normalized_codes: List[str] = []
+            for res in detections:
+                if isinstance(res, dict):
+                    lang_code = res.get('language') or 'UNKNOWN'
+                else:
+                    lang_code = res or 'UNKNOWN'
+                normalized = LanguageNormalizer.normalize_language(lang_code)
+                if normalized:
+                    normalized_codes.append(normalized.upper())
+                else:
+                    lang_str = str(lang_code).strip().upper()
+                    normalized_codes.append(lang_str if lang_str else 'UNKNOWN')
+            # Ensure we preserve alignment with the dataframe index
+            detected_series = pd.Series(normalized_codes, index=texts.index).reindex(df.index, fill_value='UNKNOWN')
 
-        for text in sample_texts:
-            if isinstance(text, str) and text.strip():
-                detected_lang = detector.detect(text)
-                if isinstance(detected_lang, dict):
-                    lang = detected_lang.get('language')
-                    if lang:
-                        language_counts[lang] += 1
-                elif isinstance(detected_lang, str):
-                    language_counts[detected_lang] += 1
+        # Cache full assignments for downstream reuse
+        self._language_assignments = detected_series
 
+        language_counts = Counter(code.lower() for code in detected_series)
         results['languages_detected'] = dict(language_counts)
 
-        text_lengths = [len(str(text)) for text in text_samples if pd.notna(text)]
-        if text_lengths:
+        text_lengths = texts.str.len()
+        if not text_lengths.empty:
             import statistics  # pylint: disable=import-outside-toplevel
 
-            avg_length = sum(text_lengths) / len(text_lengths)
-            max_length = max(text_lengths)
-            min_length = min(text_lengths)
-            median_length = statistics.median(text_lengths)
+            avg_length = float(text_lengths.mean())
+            max_length = int(text_lengths.max())
+            min_length = int(text_lengths.min())
+            median_length = statistics.median(text_lengths.tolist())
             results['text_length_stats'] = {
                 'avg_length': avg_length,
                 'max_length': max_length,
@@ -1674,9 +1688,10 @@ class BERTAnnotationStudio:
                 'median_length': median_length,
             }
 
-            long_docs = sum(1 for length in text_lengths if length > 2048)
-            results['long_document_percentage'] = (long_docs / len(text_lengths)) * 100
-            results['user_prefers_long_models'] = results['long_document_percentage'] > 20
+            long_docs = int((text_lengths > 2048).sum())
+            if len(text_lengths) > 0:
+                results['long_document_percentage'] = (long_docs / len(text_lengths)) * 100
+                results['user_prefers_long_models'] = results['long_document_percentage'] > 20
 
         return results
 
@@ -1692,7 +1707,7 @@ class BERTAnnotationStudio:
                 share = (count / total * 100) if total else 0
                 self.console.print(f"  • {lang.upper()}: {count} samples ({share:.1f}%)")
         else:
-            self.console.print("\n[yellow]⚠ Unable to detect languages automatically from the sample.[/yellow]")
+            self.console.print("\n[yellow]⚠ Unable to detect languages automatically for this dataset.[/yellow]")
 
         if text_stats:
             self.console.print("\n[bold]📊 Text Statistics:[/bold]")
