@@ -65,6 +65,14 @@ except ImportError:
     HAS_FASTTEXT = False
     fasttext = None
 
+# Optional progress bar
+try:
+    from tqdm import tqdm
+
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+
 
 class DetectionMethod(Enum):
     """Available language detection methods"""
@@ -503,23 +511,53 @@ class LanguageDetector:
             'all_scores': all_scores
         }
 
-    def detect_batch(self, texts: List[str], parallel: bool = True) -> List[Dict[str, Any]]:
+    def detect_batch(
+        self,
+        texts: List[str],
+        parallel: bool = True,
+        show_progress: bool = False,
+        desc: str = "Detecting languages",
+    ) -> List[Dict[str, Any]]:
         """
         Detect languages for multiple texts
 
         Args:
             texts: List of texts to analyze
             parallel: Use parallel processing
+            show_progress: Show progress bar with tqdm
+            desc: Description for progress bar
 
         Returns:
             List of detection results
         """
+        import sys
+        use_progress = show_progress and HAS_TQDM and len(texts) > 0
+
         if parallel and len(texts) > 10:
             from concurrent.futures import ThreadPoolExecutor
+
             with ThreadPoolExecutor(max_workers=4) as executor:
-                results = list(executor.map(self.detect, texts))
+                if use_progress:
+                    # Force tqdm to write to stderr for better terminal visibility
+                    with tqdm(total=len(texts), desc=desc, unit="text", leave=True,
+                             file=sys.stderr, ncols=80, dynamic_ncols=False) as pbar:
+                        results: List[Dict[str, Any]] = []
+                        for result in executor.map(self.detect, texts):
+                            results.append(result)
+                            pbar.update()
+                else:
+                    results = list(executor.map(self.detect, texts))
         else:
-            results = [self.detect(text) for text in texts]
+            iterator = texts
+            results = []
+            if use_progress:
+                # Force tqdm to write to stderr for better terminal visibility
+                iterator = tqdm(texts, desc=desc, unit="text", leave=True,
+                               file=sys.stderr, ncols=80, dynamic_ncols=False)
+            for text in iterator:
+                results.append(self.detect(text))
+            if use_progress:
+                iterator.close()
 
         return results
 

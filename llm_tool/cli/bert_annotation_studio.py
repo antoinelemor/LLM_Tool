@@ -56,11 +56,14 @@ import os
 import json
 import re
 from collections import Counter, defaultdict
+import textwrap
 import itertools
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Callable, Set
 from datetime import datetime
 import time
+import shutil
+from contextlib import nullcontext
 import pandas as pd
 import numpy as np
 from rich.console import Console
@@ -87,6 +90,14 @@ from llm_tool.utils.system_resources import detect_resources
 from llm_tool.utils.language_detector import LanguageDetector
 from llm_tool.utils.annotation_session_manager import AnnotationStudioSessionManager
 from transformers import AutoTokenizer
+
+# Optional progress bar support
+try:
+    from tqdm import tqdm
+
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
 
 
 MODEL_LANGUAGE_MAP = {
@@ -1717,7 +1728,15 @@ class BERTAnnotationStudio:
         if detector.method is None:
             detected_series = pd.Series(["UNKNOWN"] * len(df), index=df.index)
         else:
-            detections = detector.detect_batch(texts.tolist(), parallel=len(texts) > 50)
+            self.console.print("\n[bold cyan]🔍 Language detection in progress...[/bold cyan]")
+            self.console.print(f"[cyan]Analyzing {len(texts):,} texts to detect their language.[/cyan]\n")
+            show_progress = HAS_TQDM and len(texts) > 0
+            detections = detector.detect_batch(
+                texts.tolist(),
+                parallel=len(texts) > 50,
+                show_progress=show_progress,
+                desc="Detecting languages"
+            )
             normalized_codes: List[str] = []
             for res in detections:
                 if isinstance(res, dict):
@@ -1881,6 +1900,7 @@ class BERTAnnotationStudio:
         subset_rows = len(series)
         max_full_analysis = 10000
         sample_size = 5000
+        self.console.print("[cyan]Analysis in progress: measuring text lengths...[/cyan]")
         analysis_series = series
         sampled = False
 
@@ -1894,8 +1914,36 @@ class BERTAnnotationStudio:
             else:
                 analysis_series = series
 
-        lengths = analysis_series.str.len()
-        words = analysis_series.str.split().map(len)
+        texts_list = analysis_series.tolist()
+        batch_size_chars = 1024
+        use_length_pbar = HAS_TQDM and len(texts_list) > batch_size_chars
+        iterator = (
+            tqdm(
+                range(0, len(texts_list), batch_size_chars),
+                desc="Measuring text lengths",
+                unit="rows",
+                leave=False,
+            )
+            if use_length_pbar
+            else range(0, len(texts_list), batch_size_chars)
+        )
+        char_lengths: List[int] = []
+        word_counts: List[int] = []
+        try:
+            for start in iterator:
+                chunk = texts_list[start:start + batch_size_chars]
+                char_lengths.extend(len(text) for text in chunk)
+                word_counts.extend(len(text.split()) if text else 0 for text in chunk)
+        finally:
+            if use_length_pbar:
+                iterator.close()
+
+        if not char_lengths:
+            self.console.print("[yellow]⚠ Unable to calculate lengths (empty column).[/yellow]")
+            return
+
+        lengths = np.asarray(char_lengths, dtype=np.int64)
+        words_array = np.asarray(word_counts, dtype=np.int64)
 
         percentiles = [50, 75, 90, 95, 99]
         percentile_values = np.percentile(lengths, percentiles)
@@ -1907,7 +1955,7 @@ class BERTAnnotationStudio:
         stats_table.add_row("Rows analyzed", f"{len(analysis_series):,} / {total_rows:,}")
         stats_table.add_row("Average length (char.)", f"{lengths.mean():.1f}")
         stats_table.add_row("Median length (char.)", f"{percentile_values[0]:.0f}")
-        stats_table.add_row("Average length (words)", f"{words.mean():.1f}")
+        stats_table.add_row("Average length (words)", f"{words_array.mean():.1f}")
         stats_table.add_row("Max (char.)", f"{lengths.max():,}")
         stats_table.add_row("90th percentile (char.)", f"{percentile_values[2]:.0f}")
         stats_table.add_row("95th percentile (char.)", f"{percentile_values[3]:.0f}")
@@ -1923,23 +1971,37 @@ class BERTAnnotationStudio:
         token_percentiles_values = None
         if tokenizer is not None:
             token_lengths: List[int] = []
-            texts_list = analysis_series.tolist()
             batch_size = 256
-            for i in range(0, len(texts_list), batch_size):
-                batch = texts_list[i:i + batch_size]
-                try:
-                    encoded = tokenizer(
-                        batch,
-                        add_special_tokens=True,
-                        truncation=False,
-                        return_attention_mask=False,
-                        return_token_type_ids=False
-                    )
-                    token_lengths.extend(len(ids) for ids in encoded['input_ids'])
-                except Exception as exc:
-                    self.logger.debug("Token analysis failed on batch %s: %s", i, exc)
-                    token_lengths = []
-                    break
+            use_token_pbar = HAS_TQDM and len(texts_list) > batch_size
+            token_iterator = (
+                tqdm(
+                    range(0, len(texts_list), batch_size),
+                    desc="Analyzing token lengths",
+                    unit="batch",
+                    leave=False,
+                )
+                if use_token_pbar
+                else range(0, len(texts_list), batch_size)
+            )
+            try:
+                for i in token_iterator:
+                    batch = texts_list[i:i + batch_size]
+                    try:
+                        encoded = tokenizer(
+                            batch,
+                            add_special_tokens=True,
+                            truncation=False,
+                            return_attention_mask=False,
+                            return_token_type_ids=False
+                        )
+                        token_lengths.extend(len(ids) for ids in encoded['input_ids'])
+                    except Exception as exc:
+                        self.logger.debug("Token analysis failed on batch %s: %s", i, exc)
+                        token_lengths = []
+                        break
+            finally:
+                if use_token_pbar:
+                    token_iterator.close()
 
             if token_lengths:
                 token_array = np.array(token_lengths)
@@ -2154,9 +2216,16 @@ class BERTAnnotationStudio:
                 )
                 series = pd.Series(['UNKNOWN'] * len(df), index=df.index)
             else:
-                self.console.print("[cyan]Automatic language detection for each text...[/cyan]")
+                self.console.print("\n[bold cyan]🔍 Language detection in progress...[/bold cyan]")
+                self.console.print(f"[cyan]Analyzing {len(df):,} texts to detect their language.[/cyan]\n")
                 texts_list = df[text_column].fillna("").astype(str).tolist()
-                results = detector.detect_batch(texts_list, parallel=len(texts_list) > 20)
+                show_progress = HAS_TQDM and len(texts_list) > 0
+                results = detector.detect_batch(
+                    texts_list,
+                    parallel=len(texts_list) > 20,
+                    show_progress=show_progress,
+                    desc="Detecting languages",
+                )
                 codes = []
                 for res in results:
                     lang = res.get('language') or 'UNKNOWN'
@@ -2167,6 +2236,109 @@ class BERTAnnotationStudio:
 
         self._language_assignments = series
         return series
+
+    def _display_annotation_examples(
+        self,
+        df: pd.DataFrame,
+        column_mapping: Dict[str, Any],
+        language_series: pd.Series,
+        language_mask: Optional[pd.Series],
+        languages_to_annotate: List[str],
+    ) -> None:
+        """Display a didactic preview of rows that will receive annotations."""
+        if not languages_to_annotate:
+            return
+
+        text_column = column_mapping.get("text")
+        if not text_column or text_column not in df.columns:
+            return
+
+        id_column = column_mapping.get("id")
+
+        if language_mask is not None and len(language_mask) == len(df):
+            eligible_index = df.index[language_mask]
+        else:
+            eligible_index = df.index
+
+        if eligible_index.empty:
+            return
+
+        sample_table = Table(title="Upcoming Annotation Examples", box=box.ROUNDED)
+        sample_table.add_column("Language", style="cyan", width=10)
+        sample_table.add_column("Row ID", style="green", width=14)
+        sample_table.add_column("Excerpt", style="white", overflow="fold")
+
+        added = 0
+        for lang in languages_to_annotate:
+            lang_indices = language_series[language_series == lang].index.intersection(eligible_index)
+            if lang_indices.empty:
+                continue
+            for row_idx in list(lang_indices[:3]):
+                row = df.loc[row_idx]
+                row_id = row[id_column] if id_column and id_column in df.columns else row_idx
+                raw_text = str(row.get(text_column, ""))
+                excerpt = textwrap.shorten(raw_text.replace("\n", " "), width=120, placeholder="…")
+                sample_table.add_row(lang, str(row_id), excerpt)
+                added += 1
+
+        if added:
+            self.console.print("\n[bold cyan]📝 Preview: Rows that WILL be annotated[/bold cyan]")
+            self.console.print("[dim]These examples show rows whose language matches the model(s) you selected.[/dim]")
+            self._print_table(sample_table)
+
+    def _apply_dataset_scope(self, df: pd.DataFrame, scope: Optional[Dict[str, Any]]) -> pd.DataFrame:
+        """Return a dataframe subset according to the configured coverage scope."""
+        if not scope or scope.get("type") == "full":
+            return df.copy()
+
+        scope_type = scope.get("type")
+        if scope_type == "head":
+            size = max(1, min(int(scope.get("size", len(df))), len(df)))
+            return df.head(size).copy()
+
+        if scope_type == "random":
+            size = max(1, min(int(scope.get("size", len(df))), len(df)))
+            seed = int(scope.get("seed", 42))
+            sampled = df.sample(n=size, random_state=seed)
+            return sampled.sort_index().copy()
+
+        return df.copy()
+
+    def _resolve_entry_mask(self, entry: Dict[str, Any], df: pd.DataFrame) -> pd.Series:
+        """Compute the boolean mask of rows eligible for a pipeline entry."""
+        scope = entry.get("scope", {}) or {}
+        scope_type = scope.get("type")
+        if scope_type == "positive":
+            parent_prefix = scope.get("parent_prefix")
+            if not parent_prefix:
+                return pd.Series(False, index=df.index)
+            label_col = f"{parent_prefix}_label"
+            if label_col not in df.columns:
+                return pd.Series(False, index=df.index)
+
+            labels = scope.get("labels") or []
+            label_series = df[label_col]
+            if labels:
+                normalized_labels = {str(label) for label in labels}
+                mask = label_series.astype(str).isin(normalized_labels)
+            else:
+                mask = label_series.notna()
+
+            annotated_col = f"{parent_prefix}_annotated"
+            if annotated_col in df.columns:
+                mask = mask & df[annotated_col].fillna(False).astype(bool)
+
+            return mask.reindex(df.index).fillna(False)
+
+        return pd.Series(True, index=df.index)
+
+    def _persist_run_metadata(self, metadata: Dict[str, Any], output_dir: Path) -> Path:
+        """Write run metadata alongside exports and return the file path."""
+        metadata_path = output_dir / "session_metadata.json"
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(metadata_path, "w", encoding="utf-8") as handle:
+            json.dump(metadata, handle, ensure_ascii=False, indent=2)
+        return metadata_path
 
     def _confirm_parallel_config(self, config: Dict[str, Any], resources) -> bool:
         """Explain parallel parameters and ask for confirmation."""
@@ -2801,7 +2973,7 @@ class BERTAnnotationStudio:
             for lang in normalized_langs:
                 language_to_models.setdefault(lang, []).append(model)
 
-        self.console.print("\n[cyan]We analyse a sample of texts to infer the language.[/cyan]")
+        self.console.print("\n[cyan]We will analyze all texts in your dataset to detect their language.[/cyan]")
         self.console.print("[cyan]If you already track language codes, you can reuse that column to avoid auto-detection.[/cyan]\n")
 
         candidate_language_columns: List[Dict[str, Any]] = []
@@ -2883,20 +3055,6 @@ class BERTAnnotationStudio:
         languages_supported = set(itertools.chain.from_iterable(model_language_map.values()))
         has_multilingual = any(len(langs) > 1 for langs in model_language_map.values())
         model_lang_str = ", ".join(sorted(languages_supported)) if languages_supported else "—"
-        self.console.print(f"[cyan]Model language(s): {model_lang_str} • Primary data language: {primary_lang}[/cyan]")
-
-        is_compatible = not model_language_map or primary_lang in languages_supported or has_multilingual
-        if is_compatible:
-            self.console.print("[green]✓ At least one model is compatible with detected language[/green]")
-        else:
-            self.console.print("[yellow]⚠ Language mismatch between models and data[/yellow]")
-            if language_column and len(unique_languages) > 1:
-                self.console.print("[yellow]• Consider filtering the dataset by language column before annotating.[/yellow]")
-            if not Confirm.ask("Proceed with annotation despite the mismatch?", default=False):
-                return None
-
-        if len(unique_languages) > 1 and not has_multilingual:
-            self.console.print("[yellow]⚠ Multiple languages detected but the model is monolingual.[/yellow]")
 
         languages_detected_sorted = sorted(unique_languages)
         languages_without_model = sorted(lang for lang in unique_languages if lang not in languages_supported)
@@ -2924,8 +3082,11 @@ class BERTAnnotationStudio:
         skipped_count = len(language_series) - eligible_count
 
         if languages_detected_sorted:
-            self.console.print("\n[bold]🔗 Language → Model mapping[/bold]")
+            self.console.print("\n[bold]📊 Language Distribution & Model Coverage[/bold]")
+            self.console.print("[dim]Each model will only annotate rows in its supported language(s).[/dim]\n")
+
             for lang in languages_detected_sorted:
+                lang_count = language_counts.get(lang.lower(), 0)
                 models_for_lang = language_to_models.get(lang, [])
                 if models_for_lang:
                     formatted_models: List[str] = []
@@ -2938,20 +3099,25 @@ class BERTAnnotationStudio:
                         per_metrics = mdl.get("metrics_per_language") or mdl.get("metrics", {}).get("per_language", {})
                         score = per_metrics.get(lang) if isinstance(per_metrics, dict) else None
                         if isinstance(score, (int, float)):
-                            formatted_models.append(f"{display_name} ({score:.3f})")
+                            formatted_models.append(f"{display_name} (F1: {score:.3f})")
                         else:
                             formatted_models.append(display_name)
-                    self.console.print(f"  • {lang}: {', '.join(formatted_models)}")
+                    self.console.print(f"  [green]✓ {lang}[/green]: {lang_count:,} rows → will be annotated")
+                    self.console.print(f"    [dim]Model: {', '.join(formatted_models)}[/dim]")
                 else:
-                    self.console.print(f"[yellow]  • {lang}: no selected model — rows skipped[/yellow]")
+                    self.console.print(f"  [yellow]⊘ {lang}[/yellow]: {lang_count:,} rows → will be skipped (no compatible model)")
 
+        self.console.print()
         if skipped_count > 0:
             self.console.print(
-                f"[dim]Language filter will retain {eligible_count:,} rows "
-                f"({skipped_count:,} skipped without coverage).[/dim]"
+                f"[bold cyan]Summary:[/bold cyan] {eligible_count:,} rows will be annotated, "
+                f"{skipped_count:,} rows will be skipped (no compatible model)."
+            )
+            self.console.print(
+                f"[dim]This is expected when your dataset contains multiple languages but your models only support some of them.[/dim]"
             )
         else:
-            self.console.print(f"[dim]All {eligible_count:,} rows match the selected model languages.[/dim]")
+            self.console.print(f"[green]✓ All {eligible_count:,} rows will be annotated (full language coverage).[/green]")
 
         if eligible_count == 0:
             self.console.print(
@@ -2962,6 +3128,58 @@ class BERTAnnotationStudio:
 
         self._language_annotation_mask = language_mask
         self._allowed_annotation_languages = languages_to_annotate
+
+        try:
+            self._display_annotation_examples(
+                df,
+                column_mapping,
+                language_series,
+                language_mask,
+                languages_to_annotate,
+            )
+        except Exception as exc:
+            self.logger.debug("Unable to display annotation examples: %s", exc)
+
+        # Show language compatibility summary
+        if len(unique_languages) > 1:
+            if has_multilingual:
+                self.console.print(f"\n[green]✓ Dataset contains {len(unique_languages)} languages. Your model(s) support multiple languages.[/green]")
+            else:
+                covered_pct = (eligible_count / len(df)) * 100 if len(df) > 0 else 0
+                self.console.print(f"\n[cyan]ℹ Dataset contains {len(unique_languages)} languages (Primary: {primary_lang}).[/cyan]")
+                self.console.print(f"[cyan]  Model language(s): {model_lang_str}[/cyan]")
+                self.console.print(f"[cyan]  Coverage: {covered_pct:.1f}% of rows will be annotated ({eligible_count:,}/{len(df):,}).[/cyan]")
+
+                if primary_lang not in languages_supported:
+                    self.console.print(
+                        f"\n[yellow]⚠ Note: Your primary language ({primary_lang}) doesn't match the model language(s) ({model_lang_str}).[/yellow]"
+                    )
+                    self.console.print(
+                        f"[yellow]  Only rows in {model_lang_str} will receive annotations. This is normal for multilingual datasets.[/yellow]"
+                    )
+                    if language_column and len(unique_languages) > 1:
+                        self.console.print(
+                            f"[dim]  Tip: You can filter your dataset by the '{language_column}' column before annotation if you prefer.[/dim]"
+                        )
+                    if not Confirm.ask("\nProceed with annotation?", default=True):
+                        return None
+        else:
+            # Single language case
+            is_compatible = primary_lang in languages_supported or has_multilingual
+            if is_compatible:
+                self.console.print(f"\n[green]✓ Language compatibility confirmed ({primary_lang}). All rows will be annotated.[/green]")
+            else:
+                self.console.print(
+                    f"\n[red]✗ Language mismatch: Dataset is in {primary_lang}, but model only supports {model_lang_str}.[/red]"
+                )
+                if not Confirm.ask("Proceed anyway?", default=False):
+                    return None
+
+        if column_mapping.get('language') == '__detected_language__':
+            try:
+                df['__detected_language__'] = language_series.reindex(df.index)
+            except Exception:
+                df['__detected_language__'] = language_series.values
 
         language_info = {
             'primary_language': primary_lang,
@@ -3187,10 +3405,8 @@ class BERTAnnotationStudio:
             "[cyan]Include prediction probabilities?[/cyan]",
             default=True,
         )
-        include_metadata = Confirm.ask(
-            "[cyan]Save model + session metadata JSON alongside the file?[/cyan]",
-            default=True,
-        )
+        include_metadata = True
+        self.console.print("[dim]Session metadata will be saved automatically for reproducibility and resumes.[/dim]")
         archive_session = Confirm.ask(
             "[cyan]Create a zipped archive of the export folder for sharing?[/cyan]",
             default=False,
@@ -3203,3 +3419,271 @@ class BERTAnnotationStudio:
             "include_metadata": include_metadata,
             "archive_session": archive_session,
         }
+
+    def _confirm_and_execute(
+        self,
+        pipeline_plan: List[Dict[str, Any]],
+        data_source: Dict[str, Any],
+        df: pd.DataFrame,
+        column_mapping: Dict[str, Any],
+        language_info: Dict[str, Any],
+        annotation_config: Dict[str, Any],
+        export_config: Dict[str, Any],
+    ) -> bool:
+        """Final confirmation prompt followed by the actual annotation run."""
+        try:
+            if not pipeline_plan:
+                if self.console:
+                    self.console.print("[red]✗ No models configured for annotation.[/red]")
+                return False
+
+            text_column = column_mapping.get("text")
+            if not text_column or text_column not in df.columns:
+                if self.console:
+                    self.console.print("[red]✗ Text column is missing or invalid.[/red]")
+                return False
+
+            if self.console:
+                summary_table = Table(title="Annotation Run Summary", box=box.ROUNDED)
+                summary_table.add_column("Section", style="cyan", width=18)
+                summary_table.add_column("Details", style="white", overflow="fold")
+
+                data_desc = data_source.get("path") or data_source.get("display_name") or data_source.get("type", "dataset")
+                summary_table.add_row("Dataset", str(data_desc))
+                summary_table.add_row("Rows (post-language)", f"{len(df):,}")
+
+                detected_langs = ", ".join(language_info.get("languages", [])) if language_info else "—"
+                summary_table.add_row("Detected languages", detected_langs)
+
+                model_names = ", ".join(
+                    self._condense_relative_name(entry["info"].get("relative_name", "model"))
+                    for entry in pipeline_plan
+                )
+                summary_table.add_row("Models", model_names or "—")
+                summary_table.add_row("Output", str(export_config.get("output_path")))
+
+                self._print_table(summary_table)
+                self.console.print("[dim]Session metadata will be saved automatically for reproducibility.[/dim]")
+
+                if not Confirm.ask("\n[bold yellow]Review complete. Launch annotation now?[/bold yellow]", default=True):
+                    self.console.print("[yellow]Annotation cancelled by user.[/yellow]")
+                    return False
+
+            scope_cfg = annotation_config.get("scope") or {"type": "full"}
+            working_df = self._apply_dataset_scope(df, scope_cfg)
+            if working_df.empty:
+                if self.console:
+                    self.console.print("[red]✗ No rows selected after applying dataset coverage.[/red]")
+                return False
+
+            if len(working_df) != len(df) and self.console:
+                self.console.print(
+                    f"[dim]Dataset coverage applied: {len(working_df):,}/{len(df):,} rows will be processed.[/dim]"
+                )
+
+            self._reorder_plan_with_children(pipeline_plan)
+
+            progress = Progress(
+                TextColumn("[dim]{task.description}[/dim]"),
+                BarColumn(bar_width=None),
+                SpinnerColumn(),
+                TimeElapsedColumn(),
+                TimeRemainingColumn(),
+                console=self.console,
+                transient=True,
+            ) if self.console else None
+
+            run_stats: List[Dict[str, Any]] = []
+
+            progress_manager = progress if progress else nullcontext()
+            with progress_manager as progress_bar:
+                active_progress = progress_bar if isinstance(progress_bar, Progress) else None
+
+                for entry in pipeline_plan:
+                    info = entry.get("info", {})
+                    columns = entry.get("columns") or {}
+
+                    for key, col_name in columns.items():
+                        if col_name not in working_df.columns:
+                            if key in {"label", "language"}:
+                                working_df[col_name] = pd.Series([pd.NA] * len(working_df), dtype="object", index=working_df.index)
+                            elif key == "annotated":
+                                working_df[col_name] = False
+                            else:
+                                working_df[col_name] = np.nan
+
+                    mask = self._resolve_entry_mask(entry, working_df)
+                    eligible_index = mask[mask].index
+
+                    run_record = {
+                        "id": entry.get("id"),
+                        "model": info.get("relative_name"),
+                        "rows_scheduled": int(mask.sum()),
+                        "rows_annotated": int(len(eligible_index)),
+                    }
+
+                    if len(eligible_index) == 0:
+                        run_stats.append(run_record)
+                        continue
+
+                    task_id = None
+                    if active_progress is not None:
+                        display_name = self._condense_relative_name(info.get("relative_name", "model"))
+                        task_id = active_progress.add_task(f"{display_name}", total=len(eligible_index))
+
+                        def progress_handler(processed: int, device_tag: str, task=task_id) -> None:
+                            active_progress.advance(task, processed)
+                    else:
+                        def progress_handler(processed: int, device_tag: str) -> None:
+                            return
+
+                    texts = working_df.loc[eligible_index, text_column].fillna("").astype(str).tolist()
+
+                    model_path = info.get("path")
+                    model_path_str = str(model_path) if model_path is not None else ""
+
+                    probabilities = parallel_predict(
+                        texts,
+                        model_path_str,
+                        lang=info.get("language", "EN"),
+                        parallel=annotation_config.get("parallel", True),
+                        device_mode=annotation_config.get("device_mode", "both"),
+                        batch_size_cpu=annotation_config.get("batch_size_cpu", 32),
+                        batch_size_gpu=annotation_config.get("batch_size_gpu", 64),
+                        chunk_size=annotation_config.get("chunk_size", 1024),
+                        show_progress=False,
+                        progress_handler=progress_handler,
+                    )
+
+                    if active_progress is not None and task_id is not None:
+                        active_progress.update(task_id, completed=len(eligible_index))
+
+                    probs = np.asarray(probabilities)
+                    if probs.ndim == 1:
+                        probs = probs[:, None]
+
+                    if probs.shape[1] == 0:
+                        max_indices = np.zeros(len(probs), dtype=int)
+                        max_scores = np.zeros(len(probs))
+                    else:
+                        max_indices = probs.argmax(axis=1)
+                        max_scores = probs[np.arange(len(probs)), max_indices]
+
+                    label_pairs = info.get("id2label_pairs") or []
+                    label_lookup = {int(idx): str(label) for idx, label in label_pairs}
+                    if not label_lookup:
+                        label_lookup = {idx: f"Label {idx}" for idx in range(probs.shape[1])}
+
+                    predicted_labels = [label_lookup.get(int(idx), f"Label {idx}") for idx in max_indices]
+
+                    if columns.get("label"):
+                        working_df.loc[eligible_index, columns["label"]] = predicted_labels
+                    if columns.get("label_id"):
+                        working_df.loc[eligible_index, columns["label_id"]] = max_indices.astype(int)
+                    if columns.get("probability"):
+                        working_df.loc[eligible_index, columns["probability"]] = max_scores
+                    if columns.get("ci_lower"):
+                        working_df.loc[eligible_index, columns["ci_lower"]] = np.nan
+                    if columns.get("ci_upper"):
+                        working_df.loc[eligible_index, columns["ci_upper"]] = np.nan
+                    if columns.get("language"):
+                        working_df.loc[eligible_index, columns["language"]] = info.get("language", "")
+                    if columns.get("annotated"):
+                        working_df.loc[eligible_index, columns["annotated"]] = True
+
+                    run_stats.append(run_record)
+
+            export_df = working_df.copy()
+            if not export_config.get("include_probabilities", True):
+                drop_suffixes = ("_probability", "_ci_lower", "_ci_upper")
+                drop_columns = [
+                    col
+                    for col in export_df.columns
+                    for suffix in drop_suffixes
+                    if col.endswith(suffix)
+                ]
+                if drop_columns:
+                    export_df = export_df.drop(columns=drop_columns)
+
+            output_path = Path(export_config["output_path"])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_format = export_config.get("output_format", "csv").lower()
+
+            if output_format == "csv":
+                export_df.to_csv(output_path, index=False)
+            elif output_format == "jsonl":
+                export_df.to_json(output_path, orient="records", lines=True, force_ascii=False)
+            elif output_format == "parquet":
+                export_df.to_parquet(output_path, index=False)
+            else:
+                raise ValueError(f"Unsupported export format: {output_format}")
+
+            annotated_columns = [
+                entry.get("columns", {}).get("annotated")
+                for entry in pipeline_plan
+                if entry.get("columns", {}).get("annotated") in working_df.columns
+            ]
+            annotated_total = 0
+            if annotated_columns:
+                combined_mask = working_df[annotated_columns[0]].fillna(False).astype(bool)
+                for col_name in annotated_columns[1:]:
+                    combined_mask = combined_mask | working_df[col_name].fillna(False).astype(bool)
+                annotated_total = int(combined_mask.sum())
+
+            models_meta = []
+            for entry, stats in zip(pipeline_plan, run_stats):
+                info = entry.get("info", {})
+                path_value = info.get("path")
+                models_meta.append(
+                    {
+                        "id": entry.get("id"),
+                        "relative_name": info.get("relative_name"),
+                        "path": str(path_value) if path_value is not None else None,
+                        "language": info.get("language"),
+                        "scope": entry.get("scope"),
+                        "columns": entry.get("columns"),
+                        "rows_scheduled": stats.get("rows_scheduled"),
+                        "rows_annotated": stats.get("rows_annotated"),
+                    }
+                )
+
+            metadata_payload = {
+                "session_id": self.session_id,
+                "generated_at": datetime.now().isoformat(),
+                "data_source": data_source,
+                "column_mapping": column_mapping,
+                "language": language_info,
+                "annotation_config": annotation_config,
+                "export": {
+                    "path": str(output_path),
+                    "format": output_format,
+                    "include_probabilities": export_config.get("include_probabilities", True),
+                    "archive_session": export_config.get("archive_session", False),
+                },
+                "scoped_row_count": int(len(working_df)),
+                "annotated_row_estimate": annotated_total,
+                "models": models_meta,
+            }
+
+            metadata_path = self._persist_run_metadata(metadata_payload, output_path.parent)
+
+            archive_path = None
+            if export_config.get("archive_session"):
+                archive_path = shutil.make_archive(str(output_path.parent), "zip", root_dir=output_path.parent)
+
+            if self.console:
+                self.console.print("\n[bold green]✓ Annotation completed successfully.[/bold green]")
+                self.console.print(f"[cyan]Output file:[/cyan] {output_path}")
+                if annotated_total:
+                    self.console.print(f"[dim]{annotated_total:,} rows annotated across the configured pipeline.[/dim]")
+                self.console.print(f"[dim]Metadata stored at {metadata_path}[/dim]")
+                if archive_path:
+                    self.console.print(f"[dim]Archive created at {archive_path}[/dim]")
+
+            return True
+
+        except Exception as exc:
+            self.logger.exception("Annotation execution failed")
+            if self.console:
+                self.console.print(f"[bold red]✗ Error during annotation:[/bold red] {exc}", markup=True)
+            return False
