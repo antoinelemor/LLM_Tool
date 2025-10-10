@@ -7338,62 +7338,43 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             onevsall_file = bundle.training_files['onevsall_multilabel']
             self.console.print(f"\n[bold yellow]Training one-vs-all models for {len(onevsall_keys)} keys[/bold yellow]")
 
-            # CRITICAL: Validate one-vs-all file before training
+            # Use multi-label trainer for one-vs-all
+            onevsall_config = {
+                'input_file': str(onevsall_file),
+                'model_name': model_name,
+                'num_epochs': epochs,
+                'output_dir': str(output_dir / "onevsall"),
+                'text_column': bundle.text_column,
+                'label_column': bundle.label_column,
+                'training_strategy': 'multi-label',  # CRITICAL: Use multi-label trainer
+                'training_approach': 'one-vs-all',  # CRITICAL: Explicitly mark as one-vs-all to prevent multiclass detection
+                'multiclass_groups': None,  # Force one-vs-all
+                'reinforced_learning': enable_reinforced_learning,
+                'confirmed_languages': list(languages) if languages else None,
+                'session_id': session_id,
+                'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
+                # Global progress tracking
+                'global_total_models': global_total_models,
+                'global_current_model': len(multiclass_keys) + 1,
+                'global_total_epochs': global_total_epochs,
+                'global_max_epochs': global_max_epochs,
+                'global_completed_epochs': global_completed_epochs,
+                'global_start_time': global_start_time
+            }
+
+            if models_by_language:
+                onevsall_config["models_by_language"] = models_by_language
+
             try:
-                validated_file, was_filtered = self._validate_and_filter_insufficient_labels(
-                    input_file=str(onevsall_file),
-                    strategy='multi-label',  # One-vs-all uses multi-label strategy
-                    min_samples=2,
-                    auto_remove=True,  # Auto-remove since user already confirmed for main file
-                    train_by_language=needs_language_training
-                )
-                if was_filtered:
-                    onevsall_file = Path(validated_file)
-                    self.console.print(f"[green]✓ Using filtered dataset for one-vs-all[/green]")
-            except ValueError as e:
-                self.console.print(f"[red]✗ Failed to validate one-vs-all file: {e}[/red]")
-                self.logger.error(f"Validation failed for one-vs-all: {e}")
-                # Continue without one-vs-all training
-                onevsall_file = None
-
-            if onevsall_file:
-                # Use multi-label trainer for one-vs-all
-                onevsall_config = {
-                    'input_file': str(onevsall_file),
-                    'model_name': model_name,
-                    'num_epochs': epochs,
-                    'output_dir': str(output_dir / "onevsall"),
-                    'text_column': bundle.text_column,
-                    'label_column': bundle.label_column,
-                    'training_strategy': 'multi-label',  # CRITICAL: Use multi-label trainer
-                    'training_approach': 'one-vs-all',  # CRITICAL: Explicitly mark as one-vs-all to prevent multiclass detection
-                    'multiclass_groups': None,  # Force one-vs-all
-                    'reinforced_learning': enable_reinforced_learning,
-                    'confirmed_languages': list(languages) if languages else None,
-                    'session_id': session_id,
-                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
-                    # Global progress tracking
-                    'global_total_models': global_total_models,
-                    'global_current_model': len(multiclass_keys) + 1,
-                    'global_total_epochs': global_total_epochs,
-                    'global_max_epochs': global_max_epochs,
-                    'global_completed_epochs': global_completed_epochs,
-                    'global_start_time': global_start_time
-                }
-
-                if models_by_language:
-                    onevsall_config["models_by_language"] = models_by_language
-
-                try:
-                    onevsall_result = trainer.train(onevsall_config)
-                    # Update global completed epochs
-                    global_completed_epochs = onevsall_result.get('global_completed_epochs', global_completed_epochs)
-                    results_per_key['onevsall_combined'] = onevsall_result
-                    self.console.print(f"[green]✓ Completed one-vs-all models[/green]")
-                except Exception as exc:
-                    self.console.print(f"[red]✗ Failed to train one-vs-all models: {exc}[/red]")
-                    self.logger.exception(f"One-vs-all training failed", exc_info=exc)
-                    results_per_key['onevsall_combined'] = {'error': str(exc)}
+                onevsall_result = trainer.train(onevsall_config)
+                # Update global completed epochs
+                global_completed_epochs = onevsall_result.get('global_completed_epochs', global_completed_epochs)
+                results_per_key['onevsall_combined'] = onevsall_result
+                self.console.print(f"[green]✓ Completed one-vs-all models[/green]")
+            except Exception as exc:
+                self.console.print(f"[red]✗ Failed to train one-vs-all models: {exc}[/red]")
+                self.logger.exception(f"One-vs-all training failed", exc_info=exc)
+                results_per_key['onevsall_combined'] = {'error': str(exc)}
 
         # Aggregate results
         successful_results = [r for r in results_per_key.values() if 'error' not in r]

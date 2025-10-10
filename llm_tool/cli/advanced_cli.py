@@ -3364,27 +3364,20 @@ class AdvancedCLI:
         # REPRODUCIBILITY METADATA
         # ============================================================
         self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
-        self.console.print("[yellow]⚠️  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
-    
+        self.console.print("[green]✓ Session parameters are automatically saved for:[/green]\n")
+
         self.console.print("  [green]1. Resume Capability[/green]")
         self.console.print("     • Continue this annotation if it stops or crashes")
         self.console.print("     • Annotate additional rows later with same settings")
         self.console.print("     • Access via 'Resume/Relaunch Annotation' workflow\n")
-    
+
         self.console.print("  [green]2. Scientific Reproducibility[/green]")
         self.console.print("     • Document exact parameters for research papers")
         self.console.print("     • Reproduce identical annotations in the future")
         self.console.print("     • Track model version, prompts, and all settings\n")
-    
-        self.console.print("  [red]⚠️  If you choose NO:[/red]")
-        self.console.print("     • You CANNOT resume this annotation later")
-        self.console.print("     • You CANNOT relaunch with same parameters")
-        self.console.print("     • Parameters will be lost forever\n")
-    
-        save_metadata = Confirm.ask(
-            "[bold yellow]Save annotation parameters to JSON file?[/bold yellow]",
-            default=True
-        )
+
+        # Metadata is ALWAYS saved automatically for reproducibility
+        save_metadata = True
     
         # ============================================================
         # VALIDATION TOOL EXPORT OPTION
@@ -3895,17 +3888,21 @@ class AdvancedCLI:
         # ============================================================
         # DETECT METADATA FILES
         # ============================================================
+        from pathlib import Path
+
+        # Search in both old and new locations
         annotations_dir = self.settings.paths.data_dir / 'annotations'
+        factory_logs_dir = Path("logs") / "annotator_factory"
 
-        if not annotations_dir.exists():
-            self.console.print("[yellow]No annotations directory found.[/yellow]")
-            self.console.print("[dim]Run Complete Workflow first to create annotation sessions.[/dim]")
-            self.console.print("\n[dim]Press Enter to continue...[/dim]")
-            input()
-            return
+        metadata_files = []
 
-        # Find all metadata JSON files
-        metadata_files = list(annotations_dir.glob("*_metadata_*.json"))
+        # Old location: data/annotations/
+        if annotations_dir.exists():
+            metadata_files.extend(list(annotations_dir.glob("**/*_metadata_*.json")))
+
+        # New location: logs/annotator_factory/
+        if factory_logs_dir.exists():
+            metadata_files.extend(list(factory_logs_dir.glob("**/*_metadata_*.json")))
 
         if not metadata_files:
             self.console.print("[yellow]No saved workflow parameters found.[/yellow]")
@@ -4041,6 +4038,23 @@ class AdvancedCLI:
         output_config = metadata.get('output', {})
         export_prefs = metadata.get('export_preferences', {})
         training_workflow = metadata.get('training_workflow', {})
+
+        # Create session ID and directories
+        # For relaunch: create new session, for resume: use existing or create new
+        if action_mode == 'relaunch':
+            # New session with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            session_id = f"factory_session_{timestamp}"
+        else:
+            # Try to get existing session ID from metadata
+            session_id = metadata.get('session_id')
+            if not session_id:
+                # Fallback: create from metadata file name or timestamp
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                session_id = f"factory_session_{timestamp}"
+
+        # Create session directories
+        session_dirs = self._create_annotator_factory_session_directories(session_id)
 
         # Get export preferences
         export_to_doccano = export_prefs.get('export_to_doccano', False)
@@ -4356,9 +4370,29 @@ class AdvancedCLI:
         - Comprehensive metrics and training summaries
         """
         try:
-            # Use the Training Arena workflow for post-annotation training
-            self.console.print("\n[bold cyan]🎓 Post-Annotation Training with Training Arena[/bold cyan]")
-            self.console.print("[dim]Using the complete Training Arena workflow for LLM-JSON format data[/dim]\n")
+            # Display STEP 2/3 banner - Train Models
+            from llm_tool.cli.banners import BANNERS, STEP_NUMBERS, STEP_LABEL
+            from rich.align import Align
+
+            self.console.print()
+
+            # Display "STEP" label in ASCII art
+            for line in STEP_LABEL.split('\n'):
+                self.console.print(Align.center(f"[bold {BANNERS['train_model']['color']}]{line}[/bold {BANNERS['train_model']['color']}]"))
+
+            # Display "2/3" in ASCII art
+            for line in STEP_NUMBERS['2/3'].split('\n'):
+                self.console.print(Align.center(f"[bold {BANNERS['train_model']['color']}]{line}[/bold {BANNERS['train_model']['color']}]"))
+
+            self.console.print()
+
+            # Display main TRAIN MODEL banner (centered)
+            for line in BANNERS['train_model']['ascii'].split('\n'):
+                self.console.print(Align.center(f"[bold {BANNERS['train_model']['color']}]{line}[/bold {BANNERS['train_model']['color']}]"))
+
+            # Display tagline (centered)
+            self.console.print(Align.center(f"[{BANNERS['train_model']['color']}]{BANNERS['train_model']['tagline']}[/{BANNERS['train_model']['color']}]"))
+            self.console.print()
 
             # Import and use the COMPLETE Training Arena integration
             from llm_tool.cli.training_arena_integrated import integrate_training_arena_in_annotator_factory
@@ -5998,7 +6032,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         if HAS_RICH and self.console:
             self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
-            self.console.print("[yellow]⚠️  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
+            self.console.print("[green]✓ Session parameters are automatically saved for:[/green]\n")
 
             self.console.print("  [green]1. Resume Capability[/green]")
             self.console.print("     • Continue this annotation if it stops or crashes")
@@ -6010,15 +6044,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("     • Reproduce identical annotations in the future")
             self.console.print("     • Track model version, prompts, and all settings\n")
 
-            self.console.print("  [red]⚠️  If you choose NO:[/red]")
-            self.console.print("     • You CANNOT resume this annotation later")
-            self.console.print("     • You CANNOT relaunch with same parameters")
-            self.console.print("     • Parameters will be lost forever\n")
-
-            save_metadata = Confirm.ask(
-                "[bold yellow]Save annotation parameters to JSON file?[/bold yellow]",
-                default=True
-            )
+            # Metadata is ALWAYS saved automatically for reproducibility
+            save_metadata = True
 
             # Validation tool export option
             self.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
@@ -6120,7 +6147,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         999999
                     )
         else:
-            save_metadata = False
+            # Metadata is ALWAYS saved, even without Rich console
+            save_metadata = True
             export_to_doccano = False
             export_to_labelstudio = False
             export_sample_size = None
@@ -6695,7 +6723,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         bundle: TrainingDataBundle,
         mode: str,
         preloaded_config: Optional[Dict[str, Any]] = None,
-        is_resume: bool = False
+        is_resume: bool = False,
+        session_id: Optional[str] = None
     ) -> None:
         """
         Display training parameters and ask for confirmation before execution.
@@ -6711,6 +6740,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             Pre-loaded configuration from saved session (for resume/relaunch)
         is_resume : bool
             Whether this is a resume (True) or fresh start (False)
+        session_id : str, optional
+            Session ID for traceability (e.g., from annotator factory)
         """
         from datetime import datetime
         from rich.prompt import Confirm
@@ -6901,17 +6932,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         }
 
         # Get session ID BEFORE saving metadata
-        # Reuse the session ID created at the beginning (self.current_session_id)
-        # Add defensive check in case this attribute wasn't initialized
-        if not hasattr(self, 'current_session_id') or not self.current_session_id:
+        # Priority: 1) Passed as parameter (from annotator factory)
+        #           2) Reuse the session ID created at the beginning (self.current_session_id)
+        #           3) Generate a fallback session_id
+        if session_id:
+            # Use session_id passed as parameter (e.g., from annotator factory for traceability)
+            pass
+        elif hasattr(self, 'current_session_id') and self.current_session_id:
+            # Reuse the session ID created at the beginning
+            session_id = self.current_session_id
+        else:
             # Fallback: generate a session_id if not set (should not happen in normal flow)
             self.logger.warning("current_session_id not set, generating fallback session_id")
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             session_id = f"training_session_{timestamp}"
             self.current_session_id = session_id
-        else:
-            session_id = self.current_session_id
 
         # Save PRE-TRAINING metadata
         metadata_path = None  # Initialize before conditional block
@@ -13746,6 +13782,24 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             for idx, (key_name, key_file_path) in enumerate(key_files.items(), 1):
                 self.console.print(f"\n[bold]Training multi-class model for '{key_name}'[/bold] ({key_file_path.name})")
 
+                # CRITICAL: Validate each multiclass file before training
+                try:
+                    validated_file, was_filtered = self._validate_and_filter_insufficient_labels(
+                        input_file=str(key_file_path),
+                        strategy='single-label',  # Multiclass uses single-label strategy
+                        min_samples=2,
+                        auto_remove=True,  # Auto-remove since user already confirmed for main file
+                        train_by_language=needs_language_training
+                    )
+                    if was_filtered:
+                        key_file_path = Path(validated_file)
+                        self.console.print(f"[green]✓ Using filtered dataset for {key_name}[/green]")
+                except ValueError as e:
+                    self.console.print(f"[red]✗ Failed to train {key_name}: {e}[/red]")
+                    self.logger.error(f"Validation failed for {key_name}: {e}")
+                    results_per_key[key_name] = {'error': str(e)}
+                    continue
+
                 key_config = {
                     'input_file': str(key_file_path),
                     'model_name': model_name,
@@ -13786,43 +13840,62 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 onevsall_file = bundle.training_files['onevsall_multilabel']
                 self.console.print(f"\n[bold yellow]Training one-vs-all models for {len(onevsall_keys)} keys[/bold yellow]")
 
-                # Use multi-label trainer for one-vs-all
-                onevsall_config = {
-                    'input_file': str(onevsall_file),
-                    'model_name': model_name,
-                    'num_epochs': epochs,
-                    'output_dir': str(output_dir / "onevsall"),
-                    'text_column': bundle.text_column,
-                    'label_column': bundle.label_column,
-                    'training_strategy': 'multi-label',  # CRITICAL: Use multi-label trainer
-                    'training_approach': 'one-vs-all',  # CRITICAL: Explicitly mark as one-vs-all to prevent multiclass detection
-                    'multiclass_groups': None,  # Force one-vs-all
-                    'reinforced_learning': enable_reinforced_learning,
-                    'confirmed_languages': list(languages) if languages else None,
-                    'session_id': session_id,
-                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
-                    # Global progress tracking
-                    'global_total_models': global_total_models,
-                    'global_current_model': len(multiclass_keys) + 1,
-                    'global_total_epochs': global_total_epochs,
-                    'global_max_epochs': global_max_epochs,
-                    'global_completed_epochs': global_completed_epochs,
-                    'global_start_time': global_start_time
-                }
-
-                if models_by_language:
-                    onevsall_config["models_by_language"] = models_by_language
-
+                # CRITICAL: Validate one-vs-all file before training
                 try:
-                    onevsall_result = trainer.train(onevsall_config)
-                    # Update global completed epochs
-                    global_completed_epochs = onevsall_result.get('global_completed_epochs', global_completed_epochs)
-                    results_per_key['onevsall_combined'] = onevsall_result
-                    self.console.print(f"[green]✓ Completed one-vs-all models[/green]")
-                except Exception as exc:
-                    self.console.print(f"[red]✗ Failed to train one-vs-all models: {exc}[/red]")
-                    self.logger.exception(f"One-vs-all training failed", exc_info=exc)
-                    results_per_key['onevsall_combined'] = {'error': str(exc)}
+                    validated_file, was_filtered = self._validate_and_filter_insufficient_labels(
+                        input_file=str(onevsall_file),
+                        strategy='multi-label',  # One-vs-all uses multi-label strategy
+                        min_samples=2,
+                        auto_remove=True,  # Auto-remove since user already confirmed for main file
+                        train_by_language=needs_language_training
+                    )
+                    if was_filtered:
+                        onevsall_file = Path(validated_file)
+                        self.console.print(f"[green]✓ Using filtered dataset for one-vs-all[/green]")
+                except ValueError as e:
+                    self.console.print(f"[red]✗ Failed to validate one-vs-all file: {e}[/red]")
+                    self.logger.error(f"Validation failed for one-vs-all: {e}")
+                    # Continue without one-vs-all training
+                    onevsall_file = None
+
+                if onevsall_file:
+                    # Use multi-label trainer for one-vs-all
+                    onevsall_config = {
+                        'input_file': str(onevsall_file),
+                        'model_name': model_name,
+                        'num_epochs': epochs,
+                        'output_dir': str(output_dir / "onevsall"),
+                        'text_column': bundle.text_column,
+                        'label_column': bundle.label_column,
+                        'training_strategy': 'multi-label',  # CRITICAL: Use multi-label trainer
+                        'training_approach': 'one-vs-all',  # CRITICAL: Explicitly mark as one-vs-all to prevent multiclass detection
+                        'multiclass_groups': None,  # Force one-vs-all
+                        'reinforced_learning': enable_reinforced_learning,
+                        'confirmed_languages': list(languages) if languages else None,
+                        'session_id': session_id,
+                        'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
+                        # Global progress tracking
+                        'global_total_models': global_total_models,
+                        'global_current_model': len(multiclass_keys) + 1,
+                        'global_total_epochs': global_total_epochs,
+                        'global_max_epochs': global_max_epochs,
+                        'global_completed_epochs': global_completed_epochs,
+                        'global_start_time': global_start_time
+                    }
+
+                    if models_by_language:
+                        onevsall_config["models_by_language"] = models_by_language
+
+                    try:
+                        onevsall_result = trainer.train(onevsall_config)
+                        # Update global completed epochs
+                        global_completed_epochs = onevsall_result.get('global_completed_epochs', global_completed_epochs)
+                        results_per_key['onevsall_combined'] = onevsall_result
+                        self.console.print(f"[green]✓ Completed one-vs-all models[/green]")
+                    except Exception as exc:
+                        self.console.print(f"[red]✗ Failed to train one-vs-all models: {exc}[/red]")
+                        self.logger.exception(f"One-vs-all training failed", exc_info=exc)
+                        results_per_key['onevsall_combined'] = {'error': str(exc)}
 
             # Aggregate results
             successful_results = [r for r in results_per_key.values() if 'error' not in r]
@@ -16809,17 +16882,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         # DETECT METADATA FILES
         # ============================================================
+        from pathlib import Path
+
+        # Search in both old and new locations
         annotations_dir = self.settings.paths.data_dir / 'annotations'
+        annotator_logs_dir = Path("logs") / "annotator"
 
-        if not annotations_dir.exists():
-            self.console.print("[yellow]No annotations directory found.[/yellow]")
-            self.console.print("[dim]Run Smart Annotate first to create annotation sessions.[/dim]")
-            self.console.print("\n[dim]Press Enter to continue...[/dim]")
-            input()
-            return
+        metadata_files = []
 
-        # Find all metadata JSON files
-        metadata_files = list(annotations_dir.glob("*_metadata_*.json"))
+        # Old location: data/annotations/
+        if annotations_dir.exists():
+            metadata_files.extend(list(annotations_dir.glob("**/*_metadata_*.json")))
+
+        # New location: logs/annotator/
+        if annotator_logs_dir.exists():
+            metadata_files.extend(list(annotator_logs_dir.glob("**/*_metadata_*.json")))
 
         if not metadata_files:
             self.console.print("[yellow]No saved annotation parameters found.[/yellow]")
@@ -17615,27 +17692,20 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # REPRODUCIBILITY METADATA
         # ============================================================
         self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
-        self.console.print("[yellow]⚠️  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
-    
+        self.console.print("[green]✓ Session parameters are automatically saved for:[/green]\n")
+
         self.console.print("  [green]1. Resume Capability[/green]")
         self.console.print("     • Continue this annotation if it stops or crashes")
         self.console.print("     • Annotate additional rows later with same settings")
         self.console.print("     • Access via 'Resume/Relaunch Annotation' workflow\n")
-    
+
         self.console.print("  [green]2. Scientific Reproducibility[/green]")
         self.console.print("     • Document exact parameters for research papers")
         self.console.print("     • Reproduce identical annotations in the future")
         self.console.print("     • Track model version, prompts, and all settings\n")
-    
-        self.console.print("  [red]⚠️  If you choose NO:[/red]")
-        self.console.print("     • You CANNOT resume this annotation later")
-        self.console.print("     • You CANNOT relaunch with same parameters")
-        self.console.print("     • Parameters will be lost forever\n")
-    
-        save_metadata = Confirm.ask(
-            "[bold yellow]Save annotation parameters to JSON file?[/bold yellow]",
-            default=True
-        )
+
+        # Metadata is ALWAYS saved automatically for reproducibility
+        save_metadata = True
     
         # ============================================================
         # VALIDATION TOOL EXPORT OPTION
@@ -18697,16 +18767,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("\n[bold cyan]🗑️  Clean Old Metadata[/bold cyan]\n")
         self.console.print("[dim]Delete saved annotation parameters to free space[/dim]\n")
 
+        from pathlib import Path
+
+        # Search in both old and new locations
         annotations_dir = self.settings.paths.data_dir / 'annotations'
+        annotator_logs_dir = Path("logs") / "annotator"
+        factory_logs_dir = Path("logs") / "annotator_factory"
 
-        if not annotations_dir.exists():
-            self.console.print("[yellow]No annotations directory found.[/yellow]")
-            self.console.print("\n[dim]Press Enter to continue...[/dim]")
-            input()
-            return
+        metadata_files = []
 
-        # Find all metadata JSON files
-        metadata_files = list(annotations_dir.glob("*_metadata_*.json"))
+        # Old location: data/annotations/
+        if annotations_dir.exists():
+            metadata_files.extend(list(annotations_dir.glob("**/*_metadata_*.json")))
+
+        # New location: logs/annotator/
+        if annotator_logs_dir.exists():
+            metadata_files.extend(list(annotator_logs_dir.glob("**/*_metadata_*.json")))
+
+        # New location: logs/annotator_factory/
+        if factory_logs_dir.exists():
+            metadata_files.extend(list(factory_logs_dir.glob("**/*_metadata_*.json")))
 
         if not metadata_files:
             self.console.print("[yellow]No metadata files found.[/yellow]")
@@ -19947,15 +20027,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("     • Reproduce identical annotations in the future")
         self.console.print("     • Track model version, prompts, and all settings\n")
 
-        self.console.print("  [red]⚠️  If you choose NO:[/red]")
-        self.console.print("     • You CANNOT resume this annotation later")
-        self.console.print("     • You CANNOT relaunch with same parameters")
-        self.console.print("     • Parameters will be lost forever\n")
-
-        save_metadata = Confirm.ask(
-            "[bold yellow]Save annotation parameters to JSON file?[/bold yellow]",
-            default=True
-        )
+        # Metadata is ALWAYS saved automatically for reproducibility
+        save_metadata = True
         config['save_metadata'] = save_metadata
 
         # ============================================================
