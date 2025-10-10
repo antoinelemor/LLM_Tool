@@ -826,50 +826,60 @@ class AdvancedCLI:
                 if display_results and self.console:
                     self.console.print("[dim]Analyzing text lengths for all documents...[/dim]\n")
 
-                # Get all texts
                 all_texts = df[text_column].dropna().astype(str).tolist()
 
-                # Load tokenizer for accurate token counting
                 try:
-                    if not HAS_TRANSFORMERS:
-                        raise ImportError("transformers library not available")
+                    tokenizer = None
+                    tokenizer_error = None
 
-                    # Import tqdm locally to avoid UnboundLocalError
                     if HAS_TQDM:
                         from tqdm import tqdm
 
-                    # Try to load tokenizer with fallback
-                    tokenizer = None
-                    tokenizer_models = [
-                        "bert-base-multilingual-cased",  # Best for multilingual
-                        "bert-base-uncased",              # Fallback
-                        "distilbert-base-uncased"         # Lightweight fallback
-                    ]
+                    if HAS_TRANSFORMERS:
 
-                    for model_name in tokenizer_models:
-                        try:
-                            tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=False)
-                            break
-                        except Exception as model_error:
-                            self.logger.debug(f"Could not load {model_name}: {model_error}")
-                            continue
+                        tokenizer_models = [
+                            "bert-base-multilingual-cased",  # Best for multilingual
+                            "bert-base-uncased",             # Fallback
+                            "distilbert-base-uncased"        # Lightweight fallback
+                        ]
 
-                    if tokenizer is None:
-                        raise RuntimeError("Could not load any tokenizer model")
+                        for model_name in tokenizer_models:
+                            try:
+                                tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
+                                break
+                            except Exception as model_error:
+                                tokenizer_error = model_error
+                                self.logger.debug(f"Could not load {model_name} tokenizer locally: {model_error}")
 
-                    # Analyze lengths in both characters and tokens
+                    if tokenizer is None and display_results and self.console:
+                        warning_msg = "[yellow]⚠️ Unable to load a Hugging Face tokenizer locally."
+                        if tokenizer_error:
+                            warning_msg += f" ({tokenizer_error})"
+                        warning_msg += " Falling back to whitespace token counts.[/yellow]"
+                        self.console.print(f"{warning_msg}\n")
+
                     char_lengths = []
                     token_lengths = []
 
-                    # Use tqdm only if available
-                    text_iterator = tqdm(all_texts, desc="Measuring text lengths", disable=not HAS_TQDM) if HAS_TQDM else all_texts
-                    for text in text_iterator:
-                        char_lengths.append(len(text))
-                        tokens = tokenizer.encode(text, truncation=False, add_special_tokens=True)
-                        token_lengths.append(len(tokens))
+                    iterator = (
+                        tqdm(all_texts, desc="Measuring text lengths", disable=not HAS_TQDM)
+                        if HAS_TQDM else all_texts
+                    )
 
-                    char_lengths = np.array(char_lengths)
-                    token_lengths = np.array(token_lengths)
+                    for text in iterator:
+                        char_lengths.append(len(text))
+                        if tokenizer:
+                            try:
+                                tokens = tokenizer.encode(text, truncation=False, add_special_tokens=True)
+                                token_lengths.append(len(tokens))
+                            except Exception as encode_error:
+                                self.logger.debug(f"Tokenizer failed on text length analysis: {encode_error}")
+                                token_lengths.append(len(text.split()))
+                        else:
+                            token_lengths.append(len(text.split()))
+
+                    char_lengths = np.array(char_lengths) if char_lengths else np.array([0])
+                    token_lengths = np.array(token_lengths) if token_lengths else np.zeros_like(char_lengths)
 
                     # Calculate comprehensive statistics
                     text_length_stats = {
@@ -898,12 +908,13 @@ class AdvancedCLI:
                     long_docs = np.sum((token_lengths >= 512) & (token_lengths < 1024))
                     very_long_docs = np.sum(token_lengths >= 1024)
                     total_docs = len(token_lengths)
+                    denom = total_docs if total_docs else 1
 
                     text_length_stats['distribution'] = {
-                        'short': {'count': int(short_docs), 'percentage': float(short_docs / total_docs * 100)},
-                        'medium': {'count': int(medium_docs), 'percentage': float(medium_docs / total_docs * 100)},
-                        'long': {'count': int(long_docs), 'percentage': float(long_docs / total_docs * 100)},
-                        'very_long': {'count': int(very_long_docs), 'percentage': float(very_long_docs / total_docs * 100)},
+                        'short': {'count': int(short_docs), 'percentage': float(short_docs / denom * 100)},
+                        'medium': {'count': int(medium_docs), 'percentage': float(medium_docs / denom * 100)},
+                        'long': {'count': int(long_docs), 'percentage': float(long_docs / denom * 100)},
+                        'very_long': {'count': int(very_long_docs), 'percentage': float(very_long_docs / denom * 100)},
                     }
 
                     # Display results if requested
@@ -933,17 +944,17 @@ class AdvancedCLI:
                         dist_table.add_column("Count", style="yellow", justify="right", width=12)
                         dist_table.add_column("Percentage", style="green", justify="right", width=12)
 
-                        dist_table.add_row("Short", "< 128 tokens", f"{short_docs:,}", f"{short_docs / total_docs * 100:.1f}%")
-                        dist_table.add_row("Medium", "128-511 tokens", f"{medium_docs:,}", f"{medium_docs / total_docs * 100:.1f}%")
-                        dist_table.add_row("Long", "512-1023 tokens", f"{long_docs:,}", f"{long_docs / total_docs * 100:.1f}%",
-                                         style="bold yellow" if long_docs > 0 else None)
-                        dist_table.add_row("Very Long", "≥ 1024 tokens", f"{very_long_docs:,}", f"{very_long_docs / total_docs * 100:.1f}%",
-                                         style="bold red" if very_long_docs > 0 else None)
+                        dist_table.add_row("Short", "< 128 tokens", f"{short_docs:,}", f"{short_docs / denom * 100:.1f}%")
+                        dist_table.add_row("Medium", "128-511 tokens", f"{medium_docs:,}", f"{medium_docs / denom * 100:.1f}%")
+                        dist_table.add_row("Long", "512-1023 tokens", f"{long_docs:,}", f"{long_docs / denom * 100:.1f}%",
+                                           style="bold yellow" if long_docs > 0 else None)
+                        dist_table.add_row("Very Long", "≥ 1024 tokens", f"{very_long_docs:,}", f"{very_long_docs / denom * 100:.1f}%",
+                                           style="bold red" if very_long_docs > 0 else None)
 
                         self.console.print(dist_table)
 
                         # Long document warning
-                        long_document_percentage = (long_docs + very_long_docs) / total_docs * 100
+                        long_document_percentage = ((long_docs + very_long_docs) / denom) * 100
 
                         if long_document_percentage > 20:
                             requires_long_document_model = True
@@ -953,7 +964,7 @@ class AdvancedCLI:
                         else:
                             self.console.print(f"\n[green]✓ Most documents ({100 - long_document_percentage:.1f}%) fit within standard BERT limits (512 tokens)[/green]")
 
-                    text_length_stats['requires_long_model'] = requires_long_document_model
+                        text_length_stats['requires_long_model'] = requires_long_document_model
 
                 except Exception as tokenizer_error:
                     self.logger.debug(f"Tokenizer-based analysis failed: {tokenizer_error}")

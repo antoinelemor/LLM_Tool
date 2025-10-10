@@ -1066,6 +1066,28 @@ def _training_studio_intelligent_dataset_selector(
                 else:
                     detected_languages_per_text.append(None)
 
+        if lang_column and lang_column in df.columns:
+            # Ensure we always have a fallback distribution based on the provided language column
+            from llm_tool.cli.advanced_cli import LanguageNormalizer
+
+            normalized_langs_from_column: List[str] = []
+            column_lang_counts: Dict[str, int] = {}
+
+            for raw_value in df[lang_column].fillna("").astype(str):
+                normalized = LanguageNormalizer.normalize_language(raw_value)
+                if not normalized:
+                    normalized = raw_value.strip().lower() or "unknown"
+
+                normalized_langs_from_column.append(normalized)
+                if normalized != "unknown":
+                    column_lang_counts[normalized] = column_lang_counts.get(normalized, 0) + 1
+
+            if not lang_counts and column_lang_counts:
+                lang_counts = column_lang_counts
+
+            if not detected_languages_per_text:
+                detected_languages_per_text = normalized_langs_from_column
+
         confirmed_languages: Set[str] = set()
         if lang_counts or detected_languages_per_text:
             confirmed_languages, lang_column, language_distribution = self._confirm_language_selection(
