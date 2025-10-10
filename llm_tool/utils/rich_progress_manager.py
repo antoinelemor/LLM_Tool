@@ -497,21 +497,7 @@ class RichProgressManager:
             # Start progress
             self.progress.start()
 
-            # Add SINGLE task
-            self.overall_task_id = self.progress.add_task(
-                "Overall: Initialisation",
-                total=100,
-                completed=0
-            )
-
-            self.subtask_task_id = self.progress.add_task(
-                "Subtask: En attente",
-                total=100,
-                completed=0
-            )
-
-            # Clear line after to ensure clean display
-            print()
+            # Task will be created on first update (no "Starting..." bar)
 
     def pause_for_training(self):
         """Pause progress display for training phase"""
@@ -522,12 +508,6 @@ class RichProgressManager:
                     self.overall_task_id,
                     description="⏸ Pausing for training..."
                 )
-                if self.subtask_task_id is not None:
-                    self.progress.update(
-                        self.subtask_task_id,
-                        description="Subtask: Pause",
-                        completed=0
-                    )
 
                 time.sleep(0.5)
 
@@ -576,22 +556,12 @@ class RichProgressManager:
                     total=100,
                     completed=max(0.0, min(self.state.current_progress, 100.0))
                 )
-                self.subtask_task_id = self.progress.add_task(
-                    "Subtask: Reprise",
-                    total=100,
-                    completed=0
-                )
 
                 # Refresh current display immediately
                 self.progress.update(
                     self.overall_task_id,
                     completed=max(0.0, min(self.state.current_progress, 100.0)),
                     description=f"{self.state.current_phase or 'Progress'}: {self.state.current_message}"
-                )
-                self.progress.update(
-                    self.subtask_task_id,
-                    completed=0,
-                    description="Subtask: En attente"
                 )
 
                 del self._paused
@@ -670,7 +640,15 @@ class RichProgressManager:
             if self.state.error_count > 0:
                 desc += f" [red]({self.state.error_count} errors)[/red]"
 
-            # Update overall progress bar
+            # Create task on first update if not exists
+            if self.overall_task_id is None and self.progress:
+                self.overall_task_id = self.progress.add_task(
+                    desc,
+                    total=100,
+                    completed=0
+                )
+
+            # Update overall progress bar (single bar only)
             if self.overall_task_id is not None:
                 overall_complete = max(0.0, min(progress, 100.0))
                 self.progress.update(
@@ -678,25 +656,6 @@ class RichProgressManager:
                     completed=overall_complete,
                     description=desc
                 )
-
-            # Update subtask bar
-            if self.subtask_task_id is not None:
-                if phase == 'annotation' and subtask and subtask.get('total'):
-                    current = subtask.get('current', 0)
-                    total = subtask.get('total', 1)
-                    sub_pct = max(0.0, min(100.0, (current / max(total, 1)) * 100))
-                    sub_desc = f"Subtask: {subtask.get('message', 'Progress')} [{current}/{total}]"
-                    self.progress.update(
-                        self.subtask_task_id,
-                        completed=sub_pct,
-                        description=sub_desc
-                    )
-                else:
-                    self.progress.update(
-                        self.subtask_task_id,
-                        completed=0,
-                        description="Subtask: En attente"
-                    )
 
             # Handle errors
             if error:

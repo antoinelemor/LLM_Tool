@@ -292,11 +292,11 @@ class DataFilterLogger:
         with open(self.current_session_file, 'a', encoding='utf-8') as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
 
-        # Log summary
-        self.logger.warning(
-            f"[{location}] DataFrame filtering: {filtered_count}/{len(df_before)} rows removed "
-            f"(reason: {reason})"
-        )
+        # Log summary (disabled to avoid cluttering output)
+        # self.logger.warning(
+        #     f"[{location}] DataFrame filtering: {filtered_count}/{len(df_before)} rows removed "
+        #     f"(reason: {reason})"
+        # )
 
     def get_session_summary(self) -> Dict[str, Any]:
         """Get summary statistics for the current session"""

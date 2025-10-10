@@ -2619,18 +2619,46 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         # Determine which keys will be trained
         keys_to_train = annotation_keys if annotation_keys else detected_keys
 
-        # Validate that all selected keys exist in all_keys_values
+        # Validate and auto-correct invalid keys with intelligent suggestions
         invalid_keys = [key for key in keys_to_train if key not in all_keys_values]
         if invalid_keys:
-            self.console.print(f"\n[bold red]❌ Error: Invalid keys selected[/bold red]")
-            self.console.print(f"[yellow]The following keys do not exist in the dataset:[/yellow]")
-            for key in invalid_keys:
-                self.console.print(f"  • [red]{key}[/red]")
-            self.console.print(f"\n[bold cyan]Available keys:[/bold cyan]")
-            for key in sorted(all_keys_values.keys()):
-                self.console.print(f"  • [green]{key}[/green]")
-            self.console.print()
-            return None
+            from difflib import get_close_matches
+
+            self.console.print(f"\n[bold yellow]⚠️  Some keys need correction:[/bold yellow]")
+
+            # Auto-correct using fuzzy matching
+            corrected_keys = []
+            for key in keys_to_train:
+                if key in all_keys_values:
+                    corrected_keys.append(key)
+                else:
+                    # Find best match using fuzzy matching
+                    matches = get_close_matches(key, all_keys_values.keys(), n=1, cutoff=0.6)
+                    if matches:
+                        suggestion = matches[0]
+                        self.console.print(f"  • [red]'{key}'[/red] → [green]'{suggestion}'[/green] [dim](auto-corrected)[/dim]")
+                        corrected_keys.append(suggestion)
+                    else:
+                        self.console.print(f"  • [red]'{key}'[/red] [dim](no match found, will be skipped)[/dim]")
+
+            # Show available keys for reference
+            if len(corrected_keys) < len(keys_to_train):
+                self.console.print(f"\n[bold cyan]💡 Available keys:[/bold cyan]")
+                for key in sorted(all_keys_values.keys()):
+                    self.console.print(f"  • [green]{key}[/green]")
+
+            # Ask user to confirm corrections
+            if corrected_keys:
+                self.console.print(f"\n[green]✓ Corrected selection:[/green] {', '.join(corrected_keys)}")
+                confirm = Confirm.ask("[bold yellow]Use these corrected keys?[/bold yellow]", default=True)
+                if confirm:
+                    keys_to_train = corrected_keys
+                else:
+                    self.console.print("[yellow]Training cancelled. Please try again with correct key names.[/yellow]")
+                    return None
+            else:
+                self.console.print("[red]❌ No valid keys found after correction. Training cancelled.[/red]")
+                return None
 
         # Calculate total number of models for each approach
         total_values_count = 0
@@ -5396,6 +5424,246 @@ def _ask_split_ratios(self, use_test_set: bool, default_train: float,
     except ValueError as e:
         self.console.print(f"      [red]Error: {e}[/red]")
         return None
+
+def _validate_labels_before_file_creation(
+    self,
+    csv_path: str,
+    text_column: str,
+    annotation_column: str,
+    keys_to_train: List[str],
+    key_strategies: Dict[str, str],
+    min_samples: int = 2
+) -> Tuple[Optional[List[str]], bool]:
+    """
+    Validate ALL labels BEFORE creating training files.
+    Detects insufficient labels for ALL modes (multiclass, one-vs-all, hybrid/custom).
+
+    Args:
+        csv_path: Path to annotated CSV file
+        text_column: Column with text data
+        annotation_column: Column with JSON annotations
+        keys_to_train: List of annotation keys to include
+        key_strategies: Dict mapping key_name -> 'multi-class' or 'one-vs-all'
+        min_samples: Minimum samples required per label (default: 2)
+
+    Returns:
+        Tuple of (labels_to_exclude, user_approved_removal)
+        - labels_to_exclude: List of labels to exclude, or None if user cancelled
+        - user_approved_removal: True if user approved removal, False if cancelled
+    """
+    import pandas as pd
+    import json
+    from collections import Counter
+    from rich.table import Table
+    from rich import box
+    from rich.prompt import Confirm
+
+    # Load CSV and count labels
+    df = pd.read_csv(csv_path)
+
+    # Filter to annotated rows only (non-null and non-empty)
+    df_annotated = df[(df[annotation_column].notna()) & (df[annotation_column] != '')].copy()
+
+    if len(df_annotated) == 0:
+        self.console.print("[red]No annotated rows found in dataset[/red]")
+        return None, False
+
+    # Count labels by key and strategy
+    label_counts = {}  # {label: count}
+
+    for idx, row in df_annotated.iterrows():
+        annotation_val = row.get(annotation_column)
+        if pd.isna(annotation_val) or annotation_val == '':
+            continue
+
+        try:
+            if isinstance(annotation_val, str):
+                annotation = json.loads(annotation_val)
+            elif isinstance(annotation_val, dict):
+                annotation = annotation_val
+            else:
+                continue
+        except (json.JSONDecodeError, ValueError):
+            # Try Python literal eval
+            try:
+                import ast
+                annotation = ast.literal_eval(annotation_val)
+            except:
+                continue
+
+        if not isinstance(annotation, dict):
+            continue
+
+        # Process each key according to its strategy
+        for key in keys_to_train:
+            if key not in annotation:
+                continue
+
+            value = annotation[key]
+
+            # Skip None and empty values
+            if value is None or value == '':
+                continue
+
+            strategy = key_strategies.get(key, 'multi-class')
+
+            # For both multi-class and one-vs-all, we need to count individual labels
+            # because one-vs-all creates binary classifiers (class '1' = presence of label)
+            if isinstance(value, list):
+                for v in value:
+                    if v is not None and v != '':
+                        label_key = f"{key}_{v}"
+                        label_counts[label_key] = label_counts.get(label_key, 0) + 1
+            else:
+                label_key = f"{key}_{value}"
+                label_counts[label_key] = label_counts.get(label_key, 0) + 1
+
+    # Find insufficient labels
+    insufficient_labels = {
+        label: count for label, count in label_counts.items()
+        if count < min_samples
+    }
+
+    if not insufficient_labels:
+        # All labels are sufficient
+        return [], False
+
+    # Display warning with comprehensive table
+    self.console.print(f"\n[bold red]⚠️  INSUFFICIENT SAMPLES DETECTED (BEFORE FILE CREATION)[/bold red]\n")
+    self.console.print(f"[yellow]The following labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]\n")
+
+    # Create detailed table showing strategy per label
+    table = Table(border_style="red", show_header=True, header_style="bold red", box=box.ROUNDED)
+    table.add_column("Label", style="yellow bold", width=40)
+    table.add_column("Samples", style="red", justify="right", width=15)
+    table.add_column("Strategy", style="cyan", width=15)
+    table.add_column("Status", style="red", width=20)
+
+    for label, count in sorted(insufficient_labels.items(), key=lambda x: x[1]):
+        # Extract key from label (format: key_value)
+        key_name = label.split('_')[0] if '_' in label else label
+        strategy = key_strategies.get(key_name, 'multi-class')
+
+        table.add_row(
+            label,
+            str(count),
+            strategy,
+            "❌ BLOCKED"
+        )
+
+    self.console.print(table)
+    self.console.print()
+
+    # Explain what will happen
+    self.console.print("[bold]Options:[/bold]")
+    self.console.print("  • [green]Remove[/green]: Automatically remove insufficient labels from the dataset")
+    self.console.print("  • [red]Cancel[/red]: Stop training and fix dataset manually\n")
+
+    should_remove = Confirm.ask(
+        "Remove insufficient labels automatically?",
+        default=False
+    )
+
+    if not should_remove:
+        self.console.print("[yellow]❌ Training cancelled. Please annotate more samples or select different keys.[/yellow]")
+        return None, False
+
+    # User approved removal
+    labels_to_exclude = list(insufficient_labels.keys())
+    return labels_to_exclude, True
+
+def _filter_csv_remove_insufficient_labels(
+    self,
+    csv_path: str,
+    annotation_column: str,
+    labels_to_exclude: List[str]
+) -> str:
+    """
+    Filter CSV to remove insufficient labels from annotations.
+
+    Args:
+        csv_path: Path to original CSV
+        annotation_column: Column with JSON annotations
+        labels_to_exclude: List of labels to remove (format: key_value)
+
+    Returns:
+        Path to filtered CSV file
+    """
+    import pandas as pd
+    import json
+    from pathlib import Path
+
+    df = pd.read_csv(csv_path)
+    csv_path_obj = Path(csv_path)
+
+    # Create filtered CSV path
+    filtered_path = csv_path_obj.parent / f"{csv_path_obj.stem}_filtered{csv_path_obj.suffix}"
+
+    labels_removed_count = 0
+    samples_modified_count = 0
+
+    for idx, row in df.iterrows():
+        annotation_val = row.get(annotation_column)
+        if pd.isna(annotation_val) or annotation_val == '':
+            continue
+
+        try:
+            if isinstance(annotation_val, str):
+                annotation = json.loads(annotation_val)
+            elif isinstance(annotation_val, dict):
+                annotation = annotation_val
+            else:
+                continue
+        except (json.JSONDecodeError, ValueError):
+            try:
+                import ast
+                annotation = ast.literal_eval(annotation_val)
+            except:
+                continue
+
+        if not isinstance(annotation, dict):
+            continue
+
+        # Filter labels
+        modified = False
+        for key, value in list(annotation.items()):
+            if value is None or value == '':
+                continue
+
+            if isinstance(value, list):
+                # Remove values from list
+                original_length = len(value)
+                filtered_values = [
+                    v for v in value
+                    if v is not None and v != '' and f"{key}_{v}" not in labels_to_exclude
+                ]
+                if len(filtered_values) < original_length:
+                    annotation[key] = filtered_values
+                    labels_removed_count += (original_length - len(filtered_values))
+                    modified = True
+            else:
+                # Check if this label should be excluded
+                label_key = f"{key}_{value}"
+                if label_key in labels_to_exclude:
+                    # Set to None to indicate removal
+                    annotation[key] = None
+                    labels_removed_count += 1
+                    modified = True
+
+        if modified:
+            samples_modified_count += 1
+            # Update the annotation in the dataframe
+            df.at[idx, annotation_column] = json.dumps(annotation)
+
+    # Save filtered CSV
+    df.to_csv(filtered_path, index=False)
+
+    self.console.print(f"\n[green]✓ Filtered CSV created:[/green] {filtered_path}")
+    self.console.print(f"  [cyan]• Samples modified:[/cyan] {samples_modified_count}")
+    self.console.print(f"  [cyan]• Label instances removed:[/cyan] {labels_removed_count}")
+    self.console.print(f"  [cyan]• Insufficient label types:[/cyan] {len(labels_to_exclude)}\n")
+
+    return str(filtered_path)
 
 def _validate_and_filter_insufficient_labels(
     self,
@@ -9847,7 +10115,8 @@ def integrate_training_arena_in_annotator_factory(
         Dict with training results and metadata
     """
     console = cli_instance.console
-    
+    from pathlib import Path
+
     # Pre-configured values from Annotator Factory
     csv_path = Path(output_file) if isinstance(output_file, str) else output_file
     selected_text_column = text_column
@@ -9870,12 +10139,46 @@ def integrate_training_arena_in_annotator_factory(
     analysis = detector.analyze_file_intelligently(csv_path)
     all_columns = analysis.get('all_columns', [])
     
-    # Create training session with Annotator Factory session
-    training_session_id = f"training_{session_id}"
+    # Import TrainingDataSessionManager for comprehensive logging
+    from llm_tool.utils.training_data_utils import TrainingDataSessionManager
+    from datetime import datetime
+
+    # Determine the correct logs directory based on session context
+    # For Annotator Factory, use the factory session directory directly (no nested training_session)
     if session_dirs and "session_root" in session_dirs:
-        builder = TrainingDatasetBuilder(
-            session_dirs["session_root"] / "training_data",
+        # Use the factory session root directly - NO NESTED training_session folder
+        # Structure: logs/annotator_factory/factory_session_*/[training_data/, training_metrics/, ...]
+
+        # Initialize session manager to use factory session directory directly
+        session_manager = TrainingDataSessionManager(
+            session_id=session_id,  # Use the factory session ID (without "training_" prefix)
+            logs_base_dir=session_dirs["session_root"],  # Use factory session root directly
+            use_custom_structure=True  # Use custom structure for Annotator Factory
+        )
+
+        # Store session ID for tracking (use the factory session ID as-is)
+        actual_session_id = session_id  # Use the factory session ID
+        training_session_id = session_id  # For compatibility with code that expects training_session_id
+    else:
+        # Fallback to default Training Arena structure (shouldn't happen in Annotator Factory)
+        training_session_id = f"training_{session_id}"
+        session_manager = TrainingDataSessionManager(
             session_id=training_session_id
+        )
+        actual_session_id = training_session_id
+
+    # Store session attributes on cli_instance for use throughout training
+    # CRITICAL: These are needed for _log_training_data_distributions to work
+    cli_instance.current_session_id = actual_session_id
+    cli_instance.current_session_manager = session_manager
+
+    # Initialize builder with session-based organization
+    if session_dirs and "session_root" in session_dirs:
+        # Use factory session root directly, with training_data subdirectory
+        builder = TrainingDatasetBuilder(
+            base_output_dir=session_dirs["session_root"],
+            session_id=None,  # No additional session level
+            use_training_data_subdir=True  # Files go in training_data/
         )
     else:
         builder = TrainingDatasetBuilder(session_id=training_session_id)
@@ -10653,18 +10956,46 @@ def integrate_training_arena_in_annotator_factory(
     # Determine which keys will be trained
     keys_to_train = annotation_keys if annotation_keys else detected_keys
 
-    # Validate that all selected keys exist in all_keys_values
+    # Validate and auto-correct invalid keys with intelligent suggestions
     invalid_keys = [key for key in keys_to_train if key not in all_keys_values]
     if invalid_keys:
-        console.print(f"\n[bold red]❌ Error: Invalid keys selected[/bold red]")
-        console.print(f"[yellow]The following keys do not exist in the dataset:[/yellow]")
-        for key in invalid_keys:
-            console.print(f"  • [red]{key}[/red]")
-        console.print(f"\n[bold cyan]Available keys:[/bold cyan]")
-        for key in sorted(all_keys_values.keys()):
-            console.print(f"  • [green]{key}[/green]")
-        console.print()
-        return None
+        from difflib import get_close_matches
+
+        console.print(f"\n[bold yellow]⚠️  Some keys need correction:[/bold yellow]")
+
+        # Auto-correct using fuzzy matching
+        corrected_keys = []
+        for key in keys_to_train:
+            if key in all_keys_values:
+                corrected_keys.append(key)
+            else:
+                # Find best match using fuzzy matching
+                matches = get_close_matches(key, all_keys_values.keys(), n=1, cutoff=0.6)
+                if matches:
+                    suggestion = matches[0]
+                    console.print(f"  • [red]'{key}'[/red] → [green]'{suggestion}'[/green] [dim](auto-corrected)[/dim]")
+                    corrected_keys.append(suggestion)
+                else:
+                    console.print(f"  • [red]'{key}'[/red] [dim](no match found, will be skipped)[/dim]")
+
+        # Show available keys for reference
+        if len(corrected_keys) < len(keys_to_train):
+            console.print(f"\n[bold cyan]💡 Available keys:[/bold cyan]")
+            for key in sorted(all_keys_values.keys()):
+                console.print(f"  • [green]{key}[/green]")
+
+        # Ask user to confirm corrections
+        if corrected_keys:
+            console.print(f"\n[green]✓ Corrected selection:[/green] {', '.join(corrected_keys)}")
+            confirm = Confirm.ask("[bold yellow]Use these corrected keys?[/bold yellow]", default=True)
+            if confirm:
+                keys_to_train = corrected_keys
+            else:
+                console.print("[yellow]Training cancelled. Please try again with correct key names.[/yellow]")
+                return None
+        else:
+            console.print("[red]❌ No valid keys found after correction. Training cancelled.[/red]")
+            return None
 
     # Calculate total number of models for each approach
     total_values_count = 0
@@ -11154,6 +11485,32 @@ def integrate_training_arena_in_annotator_factory(
         # Display bundle summary (like Training Arena)
         cli_instance._training_studio_render_bundle_summary(bundle)
 
+        # ========================================================================
+        # CRITICAL: Centralized validation of ALL training files
+        # This detects ALL insufficient labels for ALL modes in ONE pass
+        # Replaces multiple validation prompts throughout training
+        # ========================================================================
+        will_train_by_language = False
+        if 'confirmed_languages' in locals() and confirmed_languages and len(confirmed_languages) > 1:
+            will_train_by_language = True
+
+        can_continue, error_msg = cli_instance._validate_all_training_files_before_training(
+            bundle=bundle,
+            min_samples=2,
+            train_by_language=will_train_by_language
+        )
+
+        if not can_continue:
+            console.print(f"\n[red]❌ Training stopped: {error_msg}[/red]\n")
+            return {
+                "status": "cancelled",
+                "session_id": training_session_id,
+                "bundle": bundle,
+                "metadata": bundle.metadata if bundle else {},
+                "training_result": None,
+                "error": error_msg
+            }
+
         # Execute training (like Training Arena)
         training_result = cli_instance._training_studio_confirm_and_execute(
             bundle=bundle,
@@ -11161,11 +11518,28 @@ def integrate_training_arena_in_annotator_factory(
             session_id=training_session_id
         )
 
+    # Display where the training reports are saved (for Annotator Factory)
+    if session_dirs and "session_root" in session_dirs and session_manager:
+        console.print("\n[bold cyan]📂 Training Data Organization:[/bold cyan]")
+        console.print(f"  [green]{session_dirs['session_root']}/[/green]")
+        console.print(f"  ├── SESSION_SUMMARY.txt         [dim]# Complete training overview[/dim]")
+        console.print(f"  ├── training_data/              [dim]# Datasets & analysis reports[/dim]")
+        console.print(f"  │   ├── *.jsonl                 [dim]# Training datasets[/dim]")
+        console.print(f"  │   ├── model_catalog.csv       [dim]# All models to train[/dim]")
+        console.print(f"  │   ├── database_reports/       [dim]# Individual .txt reports[/dim]")
+        console.print(f"  │   └── ...                     [dim]# Distribution & summaries[/dim]")
+        console.print(f"  ├── training_metrics/           [dim]# Model performance metrics[/dim]")
+        console.print(f"  ├── training_session_metadata/  [dim]# Configuration files[/dim]")
+        console.print(f"  ├── annotated_data/             [dim]# Original annotations[/dim]")
+        console.print(f"  └── metadata/                   [dim]# Annotation metadata[/dim]")
+        console.print()
+
     # Return complete results
     return {
         "status": "completed" if bundle else "failed",
-        "session_id": training_session_id,
+        "session_id": actual_session_id,  # Use the actual session ID
         "bundle": bundle,
         "metadata": bundle.metadata if bundle else {},
-        "training_result": training_result
+        "training_result": training_result,
+        "training_logs_dir": session_manager.session_dir if session_manager else None
     }

@@ -167,7 +167,7 @@ class BERTAnnotationStudio:
         except KeyboardInterrupt:
             self.console.print("\n[yellow]Annotation cancelled[/yellow]")
         except Exception as e:
-            self.console.print(f"\n[bold red]✗ Error: {str(e)}[/bold red]")
+            self.console.print(f"\n[bold red]✗ Error:[/bold red] {str(e)}", markup=False, highlight=False)
             self.logger.exception("BERT Annotation Studio error")
         finally:
             input("\nPress Enter to continue...")
@@ -217,8 +217,8 @@ class BERTAnnotationStudio:
             self.console.print(Align.center(summary))
 
             self.console.print("\n[bold cyan]Ordering Strategy:[/bold cyan]")
-            self.console.print("[dim][1] Keep current priority (same order as selection)")
-            self.console.print("[2] Sort alphabetically (A → Z by model name)[/dim]\n")
+            self.console.print("[dim][1] Keep current priority (same order as selection)[/dim]")
+            self.console.print("[dim][2] Sort alphabetically (A → Z by model name)[/dim]\n")
 
             order_choice = Prompt.ask(
                 "[cyan]Ordering mode[/cyan]",
@@ -243,9 +243,9 @@ class BERTAnnotationStudio:
             return plan
 
         self.console.print("\n[bold magenta]Reduction Mode (optional):[/bold magenta]")
-        self.console.print("[dim]Reduction mode lets you cascade models.")
-        self.console.print("Pick a reducer model that scans the full dataset, then run other models only on the rows it flags as positive.")
-        self.console.print("Useful to focus heavyweight models on the most relevant samples.[/dim]\n")
+        self.console.print("[dim]Reduction mode lets you cascade models.[/dim]")
+        self.console.print("[dim]Pick a reducer model that scans the full dataset, then run other models only on the rows it flags as positive.[/dim]")
+        self.console.print("[dim]Useful to focus heavyweight models on the most relevant samples.[/dim]\n")
 
         if not Confirm.ask("Enable reduction mode?", default=False):
             return plan
@@ -550,11 +550,11 @@ class BERTAnnotationStudio:
             self.console.print("[yellow]No trained models found[/yellow]")
             return None
 
-        self.console.print("\n[cyan]Pick one or several trained checkpoints. You can run them sequentially or cascade them later.")
-        self.console.print("Tip: combine a high-recall model with specialised models to refine positives.[/cyan]")
+        self.console.print("\n[cyan]Pick one or several trained checkpoints. You can run them sequentially or cascade them later.[/cyan]")
+        self.console.print("[cyan]Tip: combine a high-recall model with specialised models to refine positives.[/cyan]")
         self.console.print("\n[bold]🎯 Selection Mode:[/bold]")
-        self.console.print("[dim]Select the model(s) that will be used to annotate your texts.")
-        self.console.print("You can chain multiple models: each will add its dedicated columns.[/dim]")
+        self.console.print("[dim]Select the model(s) that will be used to annotate your texts.[/dim]")
+        self.console.print("[dim]You can chain multiple models: each will add its dedicated columns.[/dim]")
 
         model_table = Table(title="Available Trained Models", box=box.ROUNDED, show_lines=False)
         model_table.add_column("#", style="cyan", width=4, justify="center")
@@ -581,9 +581,9 @@ class BERTAnnotationStudio:
         self.console.print(Align.center(model_table))
 
         self.console.print("\n[bold magenta]Selection Options:[/bold magenta]")
-        self.console.print("[dim][1] Single model (pick one)")
-        self.console.print("[2] Multiple models (enter list: e.g., 1,3,5)")
-        self.console.print("[3] All available models[/dim]\n")
+        self.console.print("[dim][1] Single model (pick one)[/dim]")
+        self.console.print("[dim][2] Multiple models (enter list: e.g., 1,3,5)[/dim]")
+        self.console.print("[dim][3] All available models[/dim]\n")
 
         selection_mode = Prompt.ask(
             "[cyan]Choose a mode[/cyan]",
@@ -971,8 +971,8 @@ class BERTAnnotationStudio:
         current_id = column_mapping.get('id')
 
         self.console.print("\n[bold cyan]Why an ID column matters:[/bold cyan]")
-        self.console.print("[dim]Every row needs a stable identifier so you can reconcile predictions with the original data.")
-        self.console.print("Pick an existing unique column, combine several columns, or generate a brand new one.[/dim]\n")
+        self.console.print("[dim]Every row needs a stable identifier so you can reconcile predictions with the original data.[/dim]")
+        self.console.print("[dim]Pick an existing unique column, combine several columns, or generate a brand new one.[/dim]\n")
 
         def select_candidate_id() -> Optional[str]:
             candidates = []
@@ -1148,10 +1148,10 @@ class BERTAnnotationStudio:
         summary.add_row("GPU available", "Yes" if gpu_available else "No")
         self.console.print(Align.center(summary))
 
-        self.console.print("\n[dim]• Batch size: texts processed before the model updates.")
-        self.console.print("• Chunk size: payload sent to each worker (keeps transfers efficient).")
-        self.console.print("• CPU workers handle batches in parallel while GPU workers focus on larger batches.")
-        self.console.print("• Increase GPU batch size only if you have enough GPU memory.[/dim]\n")
+        self.console.print("\n[dim]• Batch size: texts processed before the model updates.[/dim]")
+        self.console.print("[dim]• Chunk size: payload sent to each worker (keeps transfers efficient).[/dim]")
+        self.console.print("[dim]• CPU workers handle batches in parallel while GPU workers focus on larger batches.[/dim]")
+        self.console.print("[dim]• Increase GPU batch size only if you have enough GPU memory.[/dim]\n")
 
         return Confirm.ask("[cyan]Confirm this configuration?[/cyan]", default=True)
 
@@ -1587,8 +1587,8 @@ class BERTAnnotationStudio:
             self.console.print(col_table)
 
             self.console.print("\n[bold cyan]Text Column:[/bold cyan]")
-            self.console.print("[dim]Pick the column that stores the raw text to annotate.")
-            self.console.print("Tip: go for the column that contains full sentences or messages rather than IDs or metadata.[/dim]\n")
+            self.console.print("[dim]Pick the column that stores the raw text to annotate.[/dim]")
+            self.console.print("[dim]Tip: go for the column that contains full sentences or messages rather than IDs or metadata.[/dim]\n")
 
             detected_text_idx = df.columns.tolist().index(text_candidates[0]['name']) + 1 if text_candidates else 1
 
@@ -1616,9 +1616,9 @@ class BERTAnnotationStudio:
                 id_table.add_row("0", "[dim]None[/dim]", "", "")
 
                 self.console.print("\n[bold magenta]Identifier Column:[/bold magenta]")
-                self.console.print("[dim]An ID column keeps track of each row after annotation.")
-                self.console.print("Choose a column with UNIQUE values (customer_id, tweet_id, ...).")
-                self.console.print("If none match, you can generate one in the next step.[/dim]\n")
+                self.console.print("[dim]An ID column keeps track of each row after annotation.[/dim]")
+                self.console.print("[dim]Choose a column with UNIQUE values (customer_id, tweet_id, ...).[/dim]")
+                self.console.print("[dim]If none match, you can generate one in the next step.[/dim]\n")
                 self.console.print(id_table)
 
                 id_choice = Prompt.ask(
@@ -1630,8 +1630,8 @@ class BERTAnnotationStudio:
                     id_column = id_candidates[int(id_choice) - 1]['name']
             else:
                 self.console.print("\n[bold magenta]Identifier Column:[/bold magenta]")
-                self.console.print("[dim]No highly unique column detected.")
-                self.console.print("You will be able to craft a unique identifier (combine columns or auto-generate) in the next step.[/dim]\n")
+                self.console.print("[dim]No highly unique column detected.[/dim]")
+                self.console.print("[dim]You will be able to craft a unique identifier (combine columns or auto-generate) in the next step.[/dim]\n")
 
             column_mapping = {'text': text_column, 'id': id_column, 'language': None}
             self.console.print(f"\n[green]✓ Text column: {text_column}[/green]")
@@ -1646,7 +1646,7 @@ class BERTAnnotationStudio:
             return df, column_mapping
 
         except Exception as e:
-            self.console.print(f"[red]✗ Error: {str(e)}[/red]")
+            self.console.print(f"[red]✗ Error:[/red] {str(e)}", markup=False, highlight=False)
             return None, None
 
     def _detect_and_validate_language(
@@ -1663,8 +1663,8 @@ class BERTAnnotationStudio:
             for entry in (models_or_plan or [])
         ]
 
-        self.console.print("\n[cyan]We analyse a sample of texts to infer the language.")
-        self.console.print("If you already track language codes, you can reuse that column to avoid auto-detection.[/cyan]\n")
+        self.console.print("\n[cyan]We analyse a sample of texts to infer the language.[/cyan]")
+        self.console.print("[cyan]If you already track language codes, you can reuse that column to avoid auto-detection.[/cyan]\n")
 
         candidate_language_columns: List[Dict[str, Any]] = []
         for col in df.columns:
@@ -1773,8 +1773,8 @@ class BERTAnnotationStudio:
 
     def _configure_correction(self) -> Dict[str, Any]:
         """Configure optional text preprocessing."""
-        self.console.print("\n[cyan]Light cleaning can boost model confidence on messy data.")
-        self.console.print("Toggle the options you want to apply before inference.[/cyan]\n")
+        self.console.print("\n[cyan]Light cleaning can boost model confidence on messy data.[/cyan]")
+        self.console.print("[cyan]Toggle the options you want to apply before inference.[/cyan]\n")
 
         enable_correction = Confirm.ask("[cyan]Enable preprocessing?[/cyan]", default=True)
 
@@ -1885,8 +1885,8 @@ class BERTAnnotationStudio:
             self.console.print("[yellow]Reconfiguration requested by user.[/yellow]\n")
 
         self.console.print("\n[bold magenta]Dataset Coverage:[/bold magenta]")
-        self.console.print(f"[dim]Rows detected: {total_rows:,}")
-        self.console.print("Annotate the full dataset, just the first rows, or a random sample.[/dim]\n")
+        self.console.print(f"[dim]Rows detected: {total_rows:,}[/dim]")
+        self.console.print("[dim]Annotate the full dataset, just the first rows, or a random sample.[/dim]\n")
 
         coverage_choice = Prompt.ask("[cyan]Coverage mode[/cyan]", choices=["1", "2", "3"], default="1")
 

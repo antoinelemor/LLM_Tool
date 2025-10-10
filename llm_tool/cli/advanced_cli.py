@@ -3732,9 +3732,9 @@ class AdvancedCLI:
                     annotation_cols = [col for col in df_annotated.columns if col in ['label', 'labels', 'category', 'annotation', 'predicted_label']]
 
                     if annotation_cols:
-                        # Filter to only rows that have annotations (non-null in annotation column)
+                        # Filter to only rows that have annotations (non-null AND non-empty in annotation column)
                         annotation_col = annotation_cols[0]
-                        df_annotated = df_annotated[df_annotated[annotation_col].notna()].copy()
+                        df_annotated = df_annotated[(df_annotated[annotation_col].notna()) & (df_annotated[annotation_col] != '')].copy()
                         self.console.print(f"[dim]Filtering to {len(df_annotated):,} annotated rows (out of {original_row_count:,} total rows in file)[/dim]")
                     else:
                         self.console.print(f"[yellow]⚠️  Could not identify annotation column. Processing all {original_row_count:,} rows.[/yellow]")
@@ -4251,7 +4251,7 @@ class AdvancedCLI:
                 annotation_cols = [col for col in df_for_lang.columns if col in ['label', 'labels', 'category', 'annotation', 'predicted_label']]
                 if annotation_cols:
                     annotation_col = annotation_cols[0]
-                    df_annotated = df_for_lang[df_for_lang[annotation_col].notna()].copy()
+                    df_annotated = df_for_lang[(df_for_lang[annotation_col].notna()) & (df_for_lang[annotation_col] != '')].copy()
 
                     self.console.print(f"[dim]Filtering to {len(df_annotated):,} annotated rows[/dim]")
 
@@ -6438,7 +6438,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             except Exception as e:
                 self.logger.error(f"Error: {str(e)}", exc_info=True)
                 if HAS_RICH and self.console:
-                    self.console.print(f"[bold red]Error: {str(e)}[/bold red]")
+                    self.console.print(f"[bold red]Error:[/bold red] {str(e)}", markup=False, highlight=False)
                 else:
                     print(f"Error: {str(e)}")
 
@@ -9122,18 +9122,46 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Determine which keys will be trained
             keys_to_train = annotation_keys if annotation_keys else detected_keys
 
-            # Validate that all selected keys exist in all_keys_values
+            # Validate and auto-correct invalid keys with intelligent suggestions
             invalid_keys = [key for key in keys_to_train if key not in all_keys_values]
             if invalid_keys:
-                self.console.print(f"\n[bold red]❌ Error: Invalid keys selected[/bold red]")
-                self.console.print(f"[yellow]The following keys do not exist in the dataset:[/yellow]")
-                for key in invalid_keys:
-                    self.console.print(f"  • [red]{key}[/red]")
-                self.console.print(f"\n[bold cyan]Available keys:[/bold cyan]")
-                for key in sorted(all_keys_values.keys()):
-                    self.console.print(f"  • [green]{key}[/green]")
-                self.console.print()
-                return None
+                from difflib import get_close_matches
+
+                self.console.print(f"\n[bold yellow]⚠️  Some keys need correction:[/bold yellow]")
+
+                # Auto-correct using fuzzy matching
+                corrected_keys = []
+                for key in keys_to_train:
+                    if key in all_keys_values:
+                        corrected_keys.append(key)
+                    else:
+                        # Find best match using fuzzy matching
+                        matches = get_close_matches(key, all_keys_values.keys(), n=1, cutoff=0.6)
+                        if matches:
+                            suggestion = matches[0]
+                            self.console.print(f"  • [red]'{key}'[/red] → [green]'{suggestion}'[/green] [dim](auto-corrected)[/dim]")
+                            corrected_keys.append(suggestion)
+                        else:
+                            self.console.print(f"  • [red]'{key}'[/red] [dim](no match found, will be skipped)[/dim]")
+
+                # Show available keys for reference
+                if len(corrected_keys) < len(keys_to_train):
+                    self.console.print(f"\n[bold cyan]💡 Available keys:[/bold cyan]")
+                    for key in sorted(all_keys_values.keys()):
+                        self.console.print(f"  • [green]{key}[/green]")
+
+                # Ask user to confirm corrections
+                if corrected_keys:
+                    self.console.print(f"\n[green]✓ Corrected selection:[/green] {', '.join(corrected_keys)}")
+                    confirm = Confirm.ask("[bold yellow]Use these corrected keys?[/bold yellow]", default=True)
+                    if confirm:
+                        keys_to_train = corrected_keys
+                    else:
+                        self.console.print("[yellow]Training cancelled. Please try again with correct key names.[/yellow]")
+                        return None
+                else:
+                    self.console.print("[red]❌ No valid keys found after correction. Training cancelled.[/red]")
+                    return None
 
             # Calculate total number of models for each approach
             total_values_count = 0
@@ -11899,6 +11927,495 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print(f"      [red]Error: {e}[/red]")
             return None
 
+    def _validate_all_training_files_before_training(
+        self,
+        bundle,
+        min_samples: int = 2,
+        train_by_language: bool = False
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        CENTRALIZED validation of ALL training files BEFORE training starts.
+        Detects ALL insufficient labels for ALL modes and ALL files in ONE pass.
+
+        This replaces multiple validation prompts with a SINGLE comprehensive check.
+
+        Args:
+            bundle: TrainingDataBundle with all created training files
+            min_samples: Minimum samples required per label (default: 2)
+            train_by_language: If True, validates per-language label counts
+
+        Returns:
+            Tuple of (can_continue, error_message)
+            - can_continue: True if training can proceed, False if user cancelled
+            - error_message: Error message if validation failed, None otherwise
+        """
+        import json
+        from pathlib import Path
+        from collections import Counter
+        from rich.table import Table
+        from rich import box
+        from rich.prompt import Confirm
+
+        all_insufficient_labels = {}  # {file_key: {label: count}}
+        files_to_validate = []
+
+        # Collect all files to validate
+        if bundle.training_files:
+            for key, file_path in bundle.training_files.items():
+                if file_path and Path(file_path).exists():
+                    files_to_validate.append((key, file_path))
+        elif bundle.primary_file and Path(bundle.primary_file).exists():
+            files_to_validate.append(('primary', bundle.primary_file))
+
+        if not files_to_validate:
+            return True, None
+
+        # Analyze each file
+        for file_key, file_path in files_to_validate:
+            label_counter = Counter()
+
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        record = json.loads(line)
+
+                        # Extract labels based on file type
+                        labels_data = record.get('labels', record.get('label'))
+                        lang = record.get('lang', 'unknown') if train_by_language else None
+
+                        # Count labels
+                        if isinstance(labels_data, list):
+                            # Multi-label format
+                            for label in labels_data:
+                                if train_by_language and lang:
+                                    key = f"{label}_{lang}"
+                                else:
+                                    key = str(label)
+                                label_counter[key] += 1
+                        elif isinstance(labels_data, str):
+                            # Single-label format
+                            if train_by_language and lang:
+                                key = f"{labels_data}_{lang}"
+                            else:
+                                key = labels_data
+                            label_counter[key] += 1
+
+            except Exception as e:
+                self.logger.warning(f"Could not validate {file_key}: {e}")
+                continue
+
+            # Find insufficient labels for this file
+            insufficient = {
+                label: count for label, count in label_counter.items()
+                if count < min_samples
+            }
+
+            if insufficient:
+                all_insufficient_labels[file_key] = insufficient
+
+        # If no problems, continue
+        if not all_insufficient_labels:
+            return True, None
+
+        # Display comprehensive warning
+        self.console.print(f"\n[bold red]⚠️  INSUFFICIENT SAMPLES DETECTED[/bold red]\n")
+        if train_by_language:
+            self.console.print(f"[yellow]The following language-specific labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]")
+            self.console.print(f"[dim]Note: Training uses separate models per language, so each label needs ≥{min_samples} samples PER LANGUAGE.[/dim]\n")
+        else:
+            self.console.print(f"[yellow]The following labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]\n")
+
+        # Create comprehensive table
+        table = Table(border_style="red", show_header=True, header_style="bold red", box=box.ROUNDED)
+        table.add_column("File/Model", style="cyan bold", width=25)
+        table.add_column("Label", style="yellow bold", width=40)
+        table.add_column("Samples", style="red", justify="right", width=15)
+        table.add_column("Status", style="red", width=15)
+
+        for file_key, insufficient in sorted(all_insufficient_labels.items()):
+            for label, count in sorted(insufficient.items(), key=lambda x: x[1]):
+                table.add_row(
+                    file_key,
+                    label,
+                    str(count),
+                    "❌ BLOCKED"
+                )
+
+        self.console.print(table)
+        self.console.print()
+
+        # Explain options
+        self.console.print("[bold]Options:[/bold]")
+        self.console.print("  • [green]Remove[/green]: Automatically remove insufficient labels from ALL files")
+        self.console.print("  • [red]Cancel[/red]: Stop training and fix dataset manually\n")
+
+        should_remove = Confirm.ask(
+            "Remove insufficient labels automatically?",
+            default=False
+        )
+
+        if not should_remove:
+            self.console.print("[yellow]❌ Training cancelled. Please annotate more samples or select different keys.[/yellow]")
+            return False, "User cancelled due to insufficient samples"
+
+        # User approved - filter all files
+        self.console.print(f"\n[yellow]🔄 Filtering ALL training files to remove insufficient labels...[/yellow]\n")
+
+        filtered_count = 0
+        for file_key, file_path in files_to_validate:
+            if file_key not in all_insufficient_labels:
+                continue
+
+            insufficient = all_insufficient_labels[file_key]
+            labels_to_exclude = set(insufficient.keys())
+
+            # Filter this file
+            filtered_records = []
+            removed_count = 0
+
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+
+                    labels_data = record.get('labels', record.get('label'))
+                    lang = record.get('lang', 'unknown') if train_by_language else None
+
+                    # Filter labels
+                    if isinstance(labels_data, list):
+                        # Multi-label: filter list
+                        original_labels = labels_data
+                        if train_by_language and lang:
+                            filtered_labels = [
+                                label for label in labels_data
+                                if f"{label}_{lang}" not in labels_to_exclude
+                            ]
+                        else:
+                            filtered_labels = [
+                                label for label in labels_data
+                                if str(label) not in labels_to_exclude
+                            ]
+
+                        removed_count += (len(original_labels) - len(filtered_labels))
+                        record['labels'] = filtered_labels
+                        filtered_records.append(record)
+
+                    elif isinstance(labels_data, str):
+                        # Single-label: skip if label is insufficient
+                        if train_by_language and lang:
+                            check_key = f"{labels_data}_{lang}"
+                        else:
+                            check_key = labels_data
+
+                        if check_key not in labels_to_exclude:
+                            filtered_records.append(record)
+                        else:
+                            removed_count += 1
+
+            # Save filtered file
+            filtered_path = Path(file_path).parent / f"{Path(file_path).stem}_filtered{Path(file_path).suffix}"
+            with open(filtered_path, 'w', encoding='utf-8') as f:
+                for record in filtered_records:
+                    f.write(json.dumps(record, ensure_ascii=False) + '\n')
+
+            # Update bundle to point to filtered file
+            if bundle.training_files and file_key in bundle.training_files:
+                bundle.training_files[file_key] = filtered_path
+            elif file_key == 'primary':
+                bundle.primary_file = filtered_path
+
+            filtered_count += 1
+            self.console.print(f"  [green]✓[/green] Filtered {file_key}: {len(filtered_records)} samples kept, {removed_count} label instances removed")
+
+        self.console.print(f"\n[green]✓ Filtered {filtered_count} training file(s)[/green]\n")
+        return True, None
+
+    def _validate_labels_before_file_creation(
+        self,
+        csv_path: str,
+        text_column: str,
+        annotation_column: str,
+        keys_to_train: List[str],
+        key_strategies: Dict[str, str],
+        min_samples: int = 2,
+        lang_column: Optional[str] = None,
+        train_by_language: bool = False
+    ) -> Tuple[Optional[List[str]], bool]:
+        """
+        Validate ALL labels BEFORE creating training files.
+        Detects insufficient labels for ALL modes (multiclass, one-vs-all, hybrid/custom).
+
+        CRITICAL: When train_by_language=True, validates per-language label counts.
+
+        Args:
+            csv_path: Path to annotated CSV file
+            text_column: Column with text data
+            annotation_column: Column with JSON annotations
+            keys_to_train: List of annotation keys to include
+            key_strategies: Dict mapping key_name -> 'multi-class' or 'one-vs-all'
+            min_samples: Minimum samples required per label (default: 2)
+            lang_column: Language column name (required if train_by_language=True)
+            train_by_language: If True, validate per-language label counts
+
+        Returns:
+            Tuple of (labels_to_exclude, user_approved_removal)
+            - labels_to_exclude: List of labels to exclude, or None if user cancelled
+            - user_approved_removal: True if user approved removal, False if cancelled
+        """
+        import pandas as pd
+        import json
+        from collections import Counter
+        from rich.table import Table
+        from rich import box
+        from rich.prompt import Confirm
+
+        # Load CSV and count labels
+        df = pd.read_csv(csv_path)
+
+        # Filter to annotated rows only (non-null and non-empty)
+        df_annotated = df[(df[annotation_column].notna()) & (df[annotation_column] != '')].copy()
+
+        if len(df_annotated) == 0:
+            self.console.print("[red]No annotated rows found in dataset[/red]")
+            return None, False
+
+        # Count labels by key and strategy
+        # For train_by_language: {label_lang: count}, else: {label: count}
+        label_counts = {}
+
+        for idx, row in df_annotated.iterrows():
+            annotation_val = row.get(annotation_column)
+            if pd.isna(annotation_val) or annotation_val == '':
+                continue
+
+            # Get language if needed
+            lang = None
+            if train_by_language and lang_column and lang_column in df_annotated.columns:
+                lang = row.get(lang_column)
+                if pd.isna(lang):
+                    lang = 'unknown'
+
+            try:
+                if isinstance(annotation_val, str):
+                    annotation = json.loads(annotation_val)
+                elif isinstance(annotation_val, dict):
+                    annotation = annotation_val
+                else:
+                    continue
+            except (json.JSONDecodeError, ValueError):
+                # Try Python literal eval
+                try:
+                    import ast
+                    annotation = ast.literal_eval(annotation_val)
+                except:
+                    continue
+
+            if not isinstance(annotation, dict):
+                continue
+
+            # Process each key according to its strategy
+            for key in keys_to_train:
+                if key not in annotation:
+                    continue
+
+                value = annotation[key]
+
+                # Skip None and empty values
+                if value is None or value == '':
+                    continue
+
+                strategy = key_strategies.get(key, 'multi-class')
+
+                # For both multi-class and one-vs-all, we need to count individual labels
+                # because one-vs-all creates binary classifiers (class '1' = presence of label)
+                if isinstance(value, list):
+                    for v in value:
+                        if v is not None and v != '':
+                            if train_by_language and lang:
+                                label_key = f"{key}_{v}_{lang}"
+                            else:
+                                label_key = f"{key}_{v}"
+                            label_counts[label_key] = label_counts.get(label_key, 0) + 1
+                else:
+                    if train_by_language and lang:
+                        label_key = f"{key}_{value}_{lang}"
+                    else:
+                        label_key = f"{key}_{value}"
+                    label_counts[label_key] = label_counts.get(label_key, 0) + 1
+
+        # Find insufficient labels
+        insufficient_labels = {
+            label: count for label, count in label_counts.items()
+            if count < min_samples
+        }
+
+        if not insufficient_labels:
+            # All labels are sufficient
+            return [], False
+
+        # Display warning with comprehensive table
+        self.console.print(f"\n[bold red]⚠️  INSUFFICIENT SAMPLES DETECTED (BEFORE FILE CREATION)[/bold red]\n")
+        if train_by_language:
+            self.console.print(f"[yellow]The following language-specific labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]")
+            self.console.print(f"[dim]Note: Training will use separate models per language, so each label needs ≥{min_samples} samples PER LANGUAGE.[/dim]\n")
+        else:
+            self.console.print(f"[yellow]The following labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]\n")
+
+        # Create detailed table showing strategy per label
+        table = Table(border_style="red", show_header=True, header_style="bold red", box=box.ROUNDED)
+        table.add_column("Label", style="yellow bold", width=50)
+        table.add_column("Samples", style="red", justify="right", width=15)
+        table.add_column("Strategy", style="cyan", width=15)
+        table.add_column("Status", style="red", width=20)
+
+        for label, count in sorted(insufficient_labels.items(), key=lambda x: x[1]):
+            # Extract key from label (format: key_value or key_value_lang)
+            parts = label.split('_')
+            key_name = parts[0] if parts else label
+            strategy = key_strategies.get(key_name, 'multi-class')
+
+            table.add_row(
+                label,
+                str(count),
+                strategy,
+                "❌ BLOCKED"
+            )
+
+        self.console.print(table)
+        self.console.print()
+
+        # Explain what will happen
+        self.console.print("[bold]Options:[/bold]")
+        self.console.print("  • [green]Remove[/green]: Automatically remove insufficient labels from the dataset")
+        self.console.print("  • [red]Cancel[/red]: Stop training and fix dataset manually\n")
+
+        should_remove = Confirm.ask(
+            "Remove insufficient labels automatically?",
+            default=False
+        )
+
+        if not should_remove:
+            self.console.print("[yellow]❌ Training cancelled. Please annotate more samples or select different keys.[/yellow]")
+            return None, False
+
+        # User approved removal
+        labels_to_exclude = list(insufficient_labels.keys())
+        return labels_to_exclude, True
+
+    def _filter_csv_remove_insufficient_labels(
+        self,
+        csv_path: str,
+        annotation_column: str,
+        labels_to_exclude: List[str],
+        lang_column: Optional[str] = None
+    ) -> str:
+        """
+        Filter CSV to remove insufficient labels from annotations.
+
+        Args:
+            csv_path: Path to original CSV
+            annotation_column: Column with JSON annotations
+            labels_to_exclude: List of labels to remove (format: key_value or key_value_lang)
+            lang_column: Language column (optional, used when labels include language suffix)
+
+        Returns:
+            Path to filtered CSV file
+        """
+        import pandas as pd
+        import json
+        from pathlib import Path
+
+        df = pd.read_csv(csv_path)
+        csv_path_obj = Path(csv_path)
+
+        # Create filtered CSV path
+        filtered_path = csv_path_obj.parent / f"{csv_path_obj.stem}_filtered{csv_path_obj.suffix}"
+
+        labels_removed_count = 0
+        samples_modified_count = 0
+
+        for idx, row in df.iterrows():
+            annotation_val = row.get(annotation_column)
+            if pd.isna(annotation_val) or annotation_val == '':
+                continue
+
+            # Get language if needed
+            row_lang = None
+            if lang_column and lang_column in df.columns:
+                row_lang = row.get(lang_column)
+                if pd.isna(row_lang):
+                    row_lang = None
+
+            try:
+                if isinstance(annotation_val, str):
+                    annotation = json.loads(annotation_val)
+                elif isinstance(annotation_val, dict):
+                    annotation = annotation_val
+                else:
+                    continue
+            except (json.JSONDecodeError, ValueError):
+                try:
+                    import ast
+                    annotation = ast.literal_eval(annotation_val)
+                except:
+                    continue
+
+            if not isinstance(annotation, dict):
+                continue
+
+            # Filter labels
+            modified = False
+            for key, value in list(annotation.items()):
+                if value is None or value == '':
+                    continue
+
+                if isinstance(value, list):
+                    # Remove values from list
+                    original_length = len(value)
+                    filtered_values = []
+                    for v in value:
+                        if v is None or v == '':
+                            continue
+                        # Check both with and without language suffix
+                        label_key = f"{key}_{v}"
+                        label_key_with_lang = f"{key}_{v}_{row_lang}" if row_lang else None
+
+                        if label_key not in labels_to_exclude and (not label_key_with_lang or label_key_with_lang not in labels_to_exclude):
+                            filtered_values.append(v)
+
+                    if len(filtered_values) < original_length:
+                        annotation[key] = filtered_values
+                        labels_removed_count += (original_length - len(filtered_values))
+                        modified = True
+                else:
+                    # Check if this label should be excluded
+                    label_key = f"{key}_{value}"
+                    label_key_with_lang = f"{key}_{value}_{row_lang}" if row_lang else None
+
+                    if label_key in labels_to_exclude or (label_key_with_lang and label_key_with_lang in labels_to_exclude):
+                        # Set to None to indicate removal
+                        annotation[key] = None
+                        labels_removed_count += 1
+                        modified = True
+
+            if modified:
+                samples_modified_count += 1
+                # Update the annotation in the dataframe
+                df.at[idx, annotation_column] = json.dumps(annotation)
+
+        # Save filtered CSV
+        df.to_csv(filtered_path, index=False)
+
+        self.console.print(f"\n[green]✓ Filtered CSV created:[/green] {filtered_path}")
+        self.console.print(f"  [cyan]• Samples modified:[/cyan] {samples_modified_count}")
+        self.console.print(f"  [cyan]• Label instances removed:[/cyan] {labels_removed_count}")
+        self.console.print(f"  [cyan]• Insufficient label types:[/cyan] {len(labels_to_exclude)}\n")
+
+        return str(filtered_path)
+
     def _validate_and_filter_insufficient_labels(
         self,
         input_file: str,
@@ -13197,7 +13714,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     input_file=str(bundle.primary_file),
                     strategy=bundle.strategy,
                     min_samples=2,
-                    auto_remove=False,  # Ask user for confirmation
+                    auto_remove=True,  # Auto-remove (centralized validation already asked user)
                     train_by_language=train_by_language_flag  # CRITICAL: Language-aware validation
                 )
                 if was_filtered:
@@ -14054,7 +14571,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             input_file=str(bundle.primary_file),
                             strategy=bundle.strategy,
                             min_samples=2,
-                            auto_remove=False,  # Ask user for confirmation
+                            auto_remove=True,  # Auto-remove (centralized validation already asked user)
                             train_by_language=needs_language_training  # CRITICAL: Language-aware validation
                         )
                         if was_filtered:
@@ -14137,7 +14654,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         input_file=str(bundle.primary_file),
                         strategy=bundle.strategy,
                         min_samples=2,
-                        auto_remove=False,  # Ask user for confirmation
+                        auto_remove=True,  # Auto-remove (centralized validation already asked user)
                         train_by_language=needs_language_training  # CRITICAL: Language-aware validation
                     )
                     if was_filtered:
@@ -18060,9 +18577,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     annotation_cols = [col for col in df_annotated.columns if col in ['label', 'labels', 'category', 'annotation', 'predicted_label']]
 
                     if annotation_cols:
-                        # Filter to only rows that have annotations (non-null in annotation column)
+                        # Filter to only rows that have annotations (non-null AND non-empty in annotation column)
                         annotation_col = annotation_cols[0]
-                        df_annotated = df_annotated[df_annotated[annotation_col].notna()].copy()
+                        df_annotated = df_annotated[(df_annotated[annotation_col].notna()) & (df_annotated[annotation_col] != '')].copy()
                         self.console.print(f"[dim]Filtering to {len(df_annotated):,} annotated rows (out of {original_row_count:,} total rows in file)[/dim]")
                     else:
                         self.console.print(f"[yellow]⚠️  Could not identify annotation column. Processing all {original_row_count:,} rows.[/yellow]")
@@ -18148,16 +18665,6 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print(f"[yellow]⚠️  Language detection failed: {e}[/yellow]")
                     self.logger.exception("Language detection failed")
 
-            # ============================================================
-            # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)
-            # ============================================================
-            self._post_annotation_training_workflow(
-                output_file=output_file,
-                text_column=text_column,
-                prompt_configs=prompt_configs,
-                session_id=session_id,
-                session_dirs=session_dirs  # Pass session directories for organized logging
-            )
 
             # Export to Doccano JSONL if requested
             if export_to_doccano:

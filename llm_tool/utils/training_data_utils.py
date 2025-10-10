@@ -71,22 +71,37 @@ class TrainingDataSessionManager:
             └── onevsall_*.jsonl
     """
 
-    def __init__(self, session_id: Optional[str] = None):
+    def __init__(self, session_id: Optional[str] = None, logs_base_dir: Optional[Path] = None,
+                 use_custom_structure: bool = False):
         """
         Initialize session manager with centralized log structure.
 
         Args:
             session_id: Session ID (timestamp). If None, creates new session.
+            logs_base_dir: Base directory for logs. If None, defaults to "logs/training_arena"
+                          For Annotator Factory, use the full path to the factory session directory
+            use_custom_structure: If True, logs_base_dir is used as the complete session directory
+                                 (for Annotator Factory integration)
         """
         self.session_id = session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Data directory: Raw JSONL files
-        self.data_base_dir = Path("data/training_data")
-        self.datasets_dir = self.data_base_dir / self.session_id / "training_data"
-
         # Logs directory: All reports and analysis
-        self.logs_base_dir = Path("logs/training_arena")
-        self.session_dir = self.logs_base_dir / self.session_id
+        if use_custom_structure and logs_base_dir:
+            # For Annotator Factory: use the provided directory as the session directory directly
+            # NO additional session_id level added
+            self.logs_base_dir = logs_base_dir.parent if logs_base_dir.parent.exists() else logs_base_dir
+            self.session_dir = logs_base_dir
+            # For Annotator Factory, datasets are already saved by TrainingDatasetBuilder
+            # in factory_session/training_data/, so we just reference that
+            self.data_base_dir = logs_base_dir
+            self.datasets_dir = logs_base_dir / "training_data"
+        else:
+            # Standard Training Arena structure
+            # Data directory: Raw JSONL files
+            self.data_base_dir = Path("data/training_data")
+            self.datasets_dir = self.data_base_dir / self.session_id / "training_data"
+            self.logs_base_dir = logs_base_dir or Path("logs/training_arena")
+            self.session_dir = self.logs_base_dir / self.session_id
         self.training_data_logs_dir = self.session_dir / "training_data"
         self.training_metrics_dir = self.session_dir / "training_metrics"
         self.metadata_dir = self.session_dir / "training_session_metadata"
@@ -668,6 +683,164 @@ class TrainingDataSessionManager:
                 summary_df.to_csv(quick_summary_path, index=False)
                 logger.info(f"Quick summary saved: {quick_summary_path}")
 
+    def save_individual_database_reports(self):
+        """
+        Generate individual .txt report files for each database/dataset created.
+        This creates detailed text reports for each training dataset.
+        """
+        reports_dir = self.training_data_logs_dir / "database_reports"
+        reports_dir.mkdir(exist_ok=True)
+
+        for dataset_name, data in self.distribution_data.items():
+            # Create sanitized filename
+            safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in dataset_name)
+            report_path = reports_dir / f"{safe_name}_report.txt"
+
+            metadata = data.get('metadata', {})
+            imbalance = data.get('imbalance_metrics', {})
+            warnings = data.get('warnings', [])
+
+            with open(report_path, 'w', encoding='utf-8') as f:
+                # Header
+                f.write("═" * 80 + "\n")
+                f.write(f"  DATABASE REPORT: {dataset_name}\n")
+                f.write(f"  Session ID: {self.session_id}\n")
+                f.write(f"  Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("═" * 80 + "\n\n")
+
+                # Configuration
+                f.write("📋 CONFIGURATION\n")
+                f.write("─" * 80 + "\n")
+                f.write(f"  Dataset Name:          {dataset_name}\n")
+                f.write(f"  Strategy:              {metadata.get('strategy', 'N/A')}\n")
+                f.write(f"  Training Approach:     {metadata.get('training_approach', 'N/A')}\n")
+                f.write(f"  Text Column:           {metadata.get('text_column', 'N/A')}\n")
+                f.write(f"  Label Column:          {metadata.get('label_column', 'annotation')}\n")
+                f.write(f"  Label Key:             {data.get('label_key', 'N/A')}\n")
+                f.write("\n")
+
+                # Dataset Statistics
+                f.write("📊 DATASET STATISTICS\n")
+                f.write("─" * 80 + "\n")
+                f.write(f"  Total Samples:         {data['total_samples']:,}\n")
+                f.write(f"  Unique Classes:        {data['num_classes']}\n")
+                f.write(f"  Training Samples:      {data['train_samples']:,}\n")
+                f.write(f"  Validation Samples:    {data['val_samples']:,}\n")
+                if data['test_samples'] > 0:
+                    f.write(f"  Test Samples:          {data['test_samples']:,}\n")
+                f.write("\n")
+
+                # Split Ratios
+                if data['total_samples'] > 0:
+                    f.write("📈 SPLIT RATIOS\n")
+                    f.write("─" * 80 + "\n")
+                    train_pct = (data['train_samples'] / data['total_samples']) * 100
+                    val_pct = (data['val_samples'] / data['total_samples']) * 100
+                    test_pct = (data['test_samples'] / data['total_samples']) * 100
+                    f.write(f"  Train:                 {train_pct:.1f}%\n")
+                    f.write(f"  Validation:            {val_pct:.1f}%\n")
+                    if test_pct > 0:
+                        f.write(f"  Test:                  {test_pct:.1f}%\n")
+                    f.write("\n")
+
+                # Class Distribution
+                f.write("🎯 CLASS DISTRIBUTION\n")
+                f.write("─" * 80 + "\n")
+
+                # Training distribution
+                train_dist = data.get('train_distribution', {})
+                if train_dist:
+                    f.write("\n  Training Set:\n")
+                    for label, count in sorted(train_dist.items(), key=lambda x: x[1], reverse=True)[:20]:
+                        percentage = (count / data['train_samples'] * 100) if data['train_samples'] > 0 else 0
+                        f.write(f"    • {str(label):30s} {count:6,} ({percentage:5.1f}%)\n")
+                    if len(train_dist) > 20:
+                        f.write(f"    ... and {len(train_dist) - 20} more classes\n")
+
+                # Validation distribution
+                val_dist = data.get('val_distribution', {})
+                if val_dist:
+                    f.write("\n  Validation Set:\n")
+                    for label, count in sorted(val_dist.items(), key=lambda x: x[1], reverse=True)[:10]:
+                        percentage = (count / data['val_samples'] * 100) if data['val_samples'] > 0 else 0
+                        f.write(f"    • {str(label):30s} {count:6,} ({percentage:5.1f}%)\n")
+                    if len(val_dist) > 10:
+                        f.write(f"    ... and {len(val_dist) - 10} more classes\n")
+
+                f.write("\n")
+
+                # Imbalance Metrics
+                if imbalance and imbalance.get('imbalance_ratio', 1.0) > 1.0:
+                    f.write("⚖️ IMBALANCE METRICS\n")
+                    f.write("─" * 80 + "\n")
+                    f.write(f"  Imbalance Ratio:       {imbalance.get('imbalance_ratio', 0):.2f}:1\n")
+                    f.write(f"  Gini Index:            {imbalance.get('gini_index', 0):.3f}\n")
+                    f.write(f"  Min Samples/Class:     {imbalance.get('min_samples', 0)}\n")
+                    f.write(f"  Max Samples/Class:     {imbalance.get('max_samples', 0)}\n")
+                    f.write(f"  Mean Samples/Class:    {imbalance.get('mean_samples', 0):.1f}\n")
+                    f.write("\n")
+
+                # Warnings
+                if warnings:
+                    f.write("⚠️  WARNINGS\n")
+                    f.write("─" * 80 + "\n")
+                    for i, warning in enumerate(warnings, 1):
+                        f.write(f"  {i}. {warning}\n")
+                    f.write("\n")
+
+                # File Information
+                f.write("📁 FILE INFORMATION\n")
+                f.write("─" * 80 + "\n")
+
+                # Determine actual file path
+                dataset_file = self.datasets_dir / f"{dataset_name}.jsonl"
+                if dataset_file.exists():
+                    file_size_mb = dataset_file.stat().st_size / (1024 * 1024)
+                    f.write(f"  Dataset File:          {dataset_file.name}\n")
+                    f.write(f"  File Size:             {file_size_mb:.2f} MB\n")
+                    f.write(f"  Full Path:             {dataset_file}\n")
+                else:
+                    f.write(f"  Dataset File:          {dataset_name}.jsonl (not yet created)\n")
+                    if 'file_size_mb' in metadata:
+                        f.write(f"  Estimated Size:        {metadata['file_size_mb']:.2f} MB\n")
+
+                if 'source_file' in metadata:
+                    f.write(f"  Source File:           {metadata['source_file']}\n")
+
+                f.write("\n")
+
+                # Footer
+                f.write("═" * 80 + "\n")
+                f.write(f"  End of report for {dataset_name}\n")
+                f.write("═" * 80 + "\n")
+
+            logger.info(f"Database report saved: {report_path}")
+
+        # Create index file listing all reports
+        index_path = reports_dir / "INDEX.txt"
+        with open(index_path, 'w', encoding='utf-8') as f:
+            f.write("═" * 80 + "\n")
+            f.write("  DATABASE REPORTS INDEX\n")
+            f.write(f"  Session: {self.session_id}\n")
+            f.write("═" * 80 + "\n\n")
+            f.write("Available Reports:\n")
+            f.write("─" * 80 + "\n")
+
+            for dataset_name in sorted(self.distribution_data.keys()):
+                safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in dataset_name)
+                data = self.distribution_data[dataset_name]
+                f.write(f"\n  • {dataset_name}\n")
+                f.write(f"    File: {safe_name}_report.txt\n")
+                f.write(f"    Samples: {data['total_samples']:,}\n")
+                f.write(f"    Classes: {data['num_classes']}\n")
+                warnings_count = len(data.get('warnings', []))
+                if warnings_count > 0:
+                    f.write(f"    ⚠️  Warnings: {warnings_count}\n")
+
+            f.write("\n" + "═" * 80 + "\n")
+
+        logger.info(f"Database reports index saved: {index_path}")
+
     def _generate_summary(self) -> Dict:
         """Generate overall summary statistics."""
         if not self.distribution_data:
@@ -706,6 +879,7 @@ class TrainingDataSessionManager:
         self.save_distribution_report()
         self.save_model_catalog_csv()
         self.save_split_summary_csv()
+        self.save_individual_database_reports()  # NEW: Generate individual .txt reports
 
         # Create session summary file
         summary_path = self.session_dir / "SESSION_SUMMARY.txt"
