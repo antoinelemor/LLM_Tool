@@ -70,6 +70,45 @@ HAS_RICH = True
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Shared step numbering across modes
+# ---------------------------------------------------------------------------
+
+STEP_LABEL_OVERRIDES: Dict[str, Dict[str, str]] = {
+    # Annotator Factory runs training as Phase 2; keep numbering scoped to that phase.
+    "factory": {
+        "text_length": "STEP 2.1",
+        "language_detection": "STEP 2.2",
+        "annotation_preview": "STEP 2.3",
+        "value_filter": "STEP 2.4",
+        "training_strategy": "STEP 2.5",
+        "data_split": "STEP 2.6",
+        "additional_columns": "STEP 2.7",
+    }
+}
+
+
+def resolve_step_label(step_key: str, default_label: str, context: str = "arena") -> str:
+    """
+    Return the appropriate step label for the provided context.
+
+    Parameters
+    ----------
+    step_key : str
+        Identifier for the logical step (e.g., 'text_length', 'language_detection').
+    default_label : str
+        Baseline label used by the Training Arena workflow.
+    context : str, optional
+        Logical context or mode requesting the label. Defaults to 'arena'.
+
+    Returns
+    -------
+    str
+        Context-aware step label string.
+    """
+    return STEP_LABEL_OVERRIDES.get(context, {}).get(step_key, default_label)
+
+
 # ============================================================================
 # ALL TRAINING ARENA CODE BELOW (pasted by user)
 # ============================================================================
@@ -1227,7 +1266,7 @@ def _training_studio_intelligent_dataset_selector(
         data_path=data_path,
         text_column=text_column,  # Use the ACTUAL selected column
         display_results=True,
-        step_label="STEP 4b: Text Length Analysis"
+        step_label=f"{resolve_step_label('text_length', 'STEP 4b')}: Text Length Analysis"
     )
     self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -1863,7 +1902,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             data_path=csv_path,
             text_column=text_column,  # Use the ACTUAL selected column, not temp
             display_results=True,
-            step_label="STEP 3b: Text Length Analysis"
+            step_label=f"{resolve_step_label('text_length', 'STEP 3b')}: Text Length Analysis"
         )
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -1872,7 +1911,8 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 5: Language Detection and Text Analysis (using sophisticated universal system)
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Language Detection[/bold white]")
+        language_step = resolve_step_label("language_detection", "STEP 5")
+        self.console.print(f"[bold cyan]  {language_step}:[/bold cyan] [bold white]Language Detection[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Analyzing languages to recommend the best model.[/dim]\n")
 
@@ -2222,7 +2262,8 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 6: Annotation Data Preview
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
+        annotation_step = resolve_step_label("annotation_preview", "STEP 6")
+        self.console.print(f"[bold cyan]  {annotation_step}:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]🔍 Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
 
@@ -2308,7 +2349,8 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         # Step 6.5: Value Filtering (Optional) - CRITICAL FOR DATA QUALITY
         if all_keys_values:
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[bold cyan]  STEP 6.5:[/bold cyan] [bold white]Value Filtering (Optional)[/bold white]")
+            value_filter_step = resolve_step_label("value_filter", "STEP 6.5")
+            self.console.print(f"[bold cyan]  {value_filter_step}:[/bold cyan] [bold white]Value Filtering (Optional)[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[dim]📋 You can exclude specific values from your training data.[/dim]")
             self.console.print("[dim]   For example: Remove 'null' values, or exclude rare categories.[/dim]\n")
@@ -2562,7 +2604,8 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 7: Training Strategy Selection (SIMPLIFIED)
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 7:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
+        strategy_step = resolve_step_label("training_strategy", "STEP 7")
+        self.console.print(f"[bold cyan]  {strategy_step}:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
         # Extract annotation keys and values from data
@@ -2876,7 +2919,8 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 6c: Data Split Configuration
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 6c:[/bold cyan] [bold white]Data Split Configuration[/bold white]")
+        data_split_step = resolve_step_label("data_split", "STEP 6c")
+        self.console.print(f"[bold cyan]  {data_split_step}:[/bold cyan] [bold white]Data Split Configuration[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
         split_config = self._configure_data_splits(
@@ -2997,7 +3041,8 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 8: Additional Columns (ID, Language)
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold cyan]  STEP 8:[/bold cyan] [bold white]Additional Columns (Optional)[/bold white]")
+        additional_step = resolve_step_label("additional_columns", "STEP 8")
+        self.console.print(f"[bold cyan]  {additional_step}:[/bold cyan] [bold white]Additional Columns (Optional)[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Optional: Select ID and language columns if available in your dataset.[/dim]\n")
 
@@ -10346,6 +10391,7 @@ def integrate_training_arena_in_annotator_factory(
     Returns:
         Dict with training results and metadata
     """
+    step_context = "factory"
     console = cli_instance.console
     from pathlib import Path
 
@@ -10442,7 +10488,7 @@ def integrate_training_arena_in_annotator_factory(
         data_path=csv_path,
         text_column=selected_text_column,  # Use the ACTUAL selected column, not temp
         display_results=True,
-        step_label="STEP 3b: Text Length Analysis"
+        step_label=f"{resolve_step_label('text_length', 'STEP 3b', context=step_context)}: Text Length Analysis"
     )
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -10451,7 +10497,8 @@ def integrate_training_arena_in_annotator_factory(
 
     # Step 5: Language Detection and Text Analysis (using sophisticated universal system)
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Language Detection[/bold white]")
+    language_step = resolve_step_label("language_detection", "STEP 5", context=step_context)
+    console.print(f"[bold cyan]  {language_step}:[/bold cyan] [bold white]Language Detection[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     console.print("[dim]Analyzing languages to recommend the best model.[/dim]\n")
 
@@ -10801,7 +10848,8 @@ def integrate_training_arena_in_annotator_factory(
 
     # Step 6: Annotation Data Preview
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
+    annotation_step = resolve_step_label("annotation_preview", "STEP 6", context=step_context)
+    console.print(f"[bold cyan]  {annotation_step}:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     console.print("[dim]🔍 Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
 
@@ -10887,7 +10935,8 @@ def integrate_training_arena_in_annotator_factory(
     # Step 6.5: Value Filtering (Optional) - CRITICAL FOR DATA QUALITY
     if all_keys_values:
         console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        console.print("[bold cyan]  STEP 6.5:[/bold cyan] [bold white]Value Filtering (Optional)[/bold white]")
+        value_filter_step = resolve_step_label("value_filter", "STEP 6.5", context=step_context)
+        console.print(f"[bold cyan]  {value_filter_step}:[/bold cyan] [bold white]Value Filtering (Optional)[/bold white]")
         console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         console.print("[dim]📋 You can exclude specific values from your training data.[/dim]")
         console.print("[dim]   For example: Remove 'null' values, or exclude rare categories.[/dim]\n")
@@ -11141,7 +11190,8 @@ def integrate_training_arena_in_annotator_factory(
 
     # Step 7: Training Strategy Selection (SIMPLIFIED)
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    console.print("[bold cyan]  STEP 7:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
+    strategy_step = resolve_step_label("training_strategy", "STEP 7", context=step_context)
+    console.print(f"[bold cyan]  {strategy_step}:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
     # Extract annotation keys and values from data
@@ -11455,7 +11505,8 @@ def integrate_training_arena_in_annotator_factory(
 
     # Step 6c: Data Split Configuration
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    console.print("[bold cyan]  STEP 6c:[/bold cyan] [bold white]Data Split Configuration[/bold white]")
+    data_split_step = resolve_step_label("data_split", "STEP 6c", context=step_context)
+    console.print(f"[bold cyan]  {data_split_step}:[/bold cyan] [bold white]Data Split Configuration[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
     split_config = cli_instance._configure_data_splits(
@@ -11576,7 +11627,8 @@ def integrate_training_arena_in_annotator_factory(
 
     # Step 8: Additional Columns (ID, Language)
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    console.print("[bold cyan]  STEP 8:[/bold cyan] [bold white]Additional Columns (Optional)[/bold white]")
+    additional_step = resolve_step_label("additional_columns", "STEP 8", context=step_context)
+    console.print(f"[bold cyan]  {additional_step}:[/bold cyan] [bold white]Additional Columns (Optional)[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     console.print("[dim]Optional: Select ID and language columns if available in your dataset.[/dim]\n")
 
