@@ -44,6 +44,7 @@ import time
 import os
 import shutil
 import csv
+import copy
 import json
 import warnings
 from typing import List, Tuple, Any, Optional, Dict
@@ -860,6 +861,198 @@ class BertBase(BertABC):
 
         return resolved_primary, sorted_languages
 
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        """Convert value to float, falling back to default on failure."""
+        if value is None:
+            return default
+        if isinstance(value, np.generic):
+            value = value.item()
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        """Convert value to int, falling back to default on failure."""
+        if value is None:
+            return default
+        if isinstance(value, np.generic):
+            value = value.item()
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _normalize_language_metrics(
+        self,
+        language_metrics: Optional[Dict[str, Dict[str, Any]]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Return a JSON-serialisable copy of per-language metrics."""
+        if not language_metrics:
+            return {}
+
+        normalised: Dict[str, Dict[str, Any]] = {}
+        for lang, metrics in language_metrics.items():
+            if not isinstance(metrics, dict):
+                continue
+            cleaned: Dict[str, Any] = {}
+            for key, raw_value in metrics.items():
+                value = raw_value
+                if isinstance(value, np.ndarray):
+                    value = value.tolist()
+                if isinstance(value, (list, tuple)):
+                    cleaned[key] = [self._safe_float(v) for v in value]
+                    continue
+                if isinstance(value, dict):
+                    cleaned[key] = {
+                        sub_key: self._safe_float(sub_val)
+                        for sub_key, sub_val in value.items()
+                    }
+                    continue
+                if key.startswith("support") or key in {"support", "samples"}:
+                    cleaned[key] = self._safe_int(value)
+                else:
+                    cleaned[key] = self._safe_float(value)
+            normalised[lang] = cleaned
+        return normalised
+
+    def _compute_language_averages(
+        self,
+        language_metrics: Optional[Dict[str, Dict[str, Any]]]
+    ) -> Optional[Dict[str, float]]:
+        """Compute average language scores when explicit averages are missing."""
+        if not language_metrics:
+            return None
+
+        metrics_values = [
+            metrics for metrics in language_metrics.values()
+            if isinstance(metrics, dict) and metrics
+        ]
+        if not metrics_values:
+            return None
+
+        acc_total = 0.0
+        f1_total = 0.0
+        count = 0
+
+        for metrics in metrics_values:
+            acc_total += self._safe_float(metrics.get("accuracy"))
+            f1_total += self._safe_float(
+                metrics.get("f1_macro", metrics.get("macro_f1"))
+            )
+            count += 1
+
+        if count == 0:
+            return None
+
+        avg_acc = acc_total / count
+        avg_f1 = f1_total / count
+
+        return {
+            "accuracy": avg_acc,
+            "f1_macro": avg_f1,
+            "macro_f1": avg_f1,
+        }
+
+    def _build_final_metrics_block(
+        self,
+        *,
+        combined_metric: Optional[Any],
+        macro_f1: Optional[Any],
+        accuracy: Optional[Any],
+        epoch: Optional[int],
+        train_loss: Optional[Any],
+        val_loss: Optional[Any],
+        precisions: Optional[Any],
+        recalls: Optional[Any],
+        f1_scores: Optional[Any],
+        supports: Optional[Any],
+        label_names: Optional[List[str]],
+        language_metrics: Optional[Dict[str, Dict[str, Any]]] = None,
+        language_averages: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Assemble the detailed metrics payload stored in training_metadata.json."""
+        overall: Dict[str, float] = {}
+
+        if combined_metric is not None:
+            overall["combined_metric"] = self._safe_float(combined_metric)
+        if macro_f1 is not None:
+            overall["macro_f1"] = self._safe_float(macro_f1)
+        if accuracy is not None:
+            overall["accuracy"] = self._safe_float(accuracy)
+        if train_loss is not None:
+            overall["train_loss"] = self._safe_float(train_loss)
+        if val_loss is not None:
+            overall["val_loss"] = self._safe_float(val_loss)
+
+        per_class: List[Dict[str, Any]] = []
+
+        def _as_list(values: Optional[Any]) -> List[Any]:
+            if values is None:
+                return []
+            if isinstance(values, np.ndarray):
+                return values.tolist()
+            if isinstance(values, (list, tuple)):
+                return list(values)
+            return [values]
+
+        precisions_list = _as_list(precisions)
+        recalls_list = _as_list(recalls)
+        f1_list = _as_list(f1_scores)
+        supports_list = _as_list(supports)
+
+        num_labels = max(
+            len(precisions_list),
+            len(recalls_list),
+            len(f1_list),
+            len(supports_list),
+            len(label_names) if label_names else 0,
+        )
+
+        resolved_labels = (
+            list(label_names) if label_names and len(label_names) >= num_labels
+            else [f"class_{idx}" for idx in range(num_labels)]
+        )
+
+        for idx in range(num_labels):
+            per_class.append({
+                "label": resolved_labels[idx] if idx < len(resolved_labels) else f"class_{idx}",
+                "precision": self._safe_float(precisions_list[idx]) if idx < len(precisions_list) else 0.0,
+                "recall": self._safe_float(recalls_list[idx]) if idx < len(recalls_list) else 0.0,
+                "f1": self._safe_float(f1_list[idx]) if idx < len(f1_list) else 0.0,
+                "support": self._safe_int(supports_list[idx]) if idx < len(supports_list) else 0,
+            })
+
+        languages_cleaned = self._normalize_language_metrics(language_metrics)
+
+        averages_cleaned = None
+        if language_averages:
+            averages_cleaned = {
+                key: self._safe_float(value)
+                for key, value in language_averages.items()
+            }
+        elif languages_cleaned:
+            averages_cleaned = self._compute_language_averages(language_metrics)
+
+        if not overall and not per_class and not languages_cleaned:
+            return None
+
+        metrics_block: Dict[str, Any] = {
+            "epoch": epoch,
+            "overall": overall,
+        }
+
+        if per_class:
+            metrics_block["per_class"] = per_class
+        if languages_cleaned:
+            metrics_block["per_language"] = languages_cleaned
+        if averages_cleaned:
+            metrics_block["language_averages"] = averages_cleaned
+
+        return metrics_block
+
     def _apply_languages_to_config(
             self,
             model_config,
@@ -1513,6 +1706,12 @@ class BertBase(BertABC):
         best_model_path = None
         best_scores = None  # Will store final best (precision, recall, f1, support)
         best_language_metrics = None  # Will store language metrics from best epoch
+        best_language_averages = None  # Average metrics for languages at best epoch
+        best_final_metrics_block = None  # Cached detailed metrics payload for metadata
+        best_combined_metric_value = None  # Combined score tied to the saved model
+        best_accuracy_value = None  # Accuracy recorded for the best model
+        best_macro_f1_value = None  # Macro F1 recorded for the best model
+        best_epoch_index = None  # Epoch number of the best model
         language_performance_history = []  # Store language metrics for each epoch
         self.language_metrics_history = []
         if reinforced_epochs is not None:
@@ -2020,13 +2219,29 @@ class BertBase(BertABC):
                             pass
 
                     best_metric_val = combined_metric
+                    best_combined_metric_value = combined_metric
+                    best_accuracy_value = accuracy
+                    best_macro_f1_value = macro_f1
+                    best_epoch_index = i_epoch + 1
 
                     # Always save best_scores for reinforced learning trigger check
                     best_scores = precision_recall_fscore_support(test_labels, preds)
 
                     # Save language metrics from best epoch (if available)
                     if track_languages and 'language_metrics' in locals():
-                        best_language_metrics = language_metrics.copy()
+                        best_language_metrics = copy.deepcopy(language_metrics)
+
+                        language_averages_for_best = None
+                        if language_performance_history:
+                            for record in reversed(language_performance_history):
+                                if record.get('epoch') == i_epoch + 1:
+                                    language_averages_for_best = record.get('averages')
+                                    break
+                        if language_averages_for_best is None:
+                            language_averages_for_best = self._compute_language_averages(language_metrics)
+                        best_language_averages = copy.deepcopy(language_averages_for_best)
+                    else:
+                        language_averages_for_best = None
 
                     if save_model_as is not None:
                         # Save the new best model in session-organized directory
@@ -2078,6 +2293,24 @@ class BertBase(BertABC):
                             "training_phase": "normal",
                             "timestamp": datetime.datetime.now().isoformat()
                         }
+                        final_metrics_block = self._build_final_metrics_block(
+                            combined_metric=combined_metric,
+                            macro_f1=macro_f1,
+                            accuracy=accuracy,
+                            epoch=i_epoch + 1,
+                            train_loss=avg_train_loss,
+                            val_loss=avg_val_loss,
+                            precisions=precisions,
+                            recalls=recalls,
+                            f1_scores=f1_scores,
+                            supports=supports,
+                            label_names=label_names,
+                            language_metrics=language_metrics if track_languages else None,
+                            language_averages=language_averages_for_best,
+                        )
+                        if final_metrics_block:
+                            training_metadata["final_metrics"] = final_metrics_block
+                            best_final_metrics_block = copy.deepcopy(final_metrics_block)
                         with open(metadata_file, 'w', encoding='utf-8') as f:
                             json.dump(training_metadata, f, indent=2, ensure_ascii=False)
                     else:
@@ -2300,6 +2533,59 @@ class BertBase(BertABC):
                 # Save training metadata for annotation studio
                 metadata_file = os.path.join(final_path, "training_metadata.json")
 
+                fallback_combined_metric = best_combined_metric_value if best_combined_metric_value is not None else best_metric_val
+                precision_scores = best_scores[0] if best_scores is not None else None
+                recall_scores = best_scores[1] if best_scores is not None else None
+                f1_scores_scores = best_scores[2] if best_scores is not None else None
+                support_scores = best_scores[3] if best_scores is not None else None
+
+                def _to_sequence(values: Optional[Any]) -> List[Any]:
+                    if values is None:
+                        return []
+                    if isinstance(values, np.ndarray):
+                        return values.tolist()
+                    if isinstance(values, (list, tuple)):
+                        return list(values)
+                    return [values]
+
+                fallback_macro_f1 = best_macro_f1_value
+                f1_values_for_macro = _to_sequence(f1_scores_scores)
+                if fallback_macro_f1 is None and f1_values_for_macro:
+                    fallback_macro_f1 = float(np.mean([self._safe_float(v) for v in f1_values_for_macro]))
+
+                fallback_accuracy = best_accuracy_value
+                precision_values_for_acc = _to_sequence(precision_scores)
+                support_values_for_acc = _to_sequence(support_scores)
+                if fallback_accuracy is None and precision_values_for_acc and support_values_for_acc:
+                    denom = sum(self._safe_int(s) for s in support_values_for_acc)
+                    if denom:
+                        fallback_accuracy = sum(
+                            self._safe_float(p) * self._safe_int(s)
+                            for p, s in zip(precision_values_for_acc, support_values_for_acc)
+                        ) / denom
+
+                epoch_value = best_epoch_index if best_epoch_index is not None else num_train_epochs
+
+                final_metrics_block = None
+                if best_final_metrics_block:
+                    final_metrics_block = copy.deepcopy(best_final_metrics_block)
+                else:
+                    final_metrics_block = self._build_final_metrics_block(
+                        combined_metric=fallback_combined_metric,
+                        macro_f1=fallback_macro_f1,
+                        accuracy=fallback_accuracy,
+                        epoch=epoch_value,
+                        train_loss=None,
+                        val_loss=None,
+                        precisions=precision_scores,
+                        recalls=recall_scores,
+                        f1_scores=f1_scores_scores,
+                        supports=support_scores,
+                        label_names=label_names,
+                        language_metrics=best_language_metrics,
+                        language_averages=best_language_averages,
+                    )
+
                 training_metadata = {
                     "model_type": model_type,
                     "training_approach": training_approach,
@@ -2309,11 +2595,15 @@ class BertBase(BertABC):
                     "label_value": label_value if label_value else None,
                     "language": primary_lang_code if primary_lang_code else (language.upper() if isinstance(language, str) and language else None),
                     "confirmed_languages": confirmed_languages,
-                    "final_epoch": num_train_epochs,
-                    "combined_metric": best_metric_val,
+                    "final_epoch": epoch_value,
+                    "combined_metric": self._safe_float(fallback_combined_metric) if fallback_combined_metric is not None else None,
+                    "macro_f1": self._safe_float(fallback_macro_f1) if fallback_macro_f1 is not None else None,
+                    "accuracy": self._safe_float(fallback_accuracy) if fallback_accuracy is not None else None,
                     "training_phase": "normal",
                     "timestamp": datetime.datetime.now().isoformat()
                 }
+                if final_metrics_block:
+                    training_metadata["final_metrics"] = final_metrics_block
                 with open(metadata_file, 'w', encoding='utf-8') as f:
                     json.dump(training_metadata, f, indent=2, ensure_ascii=False)
 
@@ -2859,6 +3149,10 @@ class BertBase(BertABC):
 
                         if current_metric > best_metric_val:
                             best_metric_val = current_metric
+                            best_combined_metric_value = combined_metric
+                            best_accuracy_value = accuracy
+                            best_macro_f1_value = macro_f1
+                            best_epoch_index = epoch + 1
 
                             # Save new best model
                             if save_model_as is not None:
@@ -2894,6 +3188,16 @@ class BertBase(BertABC):
                                 # Save training metadata for annotation studio
                                 metadata_file = os.path.join(temp_reinforced_path, "training_metadata.json")
 
+                                language_averages_for_best = None
+                                if track_languages:
+                                    if language_metrics:
+                                        best_language_metrics = copy.deepcopy(language_metrics)
+                                        language_averages_for_best = self._compute_language_averages(language_metrics)
+                                        best_language_averages = copy.deepcopy(language_averages_for_best)
+                                    else:
+                                        best_language_metrics = None
+                                        best_language_averages = None
+
                                 training_metadata = {
                                     "model_type": self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
                                     "training_approach": training_approach,
@@ -2910,6 +3214,24 @@ class BertBase(BertABC):
                                     "training_phase": "reinforced",
                                     "timestamp": datetime.datetime.now().isoformat()
                                 }
+                                final_metrics_block = self._build_final_metrics_block(
+                                    combined_metric=combined_metric,
+                                    macro_f1=macro_f1,
+                                    accuracy=accuracy,
+                                    epoch=epoch + 1,
+                                    train_loss=avg_train_loss,
+                                    val_loss=avg_val_loss,
+                                    precisions=precisions,
+                                    recalls=recalls,
+                                    f1_scores=f1_scores,
+                                    supports=supports,
+                                    label_names=label_names,
+                                    language_metrics=language_metrics if track_languages else None,
+                                    language_averages=language_averages_for_best,
+                                )
+                                if final_metrics_block:
+                                    training_metadata["final_metrics"] = final_metrics_block
+                                    best_final_metrics_block = copy.deepcopy(final_metrics_block)
                                 with open(metadata_file, 'w', encoding='utf-8') as f:
                                     json.dump(training_metadata, f, indent=2, ensure_ascii=False)
 

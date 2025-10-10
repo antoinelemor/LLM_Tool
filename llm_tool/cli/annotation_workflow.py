@@ -8,6 +8,7 @@ modes delegate to a single module while preserving their specific behaviour.
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -1024,6 +1025,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # Structure: logs/annotator/{session_id}/annotated_data/{dataset_name}/
     safe_model_name = model_name.replace(':', '_').replace('/', '_')
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    metadata.setdefault('annotation_session', {})['timestamp'] = timestamp
 
     # Create dataset-specific subdirectory (like {category} in Training Arena)
     dataset_name = data_path.stem
@@ -2747,6 +2749,14 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     # Prepare paths
     data_path = Path(data_source.get('file_path', ''))
     data_format = data_source.get('data_format', 'csv')
+    dataset_stem = data_path.stem
+    if not dataset_stem:
+        dataset_stem = Path(data_source.get('file_name', '') or "dataset").stem or "dataset"
+
+    metadata_root = None
+    if session_dirs:
+        metadata_root = session_dirs['metadata'] / dataset_stem
+        metadata_root.mkdir(parents=True, exist_ok=True)
 
     # Check if resuming
     if action_mode == 'resume':
@@ -2977,14 +2987,17 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         pipeline_config['options'] = options
 
     # Save new metadata for this execution
-    if action_mode == 'relaunch':
-        new_metadata = metadata.copy()
+    if action_mode == 'relaunch' and metadata_root is not None:
+        new_metadata = copy.deepcopy(metadata)
         new_metadata['annotation_session']['timestamp'] = timestamp
         new_metadata['annotation_session']['relaunch_from'] = str(metadata_file.name)
+        new_metadata['annotation_session']['action_mode'] = 'relaunch'
+        if 'output' not in new_metadata:
+            new_metadata['output'] = {}
         new_metadata['output']['output_path'] = str(default_output_path)
 
-        new_metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
-        new_metadata_path = session_dirs['metadata'] / new_metadata_filename
+        new_metadata_filename = f"{dataset_stem}_{safe_model_name}_metadata_{timestamp}.json"
+        new_metadata_path = metadata_root / new_metadata_filename
 
         with open(new_metadata_path, 'w', encoding='utf-8') as f:
             json.dump(new_metadata, f, indent=2, ensure_ascii=False)
@@ -2992,6 +3005,26 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         cli.console.print(f"\n[green]✅ New session metadata saved[/green]")
         cli.console.print(f"[cyan]📋 Metadata File:[/cyan]")
         cli.console.print(f"   {new_metadata_path}\n")
+
+    if action_mode == 'resume' and metadata_root is not None:
+        resume_metadata = copy.deepcopy(metadata)
+        resume_metadata['annotation_session']['timestamp'] = timestamp
+        resume_metadata['annotation_session']['resume_from'] = str(metadata_file.name)
+        resume_metadata['annotation_session']['action_mode'] = 'resume'
+        if 'output' not in resume_metadata:
+            resume_metadata['output'] = {}
+        resume_metadata['output']['output_path'] = str(default_output_path)
+        resume_metadata['resume_mode'] = True
+
+        resume_metadata_filename = f"{dataset_stem}_{safe_model_name}_resume_{timestamp}.json"
+        resume_metadata_path = metadata_root / resume_metadata_filename
+
+        with open(resume_metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(resume_metadata, f, indent=2, ensure_ascii=False)
+
+        cli.console.print(f"\n[green]✅ Resume metadata saved[/green]")
+        cli.console.print(f"[cyan]📋 Metadata File:[/cyan]")
+        cli.console.print(f"   {resume_metadata_path}\n")
 
     # Execute pipeline
     try:
