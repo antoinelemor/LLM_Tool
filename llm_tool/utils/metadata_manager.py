@@ -12,6 +12,8 @@ import hashlib
 import platform
 import sys
 
+from llm_tool.utils.training_paths import get_training_logs_base, get_training_metadata_dir
+
 logger = logging.getLogger(__name__)
 
 class MetadataManager:
@@ -25,7 +27,7 @@ class MetadataManager:
     # Version for metadata format (for backward compatibility)
     METADATA_VERSION = "2.0"
 
-    def __init__(self, session_id: str, base_dir: Path = Path("logs/training_arena")):
+    def __init__(self, session_id: str, base_dir: Optional[Path] = None):
         """
         Initialize metadata manager for a training session.
 
@@ -34,8 +36,12 @@ class MetadataManager:
             base_dir: Base directory for training arena logs
         """
         self.session_id = session_id
-        self.base_dir = Path(base_dir)
-        self.metadata_dir = self.base_dir / session_id / "training_session_metadata"
+        if base_dir is not None:
+            self.base_dir = Path(base_dir)
+            self.metadata_dir = self.base_dir / session_id / "training_session_metadata"
+        else:
+            self.base_dir = get_training_logs_base()
+            self.metadata_dir = get_training_metadata_dir(session_id)
         self.metadata_path = self.metadata_dir / "training_metadata.json"
         self.backup_path = self.metadata_dir / "training_metadata_backup.json"
         self.checkpoint_dir = self.metadata_dir / "checkpoints"

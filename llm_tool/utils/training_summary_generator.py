@@ -52,6 +52,8 @@ from typing import Dict, Any, List, Optional, Tuple, Union
 from collections import defaultdict, Counter
 import traceback
 
+from llm_tool.utils.training_paths import get_session_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -895,7 +897,7 @@ def generate_training_summaries(session_id: str, session_dir: Optional[Path] = N
         Tuple of (csv_path, jsonl_path) for generated files
     """
     if session_dir is None:
-        session_dir = Path("logs/training_arena") / session_id
+        session_dir = get_session_dir(session_id)
 
     generator = TrainingSummaryGenerator(session_id, session_dir)
     return generator.generate_comprehensive_summaries()

@@ -53,11 +53,16 @@ import json
 import ast
 import tempfile
 import sys
+import inspect
 
 # Import Training Arena dependencies
 from llm_tool.trainers.training_data_builder import TrainingDatasetBuilder, TrainingDataBundle, TrainingDataRequest
 from llm_tool.utils.training_data_utils import TrainingDataSessionManager
-from llm_tool.cli.advanced_cli import DataDetector
+from llm_tool.utils.training_paths import (
+    get_training_logs_base,
+    get_training_metrics_dir,
+)
+from llm_tool.cli.data_detector import DataDetector
 
 # Constants
 HAS_RICH = True
@@ -714,6 +719,7 @@ def _training_studio_intelligent_dataset_selector(
     lang_column = None
     text_length_stats = {}  # Initialize - will be populated after text column selection
     languages_from_content = {}
+    apply_auto_detection = True  # Always perform automatic detection at this stage
 
     # Check if we have a language column with detected languages
     has_lang_column = bool(analysis.get('language_column_candidates'))
@@ -739,11 +745,9 @@ def _training_studio_intelligent_dataset_selector(
         else:
             # User said no to language column - offer automatic detection
             self.console.print("\n[yellow]Language column not used. Applying automatic detection...[/yellow]")
-            apply_auto_detection = True
     else:
         # Option 2: No language column - go straight to automatic detection
         self.console.print("[yellow]ℹ️  No language column detected[/yellow]")
-        apply_auto_detection = Confirm.ask("Apply automatic language detection on text content?", default=True)
 
     # We need to detect text column first for content-based language detection
     # Quick text column detection for language analysis
@@ -756,8 +760,10 @@ def _training_studio_intelligent_dataset_selector(
 
     # Automatic language detection from text content
     language_distribution = {}  # Store exact language counts
+    apply_auto_detection = True
+    apply_auto_detection = True
 
-    if not lang_column and ('apply_auto_detection' not in locals() or apply_auto_detection):
+    if apply_auto_detection:
         self.console.print("\n[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
 
         try:
@@ -1130,16 +1136,19 @@ def _training_studio_intelligent_dataset_selector(
 
                             # Ensure same length
                             if len(detected_languages_per_text) == len(temp_df):
-                                # Map detected languages to the full DataFrame
-                                df['language'] = None
-                                df.loc[df[temp_text_column].notna(), 'language'] = detected_languages_per_text
+                                if lang_column is None:
+                                    # Map detected languages to the full DataFrame
+                                    df['language'] = None
+                                    df.loc[df[temp_text_column].notna(), 'language'] = detected_languages_per_text
 
-                                # Set lang_column to use this new column
-                                lang_column = 'language'
+                                    # Set lang_column to use this new column
+                                    lang_column = 'language'
 
-                                # Save updated DataFrame back to CSV
-                                df.to_csv(data_path, index=False)
-                                self.console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
+                                    # Save updated DataFrame back to CSV
+                                    df.to_csv(data_path, index=False)
+                                    self.console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
+                                else:
+                                    self.console.print("[dim]ℹ️  Auto-detected languages available; existing language column preserved.[/dim]")
                     else:
                         # Fallback: ask user
                         self.console.print("[yellow]Could not detect languages automatically[/yellow]")
@@ -1242,8 +1251,9 @@ def _training_studio_intelligent_dataset_selector(
 
     label_column_default = "labels" if "multi" in format_type else "label"
 
-    if analysis.get('annotation_column_candidates'):
-        best_label = analysis['annotation_column_candidates'][0]['name']
+    annotation_candidates = analysis.get('annotation_column_candidates', [])
+    if annotation_candidates:
+        best_label = annotation_candidates[0]['name']
         label_column_default = best_label
 
         self.console.print(f"[green]✓ Label column detected: '{best_label}'[/green]")
@@ -1687,6 +1697,9 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         df = pd.read_csv(csv_path)
 
+        text_candidates = analysis.get('text_column_candidates', [])
+        annotation_candidates = analysis.get('annotation_column_candidates', [])
+
         # Create comprehensive column overview table
         if all_columns:
             self.console.print(f"[bold]📊 Dataset Overview ({len(all_columns)} columns, {len(df):,} rows):[/bold]\n")
@@ -1743,10 +1756,11 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             suggestions_table.add_column("Why This Column?", style="white", width=45)
 
             # Text column row
-            if analysis['text_column_candidates']:
-                best_text = analysis['text_column_candidates'][0]['name']
+            text_candidates = analysis.get('text_column_candidates', [])
+            if text_candidates:
+                best_text = text_candidates[0]['name']
                 text_column_default = best_text
-                text_stats = analysis['text_column_candidates'][0]
+                text_stats = text_candidates[0]
                 avg_len = text_stats.get('avg_length', 0)
                 suggestions_table.add_row(
                     "📝 Text Data",
@@ -1759,8 +1773,9 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             # Annotation column row
             annotation_column_default = "annotation"
             has_annotation_alternatives = False
-            if analysis['annotation_column_candidates']:
-                best_annotation_info = analysis['annotation_column_candidates'][0]
+            annotation_candidates = analysis.get('annotation_column_candidates', [])
+            if annotation_candidates:
+                best_annotation_info = annotation_candidates[0]
                 best_annotation = best_annotation_info['name']
                 annotation_column_default = best_annotation
                 stats = analysis['annotation_stats'].get(best_annotation, {})
@@ -1787,7 +1802,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                     )
 
                     # Mark if there are alternatives
-                    if len(analysis['annotation_column_candidates']) > 1:
+                    if len(annotation_candidates) > 1:
                         has_annotation_alternatives = True
                 else:
                     suggestions_table.add_row(
@@ -1801,21 +1816,21 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             self.console.print(suggestions_table)
 
             # Show alternatives AFTER the table
-            if has_annotation_alternatives:
-                alternatives = [c['name'] for c in analysis['annotation_column_candidates'][1:3]]
+            if has_annotation_alternatives and len(annotation_candidates) > 1:
+                alternatives = [c['name'] for c in annotation_candidates[1:3]]
                 self.console.print(f"[dim]   Other annotation options: {', '.join(alternatives)}[/dim]")
 
             self.console.print()
         else:
             # Fallback if no columns detected
-            if analysis['text_column_candidates']:
-                best_text = analysis['text_column_candidates'][0]['name']
+            if text_candidates:
+                best_text = text_candidates[0]['name']
                 text_column_default = best_text
                 self.console.print(f"\n[green]✓ Suggested text column: '{best_text}'[/green]")
 
             annotation_column_default = "annotation"
-            if analysis['annotation_column_candidates']:
-                best_annotation = analysis['annotation_column_candidates'][0]['name']
+            if annotation_candidates:
+                best_annotation = annotation_candidates[0]['name']
                 annotation_column_default = best_annotation
                 stats = analysis['annotation_stats'].get(best_annotation, {})
                 fill_rate = stats.get('fill_rate', 0)
@@ -1879,6 +1894,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         confirmed_languages = set()
         lang_column = None
         language_distribution = {}  # Store exact language counts
+        apply_auto_detection = True
 
         # Check if we have a language column with detected languages
         has_lang_column = bool(analysis.get('language_column_candidates'))
@@ -1901,20 +1917,13 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 confirmed_languages = languages_found_in_column
                 lang_column = lang_column_candidate
                 self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
-            else:
-                # User said no to language column - apply automatic detection
-                self.console.print("\n[yellow]Language column not used. Applying automatic detection...[/yellow]")
-                has_lang_column = False  # Trigger auto-detection below
         else:
             # Option 2: No language column
             if not has_lang_column:
                 self.console.print("[yellow]ℹ️  No language column detected[/yellow]")
-            apply_auto_detection = Confirm.ask("Apply automatic language detection on text content?", default=True)
-            if not apply_auto_detection:
-                has_lang_column = True  # Skip auto-detection
 
-        # Automatic language detection from text content (if no lang column used)
-        if not lang_column and (not has_lang_column or 'apply_auto_detection' in locals()):
+        # Automatic language detection from text content
+        if apply_auto_detection:
             self.console.print("\n[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
 
             try:
@@ -2182,18 +2191,21 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
                                 # Ensure same length
                                 if len(detected_languages_per_text) == len(temp_df):
-                                    temp_df['language'] = detected_languages_per_text
+                                    if lang_column is None:
+                                        temp_df['language'] = detected_languages_per_text
 
-                                    # Map detected languages to the full DataFrame
-                                    df['language'] = None
-                                    df.loc[df[text_column].notna(), 'language'] = detected_languages_per_text
+                                        # Map detected languages to the full DataFrame
+                                        df['language'] = None
+                                        df.loc[df[text_column].notna(), 'language'] = detected_languages_per_text
 
-                                    # Set lang_column to use this new column
-                                    lang_column = 'language'
+                                        # Set lang_column to use this new column
+                                        lang_column = 'language'
 
-                                    # Save updated DataFrame back to CSV
-                                    df.to_csv(csv_path, index=False)
-                                    self.console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
+                                        # Save updated DataFrame back to CSV
+                                        df.to_csv(csv_path, index=False)
+                                        self.console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
+                                    else:
+                                        self.console.print("[dim]ℹ️  Auto-detected languages available; existing language column preserved.[/dim]")
                         else:
                             # Fallback: ask user
                             self.console.print("[yellow]Could not detect languages automatically[/yellow]")
@@ -4258,11 +4270,17 @@ def _run_benchmark_mode(
             self.logger.warning(f"⚠️  Created new session_id for benchmark (expected to reuse existing): {benchmark_session_id}")
 
         # CRITICAL: Display session information to user
+        session_manager = getattr(self, 'current_session_manager', None)
+        if session_manager and getattr(session_manager, 'session_dir', None):
+            benchmark_metrics_dir = session_manager.session_dir / "training_metrics" / "benchmark"
+        else:
+            benchmark_metrics_dir = get_training_metrics_dir(benchmark_session_id) / "benchmark"
+
         self.logger.info("="*80)
         self.logger.info("SESSION MANAGEMENT - BENCHMARK")
         self.logger.info(f"  benchmark_session_id: {benchmark_session_id}")
         self.logger.info(f"  Models will be saved to: models/{benchmark_session_id}/benchmark/")
-        self.logger.info(f"  Logs will be saved to: logs/training_arena/{benchmark_session_id}/training_metrics/benchmark/")
+        self.logger.info(f"  Logs will be saved to: {benchmark_metrics_dir}")
         self.logger.info("="*80)
         self.console.print(f"\n[cyan]📂 Session ID:[/cyan] [bold]{benchmark_session_id}[/bold]")
         self.console.print(f"[dim]All benchmark models will be saved to: models/{benchmark_session_id}/benchmark/[/dim]\n")
@@ -4380,6 +4398,8 @@ def _run_benchmark_mode(
 
                 # Train configuration
                 config = TrainingConfig()
+                metrics_base_dir = get_training_logs_base()
+                config.metrics_output_dir = str(metrics_base_dir)
                 config.num_epochs = benchmark_epochs
                 config.batch_size = 16
                 config.early_stopping_patience = max(2, benchmark_epochs // 5)
@@ -4661,7 +4681,10 @@ def _run_benchmark_mode(
         from llm_tool.utils.benchmark_utils import consolidate_session_csvs
 
         # Session directory is in logs/training_arena/{session_id}/training_metrics
-        session_dir = Path("logs/training_arena") / benchmark_session_id / "training_metrics"
+        if session_manager and getattr(session_manager, 'session_dir', None):
+            session_dir = session_manager.session_dir / "training_metrics"
+        else:
+            session_dir = get_training_metrics_dir(benchmark_session_id)
 
         if session_dir.exists():
             self.console.print("\n[bold cyan]📊 Consolidating session metrics...[/bold cyan]")
@@ -5906,6 +5929,204 @@ def _validate_and_filter_insufficient_labels(
 
     return str(filtered_path), True
 
+
+def _validate_all_training_files_before_training(
+    self,
+    bundle: TrainingDataBundle,
+    min_samples: int = 2,
+    train_by_language: bool = False,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Centralized validation of all training datasets before launching training.
+
+    Detects insufficient labels across every generated file (primary, per-key, per-value),
+    with optional language-aware counting. Any filtered datasets are written to companion
+    files and the bundle is updated to point to the sanitized versions.
+    """
+    from collections import Counter
+    import json
+    from pathlib import Path
+    from rich import box
+    from rich.prompt import Confirm
+    from rich.table import Table
+
+    if bundle is None:
+        return False, "No training bundle was produced."
+
+    files_to_validate: List[Tuple[str, Path]] = []
+
+    if getattr(bundle, "primary_file", None):
+        files_to_validate.append(("primary", Path(bundle.primary_file)))
+
+    training_files = getattr(bundle, "training_files", {}) or {}
+    for key, file_path in training_files.items():
+        if file_path:
+            files_to_validate.append((key, Path(file_path)))
+
+    if not files_to_validate:
+        return True, None
+
+    def _infer_strategy(path: Path, default_strategy: str) -> str:
+        """Determine whether the dataset stores labels as lists (multi-label) or scalars."""
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    labels = record.get("labels")
+                    if isinstance(labels, list):
+                        return "multi-label"
+                    if isinstance(labels, str) and labels:
+                        return "single-label"
+                    single = record.get("label")
+                    if isinstance(single, str) and single:
+                        return "single-label"
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self.logger.debug(f"Strategy inference failed for {path}: {exc}")
+        return "multi-label" if default_strategy == "multi-label" else "single-label"
+
+    default_strategy = bundle.metadata.get("training_approach", bundle.strategy or "multi-label")
+    all_insufficient: Dict[str, Dict[str, int]] = {}
+
+    for file_key, file_path in files_to_validate:
+        if not file_path.exists():
+            self.logger.warning(f"Training dataset missing: {file_path}")
+            continue
+
+        strategy = _infer_strategy(file_path, default_strategy)
+        label_counter: Counter[str] = Counter()
+
+        try:
+            with file_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    labels_field = record.get("labels", record.get("label"))
+                    language = record.get("lang", "unknown") if train_by_language else None
+
+                    if isinstance(labels_field, list):
+                        for label in labels_field:
+                            if label is None or label == "":
+                                continue
+                            key = f"{label}_{language}" if language else str(label)
+                            label_counter[key] += 1
+                    elif isinstance(labels_field, str) and labels_field:
+                        key = f"{labels_field}_{language}" if train_by_language else labels_field
+                        label_counter[key] += 1
+        except Exception as exc:
+            self.logger.warning(f"Could not analyze {file_key} ({file_path}): {exc}")
+            continue
+
+        insufficient = {
+            label: count for label, count in label_counter.items()
+            if count < min_samples
+        }
+        if insufficient:
+            all_insufficient[file_key] = insufficient
+
+    if not all_insufficient:
+        return True, None
+
+    self.console.print(f"\n[bold red]⚠️  INSUFFICIENT SAMPLES DETECTED[/bold red]\n")
+    if train_by_language:
+        self.console.print(
+            f"[yellow]Each language-specific label needs at least {min_samples} samples "
+            "to support train/validation splits.[/yellow]\n"
+        )
+    else:
+        self.console.print(
+            f"[yellow]Each label needs at least {min_samples} samples to support train/validation splits.[/yellow]\n"
+        )
+
+    table = Table(border_style="red", show_header=True, header_style="bold red", box=box.ROUNDED)
+    table.add_column("Dataset", style="cyan bold", width=28)
+    table.add_column("Label", style="yellow bold", width=40)
+    table.add_column("Samples", style="red", justify="right", width=12)
+    table.add_column("Status", style="red", width=12)
+
+    for file_key, labels in sorted(all_insufficient.items()):
+        for label, count in sorted(labels.items(), key=lambda item: item[1]):
+            table.add_row(file_key, label, str(count), "❌ BLOCKED")
+
+    self.console.print(table)
+    self.console.print()
+    self.console.print("[bold]Options:[/bold]")
+    self.console.print("  • [green]Remove[/green]: Automatically drop insufficient labels from impacted datasets")
+    self.console.print("  • [red]Cancel[/red]: Stop training and adjust the dataset manually\n")
+
+    if not Confirm.ask("Remove insufficient labels automatically?", default=False):
+        self.console.print("[yellow]❌ Training cancelled. Please adjust your annotations.[/yellow]")
+        return False, "Insufficient samples for some labels"
+
+    self.console.print(f"\n[yellow]🔄 Filtering training datasets to remove insufficient labels...[/yellow]\n")
+    updated_files = 0
+    for file_key, file_path in files_to_validate:
+        insufficient = all_insufficient.get(file_key)
+        if not insufficient:
+            continue
+
+        labels_to_exclude = set(insufficient.keys())
+        filtered_records: List[Dict[str, Any]] = []
+        removed_instances = 0
+
+        with file_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                labels_field = record.get("labels", record.get("label"))
+                language = record.get("lang", "unknown") if train_by_language else None
+
+                if isinstance(labels_field, list):
+                    original_len = len(labels_field)
+                    if train_by_language:
+                        cleaned = [
+                            label for label in labels_field
+                            if f"{label}_{language}" not in labels_to_exclude
+                        ]
+                        cleaned = [
+                            label for label in cleaned
+                            if str(label) not in labels_to_exclude
+                        ]
+                    else:
+                        cleaned = [
+                            label for label in labels_field
+                            if str(label) not in labels_to_exclude
+                        ]
+                    removed_instances += original_len - len(cleaned)
+                    record["labels"] = cleaned
+                    filtered_records.append(record)
+                elif isinstance(labels_field, str) and labels_field:
+                    key = f"{labels_field}_{language}" if train_by_language else labels_field
+                    if key not in labels_to_exclude:
+                        filtered_records.append(record)
+                    else:
+                        removed_instances += 1
+                else:
+                    filtered_records.append(record)
+
+        filtered_path = file_path.with_name(f"{file_path.stem}_filtered{file_path.suffix}")
+        with filtered_path.open("w", encoding="utf-8") as handle:
+            for record in filtered_records:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+        if file_key == "primary":
+            bundle.primary_file = filtered_path
+        elif file_key in training_files:
+            bundle.training_files[file_key] = filtered_path
+
+        updated_files += 1
+        self.console.print(
+            f"  [green]✓[/green] {file_key}: kept {len(filtered_records)} records "
+            f"(removed {removed_instances} label instance(s)) → {filtered_path.name}"
+        )
+
+    self.console.print(f"\n[green]✓ Filtered {updated_files} training file(s)[/green]\n")
+    return True, None
+
+
 def _validate_split_ratios(self, train: float, validation: float, test: float) -> Tuple[float, float, float]:
     """Validate and normalize split ratios."""
     # Check total
@@ -6909,6 +7130,11 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     """
     self.console.print("\n[bold]Quick training[/bold] - using configured parameters.")
 
+    session_manager = getattr(self, 'current_session_manager', None)
+    session_metrics_dir = None
+    if session_manager and getattr(session_manager, 'session_dir', None):
+        session_metrics_dir = session_manager.session_dir / "training_metrics" / "normal_training"
+
     # CRITICAL: Log session management for debugging
     self.logger.info("="*80)
     self.logger.info("SESSION MANAGEMENT - FULL TRAINING")
@@ -6917,7 +7143,11 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     if session_id and hasattr(self, 'current_session_id') and session_id == self.current_session_id:
         self.logger.info("  ✓ Full training REUSING same session_id as benchmark")
         self.logger.info(f"  Models will be saved to: models/{session_id}/normal_training/")
-        self.logger.info(f"  Logs will be saved to: logs/training_arena/{session_id}/training_metrics/normal_training/")
+        if session_metrics_dir is not None:
+            self.logger.info(f"  Logs will be saved to: {session_metrics_dir}")
+        else:
+            fallback_metrics_dir = get_training_metrics_dir(session_id) / "normal_training"
+            self.logger.info(f"  Logs will be saved to: {fallback_metrics_dir}")
     elif session_id:
         self.logger.warning("  ⚠️  session_id provided but differs from self.current_session_id")
         self.logger.info(f"  Models will be saved to: models/{session_id}/normal_training/")
@@ -6927,6 +7157,11 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     if session_id:
         self.console.print(f"\n[cyan]📂 Session ID:[/cyan] [bold]{session_id}[/bold]")
         self.console.print(f"[dim]All trained models will be saved to: models/{session_id}/normal_training/[/dim]\n")
+        if session_metrics_dir is not None:
+            self.console.print(f"[dim]Training metrics will be saved to: {session_metrics_dir}[/dim]\n")
+        else:
+            fallback_metrics_dir = get_training_metrics_dir(session_id) / "normal_training"
+            self.console.print(f"[dim]Training metrics will be saved to: {fallback_metrics_dir}[/dim]\n")
 
     # Use parameters from quick_params (already collected before config summary)
     if quick_params:
@@ -7057,7 +7292,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     if bundle.strategy == "multi-label":
         # Load data to check structure
         from llm_tool.trainers.multi_label_trainer import MultiLabelTrainer, TrainingConfig as MultiLabelTrainingConfig
-        ml_trainer = MultiLabelTrainer(config=MultiLabelTrainingConfig(), verbose=False)
+        ml_config = MultiLabelTrainingConfig()
+        ml_metrics_base = get_training_logs_base()
+        ml_config.metrics_output_dir = str(ml_metrics_base)
+        ml_trainer = MultiLabelTrainer(config=ml_config, verbose=False)
 
         # Use primary_file for one-vs-all, dataset_path otherwise
         data_path = str(bundle.primary_file) if hasattr(bundle, 'primary_file') else str(bundle.dataset_path)
@@ -7116,8 +7354,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     multiclass_groups = None  # Don't pass to trainer
 
     # Create TrainingConfig with user's chosen model
-    from llm_tool.trainers.model_trainer import TrainingConfig
+    from llm_tool.trainers.model_trainer import ModelTrainer, TrainingConfig
     training_config = TrainingConfig()
+    metrics_base_dir = get_training_logs_base()
+    training_config.metrics_output_dir = str(metrics_base_dir)
     training_config.model_name = model_name
     training_config.num_epochs = epochs
 
@@ -9139,8 +9379,7 @@ def _resume_training_studio(self):
     self.console.print("[dim]Load saved parameters from previous training sessions[/dim]\n")
 
     # Detect metadata files - now using the new training_arena structure
-    from pathlib import Path
-    base_dir = Path("logs/training_arena")
+    base_dir = get_training_logs_base()
 
     self.console.print(f"[dim]Searching in: {base_dir}[/dim]\n")
 
@@ -9568,8 +9807,9 @@ def _show_analysis_and_get_columns(self, analysis: Dict[str, Any], format_type: 
 
     # Auto-suggest label column
     label_column_default = "labels" if "multi" in format_type else "label"
-    if analysis['annotation_column_candidates']:
-        best_label = analysis['annotation_column_candidates'][0]['name']
+    annotation_candidates = analysis.get('annotation_column_candidates', [])
+    if annotation_candidates:
+        best_label = annotation_candidates[0]['name']
         label_column_default = best_label
         self.console.print(f"\n[green]✓ Label column detected: '{best_label}'[/green]")
         stats = analysis['annotation_stats'].get(best_label, {})
@@ -10216,6 +10456,7 @@ def integrate_training_arena_in_annotator_factory(
     confirmed_languages = set()
     lang_column = None
     language_distribution = {}  # Store exact language counts
+    apply_auto_detection = True
 
     # Check if we have a language column with detected languages
     has_lang_column = bool(analysis.get('language_column_candidates'))
@@ -10238,20 +10479,13 @@ def integrate_training_arena_in_annotator_factory(
             confirmed_languages = languages_found_in_column
             lang_column = lang_column_candidate
             console.print(f"[green]✓ Using language column: {lang_column}[/green]")
-        else:
-            # User said no to language column - apply automatic detection
-            console.print("\n[yellow]Language column not used. Applying automatic detection...[/yellow]")
-            has_lang_column = False  # Trigger auto-detection below
     else:
         # Option 2: No language column
         if not has_lang_column:
             console.print("[yellow]ℹ️  No language column detected[/yellow]")
-        apply_auto_detection = Confirm.ask("Apply automatic language detection on text content?", default=True)
-        if not apply_auto_detection:
-            has_lang_column = True  # Skip auto-detection
 
-    # Automatic language detection from text content (if no lang column used)
-    if not lang_column and (not has_lang_column or 'apply_auto_detection' in locals()):
+    # Automatic language detection from text content
+    if apply_auto_detection:
         console.print("\n[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
 
         try:
@@ -10519,18 +10753,21 @@ def integrate_training_arena_in_annotator_factory(
 
                             # Ensure same length
                             if len(detected_languages_per_text) == len(temp_df):
-                                temp_df['language'] = detected_languages_per_text
+                                if lang_column is None:
+                                    temp_df['language'] = detected_languages_per_text
 
-                                # Map detected languages to the full DataFrame
-                                df['language'] = None
-                                df.loc[df[selected_text_column].notna(), 'language'] = detected_languages_per_text
+                                    # Map detected languages to the full DataFrame
+                                    df['language'] = None
+                                    df.loc[df[selected_text_column].notna(), 'language'] = detected_languages_per_text
 
-                                # Set lang_column to use this new column
-                                lang_column = 'language'
+                                    # Set lang_column to use this new column
+                                    lang_column = 'language'
 
-                                # Save updated DataFrame back to CSV
-                                df.to_csv(csv_path, index=False)
-                                console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
+                                    # Save updated DataFrame back to CSV
+                                    df.to_csv(csv_path, index=False)
+                                    console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
+                                else:
+                                    console.print("[dim]ℹ️  Auto-detected languages available; existing language column preserved.[/dim]")
                     else:
                         # Fallback: ask user
                         console.print("[yellow]Could not detect languages automatically[/yellow]")
@@ -11543,3 +11780,16 @@ def integrate_training_arena_in_annotator_factory(
         "training_result": training_result,
         "training_logs_dir": session_manager.session_dir if session_manager else None
     }
+
+
+def _is_training_arena_method(obj: Any) -> bool:
+    """Return True if obj is a function expecting a `self` parameter."""
+    return inspect.isfunction(obj) and obj.__code__.co_varnames[:1] == ('self',)
+
+
+TRAINING_ARENA_METHODS = [
+    name for name, obj in globals().items()
+    if _is_training_arena_method(obj)
+]
+
+del _is_training_arena_method

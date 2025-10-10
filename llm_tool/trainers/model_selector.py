@@ -66,6 +66,7 @@ from llm_tool.trainers.models import (
     Bert, Camembert, GermanBert, SpanishBert, ItalianBert,
     PortugueseBert, ChineseBert, ArabicBert, RussianBert, HindiBert
 )
+from llm_tool.utils.training_paths import get_training_logs_base
 
 
 class TaskComplexity(Enum):
@@ -738,12 +739,13 @@ class ModelSelector:
 
                 # Time training
                 start_time = time.time()
+                metrics_base_dir = str(get_training_logs_base())
                 scores = model.run_training(
                     train_loader,
                     val_loader,
                     n_epochs=epochs,
                     save_model_as=f"benchmark_{model_name.lower()}",
-                    metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
+                    metrics_output_dir=metrics_base_dir,
                     track_languages=language_info is not None,
                     language_info=language_info,
                     label_key=None,  # Model selector benchmark mode

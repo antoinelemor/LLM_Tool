@@ -78,6 +78,11 @@ from .sota_models import (
     BigBirdBase, LongformerBase, MDeBERTaV3Base, XLMRobertaBase,
     LongT5Base, LongT5TGlobalBase, get_model_class_for_name
 )
+from llm_tool.utils.training_paths import (
+    get_training_logs_base,
+    get_training_metrics_dir,
+    resolve_metrics_base_dir,
+)
 from .multilingual_selector import MultilingualModelSelector
 from ..utils.data_filter_logger import get_filter_logger
 from .data_utils import safe_tolist, safe_convert_labels
@@ -278,6 +283,7 @@ class TrainingConfig:
     greater_is_better: bool = True
     output_dir: str = "./models/trained_model"
     logging_dir: str = "./logs"
+    metrics_output_dir: str = field(default_factory=lambda: str(get_training_logs_base()))
     logging_steps: int = 50
     evaluation_strategy: str = "epoch"
     save_strategy: str = "epoch"
@@ -981,6 +987,8 @@ class ModelTrainer:
                     self.logger.warning(f"  ⚠️ NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
             self.logger.debug("=" * 80)
 
+            metrics_base_dir = resolve_metrics_base_dir(getattr(self.config, "metrics_output_dir", None))
+
             best_metric, best_model_path, best_scores = model_instance.run_training(
                 train_dataloader=train_dataloader,
                 test_dataloader=val_dataloader,  # bert_base expects test_dataloader for validation
@@ -988,7 +996,7 @@ class ModelTrainer:
                 lr=self.config.learning_rate,
                 random_state=42,
                 save_model_as='model',  # Just the model name, bert_base.py will construct full path
-                metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
+                metrics_output_dir=str(metrics_base_dir),
                 label_key=label_key,      # Pass parsed label key
                 label_value=label_value,  # Pass parsed label value
                 track_languages=track_languages,  # CRITICAL: Enable language tracking
@@ -2020,14 +2028,7 @@ class ModelTrainer:
             progress_bar=False
         )
 
-        # Setup metrics output directory
-        # CRITICAL: Always use 'logs/training_arena' as base directory for consistency across ALL training modes
-        # bert_base.py will automatically organize into:
-        # Benchmark: logs/training_arena/{session_id}/training_metrics/benchmark/{category}/{language}/{model}/
-        # Normal: logs/training_arena/{session_id}/training_metrics/normal_training/{category}/{language}/{model}/
-        # NOTE: metrics_dir is not needed here - bert_base.py handles all metrics directory creation
-        # metrics_dir = output_dir / 'metrics'  # Obsolete - removed
-        # metrics_dir.mkdir(exist_ok=True)  # Obsolete - removed
+        metrics_base_dir = resolve_metrics_base_dir(getattr(self.config, "metrics_output_dir", None))
 
         # Train with enhanced tracking
         # Extract language info from samples if available
@@ -2063,7 +2064,7 @@ class ModelTrainer:
             n_epochs=self.config.num_epochs,
             lr=self.config.learning_rate,
             save_model_as='model',  # Just the model name, bert_base.py will construct full path
-            metrics_output_dir='logs/training_arena',  # CRITICAL: Use standard base dir - bert_base.py creates subdirs
+            metrics_output_dir=str(metrics_base_dir),
             track_languages=track_languages,
             language_info=val_language_info,  # CRITICAL: Pass language info for per-language metrics
             reinforced_learning=self.config.reinforced_learning if hasattr(self.config, 'reinforced_learning') else False,

@@ -43,6 +43,8 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
+from llm_tool.utils.training_paths import set_training_logs_base
+
 
 logger = logging.getLogger(__name__)
 
@@ -87,21 +89,21 @@ class TrainingDataSessionManager:
 
         # Logs directory: All reports and analysis
         if use_custom_structure and logs_base_dir:
-            # For Annotator Factory: use the provided directory as the session directory directly
-            # NO additional session_id level added
-            self.logs_base_dir = logs_base_dir.parent if logs_base_dir.parent.exists() else logs_base_dir
-            self.session_dir = logs_base_dir
-            # For Annotator Factory, datasets are already saved by TrainingDatasetBuilder
-            # in factory_session/training_data/, so we just reference that
-            self.data_base_dir = logs_base_dir
-            self.datasets_dir = logs_base_dir / "training_data"
+            # Annotator Factory passes an existing session directory.
+            self.session_dir = Path(logs_base_dir)
+            parent = self.session_dir.parent if self.session_dir.parent != self.session_dir else self.session_dir
+            self.logs_base_dir = parent
+            # Datasets are already managed inside the session directory.
+            self.data_base_dir = self.session_dir
+            self.datasets_dir = self.session_dir / "training_data"
         else:
             # Standard Training Arena structure
-            # Data directory: Raw JSONL files
+            self.logs_base_dir = Path(logs_base_dir) if logs_base_dir else Path("logs/training_arena")
+            self.session_dir = self.logs_base_dir / self.session_id
             self.data_base_dir = Path("data/training_data")
             self.datasets_dir = self.data_base_dir / self.session_id / "training_data"
-            self.logs_base_dir = logs_base_dir or Path("logs/training_arena")
-            self.session_dir = self.logs_base_dir / self.session_id
+
+        set_training_logs_base(self.logs_base_dir, session_dir=self.session_dir)
         self.training_data_logs_dir = self.session_dir / "training_data"
         self.training_metrics_dir = self.session_dir / "training_metrics"
         self.metadata_dir = self.session_dir / "training_session_metadata"

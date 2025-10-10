@@ -1184,7 +1184,7 @@ class BERTAnnotationStudio:
 
     def _select_file_source(self) -> Optional[Dict[str, Any]]:
         """Select file source with auto-detection"""
-        from llm_tool.cli.advanced_cli import DataDetector, DatasetInfo
+        from llm_tool.cli.data_detector import DataDetector, DatasetInfo
 
         # Auto-detect datasets in data directory
         data_dir = self.data_dir
@@ -1906,5 +1906,4 @@ class BERTAnnotationStudio:
 
         annotation_config['scope'] = scope
         return annotation_config
-
 

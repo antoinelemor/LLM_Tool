@@ -55,6 +55,12 @@ from llm_tool.trainers.bert_base import BertBase
 from llm_tool.trainers.multilingual_selector import MultilingualModelSelector
 from llm_tool.trainers.model_selector import ModelSelector, auto_select_model
 from llm_tool.trainers.sota_models import get_model_class_for_name
+from llm_tool.utils.training_paths import (
+    get_training_logs_base,
+    get_training_data_dir,
+    get_training_metrics_dir,
+    resolve_metrics_base_dir,
+)
 
 
 @dataclass
@@ -97,6 +103,7 @@ class TrainingConfig:
     reinforced_epochs: Optional[int] = None  # Override n_epochs_reinforced if provided
     track_languages: bool = True
     output_dir: str = "./multi_label_models"
+    metrics_output_dir: str = field(default_factory=lambda: str(get_training_logs_base()))
     parallel_training: bool = False  # train models in parallel
     multiclass_mode: bool = False  # Use true multi-class (num_labels > 2) instead of one-vs-all binary
     multiclass_groups: Optional[Dict[str, List[str]]] = None  # Detected multi-class groups
@@ -995,11 +1002,9 @@ class MultiLabelTrainer:
         # This enables automatic per-language metric tracking even without track_languages=True
         val_language_info = [s.lang if isinstance(s.lang, str) else None for s in val_samples] if val_samples else None
 
-        # CRITICAL: Use standard "logs/training_arena" base dir
-        # bert_base.py will automatically create:
-        # Benchmark: logs/training_arena/{session_id}/training_metrics/benchmark/{category}/{language}/{model}/
-        # Normal: logs/training_arena/{session_id}/training_metrics/normal_training/{category}/{language}/{model}/
-        # This ensures consistent structure across ALL training modes
+        # Determine metrics base directory, honoring explicit overrides while keeping session context
+        metrics_base_dir = resolve_metrics_base_dir(getattr(self.config, "metrics_output_dir", None))
+
         scores = model.run_training(
             train_loader,
             val_loader,
@@ -1011,7 +1016,7 @@ class MultiLabelTrainer:
             reinforced_epochs=reinforced_epochs,  # Manual override if configured
             track_languages=True,  # Always enable to get per-language metrics
             language_info=val_language_info,  # Pass language info for each validation sample
-            metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
+            metrics_output_dir=str(metrics_base_dir),
             label_key=label_key,  # Pass the parsed key (e.g., 'themes', 'sentiment')
             label_value=label_value,  # Pass the parsed value (e.g., 'transportation', 'positive')
             language=language,  # Pass the language (e.g., 'EN', 'FR', 'MULTI')
@@ -1473,7 +1478,9 @@ class MultiLabelTrainer:
         from datetime import datetime
         if session_id is None:
             session_id = datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
-        reports_dir = os.path.join('logs/training_arena', session_id, 'training_data')
+        reports_dir_path = get_training_data_dir(session_id)
+        reports_dir_path.mkdir(parents=True, exist_ok=True)
+        reports_dir = str(reports_dir_path)
 
         # Detect if we have multiple languages in the dataset
         # If yes, we need to stratify by language to ensure minority classes
@@ -1651,10 +1658,9 @@ class MultiLabelTrainer:
         # Consolidate session CSVs at session root (for all training modes)
         if session_id:
             try:
-                from pathlib import Path
                 from llm_tool.utils.benchmark_utils import consolidate_session_csvs
 
-                session_dir = Path("logs/training_arena") / session_id / "training_metrics"
+                session_dir = get_training_metrics_dir(session_id)
                 if session_dir.exists():
                     consolidate_session_csvs(session_dir, session_id)
             except Exception as e:

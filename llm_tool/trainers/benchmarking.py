@@ -68,6 +68,7 @@ from llm_tool.trainers.sota_models import (
     ALBERTBase, ALBERTLarge
 )
 from llm_tool.trainers.data_utils import safe_tolist, safe_convert_labels
+from llm_tool.utils.training_paths import resolve_metrics_base_dir
 
 
 REQUIRED_COLS = [
@@ -489,6 +490,7 @@ class BenchmarkRunner:
         # Log dataset composition before training
         self._log_dataset_composition(cat_name, language, train_labels, test_labels, log_dir)
 
+        metrics_output_dir = str(resolve_metrics_base_dir(None))
         summary = model.run_training(
             train_dataloader=train_loader,
             test_dataloader=test_loader,
@@ -497,7 +499,7 @@ class BenchmarkRunner:
             random_state=self.config.random_state,
             save_model_as=temp_model_name,
             pos_weight=pos_weight,
-            metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
+            metrics_output_dir=metrics_output_dir,
             best_model_criteria=self.config.best_model_criteria,
             f1_class_1_weight=self.config.f1_class_1_weight,
             reinforced_learning=self.config.reinforced_learning,
@@ -1331,6 +1333,7 @@ class BenchmarkRunner:
                     else:
                         print(f"   ℹ️ Reinforced learning disabled (activate in config to enable auto-triggering)")
 
+                metrics_output_dir = str(resolve_metrics_base_dir(None))
                 summary = model.run_training(
                     train_dataloader=train_loader,
                     test_dataloader=test_loader,
@@ -1347,7 +1350,7 @@ class BenchmarkRunner:
                     f1_1_rescue_threshold=self.config.f1_rescue_threshold,
                     reinforced_f1_threshold=self.config.reinforced_f1_threshold,
                     model_identifier=f"benchmark_{model_name.lower()}",
-                    metrics_output_dir='logs/training_arena',  # CRITICAL: Base dir - bert_base.py creates subdirs
+                    metrics_output_dir=metrics_output_dir,
                     label_key=None,  # Benchmark uses label_value directly
                     label_value=dataset.category,  # CRITICAL: Category name from dataset
                     language=dataset.language,  # CRITICAL: Language from dataset

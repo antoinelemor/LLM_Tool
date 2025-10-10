@@ -48,6 +48,7 @@ import json
 import warnings
 from typing import List, Tuple, Any, Optional, Dict
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -66,6 +67,8 @@ from rich.layout import Layout
 from rich.console import Group, Console
 from rich.text import Text
 from rich import box
+
+from llm_tool.utils.training_paths import resolve_metrics_base_dir, get_session_dir
 
 # Create a shared console for Rich operations
 console = Console()
@@ -943,7 +946,7 @@ class BertBase(BertABC):
             random_state: int = 42,
             save_model_as: str | None = None,
             pos_weight: torch.Tensor | None = None,
-            metrics_output_dir: str = "./logs/training_arena",
+            metrics_output_dir: Optional[str] = None,
             best_model_criteria: str = "combined",
             f1_class_1_weight: float = 0.7,
             reinforced_learning: bool = False,
@@ -1007,8 +1010,8 @@ class BertBase(BertABC):
             If not None, weights the loss to favor certain classes more heavily
             (useful in binary classification).
 
-        metrics_output_dir: str, default="./logs/training_arena"
-            Directory for saving CSV logs: training_metrics.csv and best_models.csv.
+        metrics_output_dir: Optional[str], default=None
+            Base directory for saving CSV logs. When None, the active training session directory is used.
 
         best_model_criteria: str, default="combined"
             Criterion for best model. Currently supports:
@@ -1041,9 +1044,9 @@ class BertBase(BertABC):
 
         Notes
         -----
-        This method generates:
-            - "<metrics_output_dir>/training_metrics.csv": logs metrics for each normal-training epoch.
-            - "<metrics_output_dir>/best_models.csv": logs any new best model (normal or reinforced).
+        This method generates CSV logs within the resolved training session directory, including:
+            - "training_metrics.csv": metrics for each normal-training epoch.
+            - "best.csv": entries for any new best model (normal or reinforced).
             - If reinforced training is triggered, it also logs a reinforced_training_metrics.csv.
             - The final best model is ultimately saved to "./models/<save_model_as>" if save_model_as is provided.
               (If reinforced training finds a better model, that replaces the previous best.)
@@ -1138,9 +1141,18 @@ class BertBase(BertABC):
         # Clean category name
         category_name = category_name.replace("/", "_").replace(" ", "_")
 
-        # Build directory structure based on mode
-        # New structure: logs/training_arena/{session_id}/training_metrics/...
-        session_dir = os.path.join(metrics_output_dir, session_id, "training_metrics")
+        # Build directory structure based on mode using the resolved session directory
+        resolved_base_dir = resolve_metrics_base_dir(metrics_output_dir)
+        use_configured_override = (
+            metrics_output_dir is not None
+            and Path(resolved_base_dir) == Path(metrics_output_dir)
+        )
+        if use_configured_override:
+            session_root = Path(metrics_output_dir) / session_id
+        else:
+            session_root = get_session_dir(session_id)
+        session_dir_path = session_root / "training_metrics"
+        session_dir = str(session_dir_path)
 
         # Also create the same structure for model outputs in models/ directory
         models_base = "models"
