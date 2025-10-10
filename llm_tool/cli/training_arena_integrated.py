@@ -62,7 +62,7 @@ from llm_tool.utils.training_paths import (
     get_training_logs_base,
     get_training_metrics_dir,
 )
-from llm_tool.cli.data_detector import DataDetector
+from llm_tool.utils.data_detector import DataDetector
 
 # Constants
 HAS_RICH = True
@@ -75,6 +75,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 STEP_LABEL_OVERRIDES: Dict[str, Dict[str, str]] = {
+    "arena": {
+        "language_detection": "STEP 3",
+        "text_length": "STEP 5",
+        "label_selection": "STEP 6",
+        "identifier_selection": "STEP 7",
+        "annotation_preview": "STEP 8",
+        "value_filter": "STEP 9",
+        "training_strategy": "STEP 10",
+        "data_split": "STEP 11",
+        "additional_columns": "STEP 12",
+        "token_strategy": "STEP 13",
+        "multilingual_strategy": "STEP 14",
+        "model_selection": "STEP 15",
+        "reinforced_learning": "STEP 16",
+        "epochs": "STEP 17",
+    },
     # Annotator Factory runs training as Phase 2; keep numbering scoped to that phase.
     "factory": {
         "text_length": "STEP 2.1",
@@ -84,7 +100,21 @@ STEP_LABEL_OVERRIDES: Dict[str, Dict[str, str]] = {
         "training_strategy": "STEP 2.5",
         "data_split": "STEP 2.6",
         "additional_columns": "STEP 2.7",
-    }
+    },
+    "arena_quick": {
+        "token_strategy": "STEP 1",
+        "multilingual_strategy": "STEP 2",
+        "model_selection": "STEP 3",
+        "reinforced_learning": "STEP 4",
+        "epochs": "STEP 5",
+    },
+    "factory_quick": {
+        "token_strategy": "STEP 2.8",
+        "multilingual_strategy": "STEP 2.9",
+        "model_selection": "STEP 2.10",
+        "reinforced_learning": "STEP 2.11",
+        "epochs": "STEP 2.12",
+    },
 }
 
 
@@ -261,7 +291,8 @@ def _training_studio_confirm_and_execute(
     mode: str,
     preloaded_config: Optional[Dict[str, Any]] = None,
     is_resume: bool = False,
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None,
+    step_context: str = "arena_quick"
 ) -> None:
     """
     Display training parameters and ask for confirmation before execution.
@@ -286,7 +317,7 @@ def _training_studio_confirm_and_execute(
     # STEP 1: Collect mode-specific parameters BEFORE showing config summary
     quick_params = None
     if mode == "quick" and not is_resume:
-        quick_params = self._collect_quick_mode_parameters(bundle, preloaded_config)
+        quick_params = self._collect_quick_mode_parameters(bundle, preloaded_config, step_context=step_context)
         if quick_params is None:
             # User cancelled
             self.console.print("[yellow]Training cancelled by user.[/yellow]")
@@ -399,7 +430,7 @@ def _training_studio_confirm_and_execute(
                 # Only re-collect if user wants to modify something
                 if modify_base or modify_rl:
                     self.console.print("\n[cyan]Modifying parameters...[/cyan]\n")
-                    quick_params = self._collect_quick_mode_parameters(bundle, quick_params)
+                    quick_params = self._collect_quick_mode_parameters(bundle, quick_params, step_context=step_context)
                     if quick_params is None:
                         self.console.print("[yellow]Training cancelled by user.[/yellow]")
                         return
@@ -1275,7 +1306,8 @@ def _training_studio_intelligent_dataset_selector(
 
     # Step 5: Label/Category Column Selection with Category Analysis
     self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    self.console.print("[bold cyan]  STEP 5:[/bold cyan] [bold white]Label/Category Column Selection[/bold white]")
+    label_step = resolve_step_label("label_selection", "STEP 5")
+    self.console.print(f"[bold cyan]  {label_step}:[/bold cyan] [bold white]Label/Category Column Selection[/bold white]")
     self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     self.console.print("[bold]💡 What You Need to Select:[/bold]")
     self.console.print("   [cyan]• Label Column[/cyan] - Contains the labels/categories (what the model will learn to predict)\n")
@@ -1361,7 +1393,8 @@ def _training_studio_intelligent_dataset_selector(
 
     # Step 6: ID Column Selection with Modernized Interface
     self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    self.console.print("[bold cyan]  STEP 6:[/bold cyan] [bold white]Identifier Column Selection (Optional)[/bold white]")
+    identifier_step = resolve_step_label("identifier_selection", "STEP 7")
+    self.console.print(f"[bold cyan]  {identifier_step}:[/bold cyan] [bold white]Identifier Column Selection (Optional)[/bold white]")
     self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
     # Load dataframe to detect ID candidates
@@ -1902,7 +1935,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             data_path=csv_path,
             text_column=text_column,  # Use the ACTUAL selected column, not temp
             display_results=True,
-            step_label=f"{resolve_step_label('text_length', 'STEP 3b')}: Text Length Analysis"
+            step_label=f"{resolve_step_label('text_length', 'STEP 5')}: Text Length Analysis"
         )
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -1911,7 +1944,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 5: Language Detection and Text Analysis (using sophisticated universal system)
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        language_step = resolve_step_label("language_detection", "STEP 5")
+        language_step = resolve_step_label("language_detection", "STEP 3")
         self.console.print(f"[bold cyan]  {language_step}:[/bold cyan] [bold white]Language Detection[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Analyzing languages to recommend the best model.[/dim]\n")
@@ -2262,7 +2295,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 6: Annotation Data Preview
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        annotation_step = resolve_step_label("annotation_preview", "STEP 6")
+        annotation_step = resolve_step_label("annotation_preview", "STEP 8")
         self.console.print(f"[bold cyan]  {annotation_step}:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]🔍 Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
@@ -2349,7 +2382,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         # Step 6.5: Value Filtering (Optional) - CRITICAL FOR DATA QUALITY
         if all_keys_values:
             self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            value_filter_step = resolve_step_label("value_filter", "STEP 6.5")
+            value_filter_step = resolve_step_label("value_filter", "STEP 9")
             self.console.print(f"[bold cyan]  {value_filter_step}:[/bold cyan] [bold white]Value Filtering (Optional)[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
             self.console.print("[dim]📋 You can exclude specific values from your training data.[/dim]")
@@ -2604,7 +2637,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 7: Training Strategy Selection (SIMPLIFIED)
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        strategy_step = resolve_step_label("training_strategy", "STEP 7")
+        strategy_step = resolve_step_label("training_strategy", "STEP 10")
         self.console.print(f"[bold cyan]  {strategy_step}:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -2919,7 +2952,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 6c: Data Split Configuration
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        data_split_step = resolve_step_label("data_split", "STEP 6c")
+        data_split_step = resolve_step_label("data_split", "STEP 11")
         self.console.print(f"[bold cyan]  {data_split_step}:[/bold cyan] [bold white]Data Split Configuration[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -3041,7 +3074,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Step 8: Additional Columns (ID, Language)
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        additional_step = resolve_step_label("additional_columns", "STEP 8")
+        additional_step = resolve_step_label("additional_columns", "STEP 12")
         self.console.print(f"[bold cyan]  {additional_step}:[/bold cyan] [bold white]Additional Columns (Optional)[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Optional: Select ID and language columns if available in your dataset.[/dim]\n")
@@ -6234,9 +6267,14 @@ def _display_split_summary(self, split_config: Dict[str, Any], keys_to_train: Li
 
     self.console.print()
 
-def _collect_quick_mode_parameters(self, bundle: TrainingDataBundle, preloaded_params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def _collect_quick_mode_parameters(
+    self,
+    bundle: TrainingDataBundle,
+    preloaded_params: Optional[Dict[str, Any]] = None,
+    step_context: str = "arena_quick"
+) -> Optional[Dict[str, Any]]:
     """
-    Collect parameters for quick mode training (STEP 1 of new flow).
+    Collect parameters for quick mode training (token strategy, model choice, epochs).
 
     Returns dict with keys: model_name, reinforced_learning, epochs
     Returns None if user cancels
@@ -6246,9 +6284,10 @@ def _collect_quick_mode_parameters(self, bundle: TrainingDataBundle, preloaded_p
     from rich.table import Table
     from rich import box
 
-    # STEP 1A: Token Length Strategy Selection
+    # Token length strategy selection
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-    self.console.print("[bold cyan]           📏 STEP 1: Token Length Strategy                    [/bold cyan]")
+    token_step_label = resolve_step_label("token_strategy", "STEP 1", context=step_context)
+    self.console.print(f"[bold cyan]           📏 {token_step_label}: Token Length Strategy                    [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     # Get languages from metadata
@@ -6480,11 +6519,12 @@ def _collect_quick_mode_parameters(self, bundle: TrainingDataBundle, preloaded_p
     text_length_stats['exclude_long_texts'] = exclude_long_texts
     text_length_stats['split_long_texts'] = split_long_texts
 
-    # STEP 2A: Multilingual Strategy (if multiple languages detected)
+    # Multilingual strategy (if multiple languages detected)
     train_by_language = False
     if len(languages) > 1:
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-        self.console.print("[bold cyan]           🌍 STEP 2A: Multilingual Strategy                   [/bold cyan]")
+        multilingual_step_label = resolve_step_label("multilingual_strategy", "STEP 2", context=step_context)
+        self.console.print(f"[bold cyan]           🌍 {multilingual_step_label}: Multilingual Strategy                   [/bold cyan]")
         self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
         self.console.print(f"[bold]Your dataset contains multiple languages:[/bold] {', '.join(sorted(languages))}\n")
@@ -6529,9 +6569,10 @@ def _collect_quick_mode_parameters(self, bundle: TrainingDataBundle, preloaded_p
             train_by_language = False
             self.console.print("\n[green]✓ Will train 1 multilingual model[/green]\n")
 
-    # STEP 2B: Model Selection
+    # Model selection
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-    self.console.print("[bold cyan]           🤖 STEP 2B: Model Selection                         [/bold cyan]")
+    model_step_label = resolve_step_label("model_selection", "STEP 3", context=step_context)
+    self.console.print(f"[bold cyan]           🤖 {model_step_label}: Model Selection                         [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     # Import model utilities
@@ -6927,9 +6968,10 @@ def _collect_quick_mode_parameters(self, bundle: TrainingDataBundle, preloaded_p
         # Display full model details after selection
         self._display_model_details(model_name, MODEL_METADATA)
 
-    # STEP 3: Reinforced Learning
+    # Reinforced learning
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-    self.console.print("[bold cyan]           🎓 STEP 3: Reinforced Learning                      [/bold cyan]")
+    rl_step_label = resolve_step_label("reinforced_learning", "STEP 4", context=step_context)
+    self.console.print(f"[bold cyan]           🎓 {rl_step_label}: Reinforced Learning                      [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     self.console.print("[bold]What is Reinforced Learning?[/bold]")
@@ -7104,9 +7146,10 @@ def _collect_quick_mode_parameters(self, bundle: TrainingDataBundle, preloaded_p
                 self.console.print("[green]✓ Reinforced learning epochs will be auto-calculated[/green]\n")
                 manual_rl_epochs = None
 
-    # STEP 4: Epochs
+    # Epoch configuration
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-    self.console.print("[bold cyan]           ⏱️  STEP 4: Training Epochs                           [/bold cyan]")
+    epochs_step_label = resolve_step_label("epochs", "STEP 5", context=step_context)
+    self.console.print(f"[bold cyan]           ⏱️  {epochs_step_label}: Training Epochs                           [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     self.console.print("[bold]What are Epochs?[/bold]")
@@ -9802,7 +9845,8 @@ def _resume_training_studio(self):
         bundle,
         mode,
         preloaded_config=model_config,
-        is_resume=action_mode == 'resume'
+        is_resume=action_mode == 'resume',
+        step_context="arena_quick"
     )
 
 def _training_studio_default_model(self) -> str:
@@ -10488,7 +10532,7 @@ def integrate_training_arena_in_annotator_factory(
         data_path=csv_path,
         text_column=selected_text_column,  # Use the ACTUAL selected column, not temp
         display_results=True,
-        step_label=f"{resolve_step_label('text_length', 'STEP 3b', context=step_context)}: Text Length Analysis"
+        step_label=f"{resolve_step_label('text_length', 'STEP 5', context=step_context)}: Text Length Analysis"
     )
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -10848,7 +10892,7 @@ def integrate_training_arena_in_annotator_factory(
 
     # Step 6: Annotation Data Preview
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    annotation_step = resolve_step_label("annotation_preview", "STEP 6", context=step_context)
+    annotation_step = resolve_step_label("annotation_preview", "STEP 8", context=step_context)
     console.print(f"[bold cyan]  {annotation_step}:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     console.print("[dim]🔍 Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
@@ -10935,7 +10979,7 @@ def integrate_training_arena_in_annotator_factory(
     # Step 6.5: Value Filtering (Optional) - CRITICAL FOR DATA QUALITY
     if all_keys_values:
         console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        value_filter_step = resolve_step_label("value_filter", "STEP 6.5", context=step_context)
+        value_filter_step = resolve_step_label("value_filter", "STEP 9", context=step_context)
         console.print(f"[bold cyan]  {value_filter_step}:[/bold cyan] [bold white]Value Filtering (Optional)[/bold white]")
         console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         console.print("[dim]📋 You can exclude specific values from your training data.[/dim]")
@@ -11190,7 +11234,7 @@ def integrate_training_arena_in_annotator_factory(
 
     # Step 7: Training Strategy Selection (SIMPLIFIED)
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    strategy_step = resolve_step_label("training_strategy", "STEP 7", context=step_context)
+    strategy_step = resolve_step_label("training_strategy", "STEP 10", context=step_context)
     console.print(f"[bold cyan]  {strategy_step}:[/bold cyan] [bold white]Training Strategy Selection[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -11505,7 +11549,7 @@ def integrate_training_arena_in_annotator_factory(
 
     # Step 6c: Data Split Configuration
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    data_split_step = resolve_step_label("data_split", "STEP 6c", context=step_context)
+    data_split_step = resolve_step_label("data_split", "STEP 11", context=step_context)
     console.print(f"[bold cyan]  {data_split_step}:[/bold cyan] [bold white]Data Split Configuration[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -11627,7 +11671,7 @@ def integrate_training_arena_in_annotator_factory(
 
     # Step 8: Additional Columns (ID, Language)
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    additional_step = resolve_step_label("additional_columns", "STEP 8", context=step_context)
+    additional_step = resolve_step_label("additional_columns", "STEP 12", context=step_context)
     console.print(f"[bold cyan]  {additional_step}:[/bold cyan] [bold white]Additional Columns (Optional)[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     console.print("[dim]Optional: Select ID and language columns if available in your dataset.[/dim]\n")
@@ -11813,7 +11857,8 @@ def integrate_training_arena_in_annotator_factory(
         training_result = cli_instance._training_studio_confirm_and_execute(
             bundle=bundle,
             mode='quick',
-            session_id=training_session_id
+            session_id=training_session_id,
+            step_context="factory_quick"
         )
 
     # Display where the training reports are saved (for Annotator Factory)

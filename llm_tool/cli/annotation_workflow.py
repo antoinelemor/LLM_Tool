@@ -16,7 +16,7 @@ from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
 
 from ..utils.language_detector import LanguageDetector
-from .data_detector import DataDetector
+from llm_tool.utils.data_detector import DataDetector
 
 
 class AnnotationMode(Enum):

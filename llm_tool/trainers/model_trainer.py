@@ -729,6 +729,7 @@ class ModelTrainer:
                           label_column: str = 'label',
                           training_strategy: str = 'single-label',
                           category_name: Optional[str] = None,
+                          class_names_override: Optional[List[str]] = None,
                           session_id: Optional[str] = None,
                           global_total_models: Optional[int] = None,
                           global_current_model: Optional[int] = None,
@@ -931,6 +932,24 @@ class ModelTrainer:
             # CRITICAL: Get class names from label encoder for display in metrics tables
             # self.label_encoder.classes_ contains the actual label names in correct order
             class_names_for_display = list(self.label_encoder.classes_) if hasattr(self, 'label_encoder') and self.label_encoder is not None else None
+            if class_names_override is not None:
+                class_names_for_display = [str(name) for name in class_names_override]
+            elif class_names_for_display is not None:
+                class_names_for_display = [str(name) for name in class_names_for_display]
+
+            if class_names_for_display is not None and num_labels is not None:
+                if len(class_names_for_display) != num_labels:
+                    self.logger.warning(
+                        f"⚠️ class_names length ({len(class_names_for_display)}) does not match num_labels ({num_labels}). "
+                        "Adjusting to keep them in sync."
+                    )
+                    if len(class_names_for_display) > num_labels:
+                        class_names_for_display = class_names_for_display[:num_labels]
+                    else:
+                        start_idx = len(class_names_for_display)
+                        class_names_for_display = class_names_for_display + [
+                            f"Class {i}" for i in range(start_idx, num_labels)
+                        ]
 
             # Train (using test_dataloader as validation for compatibility with bert_base)
             # Initialize global progress tracking for single model training
@@ -1706,8 +1725,23 @@ class ModelTrainer:
                         val_df_lang['label'] = val_df_lang['label'].map(label_mapping)
                     test_df_lang['label'] = test_df_lang['label'].map(label_mapping)
 
-                    num_labels_lang = len(unique_labels_lang)
+                    class_names_lang = None
+                    if hasattr(self, 'label_encoder') and self.label_encoder is not None:
+                        all_class_names = list(self.label_encoder.classes_)
+                        class_names_lang = []
+                        for old_label in unique_labels_lang:
+                            if 0 <= old_label < len(all_class_names):
+                                class_names_lang.append(str(all_class_names[old_label]))
+                            else:
+                                self.logger.warning(
+                                    f"  ⚠️ Label index {old_label} out of range for class names (len={len(all_class_names)}). "
+                                    "Using fallback placeholder."
+                                )
+                                class_names_lang.append(f"Class {len(class_names_lang)}")
+                    num_labels_lang = len(class_names_lang) if class_names_lang is not None else len(unique_labels_lang)
                     self.logger.info(f"  • {lang_code} has {num_labels_lang} unique label(s): {list(range(num_labels_lang))}")
+                    if class_names_lang:
+                        self.logger.info(f"  • {lang_code} class names: {class_names_lang}")
 
                     # Create language-specific output directory
                     base_output_dir = config.get('output_dir', 'models/best_model')
@@ -1725,6 +1759,7 @@ class ModelTrainer:
                             label_column='label',
                             training_strategy=training_strategy,
                             category_name=config.get('category_name'),
+                            class_names_override=class_names_lang,
                             session_id=config.get('session_id'),  # CRITICAL: Unified session ID
                             global_total_models=config.get('global_total_models'),
                             global_current_model=config.get('global_current_model'),

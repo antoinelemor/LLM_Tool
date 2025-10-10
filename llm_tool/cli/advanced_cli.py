@@ -154,7 +154,7 @@ from ..trainers.training_data_builder import (
     TrainingDataRequest,
     TrainingDataBundle,
 )
-from .data_detector import DatasetInfo, DataDetector
+from llm_tool.utils.data_detector import DatasetInfo, DataDetector
 from . import training_arena_integrated as training_arena
 from .annotation_workflow import (
     AnnotationMode,
