@@ -65,12 +65,12 @@ As a social science researcher, you might have:
 
 **LLM Tool makes state-of-the-art AI accessible through a simple, interactive interface:**
 
-✅ **No Coding Required** — Beautiful, interactive command-line interface guides you through every step
-✅ **Start with AI, End with Your Own Models** — Use GPT/Claude to annotate initial data, then train custom models that you own
-✅ **100% Local Option** — Works entirely on your computer with Ollama (no cloud APIs, no costs, no data sharing)
-✅ **Research-Oriented** — Built for social science workflows: inter-annotator agreement, stratified sampling, quality metrics
-✅ **Multilingual from Day One** — Automatic language detection and 75+ language support
-✅ **Production-Ready** — Generate thousands of annotations per hour, train models in minutes
+- ✅ **No Coding Required** — Beautiful, interactive command-line interface guides you through every step
+- ✅ **Start with AI, End with Your Own Models** — Use GPT/Claude to annotate initial data, then train custom models that you own
+- ✅ **100% Local Option** — Works entirely on your computer with Ollama (no cloud APIs, no costs, no data sharing)
+- ✅ **Research-Oriented** — Built for social science workflows: inter-annotator agreement, stratified sampling, quality metrics
+- ✅ **Multilingual from Day One** — Automatic language detection and 75+ language support
+- ✅ **Production-Ready** — Generate thousands of annotations per hour, train models in minutes
 
 ### Who Should Use This?
 

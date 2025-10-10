@@ -1014,418 +1014,77 @@ def _training_studio_intelligent_dataset_selector(
         temp_text_column = "text"  # fallback
 
     # Automatic language detection from text content
-    language_distribution = {}  # Store exact language counts
-    apply_auto_detection = True
-    apply_auto_detection = True
+    # Automatic language detection from text content (or confirmation of existing language column)
+    language_distribution: Dict[str, int] = {}
+    lang_counts: Dict[str, int] = {}
+    detected_languages_per_text: List[Optional[str]] = []
+    detection_failed = False
 
-    if apply_auto_detection:
-        self.console.print("\n[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
+    try:
+        import pandas as pd
+        import json
 
-        try:
-            import pandas as pd
-            import json
+        df = pd.read_csv(data_path) if data_path.suffix == '.csv' else pd.read_json(data_path, lines=data_path.suffix == '.jsonl')
+        text_mask = df[temp_text_column].notna()
+
+        if lang_column:
+            self.console.print("
+[dim]Using existing language column '{}' for analysis.[/dim]".format(lang_column))
+            lang_series = df.loc[text_mask, lang_column].apply(
+                lambda x: str(x).strip().lower() if pd.notna(x) and str(x).strip() else None
+            )
+            for value in lang_series.tolist():
+                detected_languages_per_text.append(value)
+                if value:
+                    lang_counts[value] = lang_counts.get(value, 0) + 1
+
+        if apply_auto_detection and not lang_counts:
+            self.console.print("
+[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
             from llm_tool.utils.language_detector import LanguageDetector
+            from tqdm import tqdm
 
-            df = pd.read_csv(data_path) if data_path.suffix == '.csv' else pd.read_json(data_path, lines=data_path.suffix == '.jsonl')
+            detector = LanguageDetector()
+            self.console.print("[dim]Analyzing {} texts...[/dim]".format(int(text_mask.sum())))
 
-            if temp_text_column in df.columns:
-                # Analyze ALL texts (not just sample) for precise distribution
-                all_texts = df[temp_text_column].dropna().tolist()
-
-                if all_texts:
-                    detector = LanguageDetector()
-                    lang_counts = {}
-                    detected_languages_per_text = []  # Store language for each text
-
-                    # Progress indicator
-                    from tqdm import tqdm
-                    self.console.print(f"[dim]Analyzing {len(all_texts)} texts...[/dim]")
-
-                    for text in tqdm(all_texts, desc="Detecting languages", disable=not HAS_RICH):
-                        if text and len(str(text).strip()) > 10:
-                            try:
-                                detected = detector.detect(str(text))
-                                if detected and detected.get('language'):
-                                    lang = detected['language']
-                                    lang_counts[lang] = lang_counts.get(lang, 0) + 1
-                                    detected_languages_per_text.append(lang)
-                                else:
-                                    detected_languages_per_text.append(None)
-                            except Exception as e:
-                                self.logger.debug(f"Language detection failed for text: {e}")
-                                detected_languages_per_text.append(None)
+            for text in tqdm(df.loc[text_mask, temp_text_column], desc="Detecting languages", disable=not HAS_RICH):
+                if text and len(str(text).strip()) > 10:
+                    try:
+                        detected = detector.detect(str(text))
+                        lang_code = None
+                        if isinstance(detected, dict):
+                            lang_code = detected.get('language') if detected.get('confidence', 0) >= 0.7 else None
+                        elif isinstance(detected, str):
+                            lang_code = detected
+                        if lang_code:
+                            lang_code = str(lang_code).lower()
+                            lang_counts[lang_code] = lang_counts.get(lang_code, 0) + 1
+                            detected_languages_per_text.append(lang_code)
                         else:
-                            detected_languages_per_text.append(None)  # Empty or too short text
-
-                    if lang_counts:
-                        # Store exact distribution
-                        language_distribution = lang_counts
-                        total = sum(lang_counts.values())
-
-                        self.console.print(f"\n[bold]🌍 Languages Detected from Content ({total:,} texts analyzed):[/bold]")
-
-                        # Create detailed table
-                        lang_table = Table(border_style="cyan", show_header=True, header_style="bold")
-                        lang_table.add_column("Language", style="cyan", width=12)
-                        lang_table.add_column("Count", style="yellow", justify="right", width=12)
-                        lang_table.add_column("Percentage", style="green", justify="right", width=12)
-
-                        for lang, count in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True):
-                            percentage = (count / total * 100) if total > 0 else 0
-                            lang_table.add_row(
-                                lang.upper(),
-                                f"{count:,}",
-                                f"{percentage:.1f}%"
-                            )
-
-                        self.console.print(lang_table)
-
-                        # Detect low-percentage languages (likely detection errors)
-                        LOW_PERCENTAGE_THRESHOLD = 1.0  # Languages with < 1% are considered low
-                        majority_languages = {}  # Languages above threshold
-                        minority_languages = {}  # Languages below threshold (likely errors)
-
-                        for lang, count in lang_counts.items():
-                            percentage = (count / total * 100) if total > 0 else 0
-                            if percentage >= LOW_PERCENTAGE_THRESHOLD:
-                                majority_languages[lang] = count
-                            else:
-                                minority_languages[lang] = count
-
-                        confirmed_languages = set(lang_counts.keys())
-                        texts_to_reclassify = []  # Store texts that need manual classification
-
-                        # Handle low-percentage languages if detected
-                        if minority_languages:
-                            self.console.print(f"\n[yellow]⚠ Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
-                            for lang, count in sorted(minority_languages.items(), key=lambda x: x[1], reverse=True):
-                                percentage = (count / total * 100)
-                                self.console.print(f"  • {lang.upper()}: {count} texts ({percentage:.2f}%)")
-
-                            self.console.print("\n[dim]These are likely detection errors. You have options:[/dim]")
-                            self.console.print("  [cyan]1. exclude[/cyan] - Exclude ALL low-percentage languages from training")
-                            self.console.print("  [cyan]2. keep[/cyan] - Keep ALL detected languages (not recommended)")
-                            self.console.print("  [cyan]3. select[/cyan] - Manually select which languages to keep")
-                            self.console.print("  [cyan]4. correct[/cyan] - Force ALL minority languages to a single language (quick fix)")
-                            self.console.print("  [cyan]5. reclassify[/cyan] - Manually review and reclassify texts phrase-by-phrase")
-
-                            minority_action = Prompt.ask(
-                                "\n[bold yellow]How to handle low-percentage languages?[/bold yellow]",
-                                choices=["exclude", "keep", "select", "correct", "reclassify"],
-                                default="correct"
-                            )
-
-                            if minority_action == "correct":
-                                # Quick correction: force all minority languages to one language
-                                self.console.print("\n[bold cyan]🔧 Quick Language Correction[/bold cyan]\n")
-
-                                # Show available languages (majority + all supported languages)
-                                all_supported_langs = [
-                                    'en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'ru', 'zh', 'ja',
-                                    'ar', 'pl', 'tr', 'ko', 'hi', 'sv', 'no', 'da', 'fi', 'cs',
-                                    'el', 'he', 'ro', 'uk', 'bg', 'hr', 'vi', 'th', 'id', 'fa'
-                                ]
-
-                                # Suggest the majority language
-                                majority_lang = max(majority_languages.items(), key=lambda x: x[1])[0] if majority_languages else 'en'
-
-                                self.console.print(f"[bold]Available languages:[/bold]")
-                                self.console.print(f"  • Majority language detected: [green]{majority_lang.upper()}[/green] ({majority_languages.get(majority_lang, 0)} texts)")
-                                self.console.print(f"  • All supported: {', '.join([l.upper() for l in all_supported_langs])}")
-
-                                correction_target = Prompt.ask(
-                                    f"\n[bold yellow]Force ALL minority languages to which language?[/bold yellow]",
-                                    default=majority_lang
-                                ).lower().strip()
-
-                                if correction_target not in all_supported_langs:
-                                    self.console.print(f"[yellow]Warning: '{correction_target}' not in standard list, but will be used anyway[/yellow]")
-
-                                # CRITICAL FIX: Update detected_languages_per_text with corrections
-                                total_corrected = 0
-                                if 'detected_languages_per_text' in locals() and detected_languages_per_text:
-                                    for i in range(len(detected_languages_per_text)):
-                                        if detected_languages_per_text[i] in minority_languages:
-                                            detected_languages_per_text[i] = correction_target
-                                            total_corrected += 1
-
-                                # Update language_distribution
-                                for minority_lang in minority_languages.keys():
-                                    if minority_lang in language_distribution:
-                                        del language_distribution[minority_lang]
-
-                                # Add corrected texts to target language
-                                if correction_target in language_distribution:
-                                    language_distribution[correction_target] += total_corrected
-                                else:
-                                    language_distribution[correction_target] = total_corrected
-
-                                # Update confirmed languages
-                                confirmed_languages = set([correction_target] + list(majority_languages.keys()))
-
-                                self.console.print(f"\n[green]✓ Corrected {total_corrected} texts from {len(minority_languages)} languages to {correction_target.upper()}[/green]")
-                                # Display updated distribution
-                                update_table = Table(title="Updated Language Distribution", border_style="green")
-                                update_table.add_column("Language", style="cyan", justify="center")
-                                update_table.add_column("Count", justify="right")
-                                update_table.add_column("Percentage", justify="right")
-
-                                new_total = sum(language_distribution.values())
-                                for lang, count in sorted(language_distribution.items(), key=lambda x: x[1], reverse=True):
-                                    if count > 0:  # Only show non-zero counts
-                                        percentage = (count / new_total) * 100 if new_total > 0 else 0
-                                        update_table.add_row(lang.upper(), f"{count:,}", f"{percentage:.1f}%")
-
-                                self.console.print(update_table)
-
-                            elif minority_action == "reclassify":
-                                # Manual reclassification
-                                self.console.print("\n[bold cyan]Manual Reclassification[/bold cyan]\n")
-                                self.console.print(f"[dim]Available majority languages: {', '.join([l.upper() for l in sorted(majority_languages.keys())])}[/dim]\n")
-
-                                # Create mapping for reclassification
-                                reclassification_map = {}
-
-                                # Get the texts for each minority language and show samples
-                                minority_lang_codes = list(minority_languages.keys())
-
-                                # Load texts with their detected languages
-                                all_texts_with_lang = []
-                                for idx, text in enumerate(all_texts):
-                                    if text and len(str(text).strip()) > 10:
-                                        try:
-                                            detected = detector.detect(str(text))
-                                            if detected and detected.get('language'):
-                                                lang = detected['language']
-                                                if lang in minority_languages:
-                                                    all_texts_with_lang.append({
-                                                        'index': idx,
-                                                        'text': str(text),
-                                                        'detected_lang': lang
-                                                    })
-                                        except:
-                                            continue
-
-                                # Show samples for reclassification
-                                if all_texts_with_lang:
-                                    self.console.print(f"[bold]Found {len(all_texts_with_lang)} texts to reclassify[/bold]\n")
-
-                                    # Group by detected language
-                                    from collections import defaultdict
-                                    texts_by_lang = defaultdict(list)
-                                    for item in all_texts_with_lang:
-                                        texts_by_lang[item['detected_lang']].append(item)
-
-                                    # For each minority language, show samples and ask for reclassification
-                                    for minority_lang in sorted(minority_lang_codes):
-                                        if minority_lang in texts_by_lang:
-                                            lang_texts = texts_by_lang[minority_lang]
-                                            self.console.print(f"\n[bold yellow]Reclassifying {minority_lang.upper()} ({len(lang_texts)} texts)[/bold yellow]")
-
-                                            majority_choices = sorted(majority_languages.keys())
-
-                                            # PHRASE-BY-PHRASE RECLASSIFICATION
-                                            # Each text can be assigned to a different language
-                                            reclassification_choices = {}  # Store per-text choices
-
-                                            for item in lang_texts:
-                                                idx = item['index']
-                                                text = item['text']
-
-                                                # Show current text
-                                                sample_table = Table(border_style="yellow", show_header=True, header_style="bold", title=f"Text {lang_texts.index(item) + 1}/{len(lang_texts)}")
-                                                sample_table.add_column("Text", width=90)
-                                                display_text = text if len(text) <= 200 else text[:200] + "..."
-                                                sample_table.add_row(display_text)
-                                                self.console.print(sample_table)
-
-                                                # Ask for this specific text
-                                                majority_choices_str = '/'.join([l.lower() for l in majority_choices])
-
-                                                reclassify_choice = Prompt.ask(
-                                                    f"Classify this text as [{majority_choices_str}/exclude]",
-                                                    choices=majority_choices + ["exclude"],
-                                                    default=majority_choices[0] if majority_choices else "exclude"
-                                                )
-
-                                                reclassification_choices[idx] = reclassify_choice
-
-                                            # Count the choices
-                                            choice_counts = {}
-                                            for choice in reclassification_choices.values():
-                                                choice_counts[choice] = choice_counts.get(choice, 0) + 1
-
-                                            # Update language distribution
-                                            for choice, count in choice_counts.items():
-                                                if choice != "exclude":
-                                                    language_distribution[choice] = language_distribution.get(choice, 0) + count
-                                                    if choice not in reclassification_map:
-                                                        reclassification_map[choice] = {}
-                                                    # Store the mapping
-                                                    if minority_lang not in reclassification_map[choice]:
-                                                        reclassification_map[choice][minority_lang] = count
-                                                    else:
-                                                        reclassification_map[choice][minority_lang] += count
-
-                                            # Remove from original language distribution
-                                            language_distribution[minority_lang] = 0
-
-                                            # Display summary
-                                            self.console.print(f"\n[bold]Reclassification Summary for {minority_lang.upper()}:[/bold]")
-                                            for choice, count in sorted(choice_counts.items(), key=lambda x: x[1], reverse=True):
-                                                if choice == "exclude":
-                                                    self.console.print(f"  [yellow]✗ {count} text(s) excluded[/yellow]")
-                                                else:
-                                                    self.console.print(f"  [green]✓ {count} text(s) → {choice.upper()}[/green]")
-
-                                # Update confirmed languages (remove excluded)
-                                # Filter out metadata keys and only keep languages with count > 0
-                                confirmed_languages = set([lang for lang, count in language_distribution.items()
-                                                         if not lang.startswith('_') and isinstance(count, (int, float)) and count > 0])
-
-                                # Store reclassification map for later use
-                                if reclassification_map:
-                                    language_distribution['_reclassification_map'] = reclassification_map
-
-                                self.console.print(f"\n[green]✓ Reclassification complete. Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
-
-                            elif minority_action == "exclude":
-                                # Exclude low-percentage languages
-                                for lang in minority_languages.keys():
-                                    language_distribution[lang] = 0  # Mark as excluded
-
-                                # CRITICAL FIX: Mark excluded language texts as None
-                                if 'detected_languages_per_text' in locals() and detected_languages_per_text:
-                                    for i in range(len(detected_languages_per_text)):
-                                        if detected_languages_per_text[i] in minority_languages:
-                                            detected_languages_per_text[i] = None
-
-                                confirmed_languages = set(majority_languages.keys())
-                                excluded_count = sum(minority_languages.values())
-                                self.console.print(f"\n[yellow]✗ Excluded {excluded_count} texts from {len(minority_languages)} low-percentage language(s)[/yellow]")
-                                self.console.print(f"[green]✓ Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
-
-                            elif minority_action == "keep":
-                                self.console.print("[yellow]⚠ Keeping all detected languages (including low-percentage ones)[/yellow]")
-
-                            elif minority_action == "select":
-                                # Manual selection of languages to keep
-                                self.console.print("\n[bold cyan]📝 Language Selection:[/bold cyan]")
-                                self.console.print(f"[dim]Select which languages to keep for training (from all {len(lang_counts)} detected)[/dim]\n")
-
-                                # Show all languages sorted by count
-                                self.console.print("[bold]All Detected Languages:[/bold]")
-                                for i, (lang, count) in enumerate(sorted(lang_counts.items(), key=lambda x: x[1], reverse=True), 1):
-                                    percentage = (count / total * 100)
-                                    status = "[green]✓ majority[/green]" if lang in majority_languages else "[yellow]⚠ minority[/yellow]"
-                                    self.console.print(f"  {i:2d}. {lang.upper():5s} - {count:6,} texts ({percentage:5.2f}%) {status}")
-
-                                self.console.print("\n[bold yellow]Select languages to KEEP:[/bold yellow]")
-                                self.console.print("[dim]Enter language codes separated by commas (e.g., 'fr,en,de')[/dim]")
-                                self.console.print("[dim]Press Enter without typing to keep ALL languages[/dim]")
-
-                                selected_langs = Prompt.ask("\n[bold]Languages to keep[/bold]", default="")
-
-                                if selected_langs.strip():
-                                    # User selected specific languages
-                                    selected_set = set([l.strip().lower() for l in selected_langs.split(',') if l.strip()])
-
-                                    # Validate that selected languages exist
-                                    invalid_langs = selected_set - set(lang_counts.keys())
-                                    if invalid_langs:
-                                        self.console.print(f"[yellow]⚠ Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
-                                        selected_set = selected_set - invalid_langs
-
-                                    # Exclude non-selected languages
-                                    for lang in lang_counts.keys():
-                                        if lang not in selected_set:
-                                            language_distribution[lang] = 0  # Mark as excluded
-
-                                    # CRITICAL FIX: Mark non-selected language texts as None
-                                    if 'detected_languages_per_text' in locals() and detected_languages_per_text:
-                                        for i in range(len(detected_languages_per_text)):
-                                            if detected_languages_per_text[i] and detected_languages_per_text[i] not in selected_set:
-                                                detected_languages_per_text[i] = None
-
-                                    confirmed_languages = selected_set
-                                    kept_count = sum([lang_counts[lang] for lang in selected_set])
-                                    excluded_count = total - kept_count
-
-                                    self.console.print(f"\n[green]✓ Kept {len(selected_set)} language(s): {', '.join([l.upper() for l in sorted(selected_set)])}[/green]")
-                                    self.console.print(f"[dim]  → {kept_count:,} texts kept, {excluded_count:,} texts excluded[/dim]")
-                                else:
-                                    # User pressed Enter - keep all
-                                    self.console.print("[green]✓ Keeping all detected languages[/green]")
-
-                        # Final confirmation (allow override even after selection)
-                        lang_list = ', '.join([l.upper() for l in sorted(confirmed_languages)])
-                        lang_confirmed = Confirm.ask(
-                            f"\n[bold]Final languages: {lang_list}. Is this correct?[/bold]",
-                            default=True
-                        )
-
-                        if not lang_confirmed:
-                            self.console.print("\n[yellow]Override with manual selection[/yellow]")
-                            manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
-                            confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
-
-                            # Update distribution to exclude non-selected languages
-                            for lang in lang_counts.keys():
-                                if lang not in confirmed_languages:
-                                    language_distribution[lang] = 0
-
-                            # CRITICAL FIX: Mark non-confirmed language texts as None
-                            if 'detected_languages_per_text' in locals() and detected_languages_per_text:
-                                for i in range(len(detected_languages_per_text)):
-                                    if detected_languages_per_text[i] and detected_languages_per_text[i] not in confirmed_languages:
-                                        detected_languages_per_text[i] = None
-
-                            self.console.print(f"[green]✓ Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
-                        else:
-                            self.console.print("[green]✓ Languages confirmed from content analysis[/green]")
-
-                        # CRITICAL FIX: Add detected language column to DataFrame and save
-                        if 'detected_languages_per_text' in locals() and detected_languages_per_text:
-                            # Create a temporary DataFrame for non-null texts
-                            temp_df = df[df[temp_text_column].notna()].copy()
-
-                            # Ensure same length
-                            if len(detected_languages_per_text) == len(temp_df):
-                                if lang_column is None:
-                                    # Map detected languages to the full DataFrame
-                                    df['language'] = None
-                                    df.loc[df[temp_text_column].notna(), 'language'] = detected_languages_per_text
-
-                                    # Set lang_column to use this new column
-                                    lang_column = 'language'
-
-                                    # Save updated DataFrame back to CSV
-                                    df.to_csv(data_path, index=False)
-                                    self.console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
-                                else:
-                                    self.console.print("[dim]ℹ️  Auto-detected languages available; existing language column preserved.[/dim]")
-                    else:
-                        # Fallback: ask user
-                        self.console.print("[yellow]Could not detect languages automatically[/yellow]")
-                        manual_langs = Prompt.ask("Expected language codes (e.g., en,fr,de)", default="")
-                        if manual_langs.strip():
-                            confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+                            detected_languages_per_text.append(None)
+                    except Exception as detect_exc:
+                        self.logger.debug("Language detection failed for text: {}".format(detect_exc))
+                        detected_languages_per_text.append(None)
                 else:
-                    self.console.print("[yellow]Not enough text samples for language detection[/yellow]")
-                    manual_langs = Prompt.ask("Expected language codes (optional, e.g., en,fr,de)", default="")
-                    if manual_langs.strip():
-                        confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+                    detected_languages_per_text.append(None)
 
-        except Exception as e:
-            self.logger.debug(f"Language detection from content failed: {e}")
-            self.console.print("[yellow]Automatic detection failed. Please specify manually[/yellow]")
-            manual_langs = Prompt.ask("Expected language codes (optional, e.g., en,fr,de)", default="")
-            if manual_langs.strip():
-                confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
-
-            self.console.print("[yellow]Standard models will be used (texts will be truncated to 512 tokens)[/yellow]")
-    else:
-        text_length_stats['user_prefers_long_models'] = False
+        confirmed_languages: Set[str] = set()
+        if lang_counts or detected_languages_per_text:
+            confirmed_languages, lang_column, language_distribution = self._confirm_language_selection(
+                df=df,
+                text_column=temp_text_column,
+                lang_counts=lang_counts,
+                detected_languages_per_text=detected_languages_per_text,
+                data_path=data_path,
+                lang_column=lang_column
+            )
+    except Exception as e:
+        detection_failed = True
+        self.logger.debug("Language detection from content failed: {}".format(e))
+        self.console.print("[yellow]Automatic detection failed. Please specify manually[/yellow]")
+        manual_langs = Prompt.ask("Expected language codes (optional, e.g., en,fr,de)", default="")
+        confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()]) if manual_langs.strip() else set()
+        self.console.print("[yellow]Standard models will be used (texts will be truncated to 512 tokens)[/yellow]")
 
     # Step 4: Text Column Selection with Sophisticated Table
     self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
