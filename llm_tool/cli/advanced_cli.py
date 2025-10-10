@@ -764,6 +764,71 @@ class AdvancedCLI:
         # Setup logging
         self._setup_logging()
 
+    def _resolve_existing_column(
+        self,
+        df: Any,
+        requested_column: Optional[str],
+        column_label: str,
+        fallback_candidates: Optional[List[str]] = None,
+    ) -> Optional[str]:
+        """
+        Reconcile a persisted column reference with the columns available in the current dataframe.
+
+        Resume workflows may store either the original column name or its positional index (as a
+        string). When the dataset schema changes between runs, this helper attempts to map the saved
+        reference back to a valid column so downstream steps keep functioning without silent failure.
+        """
+        if df is None or requested_column is None:
+            return requested_column
+
+        try:
+            available_columns = list(df.columns)
+        except AttributeError:
+            return requested_column
+
+        if requested_column in available_columns:
+            return requested_column
+
+        resolved_column: Optional[str] = requested_column
+
+        # 1) Handle numeric index persisted as a string (e.g., "2")
+        if isinstance(requested_column, str) and requested_column.isdigit():
+            idx = int(requested_column)
+            if 0 <= idx < len(available_columns):
+                resolved_column = available_columns[idx]
+
+        # 2) Case-insensitive name match
+        if (
+            resolved_column not in available_columns
+            and isinstance(requested_column, str)
+        ):
+            lower_map = {
+                col.lower(): col
+                for col in available_columns
+                if isinstance(col, str)
+            }
+            key = requested_column.lower()
+            if key in lower_map:
+                resolved_column = lower_map[key]
+
+        # 3) Explicit fallback candidates (ordered by priority)
+        if resolved_column not in available_columns and fallback_candidates:
+            for candidate in fallback_candidates:
+                if candidate in available_columns:
+                    resolved_column = candidate
+                    break
+
+        if resolved_column not in available_columns:
+            return requested_column
+
+        if self.console and resolved_column != requested_column:
+            self.console.print(
+                f"[yellow]ℹ Stored {column_label} '{requested_column}' not found. "
+                f"Using '{resolved_column}' instead.[/yellow]"
+            )
+
+        return resolved_column
+
     def analyze_text_lengths(
         self,
         data_path: Path = None,

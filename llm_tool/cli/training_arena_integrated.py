@@ -618,6 +618,57 @@ def _training_studio_show_model_catalog(self) -> None:
     self.console.print(table)
 
 
+    def _resolve_existing_column(self,
+                                 df: pd.DataFrame,
+                                 requested_column: Optional[str],
+                                 column_label: str,
+                                 fallback_candidates: Optional[List[str]] = None) -> Optional[str]:
+        """
+        Remap a persisted column reference (name or index) to an existing column in the current
+        dataframe. Resume workflows often store positional indices (e.g., \"2\") which no longer
+        match when schema changes, so we reconcile here to keep downstream steps functional.
+        """
+        if df is None or requested_column is None:
+            return requested_column
+
+        available_columns = list(df.columns)
+        if requested_column in available_columns:
+            return requested_column
+
+        resolved_column = requested_column
+
+        # 1) Handle numeric index persisted as a string (e.g., "2")
+        if isinstance(requested_column, str) and requested_column.isdigit():
+            idx = int(requested_column)
+            if 0 <= idx < len(available_columns):
+                resolved_column = available_columns[idx]
+
+        # 2) Case-insensitive name match
+        if resolved_column not in available_columns and isinstance(requested_column, str):
+            lower_map = {col.lower(): col for col in available_columns}
+            key = requested_column.lower()
+            if key in lower_map:
+                resolved_column = lower_map[key]
+
+        # 3) Explicit fallback candidates (ordered by priority)
+        if resolved_column not in available_columns and fallback_candidates:
+            for candidate in fallback_candidates:
+                if candidate in available_columns:
+                    resolved_column = candidate
+                    break
+
+        # If no match was found, leave the original value so downstream logic can signal the issue.
+        if resolved_column not in available_columns:
+            return requested_column
+
+        if self.console and resolved_column != requested_column:
+            self.console.print(
+                f"[yellow]ℹ Stored {column_label} '{requested_column}' not found. "
+                f"Using '{resolved_column}' instead.[/yellow]"
+            )
+
+        return resolved_column
+
 def _confirm_language_selection(self,
                                 df,
                                 text_column: str,
@@ -1028,6 +1079,13 @@ def _training_studio_intelligent_dataset_selector(
         text_mask = df[temp_text_column].notna()
 
         if lang_column:
+            lang_column = self._resolve_existing_column(
+                df,
+                lang_column,
+                "language column",
+                fallback_candidates=["language", "lang"]
+            )
+        if lang_column and lang_column in df.columns:
             self.console.print("[dim]Using existing language column '{}' for analysis.[/dim]".format(lang_column))
             lang_series = df.loc[text_mask, lang_column].apply(
                 lambda x: str(x).strip().lower() if pd.notna(x) and str(x).strip() else None
@@ -10301,17 +10359,34 @@ def integrate_training_arena_in_annotator_factory(
     import json
     df = pd.read_csv(csv_path)
     
+    # Analyze dataset structure  
+    detector = DataDetector()
+    analysis = detector.analyze_file_intelligently(csv_path)
+    all_columns = analysis.get('all_columns', [])
+    
+    text_fallbacks: List[str] = []
+    for candidate in analysis.get('text_candidates', []):
+        name = candidate.get('name')
+        if name:
+            text_fallbacks.append(name)
+    text_fallbacks.append('text')
+
+    selected_text_column = cli_instance._resolve_existing_column(
+        df,
+        selected_text_column,
+        "text column",
+        fallback_candidates=text_fallbacks
+    )
+
+    if selected_text_column not in df.columns:
+        raise ValueError(f"Resolved text column '{selected_text_column}' not present in dataset columns {list(df.columns)}")
+
     # Display dataset confirmation (clean transition from Step 2/3 banner)
     console.print("[green]✓ Annotations loaded successfully![/green]")
     console.print(f"  [cyan]File:[/cyan] {csv_path}")
     console.print(f"  [cyan]Text column:[/cyan] '{selected_text_column}'")
     console.print(f"  [cyan]Annotation column:[/cyan] '{selected_annotation_column}'")
     console.print(f"  [cyan]Rows:[/cyan] {len(df):,}\n")
-    
-    # Analyze dataset structure  
-    detector = DataDetector()
-    analysis = detector.analyze_file_intelligently(csv_path)
-    all_columns = analysis.get('all_columns', [])
     
     # Import TrainingDataSessionManager for comprehensive logging
     from llm_tool.utils.training_data_utils import TrainingDataSessionManager
