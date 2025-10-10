@@ -617,6 +617,261 @@ def _training_studio_show_model_catalog(self) -> None:
 
     self.console.print(table)
 
+
+def _confirm_language_selection(self,
+                                df,
+                                text_column: str,
+                                lang_counts: Dict[str, int],
+                                detected_languages_per_text: List[Optional[str]],
+                                data_path: Path,
+                                lang_column: Optional[str] = None,
+                                console: Optional[Console] = None) -> Tuple[Set[str], Optional[str], Dict[str, int]]:
+    """Unified confirmation workflow for language selection, used across Training Arena and Annotator Factory."""
+    console = console or self.console
+
+    language_distribution: Dict[str, int] = dict(lang_counts)
+    confirmed_languages: Set[str] = set(k for k, v in lang_counts.items() if v > 0)
+
+    # Display detected languages if available
+    total = sum(language_distribution.values())
+    if total > 0:
+        console.print(f"\n[bold]🌍 Languages Detected ({total:,} texts analyzed):[/bold]")
+
+        lang_table = Table(border_style="cyan", show_header=True, header_style="bold")
+        lang_table.add_column("Language", style="cyan", width=12)
+        lang_table.add_column("Count", style="yellow", justify="right", width=12)
+        lang_table.add_column("Percentage", style="green", justify="right", width=12)
+
+        for lang, count in sorted(language_distribution.items(), key=lambda x: x[1], reverse=True):
+            percentage = (count / total * 100) if total > 0 else 0
+            lang_table.add_row(lang.upper(), f"{count:,}", f"{percentage:.1f}%")
+
+        console.print(lang_table)
+    else:
+        console.print("[yellow]Could not detect languages automatically[/yellow]")
+
+    # Handle low-percentage languages
+    LOW_PERCENTAGE_THRESHOLD = 1.0
+    minority_languages = {}
+    majority_languages = {}
+    if total > 0:
+        for lang, count in language_distribution.items():
+            percentage = (count / total * 100) if total > 0 else 0
+            if percentage >= LOW_PERCENTAGE_THRESHOLD:
+                majority_languages[lang] = count
+            else:
+                minority_languages[lang] = count
+
+    # Provide options to adjust minority languages
+    if minority_languages:
+        console.print(f"\n[yellow]⚠ Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
+        for lang, count in sorted(minority_languages.items(), key=lambda x: x[1], reverse=True):
+            percentage = (count / total * 100) if total > 0 else 0
+            console.print(f"  • {lang.upper()}: {count} texts ({percentage:.2f}%)")
+
+        console.print("\n[dim]These are likely detection errors. You have options:[/dim]")
+        console.print("  [cyan]1. exclude[/cyan] - Exclude ALL low-percentage languages from training")
+        console.print("  [cyan]2. keep[/cyan] - Keep ALL detected languages (not recommended)")
+        console.print("  [cyan]3. select[/cyan] - Manually select which languages to keep")
+        console.print("  [cyan]4. correct[/cyan] - Force ALL minority languages to a single language (quick fix)")
+
+        minority_action = Prompt.ask(
+            "\n[bold yellow]How to handle low-percentage languages?[/bold yellow]",
+            choices=["exclude", "keep", "select", "correct"],
+            default="correct"
+        )
+
+        if minority_action == "correct":
+            console.print("\n[bold cyan]🔧 Quick Language Correction[/bold cyan]\n")
+
+            all_supported_langs = [
+                'en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'ru', 'zh', 'ja',
+                'ar', 'pl', 'tr', 'ko', 'hi', 'sv', 'no', 'da', 'fi', 'cs',
+                'el', 'he', 'ro', 'uk', 'bg', 'hr', 'vi', 'th', 'id', 'fa'
+            ]
+            majority_lang = max(majority_languages.items(), key=lambda x: x[1])[0] if majority_languages else 'en'
+
+            console.print(f"[bold]Available languages:[/bold]")
+            console.print(f"  • Majority language detected: [green]{majority_lang.upper()}[/green] ({majority_languages.get(majority_lang, 0)} texts)")
+            console.print(f"  • All supported: {', '.join([l.upper() for l in all_supported_langs])}")
+
+            correction_target = Prompt.ask(
+                f"\n[bold yellow]Force ALL minority languages to which language?[/bold yellow]",
+                default=majority_lang
+            ).lower().strip()
+
+            if correction_target not in all_supported_langs:
+                console.print(f"[yellow]Warning: '{correction_target}' not in standard list, but will be used anyway[/yellow]")
+
+            total_corrected = sum(minority_languages.values())
+            reclassification_map = language_distribution.get('_reclassification_map', {})
+            for minority_lang in minority_languages.keys():
+                if minority_lang in language_distribution:
+                    del language_distribution[minority_lang]
+                reclassification_map[minority_lang] = correction_target
+
+            if correction_target in language_distribution:
+                language_distribution[correction_target] += total_corrected
+            else:
+                language_distribution[correction_target] = total_corrected
+
+            language_distribution['_reclassification_map'] = reclassification_map
+
+            if detected_languages_per_text:
+                for i in range(len(detected_languages_per_text)):
+                    if detected_languages_per_text[i] in minority_languages:
+                        detected_languages_per_text[i] = correction_target
+
+            console.print(f"\n[green]✓ Corrected {total_corrected} texts from {len(minority_languages)} languages to {correction_target.upper()}[/green]")
+
+            update_table = Table(title="Updated Language Distribution", border_style="green")
+            update_table.add_column("Language", style="cyan", justify="center")
+            update_table.add_column("Count", justify="right")
+            update_table.add_column("Percentage", justify="right")
+
+            new_total = sum(v for k, v in language_distribution.items() if not k.startswith('_'))
+            for lang, count in sorted(language_distribution.items(), key=lambda x: x[1], reverse=True):
+                if isinstance(count, (int, float)) and count > 0 and not lang.startswith('_'):
+                    percentage = (count / new_total) * 100 if new_total > 0 else 0
+                    update_table.add_row(lang.upper(), f"{count:,}", f"{percentage:.1f}%")
+
+            console.print(update_table)
+
+        elif minority_action == "exclude":
+            for lang in minority_languages.keys():
+                language_distribution[lang] = 0
+
+            if detected_languages_per_text:
+                for i in range(len(detected_languages_per_text)):
+                    if detected_languages_per_text[i] in minority_languages:
+                        detected_languages_per_text[i] = None
+
+            confirmed_languages = set(lang for lang, count in language_distribution.items()
+                                      if isinstance(count, (int, float)) and count >= LOW_PERCENTAGE_THRESHOLD)
+            excluded_count = sum(minority_languages.values())
+            console.print(f"\n[yellow]✗ Excluded {excluded_count} texts from {len(minority_languages)} low-percentage language(s)[/yellow]")
+            console.print(f"[green]✓ Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+
+        elif minority_action == "keep":
+            console.print("[yellow]⚠ Keeping all detected languages (including low-percentage ones)[/yellow]")
+
+        elif minority_action == "select":
+            console.print("\n[bold cyan]📝 Language Selection:[/bold cyan]")
+            console.print(f"[dim]Select which languages to keep for training (from all {len(language_distribution)} detected)[/dim]\n")
+
+            console.print("[bold]All Detected Languages:[/bold]")
+            for i, (lang, count) in enumerate(sorted(language_distribution.items(), key=lambda x: x[1], reverse=True), 1):
+                if lang.startswith('_'):
+                    continue
+                percentage = (count / total * 100) if total > 0 else 0
+                status = "[green]✓ majority[/green]" if lang in majority_languages else "[yellow]⚠ minority[/yellow]"
+                console.print(f"  {i:2d}. {lang.upper():5s} - {count:6,} texts ({percentage:5.2f}%) {status}")
+
+            console.print("\n[bold yellow]Select languages to KEEP:[/bold yellow]")
+            console.print("[dim]Enter language codes separated by commas (e.g., 'fr,en,de')[/dim]")
+            console.print("[dim]Press Enter without typing to keep ALL languages[/dim]")
+
+            selected_langs = Prompt.ask("\n[bold]Languages to keep[/bold]", default="")
+
+            if selected_langs.strip():
+                selected_set = set([l.strip().lower() for l in selected_langs.split(',') if l.strip()])
+                invalid_langs = selected_set - set(language_distribution.keys())
+                if invalid_langs:
+                    console.print(f"[yellow]⚠ Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
+                    selected_set = selected_set - invalid_langs
+
+                for lang in list(language_distribution.keys()):
+                    if not lang.startswith('_') and lang not in selected_set:
+                        language_distribution[lang] = 0
+
+                if detected_languages_per_text:
+                    for i in range(len(detected_languages_per_text)):
+                        if detected_languages_per_text[i] and detected_languages_per_text[i] not in selected_set:
+                            detected_languages_per_text[i] = None
+
+                confirmed_languages = selected_set
+                kept_count = sum([lang_counts.get(lang, 0) for lang in selected_set])
+                excluded_count = total - kept_count
+                console.print(f"\n[green]✓ Kept {len(selected_set)} language(s): {', '.join([l.upper() for l in sorted(selected_set)])}[/green]")
+                console.print(f"[dim]  → {kept_count:,} texts kept, {excluded_count:,} texts excluded[/dim]")
+            else:
+                console.print("[green]✓ Keeping all detected languages[/green]")
+
+    # Final confirmation
+    filtered_distribution = {lang: count for lang, count in language_distribution.items()
+                             if not lang.startswith('_') and isinstance(count, (int, float))}
+    confirmed_languages = set(lang for lang, count in filtered_distribution.items() if count > 0)
+
+    if confirmed_languages:
+        lang_list = ', '.join([l.upper() for l in sorted(confirmed_languages)])
+        lang_confirmed = Confirm.ask(
+            f"\n[bold]Final languages: {lang_list}. Is this correct?[/bold]",
+            default=True
+        )
+
+        if not lang_confirmed:
+            console.print("\n[yellow]Override with manual selection[/yellow]")
+            manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
+            confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+
+            for lang in list(language_distribution.keys()):
+                if lang.startswith('_'):
+                    continue
+                if lang not in confirmed_languages:
+                    language_distribution[lang] = 0
+
+            if detected_languages_per_text:
+                for i in range(len(detected_languages_per_text)):
+                    if detected_languages_per_text[i] and detected_languages_per_text[i] not in confirmed_languages:
+                        detected_languages_per_text[i] = None
+
+            console.print(f"[green]✓ Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+        else:
+            console.print("[green]✓ Languages confirmed from analysis[/green]")
+    else:
+        console.print("[yellow]No languages confirmed. Please specify manually if required.[/yellow]")
+        manual_langs = Prompt.ask("Expected language codes (optional, e.g., en,fr,de)", default="")
+        if manual_langs.strip():
+            confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
+            for lang in list(language_distribution.keys()):
+                if lang not in confirmed_languages and not lang.startswith('_'):
+                    language_distribution[lang] = 0
+
+    # Update DataFrame and persist language column if possible
+    text_mask = df[text_column].notna()
+    target_column = lang_column
+
+    if detected_languages_per_text and len(detected_languages_per_text) == text_mask.sum():
+        final_langs = []
+        for lang in detected_languages_per_text:
+            final_langs.append(lang if lang and str(lang).strip() else None)
+
+        if target_column is None:
+            target_column = 'language'
+            df[target_column] = None
+
+        df.loc[text_mask, target_column] = final_langs
+
+        if data_path:
+            try:
+                df.to_csv(data_path, index=False)
+                console.print(f"[dim]✓ Language data saved to column '{target_column}'[/dim]")
+            except Exception as exc:
+                self.logger.warning(f"Could not save language updates: {exc}")
+
+        # Recalculate distribution from final languages
+        recalculated = {}
+        for lang in final_langs:
+            if lang:
+                recalculated[lang] = recalculated.get(lang, 0) + 1
+        for lang, count in recalculated.items():
+            language_distribution[lang] = count
+        for lang in list(language_distribution.keys()):
+            if not lang.startswith('_') and lang not in recalculated:
+                language_distribution[lang] = 0
+
+    return confirmed_languages, target_column, language_distribution
+
 def _training_studio_intelligent_dataset_selector(
     self,
     format_type: str
