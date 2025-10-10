@@ -50,7 +50,9 @@ import time
 import logging
 import glob
 import shutil
+import copy
 import numpy as np
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple, Set
 from dataclasses import dataclass, field
@@ -92,9 +94,11 @@ except ImportError:
 # Try importing pandas for data preview
 try:
     import pandas as pd
+    from pandas.api import types as pd_types
     HAS_PANDAS = True
 except ImportError:
     HAS_PANDAS = False
+    pd_types = None
 
 # Try importing numpy for numerical operations
 try:
@@ -5829,11 +5833,219 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self.console.print(params_table)
 
-    def _modify_parameters_if_requested(self, metadata: dict, modify: bool) -> dict:
-        """Allow user to modify specific parameters"""
-        if not modify:
-            return metadata
+    def _load_preview_dataframe(self, data_source: dict, max_rows: int = 25):
+        """Read a lightweight sample of the dataset for previews."""
+        if not HAS_PANDAS:
+            return None
 
+        dataset_path = data_source.get('file_path')
+        if not dataset_path:
+            return None
+
+        try:
+            path = Path(dataset_path).expanduser()
+        except (TypeError, ValueError):
+            return None
+
+        if not path.exists():
+            return None
+
+        if not hasattr(self, "_resume_preview_cache"):
+            self._resume_preview_cache: Dict[Path, Dict[str, Any]] = {}
+
+        cache_entry = self._resume_preview_cache.get(path)
+        mtime = path.stat().st_mtime
+        if cache_entry and cache_entry.get("mtime") == mtime:
+            cached_df = cache_entry.get("df")
+            if cached_df is not None:
+                return cached_df.copy()
+
+        data_format = (data_source.get('data_format') or path.suffix.lower().lstrip('.')).lower()
+
+        try:
+            if data_format in {"csv", "tsv"}:
+                sep = "," if data_format == "csv" else "\t"
+                df = pd.read_csv(path, sep=sep, nrows=max_rows)
+            elif data_format == "jsonl":
+                df = pd.read_json(path, lines=True, nrows=max_rows)
+            elif data_format == "json":
+                df = pd.read_json(path)
+                if len(df) > max_rows:
+                    df = df.head(max_rows)
+            elif data_format in {"xlsx", "xls", "excel"}:
+                df = pd.read_excel(path, nrows=max_rows)
+            elif data_format == "parquet":
+                df = pd.read_parquet(path)
+                if len(df) > max_rows:
+                    df = df.head(max_rows)
+            else:
+                logging.debug("Resume preview: unsupported format '%s'", data_format)
+                return None
+        except Exception as exc:
+            logging.debug("Resume preview: unable to load %s (%s)", path, exc)
+            return None
+
+        if df is None or df.empty:
+            return None
+
+        limited_df = df.head(max_rows).copy()
+        self._resume_preview_cache[path] = {"mtime": mtime, "df": limited_df}
+        return limited_df.copy()
+
+    def _detect_column_profile(self, series) -> str:
+        """Generate a friendly description for a dataframe column."""
+        if not HAS_PANDAS:
+            return ""
+
+        try:
+            non_null = series.dropna()
+        except Exception:
+            return "🧩"
+
+        if non_null.empty:
+            return "⬜️ Empty"
+
+        if pd_types:
+            if pd_types.is_datetime64_any_dtype(series):
+                return "🕒 Date/Time"
+            if pd_types.is_numeric_dtype(series):
+                unique_ratio = non_null.nunique() / len(non_null)
+                if unique_ratio > 0.95:
+                    return "🔑 Numeric ID"
+                return "🔢 Numeric"
+            if pd_types.is_bool_dtype(series):
+                return "⚙️ Boolean"
+
+        # Treat as text-like
+        text_values = non_null.astype(str)
+        avg_len = text_values.str.len().mean() if not text_values.empty else 0
+        unique_ratio = text_values.nunique() / len(text_values)
+
+        if unique_ratio > 0.95 and avg_len < 40:
+            return "🔑 ID / Reference"
+        if avg_len >= 200:
+            return "📝 Long text"
+        if avg_len >= 60:
+            return "📝 Text"
+        if avg_len >= 20:
+            return "📝 Short text"
+        return "🗂️ Category"
+
+    def _render_dataset_preview(
+        self,
+        df,
+        highlight_column: Optional[str] = None,
+        show_indices: bool = False,
+        max_columns: int = 12,
+        sample_rows: int = 3,
+        include_detection: bool = True,
+    ):
+        """Render a rich table showing dataset columns plus sample text."""
+        if not HAS_RICH or not self.console or df is None or df.empty:
+            return
+
+        columns = list(df.columns[:max_columns])
+        if not columns:
+            return
+
+        table = Table(title="📊 Colonnes disponibles", box=box.SIMPLE_HEAD, show_lines=False)
+        if show_indices:
+            table.add_column("#", style="cyan", justify="right", width=3)
+        table.add_column("Colonne", style="green", overflow="fold")
+        table.add_column("Type", style="yellow", no_wrap=True)
+        if include_detection:
+            table.add_column("Profil", style="magenta", overflow="fold")
+        table.add_column("Extrait", style="white", overflow="fold")
+
+        for idx, col in enumerate(columns, 1):
+            series = df[col]
+            series_non_null = series.dropna()
+            sample = "-"
+            if not series_non_null.empty:
+                sample = str(series_non_null.iloc[0]).replace("\n", " ").strip()
+                if len(sample) > 90:
+                    sample = sample[:87] + "..."
+
+            display_name = str(col)
+            if highlight_column and str(col) == str(highlight_column):
+                display_name = f"[cyan]{display_name}[/cyan]"
+
+            row = []
+            if show_indices:
+                row.append(str(idx))
+            row.append(display_name)
+            row.append(str(series.dtype))
+            if include_detection:
+                profile = self._detect_column_profile(series)
+                if highlight_column and str(col) == str(highlight_column):
+                    profile = f"[cyan]{profile}[/cyan]"
+                row.append(profile)
+            row.append(sample)
+            table.add_row(*row)
+
+        if len(df.columns) > max_columns:
+            table.caption = (
+                f"Affichage des {max_columns} premières colonnes sur {len(df.columns)}"
+            )
+
+        self.console.print(table)
+
+        highlight = None
+        if highlight_column is not None:
+            for col in df.columns:
+                if str(col) == str(highlight_column):
+                    highlight = col
+                    break
+
+        if highlight is not None and highlight in df.columns:
+            samples = df[highlight].dropna().astype(str).head(sample_rows)
+            if not samples.empty:
+                text_table = Table(
+                    title=f"📝 Extraits – {highlight}",
+                    box=box.SIMPLE_HEAD,
+                    show_header=False,
+                )
+                text_table.add_column("Sample", style="white", overflow="fold")
+                for sample in samples:
+                    cleaned = sample.replace("\n", " ").strip()
+                    if len(cleaned) > 160:
+                        cleaned = cleaned[:157] + "..."
+                    text_table.add_row(cleaned or "-")
+                self.console.print(text_table)
+
+    def _display_resume_data_preview(self, metadata: dict):
+        """Display dataset columns and text samples when modifying resume parameters."""
+        if not HAS_RICH or not HAS_PANDAS or not self.console:
+            return
+
+        data_source = metadata.get('data_source', {})
+        df = self._load_preview_dataframe(data_source)
+        if df is None:
+            return
+
+        resolved_text_column = self._resolve_existing_column(
+            df,
+            data_source.get('text_column'),
+            "text column"
+        )
+        resolved_text_column_name = (
+            str(resolved_text_column) if resolved_text_column is not None else None
+        )
+
+        # Store for reuse inside the modification loop
+        self._current_resume_preview_df = df.copy()
+
+        self._render_dataset_preview(
+            df,
+            highlight_column=resolved_text_column_name,
+            show_indices=False,
+            max_columns=12,
+            sample_rows=3,
+            include_detection=True,
+        )
+
+    def _print_parameter_modification_menu(self):
+        """Display resume parameter modification menu."""
         self.console.print("\n[bold]Select parameter to modify:[/bold]")
         self.console.print("  [cyan]1[/cyan] - Data source (file, text column)")
         self.console.print("  [cyan]2[/cyan] - Model (provider, model name)")
@@ -5843,9 +6055,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("  [cyan]6[/cyan] - Processing (workers, batch size)")
         self.console.print("  [cyan]0[/cyan] - Done modifying")
 
-        modified = metadata.copy()
+    def _modify_parameters_if_requested(self, metadata: dict, modify: bool) -> dict:
+        """Allow user to modify specific parameters"""
+        if not modify:
+            return metadata
+
+        modified = copy.deepcopy(metadata)
+        changes_made = False
 
         while True:
+            self._display_metadata_parameters(modified)
+            self._display_resume_data_preview(modified)
+            self._print_parameter_modification_menu()
+
             choice = Prompt.ask(
                 "\n[bold yellow]Modify which parameter?[/bold yellow]",
                 choices=["0", "1", "2", "3", "4", "5", "6"],
@@ -5857,44 +6079,171 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             elif choice == "1":
                 # Modify data source
                 self.console.print("\n[yellow]Current data:[/yellow]")
-                data_source = modified.get('data_source', {})
+                data_source = modified.setdefault('data_source', {})
                 self.console.print(f"  File: {data_source.get('file_path', 'N/A')}")
                 self.console.print(f"  Text column: {data_source.get('text_column', 'N/A')}")
 
+                changed_this_round = False
+
                 if Confirm.ask("Change data file?", default=False):
                     new_file = self._prompt_file_path("New data file path")
-                    modified['data_source']['file_path'] = new_file
-                    modified['data_source']['file_name'] = Path(new_file).name
+                    if new_file and new_file != data_source.get('file_path'):
+                        data_source['file_path'] = new_file
+                        data_source['file_name'] = Path(new_file).name
+                        new_format = Path(new_file).suffix.lower().lstrip(".")
+                        if new_format:
+                            data_source['data_format'] = new_format
+                        # Reset preview cache so the next loop uses fresh sample
+                        if hasattr(self, "_resume_preview_cache"):
+                            try:
+                                self._resume_preview_cache.clear()
+                            except Exception:
+                                self._resume_preview_cache = {}
+                        self._current_resume_preview_df = None
+                        changed_this_round = True
 
                 if Confirm.ask("Change text column?", default=False):
-                    new_col = Prompt.ask("New text column name")
-                    modified['data_source']['text_column'] = new_col
+                    df_preview = self._load_preview_dataframe(data_source)
+                    resolved_current = None
+                    resolved_current_name = None
+                    if df_preview is not None:
+                        resolved_current = self._resolve_existing_column(
+                            df_preview,
+                            data_source.get('text_column'),
+                            "text column"
+                        )
+                        resolved_current_name = (
+                            str(resolved_current) if resolved_current is not None else None
+                        )
+
+                        self.console.print("\n[cyan]Available columns with samples:[/cyan]")
+                        self._render_dataset_preview(
+                            df_preview,
+                            highlight_column=resolved_current_name,
+                            show_indices=True,
+                            max_columns=min(20, len(df_preview.columns)),
+                            sample_rows=3,
+                            include_detection=True,
+                        )
+
+                        if len(df_preview.columns) > 0:
+                            default_idx = 1
+                            if resolved_current_name:
+                                for idx, col in enumerate(df_preview.columns, 1):
+                                    if str(col) == resolved_current_name:
+                                        default_idx = idx
+                                        break
+
+                            self.console.print("[dim]Enter 0 to type a column name manually.[/dim]")
+                            selection = self._int_prompt_with_validation(
+                                "Select new text column (number)",
+                                default_idx,
+                                0,
+                                len(df_preview.columns)
+                            )
+
+                            if selection == 0:
+                                new_col = Prompt.ask(
+                                    "Column name",
+                                    default=resolved_current_name or None
+                                )
+                            else:
+                                new_col = str(df_preview.columns[selection - 1])
+                        else:
+                            new_col = Prompt.ask("Column name")
+                    else:
+                        new_col = Prompt.ask(
+                            "New text column name",
+                            default=str(data_source.get('text_column', '') or '') or None
+                        )
+
+                    if new_col:
+                        new_col = new_col.strip()
+
+                    if new_col and new_col != data_source.get('text_column'):
+                        data_source['text_column'] = new_col
+                        changed_this_round = True
+                        self._current_resume_preview_df = df_preview.copy() if df_preview is not None else None
+                        if df_preview is not None and new_col not in {str(c) for c in df_preview.columns}:
+                            self.console.print(f"[yellow]⚠️ Column '{new_col}' not found in preview sample.[/yellow]")
+                    else:
+                        self.console.print("[dim]No changes applied to text column[/dim]")
+
+                if changed_this_round:
+                    changes_made = True
+                    self.console.print("[green]✓ Data source updated[/green]")
+                else:
+                    self.console.print("[dim]No changes applied to data source[/dim]")
 
             elif choice == "2":
                 # Modify model
                 self.console.print("\n[yellow]Current model:[/yellow]")
-                model_config = modified.get('model_configuration', {})
+                model_config = modified.setdefault('model_configuration', {})
                 self.console.print(f"  Provider: {model_config.get('provider', 'N/A')}")
                 self.console.print(f"  Model: {model_config.get('model_name', 'N/A')}")
 
+                changed_this_round = False
+
                 if Confirm.ask("Change model?", default=False):
                     # Reuse model selection from smart annotate
-                    provider = Prompt.ask("Provider", choices=["ollama", "openai", "anthropic"], default="ollama")
-                    model_name = Prompt.ask("Model name")
-                    modified['model_configuration']['provider'] = provider
-                    modified['model_configuration']['model_name'] = model_name
+                    provider = Prompt.ask(
+                        "Provider",
+                        choices=["ollama", "openai", "anthropic"],
+                        default=model_config.get('provider', 'ollama')
+                    )
+                    current_model_name = model_config.get('model_name')
+                    if current_model_name:
+                        model_name = Prompt.ask("Model name", default=current_model_name)
+                    else:
+                        model_name = Prompt.ask("Model name")
+                    if provider != model_config.get('provider'):
+                        model_config['provider'] = provider
+                        changed_this_round = True
+                    if model_name and model_name != model_config.get('model_name'):
+                        model_config['model_name'] = model_name
+                        changed_this_round = True
+
+                if changed_this_round:
+                    changes_made = True
+                    self.console.print("[green]✓ Model configuration updated[/green]")
+                else:
+                    self.console.print("[dim]No changes applied to model configuration[/dim]")
 
             elif choice == "3":
                 # Modify model parameters
-                model_config = modified.get('model_configuration', {})
+                model_config = modified.setdefault('model_configuration', {})
+                changed_this_round = False
 
                 if Confirm.ask("Change temperature?", default=False):
-                    temp = FloatPrompt.ask("Temperature (0.0-2.0)", default=0.7)
-                    modified['model_configuration']['temperature'] = temp
+                    current_temp = model_config.get('temperature', 0.7)
+                    default_temp = current_temp if isinstance(current_temp, (int, float)) else 0.7
+                    temp = FloatPrompt.ask(
+                        "Temperature (0.0-2.0)",
+                        default=default_temp
+                    )
+                    if temp != model_config.get('temperature'):
+                        model_config['temperature'] = temp
+                        changed_this_round = True
 
                 if Confirm.ask("Change max_tokens?", default=False):
-                    tokens = self._int_prompt_with_validation("Max tokens", 1000, 50, 8000)
-                    modified['model_configuration']['max_tokens'] = tokens
+                    current_max_tokens = model_config.get('max_tokens', 1000)
+                    if not isinstance(current_max_tokens, int):
+                        current_max_tokens = 1000
+                    tokens = self._int_prompt_with_validation(
+                        "Max tokens",
+                        current_max_tokens,
+                        50,
+                        8000
+                    )
+                    if tokens != model_config.get('max_tokens'):
+                        model_config['max_tokens'] = tokens
+                        changed_this_round = True
+
+                if changed_this_round:
+                    changes_made = True
+                    self.console.print("[green]✓ Model parameters updated[/green]")
+                else:
+                    self.console.print("[dim]No changes applied to model parameters[/dim]")
 
             elif choice == "4":
                 # Modify prompts
@@ -5903,40 +6252,126 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             elif choice == "5":
                 # Modify sampling
-                data_source = modified.get('data_source', {})
+                data_source = modified.setdefault('data_source', {})
                 current_rows = data_source.get('total_rows', 'all')
 
                 self.console.print(f"\n[yellow]Current: {current_rows} rows[/yellow]")
 
+                changed_this_round = False
+
                 if Confirm.ask("Change number of rows to annotate?", default=False):
                     annotate_all = Confirm.ask("Annotate all rows?", default=True)
                     if annotate_all:
-                        modified['data_source']['total_rows'] = 'all'
-                        modified['data_source']['sampling_strategy'] = 'none'
+                        if data_source.get('total_rows') != 'all' or data_source.get('sampling_strategy') != 'none':
+                            data_source['total_rows'] = 'all'
+                            data_source['sampling_strategy'] = 'none'
+                            changed_this_round = True
                     else:
-                        num_rows = self._int_prompt_with_validation("Number of rows", 100, 1, 1000000)
-                        strategy = Prompt.ask("Sampling strategy", choices=["head", "random"], default="random")
-                        modified['data_source']['total_rows'] = num_rows
-                        modified['data_source']['sampling_strategy'] = strategy
+                        current_total_rows = data_source.get('total_rows', 100)
+                        if not isinstance(current_total_rows, int):
+                            current_total_rows = 100
+                        num_rows = self._int_prompt_with_validation(
+                            "Number of rows",
+                            current_total_rows,
+                            1,
+                            1000000
+                        )
+                        current_strategy = data_source.get('sampling_strategy', 'random')
+                        if current_strategy not in {"head", "random"}:
+                            current_strategy = "random"
+                        strategy = Prompt.ask(
+                            "Sampling strategy",
+                            choices=["head", "random"],
+                            default=current_strategy
+                        )
+                        if num_rows != data_source.get('total_rows'):
+                            data_source['total_rows'] = num_rows
+                            changed_this_round = True
+                        if strategy != data_source.get('sampling_strategy'):
+                            data_source['sampling_strategy'] = strategy
+                            changed_this_round = True
+
+                if changed_this_round:
+                    changes_made = True
+                    self.console.print("[green]✓ Sampling configuration updated[/green]")
+                else:
+                    self.console.print("[dim]No changes applied to sampling[/dim]")
 
             elif choice == "6":
                 # Modify processing
-                proc_config = modified.get('processing_configuration', {})
+                proc_config = modified.setdefault('processing_configuration', {})
+                changed_this_round = False
 
                 if Confirm.ask("Change parallel workers?", default=False):
-                    workers = self._int_prompt_with_validation("Parallel workers", 1, 1, 16)
-                    modified['processing_configuration']['parallel_workers'] = workers
+                    current_workers = proc_config.get('parallel_workers', 1)
+                    if not isinstance(current_workers, int):
+                        current_workers = 1
+                    workers = self._int_prompt_with_validation(
+                        "Parallel workers",
+                        current_workers,
+                        1,
+                        16
+                    )
+                    if workers != proc_config.get('parallel_workers'):
+                        proc_config['parallel_workers'] = workers
+                        changed_this_round = True
 
                 if Confirm.ask("Change batch size?", default=False):
-                    batch = self._int_prompt_with_validation("Batch size", 1, 1, 1000)
-                    modified['processing_configuration']['batch_size'] = batch
+                    current_batch = proc_config.get('batch_size', 1)
+                    if not isinstance(current_batch, int):
+                        current_batch = 1
+                    batch = self._int_prompt_with_validation(
+                        "Batch size",
+                        current_batch,
+                        1,
+                        1000
+                    )
+                    if batch != proc_config.get('batch_size'):
+                        proc_config['batch_size'] = batch
+                        changed_this_round = True
 
-        self.console.print("\n[green]✓ Parameters modified[/green]")
+                if changed_this_round:
+                    changes_made = True
+                    self.console.print("[green]✓ Processing configuration updated[/green]")
+                else:
+                    self.console.print("[dim]No changes applied to processing[/dim]")
+
+        if changes_made:
+            self.console.print("\n[green]✓ Parameters modified[/green]")
+        else:
+            self.console.print("\n[yellow]No parameter changes detected[/yellow]")
         return modified
 
     def _execute_from_metadata(self, metadata: dict, action_mode: str, metadata_file: Path):
         """Execute annotation based on loaded metadata using shared workflow module."""
-        execute_from_metadata(self, metadata, action_mode, metadata_file)
+        session_info = metadata.setdefault('annotation_session', {})
+        previous_session_id = session_info.get('session_id')
+
+        workflow_name = str(session_info.get('workflow', '')).lower()
+        is_factory = "factory" in workflow_name
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        session_prefix = "factory_session" if is_factory else "annotator_session"
+        session_id = f"{session_prefix}_{timestamp}_{uuid.uuid4().hex[:4]}"
+
+        if previous_session_id:
+            session_info['parent_session_id'] = previous_session_id
+
+        session_info['session_id'] = session_id
+        metadata['session_id'] = session_id
+
+        if is_factory:
+            session_dirs = self._create_annotator_factory_session_directories(session_id)
+        else:
+            session_dirs = self._create_annotator_session_directories(session_id)
+
+        execute_from_metadata(
+            self,
+            metadata,
+            action_mode,
+            metadata_file,
+            session_dirs=session_dirs
+        )
 
     def _clean_metadata(self):
         """Clean old metadata files"""

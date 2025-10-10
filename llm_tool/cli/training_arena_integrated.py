@@ -6032,6 +6032,15 @@ def _validate_and_filter_insufficient_labels(
                 # No label - remove sample
                 removed_count += 1
 
+    if not filtered_records:
+        msg = (
+            f"Dataset '{input_path.name}' has no samples after removing insufficient labels. "
+            "Please annotate more data or adjust your label selection."
+        )
+        self.console.print(f"[yellow]⚠️ {msg}[/yellow]\n")
+        self.logger.warning(msg, extra={"dataset": input_path.name, "path": str(input_path)})
+        raise ValueError(msg)
+
     # Save filtered dataset
     filtered_path = input_path.parent / f"{input_path.stem}_filtered{input_path.suffix}"
 
@@ -6193,6 +6202,7 @@ def _validate_all_training_files_before_training(
 
     self.console.print(f"\n[yellow]🔄 Filtering training datasets to remove insufficient labels...[/yellow]\n")
     updated_files = 0
+    empty_datasets: List[str] = []
     for file_key, file_path in files_to_validate:
         insufficient = all_insufficient.get(file_key)
         if not insufficient:
@@ -6238,6 +6248,16 @@ def _validate_all_training_files_before_training(
                 else:
                     filtered_records.append(record)
 
+        if not filtered_records:
+            empty_datasets.append(file_key)
+            warning_msg = (
+                f"Dataset '{file_key}' has no samples after removing insufficient labels. "
+                "Skipping this dataset."
+            )
+            self.console.print(f"  [yellow]⚠️ {warning_msg}[/yellow]")
+            self.logger.warning(warning_msg, extra={"dataset": file_key, "path": str(file_path)})
+            continue
+
         filtered_path = file_path.with_name(f"{file_path.stem}_filtered{file_path.suffix}")
         with filtered_path.open("w", encoding="utf-8") as handle:
             for record in filtered_records:
@@ -6252,6 +6272,36 @@ def _validate_all_training_files_before_training(
         self.console.print(
             f"  [green]✓[/green] {file_key}: kept {len(filtered_records)} records "
             f"(removed {removed_instances} label instance(s)) → {filtered_path.name}"
+        )
+
+    if empty_datasets:
+        for skipped_key in empty_datasets:
+            if skipped_key == "primary":
+                bundle.primary_file = None
+            else:
+                bundle.training_files.pop(skipped_key, None)
+
+        if bundle.metadata:
+            if "multiclass_keys" in bundle.metadata:
+                bundle.metadata["multiclass_keys"] = [
+                    key for key in bundle.metadata.get("multiclass_keys", [])
+                    if key not in empty_datasets
+                ]
+            if "onevsall_keys" in bundle.metadata:
+                bundle.metadata["onevsall_keys"] = [
+                    key for key in bundle.metadata.get("onevsall_keys", [])
+                    if key not in empty_datasets
+                ]
+            if "files_per_key" in bundle.metadata:
+                bundle.metadata["files_per_key"] = {
+                    key: value
+                    for key, value in bundle.metadata.get("files_per_key", {}).items()
+                    if key not in empty_datasets
+                }
+
+        skipped_list = ", ".join(empty_datasets)
+        self.console.print(
+            f"[yellow]⚠️ Skipping {len(empty_datasets)} dataset(s) with no remaining samples: {skipped_list}[/yellow]\n"
         )
 
     self.console.print(f"\n[green]✓ Filtered {updated_files} training file(s)[/green]\n")

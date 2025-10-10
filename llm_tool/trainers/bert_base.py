@@ -800,6 +800,86 @@ class BertBase(BertABC):
         dataloader = DataLoader(dataset, sampler=sampler, batch_size=batch_size)
         return dataloader
 
+    def _collect_language_codes(
+            self,
+            primary_language: Optional[str],
+            language_info: Optional[List[str]] = None,
+            extra_languages: Optional[List[str]] = None,
+    ) -> Tuple[Optional[str], List[str]]:
+        """Aggregate normalized language codes from all training sources."""
+        languages = set()
+
+        def _add(lang_candidate):
+            if not lang_candidate:
+                return
+            if isinstance(lang_candidate, str):
+                normalized = lang_candidate.strip().upper()
+                if normalized and normalized != "MULTI":
+                    languages.add(normalized)
+                return
+            try:
+                iterator = iter(lang_candidate)
+            except TypeError:
+                return
+            for item in iterator:
+                if isinstance(item, str):
+                    normalized = item.strip().upper()
+                    if normalized and normalized != "MULTI":
+                        languages.add(normalized)
+
+        _add(extra_languages)
+        if hasattr(self, "confirmed_languages"):
+            _add(getattr(self, "confirmed_languages"))
+        if hasattr(self, "detected_languages") and self.detected_languages:
+            _add(self.detected_languages)
+        _add(language_info)
+
+        normalized_primary = None
+        if isinstance(primary_language, str) and primary_language.strip():
+            normalized_primary = primary_language.strip().upper()
+            if normalized_primary != "MULTI":
+                languages.add(normalized_primary)
+
+        sorted_languages = sorted(languages)
+
+        if normalized_primary and normalized_primary != "MULTI":
+            resolved_primary = normalized_primary
+        elif normalized_primary == "MULTI":
+            if len(sorted_languages) > 1:
+                resolved_primary = "MULTI"
+            elif sorted_languages:
+                resolved_primary = sorted_languages[0]
+            else:
+                resolved_primary = "MULTI"
+        elif len(sorted_languages) == 1:
+            resolved_primary = sorted_languages[0]
+        elif len(sorted_languages) > 1:
+            resolved_primary = "MULTI"
+        else:
+            resolved_primary = None
+
+        return resolved_primary, sorted_languages
+
+    def _apply_languages_to_config(
+            self,
+            model_config,
+            primary_language: Optional[str],
+            confirmed_languages: List[str],
+    ) -> None:
+        """Persist language metadata into the Hugging Face config object."""
+        languages_list = confirmed_languages or []
+        model_config.confirmed_languages = languages_list
+        model_config.languages = languages_list
+
+        if primary_language:
+            model_config.language = primary_language
+            model_config.primary_language = primary_language
+        else:
+            model_config.language = None
+            model_config.primary_language = None
+
+        model_config.language_strategy = "multilingual" if len(languages_list) > 1 else "single"
+
     def calculate_reinforced_trigger_score(
             self,
             f1_class_0: float,
@@ -1962,6 +2042,16 @@ class BertBase(BertABC):
                             model_to_save.config.id2label = {i: name for i, name in enumerate(label_names)}
                             model_to_save.config.label2id = {name: i for i, name in enumerate(label_names)}
 
+                        primary_lang_code, confirmed_languages = self._collect_language_codes(
+                            language,
+                            language_info,
+                        )
+                        self._apply_languages_to_config(
+                            model_to_save.config,
+                            primary_lang_code,
+                            confirmed_languages,
+                        )
+
                         output_model_file = os.path.join(best_model_path, WEIGHTS_NAME)
                         output_config_file = os.path.join(best_model_path, CONFIG_NAME)
 
@@ -1972,20 +2062,6 @@ class BertBase(BertABC):
                         # Save training metadata for annotation studio
                         metadata_file = os.path.join(best_model_path, "training_metadata.json")
 
-                        # Combine all language sources to get complete language list
-                        all_languages = set()
-                        if self.detected_languages:
-                            all_languages.update(self.detected_languages)
-                        if language_info:
-                            normalized_langs = {
-                                lang.upper()
-                                for lang in language_info
-                                if isinstance(lang, str) and lang
-                            }
-                            all_languages.update(normalized_langs)
-                        if language and language != 'MULTI':
-                            all_languages.add(language.upper())
-
                         training_metadata = {
                             "model_type": model_type,
                             "training_approach": training_approach,
@@ -1993,8 +2069,8 @@ class BertBase(BertABC):
                             "label_names": label_names if label_names else [],
                             "label_key": label_key if label_key else None,
                             "label_value": label_value if label_value else None,
-                            "language": language if language else None,
-                            "confirmed_languages": sorted(list(all_languages)) if all_languages else [],
+                            "language": primary_lang_code if primary_lang_code else (language.upper() if isinstance(language, str) and language else None),
+                            "confirmed_languages": confirmed_languages,
                             "epoch": i_epoch + 1,
                             "combined_metric": combined_metric,
                             "macro_f1": macro_f1,
@@ -2204,6 +2280,16 @@ class BertBase(BertABC):
                     model_to_save.config.id2label = {i: name for i, name in enumerate(label_names)}
                     model_to_save.config.label2id = {name: i for i, name in enumerate(label_names)}
 
+                primary_lang_code, confirmed_languages = self._collect_language_codes(
+                    language,
+                    language_info,
+                )
+                self._apply_languages_to_config(
+                    model_to_save.config,
+                    primary_lang_code,
+                    confirmed_languages,
+                )
+
                 output_model_file = os.path.join(final_path, WEIGHTS_NAME)
                 output_config_file = os.path.join(final_path, CONFIG_NAME)
                 torch.save(model_to_save.state_dict(), output_model_file)
@@ -2214,20 +2300,6 @@ class BertBase(BertABC):
                 # Save training metadata for annotation studio
                 metadata_file = os.path.join(final_path, "training_metadata.json")
 
-                # Combine all language sources to get complete language list
-                all_languages = set()
-                if self.detected_languages:
-                    all_languages.update(self.detected_languages)
-                if language_info:
-                    normalized_langs = {
-                        lang.upper()
-                        for lang in language_info
-                        if isinstance(lang, str) and lang
-                    }
-                    all_languages.update(normalized_langs)
-                if language and language != 'MULTI':
-                    all_languages.add(language.upper())
-
                 training_metadata = {
                     "model_type": model_type,
                     "training_approach": training_approach,
@@ -2235,8 +2307,8 @@ class BertBase(BertABC):
                     "label_names": label_names if label_names else [],
                     "label_key": label_key if label_key else None,
                     "label_value": label_value if label_value else None,
-                    "language": language if language else None,
-                    "confirmed_languages": sorted(list(all_languages)) if all_languages else [],
+                    "language": primary_lang_code if primary_lang_code else (language.upper() if isinstance(language, str) and language else None),
+                    "confirmed_languages": confirmed_languages,
                     "final_epoch": num_train_epochs,
                     "combined_metric": best_metric_val,
                     "training_phase": "normal",
@@ -2802,6 +2874,16 @@ class BertBase(BertABC):
                                     model_to_save.config.id2label = {i: name for i, name in enumerate(label_names)}
                                     model_to_save.config.label2id = {name: i for i, name in enumerate(label_names)}
 
+                                primary_lang_code, confirmed_languages = self._collect_language_codes(
+                                    language,
+                                    language_info,
+                                )
+                                self._apply_languages_to_config(
+                                    model_to_save.config,
+                                    primary_lang_code,
+                                    confirmed_languages,
+                                )
+
                                 output_model_file = os.path.join(temp_reinforced_path, WEIGHTS_NAME)
                                 output_config_file = os.path.join(temp_reinforced_path, CONFIG_NAME)
 
@@ -2812,20 +2894,6 @@ class BertBase(BertABC):
                                 # Save training metadata for annotation studio
                                 metadata_file = os.path.join(temp_reinforced_path, "training_metadata.json")
 
-                                # Combine all language sources to get complete language list
-                                all_languages = set()
-                                if self.detected_languages:
-                                    all_languages.update(self.detected_languages)
-                                if language_info:
-                                    normalized_langs = {
-                                        lang.upper()
-                                        for lang in language_info
-                                        if isinstance(lang, str) and lang
-                                    }
-                                    all_languages.update(normalized_langs)
-                                if language and language != 'MULTI':
-                                    all_languages.add(language.upper())
-
                                 training_metadata = {
                                     "model_type": self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
                                     "training_approach": training_approach,
@@ -2833,8 +2901,8 @@ class BertBase(BertABC):
                                     "label_names": label_names if label_names else [],
                                     "label_key": label_key if label_key else None,
                                     "label_value": label_value if label_value else None,
-                                    "language": language if language else None,
-                                    "confirmed_languages": sorted(list(all_languages)) if all_languages else [],
+                                    "language": primary_lang_code if primary_lang_code else (language.upper() if isinstance(language, str) and language else None),
+                                    "confirmed_languages": confirmed_languages,
                                     "epoch": epoch + 1,
                                     "combined_metric": combined_metric,
                                     "macro_f1": macro_f1,
