@@ -155,6 +155,14 @@ from ..trainers.training_data_builder import (
     TrainingDataBundle,
 )
 from llm_tool.utils.data_detector import DatasetInfo, DataDetector
+from llm_tool.utils.session_summary import (
+    SessionSummary,
+    SummaryRecord,
+    collect_all_summaries,
+    collect_summaries_for_mode,
+    read_summary,
+)
+from llm_tool.utils.training_paths import get_training_logs_base
 from . import training_arena_integrated as training_arena
 from .annotation_workflow import (
     AnnotationMode,
@@ -541,6 +549,60 @@ class LanguageNormalizer:
         cls._build_reverse_mapping()
         lang_lower = str(lang_value).strip().lower()
         return cls._REVERSE_MAPPING.get(lang_lower)
+
+    @staticmethod
+    def detect_dataset_languages(
+        sample_texts: List[str],
+        max_samples: int = 200,
+        confidence_floor: float = 0.55
+    ) -> List[Set[str]]:
+        """
+        Detect likely languages present in a dataset sample.
+
+        Returns a list of language code sets so callers can aggregate counts.
+        """
+        if not sample_texts:
+            return []
+
+        filtered: List[str] = []
+        for text in sample_texts:
+            if isinstance(text, str):
+                stripped = text.strip()
+                if stripped:
+                    filtered.append(stripped)
+            if len(filtered) >= max_samples:
+                break
+
+        if not filtered:
+            return []
+
+        detector = LanguageDetector()
+        detections = detector.detect_batch(filtered, parallel=True)
+
+        language_sets: List[Set[str]] = []
+        for detection in detections:
+            languages: Set[str] = set()
+            primary_lang = detection.get("language")
+            if primary_lang:
+                languages.add(str(primary_lang).lower())
+
+            for lang_code, score in detection.get("all_scores", []):
+                try:
+                    numeric_score = float(score)
+                except (TypeError, ValueError):
+                    numeric_score = 0.0
+
+                lang_code_str = str(lang_code).lower()
+                if numeric_score >= confidence_floor:
+                    languages.add(lang_code_str)
+                elif not languages and numeric_score > 0:
+                    # Keep at least the best guess when nothing else qualified
+                    languages.add(lang_code_str)
+
+            if languages:
+                language_sets.append(languages)
+
+        return language_sets
 
     @staticmethod
     def detect_languages_in_column(df, column_name: str) -> Dict[str, int]:
@@ -1497,6 +1559,7 @@ class AdvancedCLI:
                 ("5", "🔍 Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement [⚠️ IN DEVELOPMENT]"),
                 ("6", "💾 Profile Manager - Save & Load Configurations"),
                 ("7", "📚 Documentation & Help"),
+                ("8", "📂 Resume Center - Manage Saved Sessions"),
                 ("0", "❌ Exit")
             ]
 
@@ -1521,7 +1584,7 @@ class AdvancedCLI:
             # Smart prompt with validation (now 0-7 since we have 8 options)
             choice = Prompt.ask(
                 "\n[bold yellow]Select option[/bold yellow]",
-                choices=["0", "1", "2", "3", "4", "5", "6", "7"],
+                choices=["0", "1", "2", "3", "4", "5", "6", "7", "8"],
                 default="1"
             )
 
@@ -1536,6 +1599,7 @@ class AdvancedCLI:
             print("5. Validation Lab - Quality Scoring & Sampling [⚠️ IN DEVELOPMENT]")
             print("6. Profile Manager - Save & Load Configurations")
             print("7. Documentation & Help")
+            print("8. Resume Center - Manage Saved Sessions")
             print("0. Exit")
             print("-"*50)
 
@@ -1543,7 +1607,7 @@ class AdvancedCLI:
             if suggestions:
                 print(f"💡 {suggestions}")
 
-            choice = input("\nSelect option (0-7): ").strip()
+            choice = input("\nSelect option (0-8): ").strip()
 
         return choice
 
@@ -1572,6 +1636,172 @@ class AdvancedCLI:
             suggestions.append(f"Last: {recent_profiles[0].name}")
 
         return " | ".join(suggestions) if suggestions else ""
+
+    # ------------------------------------------------------------------
+    # Resume helpers
+    # ------------------------------------------------------------------
+    def _resume_mode_roots(self) -> Dict[str, Path]:
+        """Return base directories for resumable modes."""
+        return {
+            "annotator": Path("logs") / "annotator",
+            "annotator_factory": Path("logs") / "annotator_factory",
+            "training_arena": get_training_logs_base(),
+            "bert_annotation_studio": Path("logs") / "annotation_studio",
+        }
+
+    def _fetch_resume_records(self, mode: str, limit: int = 20) -> List[SummaryRecord]:
+        """Load recent SessionSummary records for a specific mode."""
+        roots = self._resume_mode_roots()
+        base_dir = roots.get(mode)
+        if not base_dir:
+            return []
+        return collect_summaries_for_mode(base_dir, mode, limit)
+
+    def _discover_annotation_metadata(self, session_id: str, session_dir: Path) -> List[Path]:
+        """
+        Locate metadata JSON files associated with an annotation session.
+
+        Search order:
+            1. logs/<mode>/<session_id>/metadata/*.json
+            2. data/annotations/*<session_id>*_metadata_*.json  (legacy)
+        """
+        candidates: List[Path] = []
+        metadata_dir = session_dir / "metadata"
+        if metadata_dir.exists():
+            candidates.extend(metadata_dir.glob("*_metadata_*.json"))
+
+        legacy_dir = getattr(self.settings.paths, "data_dir", Path("data")) / "annotations"
+        if legacy_dir.exists():
+            pattern = f"*{session_id}*_metadata_*.json"
+            candidates.extend(legacy_dir.glob(pattern))
+
+        unique_candidates = {path.resolve(): path for path in candidates}
+        sorted_candidates = sorted(
+            unique_candidates.values(),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        return sorted_candidates
+
+    def _load_annotation_resume_candidates(
+        self,
+        mode: str,
+        limit: int = 20,
+    ) -> List[Tuple[Path, Dict[str, Any], SummaryRecord]]:
+        """
+        Assemble metadata & summary triples for annotation workflows.
+
+        Returns list of tuples: (metadata_path, metadata_payload, summary_record)
+        """
+        candidates: List[Tuple[Path, Dict[str, Any], SummaryRecord]] = []
+        for record in self._fetch_resume_records(mode, limit):
+            session_id = record.summary.session_id
+            metadata_files = self._discover_annotation_metadata(session_id, record.directory)
+            if not metadata_files:
+                continue
+            metadata_path = metadata_files[0]
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            candidates.append((metadata_path, metadata, record))
+        return candidates
+
+    def resume_center(self) -> None:
+        """Unified dashboard listing resumable sessions across all modes."""
+        mode_labels = {
+            "annotator": "Annotator",
+            "annotator_factory": "Annotator Factory",
+            "training_arena": "Training Arena",
+            "bert_annotation_studio": "BERT Annotation Studio",
+        }
+
+        records = collect_all_summaries(
+            self._resume_mode_roots(),
+            limit_per_mode=15,
+            total_limit=60,
+        )
+        if not records:
+            message = "[yellow]No resumable sessions detected yet.[/yellow]\n[dim]Start a workflow to populate the resume center.[/dim]"
+            if HAS_RICH and self.console:
+                self.console.print(message)
+            else:
+                print("No resumable sessions detected yet. Run a workflow to populate the resume center.")
+            return
+
+        if HAS_RICH and self.console:
+            table = Table(title="📂 Resume Center", border_style="cyan")
+            table.add_column("#", style="cyan", width=3)
+            table.add_column("Mode", style="magenta", width=18)
+            table.add_column("Session", style="white")
+            table.add_column("Status", style="green", width=12)
+            table.add_column("Updated", style="yellow", width=19)
+            table.add_column("Last Step", style="cyan")
+        else:
+            print("\n=== Resume Center ===")
+            print(f"{'#':<4}{'Mode':<18}{'Session':<30}{'Status':<12}{'Updated':<20}{'Last step'}")
+
+        entries: List[SummaryRecord] = []
+        for idx, record in enumerate(records, 1):
+            summary = record.summary
+            mode_label = mode_labels.get(summary.mode, summary.mode)
+            updated_display = summary.updated_at.replace("T", " ")
+            last_step = summary.last_step_name or summary.last_step_key or "-"
+            if summary.last_step_no:
+                last_step = f"{summary.last_step_no}. {last_step}"
+
+            if HAS_RICH and self.console:
+                table.add_row(
+                    str(idx),
+                    mode_label,
+                    summary.session_id,
+                    summary.status,
+                    updated_display,
+                    last_step,
+                )
+            else:
+                print(f"{idx:<4}{mode_label:<18}{summary.session_id:<30}{summary.status:<12}{updated_display:<20}{last_step}")
+            entries.append(record)
+
+        if HAS_RICH and self.console:
+            self.console.print(table)
+
+        selection = self._int_prompt_with_validation(
+            "\n[bold yellow]Select session (0 to return)[/bold yellow]" if HAS_RICH and self.console else "\nSelect session (0 to return): ",
+            0,
+            0,
+            len(entries),
+        )
+        if selection == 0:
+            return
+
+        chosen = entries[selection - 1]
+        summary = chosen.summary
+        mode = summary.mode
+
+        if mode == "annotator":
+            self._quick_annotate(focus_session_id=summary.session_id)
+        elif mode == "annotator_factory":
+            self._resume_mode2(focus_session_id=summary.session_id)
+        elif mode == "training_arena":
+            if hasattr(self, "_resume_training_studio"):
+                self._resume_training_studio(summary.session_id)
+            else:
+                self.console.print("[yellow]Training resume handler unavailable in this build.[/yellow]" if HAS_RICH and self.console else "Training resume handler unavailable.")
+        elif mode == "bert_annotation_studio":
+            if HAS_RICH and self.console:
+                self.console.print(
+                    "\n[cyan]Opening BERT Annotation Studio. Select 'Resume existing session' and choose the highlighted session.[/cyan]"
+                )
+            else:
+                print("\nOpening BERT Annotation Studio. Select 'Resume existing session' to continue.")
+            self.bert_annotation_studio()
+        else:
+            if HAS_RICH and self.console:
+                self.console.print(f"[yellow]No direct handler for mode: {mode}[/yellow]")
+            else:
+                print(f"No direct handler for mode: {mode}")
+
 
     def _get_or_prompt_api_key(self, provider: str, model_name: Optional[str] = None) -> Optional[str]:
         """
@@ -2177,85 +2407,50 @@ class AdvancedCLI:
         """Execute complete annotation → training workflow via shared module."""
         run_factory_workflow(self, session_id=session_id)
 
-    def _resume_mode2(self):
+    def _resume_mode2(self, focus_session_id: Optional[str] = None):
         """Resume or relaunch annotation → training workflow using saved parameters"""
         self.console.print("\n[bold cyan]🔄 Resume/Relaunch Workflow[/bold cyan]\n")
         self.console.print("[dim]Load saved parameters from previous annotation → training sessions[/dim]\n")
 
         # ============================================================
         # DETECT METADATA FILES
-        # ============================================================
-        from pathlib import Path
-
-        # Search in both old and new locations
-        annotations_dir = self.settings.paths.data_dir / 'annotations'
-        factory_logs_dir = Path("logs") / "annotator_factory"
-
-        metadata_files = []
-
-        # Old location: data/annotations/
-        if annotations_dir.exists():
-            metadata_files.extend(list(annotations_dir.glob("**/*_metadata_*.json")))
-
-        # New location: logs/annotator_factory/
-        if factory_logs_dir.exists():
-            metadata_files.extend(list(factory_logs_dir.glob("**/*_metadata_*.json")))
-
-        if not metadata_files:
+        candidates = self._load_annotation_resume_candidates("annotator_factory", limit=25)
+        if not candidates:
             self.console.print("[yellow]No saved workflow parameters found.[/yellow]")
             self.console.print("[dim]Run Complete Workflow and save parameters to use this feature.[/dim]")
             self.console.print("\n[dim]Press Enter to continue...[/dim]")
             input()
             return
 
-        # Sort by modification time (most recent first)
-        metadata_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-
-        # Display available sessions
-        self.console.print(f"[green]Found {len(metadata_files)} saved workflow session(s)[/green]\n")
+        self.console.print(f"[green]Found {len(candidates)} resumable workflow session(s)[/green]\n")
 
         sessions_table = Table(border_style="cyan", show_header=True)
         sessions_table.add_column("#", style="cyan", width=3)
         sessions_table.add_column("Session", style="white")
-        sessions_table.add_column("Date", style="yellow")
-        sessions_table.add_column("Workflow", style="green")
+        sessions_table.add_column("Updated", style="yellow")
+        sessions_table.add_column("Status", style="green", width=12)
+        sessions_table.add_column("Last Step", style="cyan")
         sessions_table.add_column("Model", style="magenta")
 
-        import json
-        from datetime import datetime
+        valid_sessions: List[Tuple[Path, Dict[str, Any], SessionSummary]] = []
+        for idx, (metadata_path, metadata, record) in enumerate(candidates, 1):
+            summary = record.summary
+            session_id = summary.session_id
+            updated_display = summary.updated_at.replace("T", " ")
+            last_step_display = summary.last_step_name or summary.last_step_key or "-"
+            model_config = metadata.get("model_configuration", {})
+            model_name = model_config.get("model_name") or model_config.get("selected_model") or summary.extra.get("model") or "-"
 
-        # Load and display sessions
-        valid_sessions = []
-        for i, mf in enumerate(metadata_files[:20], 1):  # Show max 20 most recent
-            try:
-                with open(mf, 'r', encoding='utf-8') as f:
-                    metadata = json.load(f)
+            sessions_table.add_row(
+                str(idx),
+                session_id,
+                updated_display,
+                summary.status,
+                last_step_display,
+                model_name,
+            )
 
-                session_info = metadata.get('annotation_session', {})
-                model_config = metadata.get('model_configuration', {})
-
-                timestamp_str = session_info.get('timestamp', '')
-                try:
-                    dt = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
-                    date_str = dt.strftime('%Y-%m-%d %H:%M')
-                except:
-                    date_str = timestamp_str
-
-                workflow = session_info.get('workflow', 'Unknown')
-                model_name = model_config.get('model_name', 'Unknown')
-
-                sessions_table.add_row(
-                    str(i),
-                    mf.stem[:40],
-                    date_str,
-                    workflow.split(' - ')[0] if ' - ' in workflow else workflow,
-                    model_name
-                )
-
-                valid_sessions.append((mf, metadata))
-            except Exception as e:
-                self.logger.warning(f"Could not load metadata file {mf}: {e}")
-                continue
+            valid_sessions.append((metadata_path, metadata, summary))
 
         if not valid_sessions:
             self.console.print("[yellow]No valid metadata files found.[/yellow]")
@@ -2265,15 +2460,26 @@ class AdvancedCLI:
 
         self.console.print(sessions_table)
 
-        # Select session
-        session_choice = self._int_prompt_with_validation(
-            "\n[bold yellow]Select session to resume/relaunch[/bold yellow]",
-            1, 1, len(valid_sessions)
-        )
+        session_choice: Optional[int] = None
+        if focus_session_id:
+            for idx, (_, _, summary) in enumerate(valid_sessions, 1):
+                if summary and summary.session_id == focus_session_id:
+                    session_choice = idx
+                    self.console.print(f"\n[dim]Auto-selecting session {summary.session_id}[/dim]")
+                    break
 
-        selected_file, metadata = valid_sessions[session_choice - 1]
+        if session_choice is None:
+            session_choice = self._int_prompt_with_validation(
+                "\n[bold yellow]Select session to resume/relaunch[/bold yellow]",
+                1, 1, len(valid_sessions)
+            )
+
+        selected_file, metadata, summary = valid_sessions[session_choice - 1]
 
         self.console.print(f"\n[green]✓ Selected: {selected_file.name}[/green]")
+        if summary:
+            last_step = summary.last_step_name or summary.last_step_key or "-"
+            self.console.print(f"[dim]Status: {summary.status} • Last step: {last_step}[/dim]")
 
         # ============================================================
         # DISPLAY ALL PARAMETERS
@@ -4707,6 +4913,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.profile_manager_ui()
                 elif choice == "7":
                     self.show_documentation()
+                elif choice == "8":
+                    self.resume_center()
                 elif choice == "0":
                     if HAS_RICH and self.console:
                         self.console.print("\n[bold cyan]Thank you for using LLMTool! 👋[/bold cyan]\n")
@@ -4868,7 +5076,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self._clean_metadata()
 
 
-    def bert_annotation_studio(self):
+    def bert_annotation_studio(self, resume_session_id: Optional[str] = None):
         """BERT Annotation Studio - Advanced annotation with trained models"""
         # Display ASCII logo only
         self._display_ascii_logo()
@@ -4889,40 +5097,43 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             }
         )
 
+        choice: Optional[str] = "2" if resume_session_id else None
+
         if HAS_RICH and self.console:
-            # Create mode menu
-            self.console.print("\n[bold cyan]🎯 BERT Annotation Studio Options[/bold cyan]\n")
+            if resume_session_id is None:
+                # Create mode menu
+                self.console.print("\n[bold cyan]🎯 BERT Annotation Studio Options[/bold cyan]\n")
 
-            studio_options_table = Table(show_header=False, box=None, padding=(0, 2))
-            studio_options_table.add_column("Option", style="cyan", width=8)
-            studio_options_table.add_column("Description")
+                studio_options_table = Table(show_header=False, box=None, padding=(0, 2))
+                studio_options_table.add_column("Option", style="cyan", width=8)
+                studio_options_table.add_column("Description")
 
-            options = [
-                ("1", "🆕 Start new session"),
-                ("2", "🔄 Resume session"),
-                ("3", "📚 Session history"),
-                ("0", "⬅️  Back to main menu"),
-            ]
+                options = [
+                    ("1", "🆕 Start new session"),
+                    ("2", "🔄 Resume session"),
+                    ("3", "📚 Session history"),
+                    ("0", "⬅️  Back to main menu"),
+                ]
 
-            for option, desc in options:
-                studio_options_table.add_row(f"[bold cyan]{option}[/bold cyan]", desc)
+                for option, desc in options:
+                    studio_options_table.add_row(f"[bold cyan]{option}[/bold cyan]", desc)
 
-            panel = Panel(
-                studio_options_table,
-                title="[bold]🤖 BERT Annotation Studio[/bold]",
-                border_style="cyan"
-            )
+                panel = Panel(
+                    studio_options_table,
+                    title="[bold]🤖 BERT Annotation Studio[/bold]",
+                    border_style="cyan"
+                )
 
-            self.console.print(panel)
+                self.console.print(panel)
 
-            choice = Prompt.ask(
-                "\n[bold yellow]Select an option[/bold yellow]",
-                choices=["0", "1", "2", "3"],
-                default="1"
-            )
+                choice = Prompt.ask(
+                    "\n[bold yellow]Select an option[/bold yellow]",
+                    choices=["0", "1", "2", "3"],
+                    default="1"
+                )
 
-            if choice == "0":
-                return
+                if choice == "0":
+                    return
 
         from .bert_annotation_studio import BERTAnnotationStudio
 
@@ -4931,6 +5142,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             settings=self.settings,
             logger=self.logger
         )
+
+        if resume_session_id:
+            studio.run(session_action="2", resume_session_id=resume_session_id)
+            return
 
         if choice == "1":
             studio.run(session_action="1")
@@ -5435,85 +5650,49 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
     # LLM ANNOTATION STUDIO - WORKFLOW METHODS
     # ============================================================================
 
-    def _quick_annotate(self):
+    def _quick_annotate(self, focus_session_id: Optional[str] = None):
         """Resume or relaunch annotation using saved parameters"""
         self.console.print("\n[bold cyan]🔄 Resume/Relaunch Annotation[/bold cyan]\n")
         self.console.print("[dim]Load saved parameters from previous annotations[/dim]\n")
 
         # ============================================================
         # DETECT METADATA FILES
-        # ============================================================
-        from pathlib import Path
-
-        # Search in both old and new locations
-        annotations_dir = self.settings.paths.data_dir / 'annotations'
-        annotator_logs_dir = Path("logs") / "annotator"
-
-        metadata_files = []
-
-        # Old location: data/annotations/
-        if annotations_dir.exists():
-            metadata_files.extend(list(annotations_dir.glob("**/*_metadata_*.json")))
-
-        # New location: logs/annotator/
-        if annotator_logs_dir.exists():
-            metadata_files.extend(list(annotator_logs_dir.glob("**/*_metadata_*.json")))
-
-        if not metadata_files:
-            self.console.print("[yellow]No saved annotation parameters found.[/yellow]")
-            self.console.print("[dim]Run Smart Annotate and save parameters to use this feature.[/dim]")
+        candidates = self._load_annotation_resume_candidates("annotator", limit=25)
+        if not candidates:
+            self.console.print("[yellow]No resumable annotation sessions found.[/yellow]")
+            self.console.print("[dim]Complete a session at least once to enable resume/relaunch.[/dim]")
             self.console.print("\n[dim]Press Enter to continue...[/dim]")
             input()
             return
 
-        # Sort by modification time (most recent first)
-        metadata_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-
-        # Display available sessions
-        self.console.print(f"[green]Found {len(metadata_files)} saved annotation session(s)[/green]\n")
+        self.console.print(f"[green]Found {len(candidates)} resumable annotation session(s)[/green]\n")
 
         sessions_table = Table(border_style="cyan", show_header=True)
         sessions_table.add_column("#", style="cyan", width=3)
         sessions_table.add_column("Session", style="white")
-        sessions_table.add_column("Date", style="yellow")
-        sessions_table.add_column("Workflow", style="green")
+        sessions_table.add_column("Updated", style="yellow")
+        sessions_table.add_column("Status", style="green", width=12)
+        sessions_table.add_column("Last Step", style="cyan")
         sessions_table.add_column("Model", style="magenta")
-
-        import json
         from datetime import datetime
 
-        # Load and display sessions
-        valid_sessions = []
-        for i, mf in enumerate(metadata_files[:20], 1):  # Show max 20 most recent
-            try:
-                with open(mf, 'r', encoding='utf-8') as f:
-                    metadata = json.load(f)
-
-                session_info = metadata.get('annotation_session', {})
-                model_config = metadata.get('model_configuration', {})
-
-                timestamp_str = session_info.get('timestamp', '')
-                try:
-                    dt = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
-                    date_str = dt.strftime('%Y-%m-%d %H:%M')
-                except:
-                    date_str = timestamp_str
-
-                workflow = session_info.get('workflow', 'Unknown')
-                model_name = model_config.get('model_name', 'Unknown')
-
-                sessions_table.add_row(
-                    str(i),
-                    mf.stem[:40],
-                    date_str,
-                    workflow.split(' - ')[0] if ' - ' in workflow else workflow,
-                    model_name
-                )
-
-                valid_sessions.append((mf, metadata))
-            except Exception as e:
-                self.logger.warning(f"Could not load metadata file {mf}: {e}")
-                continue
+        valid_sessions: List[Tuple[Path, Dict[str, Any], SessionSummary]] = []
+        for idx, (metadata_path, metadata, record) in enumerate(candidates, 1):
+            summary = record.summary
+            session_id = summary.session_id
+            updated_display = summary.updated_at.replace("T", " ")
+            last_step_display = summary.last_step_name or summary.last_step_key or "-"
+            model_config = metadata.get("model_configuration", {})
+            model_name = model_config.get("model_name") or model_config.get("selected_model") or summary.extra.get("model") or "-"
+            sessions_table.add_row(
+                str(idx),
+                session_id,
+                updated_display,
+                summary.status,
+                last_step_display,
+                model_name,
+            )
+            valid_sessions.append((metadata_path, metadata, summary))
 
         if not valid_sessions:
             self.console.print("[yellow]No valid metadata files found.[/yellow]")
@@ -5523,15 +5702,26 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         self.console.print(sessions_table)
 
-        # Select session
-        session_choice = self._int_prompt_with_validation(
-            "\n[bold yellow]Select session to resume/relaunch[/bold yellow]",
-            1, 1, len(valid_sessions)
-        )
+        session_choice: Optional[int] = None
+        if focus_session_id:
+            for idx, (_, _, summary) in enumerate(valid_sessions, 1):
+                if summary and summary.session_id == focus_session_id:
+                    session_choice = idx
+                    self.console.print(f"\n[dim]Auto-selecting session {summary.session_id}[/dim]")
+                    break
 
-        selected_file, metadata = valid_sessions[session_choice - 1]
+        if session_choice is None:
+            session_choice = self._int_prompt_with_validation(
+                "\n[bold yellow]Select session to resume/relaunch[/bold yellow]",
+                1, 1, len(valid_sessions)
+            )
+
+        selected_file, metadata, summary = valid_sessions[session_choice - 1]
 
         self.console.print(f"\n[green]✓ Selected: {selected_file.name}[/green]")
+        if summary:
+            last_step = summary.last_step_name or summary.last_step_key or "-"
+            self.console.print(f"[dim]Status: {summary.status} • Last step: {last_step}[/dim]")
 
         # ============================================================
         # DISPLAY ALL PARAMETERS

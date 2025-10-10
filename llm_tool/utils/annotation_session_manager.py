@@ -19,6 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from llm_tool.utils.session_summary import SessionSummary, merge_summary, read_summary
+
 try:  # Optional rich dependency for nicer tables
     from rich import box
     from rich.console import Console
@@ -116,11 +118,12 @@ class AnnotationStudioSessionManager:
         session_dir = self.base_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
+        current_ts = datetime.now().strftime(ISO_FORMAT)
         metadata = {
             "session_id": session_id,
             "session_name": slug,
-            "created_at": datetime.now().strftime(ISO_FORMAT),
-            "updated_at": datetime.now().strftime(ISO_FORMAT),
+            "created_at": current_ts,
+            "updated_at": current_ts,
             "status": "active",
             "steps": {
                 step.key: {"status": "pending", "name": step.name, "order": step.step_no}
@@ -139,6 +142,7 @@ class AnnotationStudioSessionManager:
         (self.session_dir / "artifacts").mkdir(exist_ok=True)
 
         self.logger.info("Created annotation studio session %s", session_id)
+        self._persist_summary()
         return session_id
 
     def resume_session(self, session_id: str) -> None:
@@ -164,6 +168,7 @@ class AnnotationStudioSessionManager:
                     self.step_cache[step_key] = step_payload.get("data")
 
         self.logger.info("Loaded annotation studio session %s", session_id)
+        self._persist_summary(session_dir=session_dir, metadata=self.metadata)
 
     def list_sessions(self, limit: int = 25) -> List[Dict[str, Any]]:
         """Return metadata summaries for existing sessions (sorted by recency)."""
@@ -171,21 +176,15 @@ class AnnotationStudioSessionManager:
         for session_dir in sorted(self.base_dir.glob("*"), reverse=True):
             if not session_dir.is_dir():
                 continue
-            metadata = _load_json(session_dir / "session.json")
-            if not metadata:
-                continue
-            updated_at = metadata.get("updated_at") or metadata.get("created_at")
-            sessions.append(
-                {
-                    "session_id": metadata.get("session_id", session_dir.name),
-                    "session_name": metadata.get("session_name", session_dir.name),
-                    "status": metadata.get("status", "unknown"),
-                    "updated_at": updated_at or "",
-                    "last_step": metadata.get("last_completed_step"),
-                    "path": session_dir,
-                }
-            )
-        sessions.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
+            summary = read_summary(session_dir / "resume.json")
+            metadata: Optional[Dict[str, Any]] = None
+            if summary is None:
+                metadata = _load_json(session_dir / "session.json")
+                if not metadata:
+                    continue
+                summary = self._build_summary_from_metadata(metadata=metadata, session_dir=session_dir)
+            sessions.append({"summary": summary, "path": session_dir})
+        sessions.sort(key=lambda item: item["summary"].updated_at, reverse=True)
         return sessions[:limit]
 
     def record_resume(self, step_no: int) -> None:
@@ -284,8 +283,9 @@ class AnnotationStudioSessionManager:
 
         if not (self.console and Table and Panel):
             # Fallback to simple stdout
-            for idx, session in enumerate(sessions, 1):
-                print(f"{idx}. {session['session_id']} [{session['status']}] {session.get('updated_at','')}")
+            for idx, payload in enumerate(sessions, 1):
+                summary: SessionSummary = payload["summary"]
+                print(f"{idx}. {summary.session_id} [{summary.status}] {summary.updated_at}")
             return
 
         table = Table(title="Annotation Studio Sessions", box=box.ROUNDED, show_lines=False)
@@ -295,13 +295,17 @@ class AnnotationStudioSessionManager:
         table.add_column("Updated", style="magenta", width=20)
         table.add_column("Last step", style="cyan", overflow="fold")
 
-        for idx, session in enumerate(sessions, 1):
+        for idx, payload in enumerate(sessions, 1):
+            summary: SessionSummary = payload["summary"]
+            last_step = summary.last_step_name or summary.last_step_key or "-"
+            if summary.last_step_no:
+                last_step = f"{summary.last_step_no}. {last_step}"
             table.add_row(
                 str(idx),
-                session["session_id"],
-                session.get("status", "unknown"),
-                session.get("updated_at", ""),
-                str(session.get("last_step") or "-"),
+                summary.session_id,
+                summary.status,
+                summary.updated_at,
+                str(last_step),
             )
 
         panel = Panel(table, border_style="cyan", title="📂 Session Navigator")
@@ -344,6 +348,7 @@ class AnnotationStudioSessionManager:
             return
         self.metadata["updated_at"] = datetime.now().strftime(ISO_FORMAT)
         _write_json(self.session_dir / "session.json", _serialize_for_json(self.metadata))
+        self._persist_summary()
 
     # ------------------------------------------------------------------
     # Utility functions
@@ -355,3 +360,78 @@ class AnnotationStudioSessionManager:
         sanitized = "".join(ch for ch in sanitized if ch.isalnum() or ch in {"_", "-"})
         return sanitized or "session"
 
+    # ------------------------------------------------------------------
+    # Summary helpers
+    # ------------------------------------------------------------------
+    def _persist_summary(
+        self,
+        session_dir: Optional[Path] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        directory = session_dir or self.session_dir
+        payload = metadata or self.metadata
+        if not (directory and payload):
+            return
+        summary = self._build_summary_from_metadata(metadata=payload, session_dir=directory)
+        summary_path = directory / "resume.json"
+        merge_summary(summary_path, summary)
+
+    def _build_summary_from_metadata(
+        self,
+        metadata: Optional[Dict[str, Any]] = None,
+        session_dir: Optional[Path] = None,
+    ) -> SessionSummary:
+        payload = metadata or self.metadata or {}
+        session_id = payload.get("session_id", self.session_id or "session")
+        session_name = payload.get("session_name", session_id)
+        created_at = payload.get("created_at") or datetime.now().strftime(ISO_FORMAT)
+        updated_at = payload.get("updated_at") or created_at
+
+        steps_meta: Dict[str, Dict[str, Any]] = payload.get("steps", {}) or {}
+        last_key = payload.get("last_completed_step")
+        last_step_name = None
+        last_step_no: Optional[int] = None
+        last_event_at = None
+        if last_key and last_key in self._step_lookup:
+            last_step = self._step_lookup[last_key]
+            last_step_name = last_step.name
+            last_step_no = last_step.step_no
+            last_event_at = steps_meta.get(last_key, {}).get("completed_at") or updated_at
+
+        completed_steps = sum(
+            1 for meta in steps_meta.values() if meta.get("status") == "completed"
+        )
+        total_steps = len(self.STEPS)
+        pending_step_no = None
+        pending_step_name = None
+        for step in self.STEPS:
+            meta = steps_meta.get(step.key, {})
+            if meta.get("status") != "completed":
+                pending_step_no = step.step_no
+                pending_step_name = step.name
+                break
+
+        resume_log = payload.get("resume_log", []) or []
+
+        extra = {
+            "completed_steps": completed_steps,
+            "total_steps": total_steps,
+            "pending_step_no": pending_step_no,
+            "pending_step_name": pending_step_name,
+            "resume_count": len(resume_log),
+            "session_dir": str(session_dir or self.session_dir or ""),
+        }
+
+        return SessionSummary(
+            mode="bert_annotation_studio",
+            session_id=session_id,
+            session_name=session_name,
+            status=payload.get("status", "pending"),
+            created_at=created_at,
+            updated_at=updated_at,
+            last_step_key=last_key,
+            last_step_name=last_step_name,
+            last_step_no=last_step_no,
+            last_event_at=last_event_at,
+            extra=extra,
+        )

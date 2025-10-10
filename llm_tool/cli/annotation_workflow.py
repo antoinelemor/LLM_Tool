@@ -8,15 +8,20 @@ modes delegate to a single module while preserving their specific behaviour.
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
 
 from ..utils.language_detector import LanguageDetector
 from llm_tool.utils.data_detector import DataDetector
+from llm_tool.utils.session_summary import SessionSummary, merge_summary, read_summary
+
+
+ISO_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
 
 class AnnotationMode(Enum):
@@ -60,6 +65,148 @@ def create_session_directories(mode: AnnotationMode, session_id: str) -> Dict[st
     return dirs
 
 
+ANNOTATOR_RESUME_STEPS = {
+    1: {"key": "data_selection", "name": "Select dataset"},
+    2: {"key": "column_mapping", "name": "Configure columns"},
+    3: {"key": "model_selection", "name": "Choose model"},
+    4: {"key": "prompt_configuration", "name": "Configure prompts"},
+    5: {"key": "advanced_settings", "name": "Review advanced options"},
+    6: {"key": "run_annotation", "name": "Execute annotation"},
+    7: {"key": "post_actions", "name": "Exports & follow-up"},
+}
+
+
+FACTORY_RESUME_STEPS = {
+    1: {"key": "data_selection", "name": "Select dataset"},
+    2: {"key": "column_mapping", "name": "Configure columns"},
+    3: {"key": "model_selection", "name": "Choose models"},
+    4: {"key": "prompt_configuration", "name": "Configure prompts"},
+    5: {"key": "advanced_settings", "name": "Review advanced options"},
+    6: {"key": "run_annotation", "name": "Execute annotation"},
+    7: {"key": "training_prep", "name": "Prepare training data"},
+    8: {"key": "training_launch", "name": "Launch training arena"},
+    9: {"key": "post_actions", "name": "Exports & reports"},
+}
+
+
+class AnnotationResumeTracker:
+    """Helper to keep resume metadata consistent for annotation workflows."""
+
+    def __init__(
+        self,
+        mode: AnnotationMode,
+        session_id: str,
+        session_dirs: Dict[str, Path],
+        step_catalog: Dict[int, Dict[str, str]],
+        session_name: Optional[str] = None,
+    ) -> None:
+        self.mode = mode
+        self.session_id = session_id
+        self.session_name = session_name or session_id
+        self.summary_path = session_dirs["base"] / "resume.json"
+        self.step_catalog = step_catalog
+        self._step_status: Dict[int, str] = {no: "pending" for no in step_catalog}
+
+        self._summary: Optional[SessionSummary] = read_summary(self.summary_path)
+        if self._summary:
+            stored_status = self._summary.extra.get("step_status", {})
+            if isinstance(stored_status, dict):
+                for key, value in stored_status.items():
+                    try:
+                        no = int(key)
+                    except (ValueError, TypeError):
+                        continue
+                    if no in self._step_status:
+                        self._step_status[no] = str(value)
+        else:
+            now = datetime.now().strftime(ISO_FORMAT)
+            base_summary = SessionSummary(
+                mode=self.mode.value,
+                session_id=self.session_id,
+                session_name=self.session_name,
+                status="pending",
+                created_at=now,
+                updated_at=now,
+                extra=self._build_extra_payload(completed_steps=0),
+            )
+            self._summary = merge_summary(self.summary_path, base_summary)
+
+    def _build_extra_payload(self, *, completed_steps: int) -> Dict[str, Any]:
+        return {
+            "total_steps": len(self.step_catalog),
+            "completed_steps": completed_steps,
+            "step_status": {str(k): v for k, v in self._step_status.items()},
+            "mode_label": self.mode.name,
+        }
+
+    def _completed_steps(self) -> int:
+        return sum(1 for status in self._step_status.values() if status == "completed")
+
+    def mark_step(
+        self,
+        step_no: int,
+        *,
+        status: str = "completed",
+        detail: Optional[str] = None,
+        overall_status: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if step_no in self._step_status:
+            self._step_status[step_no] = status
+        for prior in sorted(self.step_catalog):
+            if prior < step_no and self._step_status.get(prior) == "pending":
+                self._step_status[prior] = "completed"
+        step_info = self.step_catalog.get(step_no, {"key": f"step_{step_no}", "name": f"Step {step_no}"})
+        timestamp = datetime.now().strftime(ISO_FORMAT)
+        extras = self._build_extra_payload(completed_steps=self._completed_steps())
+        if detail:
+            extras["last_step_summary"] = detail
+        if extra:
+            extras.update(extra)
+        summary = SessionSummary(
+            mode=self.mode.value,
+            session_id=self.session_id,
+            session_name=self.session_name,
+            status=overall_status or (self._summary.status if self._summary else "active"),
+            created_at=self._summary.created_at if self._summary else timestamp,
+            updated_at=timestamp,
+            last_step_key=step_info["key"],
+            last_step_name=step_info["name"],
+            last_step_no=step_no,
+            last_event_at=timestamp,
+            extra=extras,
+        )
+        self._summary = merge_summary(self.summary_path, summary)
+
+    def update_status(
+        self,
+        status: str,
+        *,
+        note: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        timestamp = datetime.now().strftime(ISO_FORMAT)
+        extras = self._build_extra_payload(completed_steps=self._completed_steps())
+        if note:
+            extras["status_note"] = note
+        if extra:
+            extras.update(extra)
+        summary = SessionSummary(
+            mode=self.mode.value,
+            session_id=self.session_id,
+            session_name=self.session_name,
+            status=status,
+            created_at=self._summary.created_at if self._summary else timestamp,
+            updated_at=timestamp,
+            last_step_key=self._summary.last_step_key if self._summary else None,
+            last_step_name=self._summary.last_step_name if self._summary else None,
+            last_step_no=self._summary.last_step_no if self._summary else None,
+            last_event_at=timestamp,
+            extra=extras,
+        )
+        self._summary = merge_summary(self.summary_path, summary)
+
+
 def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[Dict[str, Path]] = None):
     """Smart guided annotation wizard with all options
 
@@ -78,6 +225,15 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # Create session directories
     if session_dirs is None:
         session_dirs = cli._create_annotator_session_directories(session_id)
+
+    tracker = AnnotationResumeTracker(
+        mode=AnnotationMode.ANNOTATOR,
+        session_id=session_id,
+        session_dirs=session_dirs,
+        step_catalog=ANNOTATOR_RESUME_STEPS,
+        session_name=session_id,
+    )
+    tracker.update_status("active")
 
     cli.console.print("\n[bold cyan]🎯 Smart Annotate - Guided Wizard[/bold cyan]\n")
 
@@ -135,6 +291,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         data_format = 'excel'
 
     cli.console.print(f"[green]✓ Selected: {data_path.name} ({data_format})[/green]")
+    tracker.mark_step(
+        1,
+        detail=f"{data_path.name} ({data_format})",
+        extra={"dataset_path": str(data_path)},
+    )
 
     # Step 2: Text column selection with intelligent detection
     cli.console.print("\n[bold]Step 2/7: Text Column Selection[/bold]")
@@ -209,6 +370,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         text_column=text_column,
         step_label="Step 2b/7: Identifier Column Selection"
     )
+    tracker.mark_step(
+        2,
+        detail=f"text={text_column}, id={identifier_column or 'auto'}",
+        extra={"text_column": text_column, "identifier_column": identifier_column},
+    )
 
     # Step 3: Model Selection
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -219,6 +385,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     selected_llm = cli._select_llm_interactive()
     provider = selected_llm.provider
     model_name = selected_llm.name
+    tracker.mark_step(
+        3,
+        detail=f"{provider}:{model_name}",
+        extra={"provider": provider, "model": model_name},
+    )
 
     # Get API key if needed
     api_key = None
@@ -384,6 +555,12 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     else:
         # Single prompt - no prefix needed
         prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
+
+    tracker.mark_step(
+        4,
+        detail=f"{len(prompt_configs)} prompt(s)",
+        extra={"prompt_count": len(prompt_configs)},
+    )
 
     # Step 1.5: Advanced Options
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -593,6 +770,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             cli.console.print("  • [yellow]Medium (20-50)[/yellow]  - Balanced diversity")
             cli.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
             top_k = cli._int_prompt_with_validation("Top K", 40, 1, 100)
+
+    tracker.mark_step(
+        5,
+        detail="Advanced options configured",
+    )
 
     # Step 1.6: Execute
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -934,6 +1116,16 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         cli.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
         cli.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
         cli.console.print(f"   {metadata_path}\n")
+        tracker.mark_step(
+            5,
+            detail=f"Metadata saved: {metadata_path.name}",
+            extra={
+                "metadata_path": str(metadata_path),
+                "dataset_path": str(data_path),
+                "text_column": text_column,
+                "identifier_column": identifier_column,
+            },
+        )
 
     # Execute pipeline with Rich progress
     try:
@@ -990,6 +1182,16 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             if success_count:
                 success_rate = (success_count / total_annotated * 100)
                 cli.console.print(f"   Success rate: {success_rate:.1f}%")
+
+        tracker.mark_step(
+            6,
+            detail=f"Annotated rows: {total_annotated or 'n/a'}",
+            extra={
+                "output_file": output_file,
+                "total_annotated": total_annotated,
+                "success_count": annotation_results.get('success_count'),
+            },
+        )
 
         # ============================================================
         # AUTOMATIC LANGUAGE DETECTION (if no language column provided)
@@ -1144,10 +1346,22 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                     session_dirs=session_dirs
                 )
 
+        tracker.mark_step(
+            7,
+            detail="Post-processing complete",
+            extra={
+                "export_doccano": export_to_doccano,
+                "export_labelstudio": export_to_labelstudio,
+                "prediction_mode": prediction_mode,
+            },
+        )
+        tracker.update_status("completed")
+
         cli.console.print("\n[dim]Press Enter to return to menu...[/dim]")
         input()
 
     except Exception as exc:
+        tracker.update_status("failed", note=str(exc))
         cli.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
         cli.logger.exception("Annotation execution failed")
         cli.console.print("\n[dim]Press Enter to return to menu...[/dim]")
@@ -1172,6 +1386,15 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # Create session directories
     if session_dirs is None:
         session_dirs = cli._create_annotator_factory_session_directories(session_id)
+
+    tracker = AnnotationResumeTracker(
+        mode=AnnotationMode.FACTORY,
+        session_id=session_id,
+        session_dirs=session_dirs,
+        step_catalog=FACTORY_RESUME_STEPS,
+        session_name=session_id,
+    )
+    tracker.update_status("active")
 
     # Display Annotator Factory STEP 1 banner
     from llm_tool.cli.banners import BANNERS, STEP_NUMBERS, STEP_LABEL
@@ -2214,6 +2437,16 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 success_rate = (success_count / total_annotated * 100)
                 cli.console.print(f"   Success rate: {success_rate:.1f}%")
 
+        tracker.mark_step(
+            6,
+            detail=f"Annotated rows: {total_annotated or 'n/a'}",
+            extra={
+                "output_file": output_file,
+                "total_annotated": total_annotated,
+                "success_count": annotation_results.get('success_count'),
+            },
+        )
+
         # ============================================================
         # AUTOMATIC LANGUAGE DETECTION (if no language column provided)
         # ============================================================
@@ -2336,6 +2569,11 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             session_id=session_id,
             session_dirs=session_dirs  # Pass session directories for organized logging
         )
+        tracker.mark_step(
+            8,
+            detail="Training workflow executed",
+            extra={"training_session_id": session_id},
+        )
 
         # Export to Doccano JSONL if requested
         if export_to_doccano:
@@ -2377,10 +2615,22 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                     session_dirs=session_dirs
                 )
 
+        tracker.mark_step(
+            9,
+            detail="Factory workflow complete",
+            extra={
+                "export_doccano": export_to_doccano,
+                "export_labelstudio": export_to_labelstudio,
+                "prediction_mode": prediction_mode,
+            },
+        )
+        tracker.update_status("completed")
+
         cli.console.print("\n[dim]Press Enter to return to menu...[/dim]")
         input()
 
     except Exception as exc:
+        tracker.update_status("failed", note=str(exc))
         cli.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
         cli.logger.exception("Annotation execution failed")
         cli.console.print("\n[dim]Press Enter to return to menu...[/dim]")

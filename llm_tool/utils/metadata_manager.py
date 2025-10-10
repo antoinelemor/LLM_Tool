@@ -13,6 +13,7 @@ import platform
 import sys
 
 from llm_tool.utils.training_paths import get_training_logs_base, get_training_metadata_dir
+from llm_tool.utils.session_summary import SessionSummary, merge_summary
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,7 @@ class MetadataManager:
 
         # Save metadata with backup
         self._save_with_backup(metadata)
+        self._write_resume_summary(metadata)
 
         return self.metadata_path
 
@@ -204,9 +206,72 @@ class MetadataManager:
 
             # Save with backup
             self._save_with_backup(metadata)
+            self._write_resume_summary(metadata)
 
         except Exception as e:
             logger.error(f"Failed to update metadata: {e}")
+
+    def _write_resume_summary(self, metadata: Dict[str, Any]) -> None:
+        """Persist a compact resume summary for Training Arena sessions."""
+        try:
+            session_info = metadata.get("training_session", {})
+            session_id = session_info.get("session_id", self.session_id)
+            session_dir = self.base_dir / session_id
+            session_dir.mkdir(parents=True, exist_ok=True)
+
+            execution_status = metadata.get("execution_status", {}) or {}
+            status = execution_status.get("status", "pending")
+            created_at = metadata.get("created_at", datetime.now().isoformat())
+            updated_at = metadata.get("last_updated", created_at)
+
+            last_step_name = self._derive_last_step_label(status, execution_status)
+
+            dataset_config = metadata.get("dataset_config", {})
+            model_config = metadata.get("model_config", {})
+
+            summary = SessionSummary(
+                mode="training_arena",
+                session_id=session_id,
+                session_name=session_info.get("workflow", session_id).split(" - ")[0],
+                status=status,
+                created_at=created_at,
+                updated_at=updated_at,
+                last_step_key=status,
+                last_step_name=last_step_name,
+                last_step_no=None,
+                last_event_at=updated_at,
+                extra={
+                    "workflow": session_info.get("workflow"),
+                    "training_mode": model_config.get("training_mode"),
+                    "selected_model": model_config.get("selected_model"),
+                    "dataset": dataset_config.get("primary_file"),
+                    "current_model": execution_status.get("current_model"),
+                    "current_epoch": execution_status.get("current_epoch"),
+                    "best_model": execution_status.get("best_model"),
+                    "models_trained": execution_status.get("models_trained"),
+                },
+            )
+            merge_summary(session_dir / "resume.json", summary)
+        except Exception as err:
+            logger.debug("Failed to update training resume summary: %s", err)
+
+    def _derive_last_step_label(self, status: str, execution_status: Dict[str, Any]) -> str:
+        """Generate a human-friendly label for the current training stage."""
+        status_normalized = (status or "").lower()
+        if status_normalized == "completed":
+            return "Training completed"
+        if status_normalized == "failed":
+            return "Training failed"
+        current_model = execution_status.get("current_model")
+        current_epoch = execution_status.get("current_epoch")
+        if current_model and current_epoch:
+            return f"Training {current_model} (epoch {current_epoch})"
+        if current_model:
+            return f"Training {current_model}"
+        best_model = execution_status.get("best_model")
+        if best_model:
+            return f"Best model: {best_model}"
+        return status.replace("_", " ").title() if status else "In progress"
 
     def save_checkpoint(self, checkpoint_name: str, checkpoint_data: Dict[str, Any]) -> None:
         """

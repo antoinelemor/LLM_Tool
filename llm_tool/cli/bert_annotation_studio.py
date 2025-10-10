@@ -229,7 +229,10 @@ class BERTAnnotationStudio:
 
         chosen_session: Optional[Dict[str, Any]] = None
         if preferred_id:
-            chosen_session = next((s for s in sessions if s["session_id"] == preferred_id), None)
+            chosen_session = next(
+                (entry for entry in sessions if entry["summary"].session_id == preferred_id),
+                None,
+            )
             if chosen_session is None and self.console:
                 self.console.print(f"[yellow]Session '{preferred_id}' not found. Showing session selector.[/yellow]")
 
@@ -245,7 +248,8 @@ class BERTAnnotationStudio:
                 return False
             chosen_session = sessions[int(selection) - 1]
 
-        session_id = chosen_session["session_id"]
+        summary = chosen_session["summary"]
+        session_id = summary.session_id
         self.session_manager.resume_session(session_id)
         self.session_id = session_id
         self._step_cache = dict(self.session_manager.step_cache)
@@ -255,6 +259,11 @@ class BERTAnnotationStudio:
             self.console.print(f"\n[bold green]✓ Loaded session:[/bold green] [cyan]{session_id}[/cyan]")
             self.console.print(f"[dim]Directory: {self.session_manager.session_dir}[/dim]\n")
             self.session_manager.render_step_status()
+            last_step_display = summary.last_step_name or summary.last_step_key
+            if last_step_display:
+                prefix = f"{summary.last_step_no}. " if summary.last_step_no else ""
+                self.console.print(f"[dim]Last completed step: {prefix}{last_step_display}[/dim]")
+            self.console.print(f"[dim]Status: {summary.status} • Updated: {summary.updated_at}[/dim]")
 
         default_step = self.session_manager.next_pending_step()
         step_choices = [str(i) for i in range(1, self._total_steps + 1)]
@@ -712,7 +721,7 @@ class BERTAnnotationStudio:
             summary.add_column("Task", style="bright_white", overflow="ellipsis")
             summary.add_column("Lang", style="magenta", justify="center", width=8)
             summary.add_column("Labels", style="cyan", justify="right", width=6)
-            summary.add_column("id2label", style="white", overflow="fold")
+            summary.add_column("Categories", style="white", overflow="fold")
             summary.add_column("Macro F1", style="bright_white", justify="right", width=10)
 
             for idx, model in enumerate(ordered_models, 1):
@@ -1231,7 +1240,7 @@ class BERTAnnotationStudio:
         model_table.add_column("Task", style="bright_white", overflow="ellipsis")
         model_table.add_column("Lang", style="magenta", width=8, justify="center")
         model_table.add_column("Labels", style="cyan", width=6, justify="right")
-        model_table.add_column("id2label", style="white", overflow="fold")
+        model_table.add_column("Categories", style="white", overflow="fold")
         model_table.add_column("Macro F1", style="bright_white", width=10, justify="right")
         model_table.add_column("Updated", style="dim", width=19)
 
@@ -1308,13 +1317,42 @@ class BERTAnnotationStudio:
             selection = list(range(1, len(model_entries) + 1))
 
         if len(selection) > 1:
+            if self.console:
+                self.console.print(
+                    "\n[cyan]Execution order decides which model runs first during inference.[/cyan]"
+                )
+                self.console.print(
+                    "[cyan]• Keep selection order: run models exactly in the sequence you just picked.[/cyan]"
+                )
+                self.console.print(
+                    "[cyan]• Alphabetical: run models from A → Z by their display name.[/cyan]"
+                )
+                self.console.print(
+                    "[cyan]• Custom order: type the indices again to define a new priority right now.[/cyan]"
+                )
             order_choice = Prompt.ask(
-                "\n[cyan]Annotation order[/cyan] ([1] input priority • [2] alphabetical order)",
-                choices=["1", "2"],
+                "\n[cyan]Choose execution order[/cyan] ([1] keep selection order • [2] alphabetical • [3] custom order)",
+                choices=["1", "2", "3"],
                 default="1",
             )
             if order_choice == "2":
                 selection.sort(key=lambda idx: model_entries[idx - 1]['relative_name'].lower())
+            elif order_choice == "3":
+                while True:
+                    raw_order = Prompt.ask(
+                        "\n[cyan]Enter the exact execution order (e.g., 2,1,3)[/cyan]",
+                        default=",".join(str(idx) for idx in selection),
+                    )
+                    try:
+                        reordered = parse_indices(raw_order)
+                        if len(reordered) != len(selection):
+                            raise ValueError
+                        selection = reordered
+                        break
+                    except ValueError:
+                        self.console.print(
+                            "[red]Please enter each selected index once to set the execution order.[/red]"
+                        )
 
         chosen_models = [model_entries[idx - 1] for idx in selection]
 
@@ -1324,7 +1362,7 @@ class BERTAnnotationStudio:
         summary.add_column("Task", style="bright_white", overflow="ellipsis")
         summary.add_column("Lang", style="magenta", width=8, justify="center")
         summary.add_column("Labels", style="cyan", width=6, justify="right")
-        summary.add_column("id2label", style="white", overflow="fold")
+        summary.add_column("Categories", style="white", overflow="fold")
         summary.add_column("Macro F1", style="bright_white", width=10, justify="right")
 
         for idx, model in enumerate(chosen_models, 1):
@@ -1348,7 +1386,7 @@ class BERTAnnotationStudio:
             )
         self._print_table(summary)
         if len(chosen_models) > 1:
-            self.console.print("[dim]FYI: models run in the current selection order. You can reorder them in the pipeline configuration step next.[/dim]")
+            self.console.print("[dim]FYI: inference follows this execution order. You can still adjust it in the pipeline configuration step next.[/dim]")
         self.console.print(f"\n[green]✓ {len(chosen_models)} model(s) ready for annotation[/green]")
         return chosen_models
 

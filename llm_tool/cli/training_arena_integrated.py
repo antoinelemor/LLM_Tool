@@ -63,6 +63,7 @@ from llm_tool.utils.training_paths import (
     get_training_metrics_dir,
 )
 from llm_tool.utils.data_detector import DataDetector
+from llm_tool.utils.session_summary import collect_summaries_for_mode, read_summary
 
 # Constants
 HAS_RICH = True
@@ -9453,17 +9454,102 @@ def _reconstruct_bundle_from_metadata(self, metadata: Dict[str, Any]) -> Optiona
         self.console.print(f"[red]Error reconstructing dataset: {e}[/red]")
         return None
 
-def _resume_training_studio(self):
-    """Resume or relaunch training using saved parameters from previous sessions"""
+def _resolve_training_metadata(self, session_dir: Path) -> Optional[Tuple[Path, Dict[str, Any]]]:
+    """Load or reconstruct training metadata for a session."""
+    metadata_path = session_dir / "training_session_metadata" / "training_metadata.json"
+
+    if metadata_path.exists():
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as handle:
+                metadata = json.load(handle)
+            metadata.setdefault("_recovered", False)
+            return metadata_path, metadata
+        except Exception as err:
+            if hasattr(self, "logger"):
+                self.logger.warning("Could not load training metadata %s: %s", metadata_path, err)
+            return None
+
+    try:
+        session_id = session_dir.name
+        parts = session_id.rsplit("_", 2)
+        session_name = session_id
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if len(parts) >= 3 and len(parts[-2]) == 8 and len(parts[-1]) == 6:
+            session_name = "_".join(parts[:-2]) or session_id
+            timestamp_str = f"{parts[-2]}_{parts[-1]}"
+
+        workflow_label = "Training Arena"
+        if "factory" in session_id:
+            workflow_label = "Annotator Factory Training"
+
+        minimal_metadata: Dict[str, Any] = {
+            "metadata_version": "2.0",
+            "created_at": datetime.now().isoformat(),
+            "last_updated": datetime.now().isoformat(),
+            "training_session": {
+                "session_id": session_id,
+                "timestamp": timestamp_str,
+                "workflow": workflow_label,
+                "mode": "arena",
+                "python_version": sys.version,
+                "platform": platform.platform(),
+                "hostname": platform.node(),
+                "user": platform.node(),
+            },
+            "dataset_config": {
+                "primary_file": None,
+                "format_type": "unknown",
+                "strategy": "single-label",
+            },
+            "language_config": {},
+            "text_analysis": {},
+            "split_config": {},
+            "label_config": {},
+            "model_config": {
+                "training_mode": "quick",
+                "selected_model": None,
+            },
+            "training_params": {},
+            "reinforced_learning_config": {},
+            "execution_status": {
+                "status": "unknown",
+                "current_model": None,
+                "current_epoch": None,
+                "best_model": None,
+                "models_trained": [],
+            },
+            "output_paths": {
+                "session_dir": str(session_dir),
+                "models_dir": str(Path("models") / session_id),
+                "logs_dir": str(session_dir),
+            },
+            "preprocessing": {},
+            "advanced_settings": {},
+            "checkpoints": {},
+            "training_context": {},
+            "_recovered": True,
+        }
+
+        training_data_dir = session_dir / "training_data"
+        if training_data_dir.exists():
+            for train_file in training_data_dir.glob("train_*.csv"):
+                minimal_metadata["dataset_config"]["primary_file"] = str(train_file)
+                break
+
+        return metadata_path, minimal_metadata
+    except Exception as err:
+        if hasattr(self, "logger"):
+            self.logger.debug("Failed to recover metadata for %s: %s", session_dir, err)
+        return None
+
+
+def _resume_training_studio(self, focus_session_id: Optional[str] = None):
+    """Resume or relaunch training using saved parameters."""
 
     self.console.print("\n[bold cyan]🔄 Resume/Relaunch Training[/bold cyan]\n")
     self.console.print("[dim]Load saved parameters from previous training sessions[/dim]\n")
 
-    # Detect metadata files - now using the new training_arena structure
     base_dir = get_training_logs_base()
-
-    self.console.print(f"[dim]Searching in: {base_dir}[/dim]\n")
-
     if not base_dir.exists():
         self.console.print("[yellow]⚠️  Training arena logs directory not found.[/yellow]")
         self.console.print(f"[dim]Expected location: {base_dir}[/dim]")
@@ -9472,322 +9558,115 @@ def _resume_training_studio(self):
         input()
         return
 
-    # Find all training sessions - BOTH with and without metadata
-    # This ensures ALL sessions are recallable, even if metadata was not saved
-    metadata_files = []
-    sessions_without_metadata = []
-
-    for session_dir in base_dir.iterdir():
-        if not session_dir.is_dir():
-            continue
-
-        metadata_path = session_dir / "training_session_metadata" / "training_metadata.json"
-        if metadata_path.exists():
-            # Session has metadata - add to primary list
-            metadata_files.append(metadata_path)
-        else:
-            # Session exists but has NO metadata - create minimal metadata on-the-fly
-            # This allows recovery of sessions where user declined metadata saving
-            sessions_without_metadata.append(session_dir)
-
-    # Generate minimal metadata for sessions without it
-    for session_dir in sessions_without_metadata:
-        try:
-            session_id = session_dir.name
-
-            # Create minimal metadata structure for display and potential recovery
-            minimal_metadata = {
-                "metadata_version": "2.0",
-                "created_at": datetime.fromtimestamp(session_dir.stat().st_mtime).isoformat(),
-                "last_updated": datetime.fromtimestamp(session_dir.stat().st_mtime).isoformat(),
-                "training_session": {
-                    "session_id": session_id,
-                    "timestamp": session_id,
-                    "tool_version": "LLMTool",
-                    "workflow": "Training Arena - Unknown",
-                    "mode": "unknown"
-                },
-                "dataset_config": {
-                    "primary_file": None,
-                    "format_type": "unknown",
-                    "strategy": "single-label",
-                    "text_column": "text",
-                    "label_column": "label",
-                    "total_samples": 0
-                },
-                "model_config": {
-                    "training_mode": "unknown",
-                    "selected_model": None,
-                    "epochs": None,
-                    "batch_size": 16
-                },
-                "execution_status": {
-                    "status": "no_metadata",
-                    "started_at": None,
-                    "completed_at": None
-                },
-                "output_paths": {
-                    "session_dir": str(session_dir),
-                    "models_dir": str(Path("models") / session_id),
-                    "logs_dir": str(session_dir)
-                },
-                "_recovered": True  # Flag indicating this was auto-recovered
-            }
-
-            # Try to extract information from training_data directory if it exists
-            training_data_dir = session_dir / "training_data"
-            if training_data_dir.exists():
-                # Look for training files to get dataset info
-                for train_file in training_data_dir.glob("train_*.csv"):
-                    minimal_metadata["dataset_config"]["primary_file"] = str(train_file)
-                    break
-
-            # Create a "virtual" metadata file path for this session
-            # We don't actually save it to disk unless user tries to relaunch
-            virtual_metadata_path = session_dir / "training_session_metadata" / "training_metadata.json"
-
-            # Store the metadata temporarily (we'll handle it specially in the loop)
-            # Add to metadata_files list as a tuple to distinguish it
-            metadata_files.append((virtual_metadata_path, minimal_metadata))
-
-        except Exception as e:
-            self.logger.debug(f"Could not generate metadata for {session_dir.name}: {e}")
-            continue
-
-    if not metadata_files:
-        self.console.print("[yellow]⚠️  No training sessions found.[/yellow]")
-        self.console.print(f"[dim]Searched in: {base_dir}[/dim]")
-        self.console.print("[dim]Complete a training to create session history.[/dim]")
+    records = collect_summaries_for_mode(base_dir, "training_arena", limit=25)
+    if not records:
+        self.console.print("[yellow]No training sessions found.[/yellow]")
+        self.console.print("[dim]Run a training session to populate the history.[/dim]")
         self.console.print("\n[dim]Press Enter to continue...[/dim]")
         input()
         return
 
-    # Sort by modification time (most recent first)
-    # Handle both Path objects and tuples (virtual metadata)
-    def get_mtime(item):
-        if isinstance(item, tuple):
-            # Virtual metadata - use parent directory mtime
-            return item[0].parent.parent.stat().st_mtime
-        else:
-            # Real metadata file
-            return item.stat().st_mtime
-
-    metadata_files.sort(key=get_mtime, reverse=True)
-
-    # Display sessions table
     sessions_table = Table(
-        title="📚 Previous Training Sessions (20 most recent)",
+        title="📚 Previous Training Sessions (25 most recent)",
         border_style="cyan",
-        box=box.ROUNDED
+        box=box.ROUNDED,
     )
     sessions_table.add_column("#", style="cyan bold", width=4)
-    sessions_table.add_column("Session Name", style="white", width=25)
+    sessions_table.add_column("Session", style="white", width=28)
     sessions_table.add_column("Date", style="yellow", width=12)
     sessions_table.add_column("Time", style="yellow", width=8)
-    sessions_table.add_column("Mode", style="magenta", width=12)
-    sessions_table.add_column("Dataset", style="green", width=25)
+    sessions_table.add_column("Mode", style="magenta", width=16)
+    sessions_table.add_column("Dataset", style="green", width=24)
     sessions_table.add_column("Model", style="blue", width=20)
+    sessions_table.add_column("Last Step", style="cyan", width=28)
     sessions_table.add_column("Status", style="white", width=12)
 
-    import json
-    from datetime import datetime
-
-    # Load and display sessions
-    valid_sessions = []
-    parsing_errors = []  # Track errors for debugging
-
-    for i, mf_item in enumerate(metadata_files[:20], 1):  # Show max 20 most recent
-        try:
-            # Handle both real metadata files and virtual metadata (tuples)
-            if isinstance(mf_item, tuple):
-                # Virtual metadata - already loaded
-                mf, metadata = mf_item
-                is_recovered = True
-            else:
-                # Real metadata file - load it
-                mf = mf_item
-                with open(mf, 'r', encoding='utf-8') as f:
-                    metadata = json.load(f)
-                is_recovered = False
-
-            session_info = metadata.get('training_session', {})
-            dataset_config = metadata.get('dataset_config', {})
-            model_config = metadata.get('model_config', {})
-            exec_status = metadata.get('execution_status', {})
-
-            # Extract session name and timestamp
-            session_id = session_info.get('session_id', '')
-
-            # Parse session name and timestamp from session_id
-            # Expected format: {name}_{YYYYMMDD_HHMMSS}
-            session_name_parts = session_id.rsplit('_', 2)
-            if len(session_name_parts) >= 3 and len(session_name_parts[-1]) == 6 and len(session_name_parts[-2]) == 8:
-                # Has proper timestamp format
-                session_name = '_'.join(session_name_parts[:-2]) or 'training_session'
-                timestamp_str = f"{session_name_parts[-2]}_{session_name_parts[-1]}"
-            else:
-                # Fallback for legacy or malformed session IDs
-                session_name = session_id.split('_20')[0] if '_20' in session_id else session_id
-                timestamp_str = session_info.get('timestamp', '')
-
-            # Format date and time separately
-            try:
-                dt = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
-                date_str = dt.strftime('%Y-%m-%d')
-                time_str = dt.strftime('%H:%M')
-            except:
-                # Fallback if timestamp parsing fails
-                date_str = timestamp_str[:10] if len(timestamp_str) >= 10 else 'N/A'
-                time_str = timestamp_str[11:16] if len(timestamp_str) >= 16 else 'N/A'
-
-            # Truncate session name if too long
-            if len(session_name) > 23:
-                session_name = session_name[:20] + "..."
-
-            mode = model_config.get('training_mode', 'unknown')
-            dataset_path = dataset_config.get('primary_file', '')
-            dataset_name = Path(dataset_path).name if dataset_path else 'N/A'
-            if len(dataset_name) > 23:
-                dataset_name = dataset_name[:20] + "..."
-
-            model_name = model_config.get('selected_model') or 'N/A'
-            if len(model_name) > 18:
-                model_name = model_name[:15] + "..."
-
-            status = exec_status.get('status', 'unknown')
-
-            # Color code status
-            if is_recovered:
-                # Session recovered without metadata
-                status_display = f"[yellow]⚠ recovered[/yellow]"
-            elif status == 'completed':
-                status_display = f"[green]✓ {status}[/green]"
-            elif status == 'failed':
-                status_display = f"[red]✗ {status}[/red]"
-            elif 'benchmark' in status.lower():
-                # Benchmark-specific statuses
-                if 'completed' in status.lower():
-                    status_display = f"[green]🎯 benchmark[/green]"
-                else:
-                    status_display = f"[cyan]🎯 {status}[/cyan]"
-            else:
-                status_display = f"[yellow]⏸ {status}[/yellow]"
-
-            sessions_table.add_row(
-                str(i),
-                session_name,
-                date_str,
-                time_str,
-                mode,
-                dataset_name,
-                model_name,
-                status_display
-            )
-
-            valid_sessions.append((mf, metadata))
-
-        except Exception as e:
-            self.logger.debug(f"Skipping invalid metadata file {mf}: {e}")
-            parsing_errors.append((mf.name, str(e)))
+    valid_sessions: List[Tuple[Path, Dict[str, Any], Any, Path]] = []
+    for idx, record in enumerate(records, 1):
+        resolved = self._resolve_training_metadata(record.directory)
+        if not resolved:
             continue
+        metadata_path, metadata = resolved
+        summary = record.summary
+
+        dataset_config = metadata.get("dataset_config", {})
+        model_config = metadata.get("model_config", {})
+        exec_status = metadata.get("execution_status", {})
+        session_info = metadata.get("training_session", {})
+
+        dataset_name = dataset_config.get("primary_file") or summary.extra.get("dataset") or "-"
+        model_name = (
+            model_config.get("selected_model")
+            or exec_status.get("current_model")
+            or summary.extra.get("current_model")
+            or "-"
+        )
+        workflow_label = session_info.get("workflow", summary.extra.get("workflow", "Training Arena"))
+
+        try:
+            dt_obj = datetime.fromisoformat(summary.updated_at)
+            date_str = dt_obj.strftime("%Y-%m-%d")
+            time_str = dt_obj.strftime("%H:%M")
+        except ValueError:
+            parts = summary.updated_at.split("T")
+            date_str = parts[0]
+            time_str = parts[1] if len(parts) > 1 else ""
+
+        last_step = summary.last_step_name or summary.last_step_key or "-"
+        if summary.last_step_no:
+            last_step = f"{summary.last_step_no}. {last_step}"
+
+        sessions_table.add_row(
+            str(idx),
+            summary.session_name or summary.session_id,
+            date_str,
+            time_str,
+            workflow_label,
+            dataset_name,
+            model_name,
+            last_step,
+            summary.status,
+        )
+
+        valid_sessions.append((metadata_path, metadata, summary, record.directory))
 
     if not valid_sessions:
-        self.console.print("[yellow]No valid training sessions found.[/yellow]")
-
-        # Show parsing errors if any for debugging
-        if parsing_errors:
-            self.console.print(f"\n[dim]Parsing errors for {len(parsing_errors)} files:[/dim]")
-            for fname, err in parsing_errors[:5]:  # Show first 5
-                self.console.print(f"[dim]  • {fname}: {err[:80]}[/dim]")
-
+        self.console.print("[yellow]No valid training sessions were found.[/yellow]")
         self.console.print("\n[dim]Press Enter to continue...[/dim]")
         input()
         return
 
     self.console.print(sessions_table)
 
-    # Check if any sessions were recovered
-    recovered_count = sum(1 for _, metadata in valid_sessions if metadata.get('_recovered', False))
-    if recovered_count > 0:
-        self.console.print(f"\n[yellow]ℹ️  {recovered_count} session(s) marked as 'recovered' had no saved metadata.[/yellow]")
-        self.console.print("[dim]   These sessions can still be viewed, but may have limited information.[/dim]")
-        self.console.print("[dim]   Note: Starting now, all new training sessions will automatically save metadata.[/dim]\n")
+    session_choice: Optional[int] = None
+    if focus_session_id:
+        for idx, (_, _, summary, _) in enumerate(valid_sessions, 1):
+            if summary.session_id == focus_session_id:
+                session_choice = idx
+                self.console.print(f"\n[dim]Auto-selecting session {summary.session_id}[/dim]")
+                break
 
-    # Select session
-    session_choices = [str(i) for i in range(1, len(valid_sessions) + 1)] + ["back"]
-    session_choice = Prompt.ask(
-        "\n[bold yellow]Select session to resume/relaunch[/bold yellow]",
-        choices=session_choices,
-        default="1"
-    )
+    if session_choice is None:
+        session_choice = self._int_prompt_with_validation(
+            "\n[bold yellow]Select session to resume/relaunch[/bold yellow]",
+            1,
+            1,
+            len(valid_sessions),
+        )
 
-    if session_choice == "back":
-        return
+    selected_file, metadata, summary, session_dir = valid_sessions[session_choice - 1]
 
-    metadata_file, metadata = valid_sessions[int(session_choice) - 1]
+    self.console.print(f"\n[green]✓ Selected: {summary.session_id}[/green]")
+    last_step = summary.last_step_name or summary.last_step_key or "-"
+    self.console.print(f"[dim]Status: {summary.status} • Last step: {last_step}[/dim]")
 
-    # Check if this is a recovered session
-    is_recovered_session = metadata.get('_recovered', False)
+    self._display_metadata_parameters(metadata)
 
-    # Display selected session details
-    self.console.print("\n[bold cyan]📋 Selected Session Details[/bold cyan]")
+    is_recovered_session = metadata.get("_recovered", False)
 
     if is_recovered_session:
-        self.console.print("[yellow]⚠️  This session was recovered without complete metadata.[/yellow]")
-        self.console.print("[dim]Some training parameters may be missing or unknown.[/dim]\n")
+        self.console.print("\n[yellow]⚠️  Recovered session: parameters may be incomplete.[/yellow]")
 
-    details_table = Table(border_style="green", box=box.SIMPLE)
-    details_table.add_column("Parameter", style="cyan bold", width=25)
-    details_table.add_column("Value", style="white", width=60)
-
-    session_info = metadata.get('training_session', {})
-    dataset_config = metadata.get('dataset_config', {})
-    model_config = metadata.get('model_config', {})
-    exec_status = metadata.get('execution_status', {})
-
-    details_table.add_row("Timestamp", session_info.get('timestamp', 'N/A'))
-    details_table.add_row("Workflow", session_info.get('workflow', 'N/A'))
-
-    dataset_file = dataset_config.get('primary_file', '')
-    if dataset_file:
-        details_table.add_row("Dataset", Path(dataset_file).name)
-    else:
-        details_table.add_row("Dataset", "[yellow]Unknown[/yellow]")
-
-    details_table.add_row("Strategy", dataset_config.get('strategy', 'N/A'))
-    details_table.add_row("Total Samples", str(dataset_config.get('total_samples', 0)))
-    details_table.add_row("Training Mode", model_config.get('training_mode', 'N/A'))
-
-    selected_model = model_config.get('selected_model')
-    if selected_model:
-        details_table.add_row("Model", selected_model)
-
-    epochs = model_config.get('epochs')
-    if epochs:
-        details_table.add_row("Epochs", str(epochs))
-
-    batch_size = model_config.get('batch_size')
-    if batch_size:
-        details_table.add_row("Batch Size", str(batch_size))
-
-    details_table.add_row("Status", exec_status.get('status', 'unknown'))
-
-    self.console.print(details_table)
-
-    # Special handling for recovered sessions
-    if is_recovered_session:
-        self.console.print("\n[yellow]⚠️  Recovered Session Limitations:[/yellow]")
-        self.console.print("  • Training parameters are incomplete")
-        self.console.print("  • Cannot guarantee exact reproduction of original training")
-        self.console.print("  • Consider starting a new training session instead\n")
-
-        if not dataset_config.get('primary_file'):
-            self.console.print("[red]✗ Cannot relaunch: Dataset file is unknown[/red]")
-            self.console.print("[dim]Press Enter to continue...[/dim]")
-            input()
-            return
-
-    # Ask: resume or relaunch?
     self.console.print("\n[bold cyan]🎯 Action Mode[/bold cyan]")
     self.console.print("  • [cyan]resume[/cyan]   - Continue incomplete training (if interrupted)")
     self.console.print("  • [cyan]relaunch[/cyan] - Start fresh with same parameters\n")
@@ -9795,12 +9674,10 @@ def _resume_training_studio(self):
     action_mode = Prompt.ask(
         "[bold yellow]Resume or relaunch?[/bold yellow]",
         choices=["resume", "relaunch"],
-        default="relaunch"  # Default to relaunch since resume is complex for training
+        default="relaunch",
     )
 
-    # Reconstruct bundle from metadata
     self.console.print(f"\n[cyan]Reconstructing dataset configuration...[/cyan]")
-
     bundle = self._reconstruct_bundle_from_metadata(metadata)
 
     if bundle is None:
@@ -9809,47 +9686,32 @@ def _resume_training_studio(self):
         input()
         return
 
-    # Get training mode
-    mode = model_config.get('training_mode', 'quick')
-
-    # CRITICAL: Initialize session attributes for resume/relaunch
-    # Extract session_id from metadata
-    session_info = metadata.get('training_session', {})
-    session_id = session_info.get('session_id')
-
+    session_info = metadata.get("training_session", {})
+    session_id = session_info.get("session_id")
     if not session_id:
-        # Fallback: try to extract from metadata file path or generate new one
-        self.logger.warning("No session_id found in metadata, generating new session_id for relaunch")
-        from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_id = f"relaunch_{timestamp}"
 
-    # Initialize session manager (required by training execution code)
-    from llm_tool.utils.training_data_utils import TrainingDataSessionManager
     session_manager = TrainingDataSessionManager(session_id=session_id)
-
-    # Store session attributes for use throughout training
     self.current_session_id = session_id
     self.current_session_manager = session_manager
 
     self.console.print(f"[dim]Session ID: {session_id}[/dim]\n")
 
-    # Display confirmation message
-    if action_mode == 'resume':
-        self.console.print(f"\n[green]✓ Resuming training session...[/green]\n")
+    if action_mode == "resume":
+        self.console.print("\n[green]✓ Resuming training session...[/green]\n")
     else:
-        self.console.print(f"\n[green]✓ Relaunching training with saved parameters...[/green]\n")
+        self.console.print("\n[green]✓ Relaunching training with saved parameters...[/green]\n")
 
-    # Execute with loaded parameters
-    # We'll modify _training_studio_confirm_and_execute to accept optional pre-loaded config
+    mode = metadata.get("model_config", {}).get("training_mode", "quick")
+
     self._training_studio_confirm_and_execute(
         bundle,
         mode,
-        preloaded_config=model_config,
-        is_resume=action_mode == 'resume',
-        step_context="arena_quick"
+        preloaded_config=metadata.get("model_config", {}),
+        is_resume=action_mode == "resume",
+        step_context="arena_quick",
     )
-
 def _training_studio_default_model(self) -> str:
     models = self._flatten_trainer_models()
     return "bert-base-uncased" if "bert-base-uncased" in models else (models[0] if models else "bert-base-uncased")
