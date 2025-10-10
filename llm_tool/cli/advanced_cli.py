@@ -846,7 +846,10 @@ class AdvancedCLI:
         df: Any = None,
         text_column: str = None,
         display_results: bool = True,
-        step_label: str = "Text Length Analysis"
+        step_label: str = "Text Length Analysis",
+        analysis_df: Any = None,
+        total_rows_reference: Optional[int] = None,
+        subset_label: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         CRITICAL: Universal text length analysis method.
@@ -898,11 +901,36 @@ class AdvancedCLI:
                 elif data_path.suffix == '.parquet':
                     df = pd.read_parquet(data_path)
 
-            if df is not None and text_column and text_column in df.columns:
-                if display_results and self.console:
-                    self.console.print("[dim]Analyzing text lengths for all documents...[/dim]\n")
+            if analysis_df is not None and df is None:
+                df = analysis_df
 
-                all_texts = df[text_column].dropna().astype(str).tolist()
+            if df is not None and text_column and text_column in df.columns:
+                working_df = analysis_df if analysis_df is not None else df
+                if text_column not in working_df.columns:
+                    working_df = df
+
+                source_df = df
+                source_series = source_df[text_column].dropna().astype(str)
+                working_series = working_df[text_column].dropna().astype(str)
+
+                source_total = (
+                    total_rows_reference
+                    if total_rows_reference is not None
+                    else len(source_series)
+                )
+                analysis_total = len(working_series)
+
+                if display_results and self.console:
+                    if subset_label and analysis_total != source_total:
+                        self.console.print(
+                            f"[dim]Analyzing {analysis_total:,} {subset_label} "
+                            f"(out of {source_total:,} texts).[/dim]\n"
+                        )
+                    else:
+                        self.console.print(f"[dim]Analyzing {analysis_total:,} texts...[/dim]\n")
+
+                analysis_series = working_series
+                analysis_texts = analysis_series.tolist()
 
                 try:
                     tokenizer = None
@@ -938,8 +966,8 @@ class AdvancedCLI:
                     token_lengths = []
 
                     iterator = (
-                        tqdm(all_texts, desc="Measuring text lengths", disable=not HAS_TQDM)
-                        if HAS_TQDM else all_texts
+                        tqdm(analysis_texts, desc="Measuring text lengths", disable=not HAS_TQDM)
+                        if HAS_TQDM else analysis_texts
                     )
 
                     for text in iterator:
@@ -977,6 +1005,10 @@ class AdvancedCLI:
                         'token_p95': float(np.percentile(token_lengths, 95)),
                         'avg_chars': float(np.mean(char_lengths)),  # For compatibility
                     }
+                    text_length_stats['rows_analyzed'] = len(analysis_series)
+                    text_length_stats['rows_available'] = int(source_total)
+                    if subset_label:
+                        text_length_stats['subset_label'] = subset_label
 
                     # Classify documents by length
                     short_docs = np.sum(token_lengths < 128)
@@ -1049,7 +1081,7 @@ class AdvancedCLI:
                         self.console.print(f"[dim]Error: {str(tokenizer_error)}[/dim]")
 
                     # Fallback: character-based analysis only
-                    char_lengths = [len(str(text)) for text in all_texts]
+                    char_lengths = [len(str(text)) for text in analysis_texts]
                     char_lengths = np.array(char_lengths)
 
                     text_length_stats = {
@@ -4866,8 +4898,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             studio_options_table.add_column("Description")
 
             options = [
-                ("1", "🚀 Start Annotation Workflow (8-step guided process)"),
-                ("0", "⬅️  Back to main menu")
+                ("1", "🆕 Start new session"),
+                ("2", "🔄 Resume session"),
+                ("3", "📚 Session history"),
+                ("0", "⬅️  Back to main menu"),
             ]
 
             for option, desc in options:
@@ -4883,7 +4917,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             choice = Prompt.ask(
                 "\n[bold yellow]Select an option[/bold yellow]",
-                choices=["0", "1"],
+                choices=["0", "1", "2", "3"],
                 default="1"
             )
 
@@ -4897,7 +4931,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             settings=self.settings,
             logger=self.logger
         )
-        studio.run()
+
+        if choice == "1":
+            studio.run(session_action="1")
+        elif choice == "2":
+            studio.run(session_action="2")
+        elif choice == "3":
+            studio.run(session_action="3")
 
     def validation_lab(self):
         """Validation lab for quality control and Doccano export"""

@@ -83,6 +83,7 @@ from llm_tool.trainers.parallel_inference import parallel_predict
 from llm_tool.cli.advanced_cli import LanguageNormalizer
 from llm_tool.utils.system_resources import detect_resources
 from llm_tool.utils.language_detector import LanguageDetector
+from llm_tool.utils.annotation_session_manager import AnnotationStudioSessionManager
 from transformers import AutoTokenizer
 
 
@@ -118,61 +119,562 @@ class BERTAnnotationStudio:
         self._factory_annotated_count: int = 0
         self._factory_notice_shown: Set[str] = set()
 
-    def run(self):
-        """Main entry point"""
+        self.session_manager = AnnotationStudioSessionManager(
+            base_dir=Path("logs") / "annotation_studio",
+            console=self.console,
+            logger=self.logger,
+        )
+        self.session_id: Optional[str] = None
+        self._resume_mode: bool = False
+        self._resume_from_step: int = 1
+        self._step_cache: Dict[str, Any] = {}
+
+    # ------------------------------------------------------------------
+    # Session lifecycle helpers
+    # ------------------------------------------------------------------
+    def _prompt_session_name(self) -> str:
+        if self.console:
+            self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+            self.console.print("[bold cyan]           📝 Session Name Configuration                       [/bold cyan]")
+            self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+            self.console.print("[bold]Give this session a descriptive identifier.[/bold]")
+            self.console.print("  • [green]Traceability:[/green] link annotations, exports, and metrics")
+            self.console.print("  • [green]Collaboration:[/green] teammates understand the use-case")
+            self.console.print("  • [green]Audit trail:[/green] timestamp guarantees uniqueness\n")
+            self.console.print("[dim]Format: {session_name}_{yyyymmdd_hhmmss}[/dim]")
+            self.console.print("[dim]Example: legal_reviews_20251130_093050[/dim]\n")
+
+        raw_name = Prompt.ask(
+            "[bold yellow]Enter session name[/bold yellow]",
+            default="bert_annotation",
+        ).strip()
+        slug = AnnotationStudioSessionManager.slugify(raw_name)
+        if self.console and slug != raw_name:
+            self.console.print(f"[dim]Sanitized session name:[/dim] {slug}")
+        return slug
+
+    def _show_session_history(self) -> None:
+        sessions = self.session_manager.list_sessions(limit=40)
+        if not sessions:
+            if self.console:
+                self.console.print("[yellow]No previous sessions to display.[/yellow]")
+            return
+        self.session_manager.render_sessions_table(sessions)
+
+    def _initialize_session(
+        self,
+        session_action: Optional[str] = None,
+        resume_session_id: Optional[str] = None,
+    ) -> bool:
+        """Display the navigation menu and prepare the active session."""
+        action = session_action
+        while True:
+            if action is None:
+                if self.console:
+                    if Table and Panel:
+                        options_table = Table(show_header=False, box=box.ROUNDED if box else None, padding=(0, 2))
+                        options_table.add_column("Option", style="cyan", width=8)
+                        options_table.add_column("Description", style="white")
+                        options_table.add_row("[bold cyan]1[/bold cyan]", "🆕 Start new session (recommended)")
+                        options_table.add_row("[bold cyan]2[/bold cyan]", "🔄 Resume existing session")
+                        options_table.add_row("[bold cyan]3[/bold cyan]", "📚 View session history")
+                        options_table.add_row("[bold cyan]0[/bold cyan]", "⬅️  Back")
+                        panel = Panel(options_table, title="[bold]Annotation Studio Navigator[/bold]", border_style="cyan")
+                        self.console.print(panel)
+                    else:
+                        self.console.print("\n1) Start new session")
+                        self.console.print("2) Resume existing session")
+                        self.console.print("3) View session history")
+                        self.console.print("0) Back")
+                action = Prompt.ask(
+                    "\n[bold yellow]Select an option[/bold yellow]",
+                    choices=["0", "1", "2", "3"],
+                    default="1",
+                )
+
+            if action == "0":
+                return False
+
+            if action == "3":
+                self._show_session_history()
+                action = None
+                continue
+
+            if action == "1":
+                session_slug = self._prompt_session_name()
+                self.session_id = self.session_manager.start_new_session(session_slug)
+                self._resume_mode = False
+                self._resume_from_step = 1
+                self._step_cache = {}
+                if self.console:
+                    self.console.print(f"\n[bold green]✓ Session ID:[/bold green] [cyan]{self.session_id}[/cyan]")
+                    self.console.print(f"[dim]Logs: {self.session_manager.session_dir}[/dim]")
+                return True
+
+            if action == "2":
+                if self._resume_existing_session(resume_session_id):
+                    return True
+                action = None
+                continue
+
+            # Unknown action -> re-display menu
+            action = None
+
+    def _resume_existing_session(self, preferred_id: Optional[str] = None) -> bool:
+        sessions = self.session_manager.list_sessions(limit=40)
+        if not sessions:
+            if self.console:
+                self.console.print("[yellow]No saved sessions available yet.[/yellow]")
+            return False
+
+        chosen_session: Optional[Dict[str, Any]] = None
+        if preferred_id:
+            chosen_session = next((s for s in sessions if s["session_id"] == preferred_id), None)
+            if chosen_session is None and self.console:
+                self.console.print(f"[yellow]Session '{preferred_id}' not found. Showing session selector.[/yellow]")
+
+        while chosen_session is None:
+            self.session_manager.render_sessions_table(sessions)
+            choices = [str(i) for i in range(1, len(sessions) + 1)]
+            selection = Prompt.ask(
+                "\n[bold yellow]Choose a session (0 to cancel)[/bold yellow]",
+                choices=choices + ["0"],
+                default="1",
+            )
+            if selection == "0":
+                return False
+            chosen_session = sessions[int(selection) - 1]
+
+        session_id = chosen_session["session_id"]
+        self.session_manager.resume_session(session_id)
+        self.session_id = session_id
+        self._step_cache = dict(self.session_manager.step_cache)
+        self._resume_mode = True
+
+        if self.console:
+            self.console.print(f"\n[bold green]✓ Loaded session:[/bold green] [cyan]{session_id}[/cyan]")
+            self.console.print(f"[dim]Directory: {self.session_manager.session_dir}[/dim]\n")
+            self.session_manager.render_step_status()
+
+        default_step = self.session_manager.next_pending_step()
+        step_choices = [str(i) for i in range(1, self._total_steps + 1)]
+        resume_choice = Prompt.ask(
+            "\n[bold yellow]Resume from which step?[/bold yellow]",
+            choices=step_choices,
+            default=str(default_step),
+        )
+        self._resume_from_step = int(resume_choice)
+        self.session_manager.record_resume(self._resume_from_step)
+        return True
+
+    def _determine_step_reuse(
+        self,
+        step_key: str,
+        step_no: int,
+        saved_payload: Optional[Dict[str, Any]],
+    ) -> bool:
+        if not self._resume_mode or saved_payload is None:
+            return False
+
+        if step_no < self._resume_from_step:
+            if self.console:
+                self.console.print(
+                    f"[dim]Using saved configuration for Step {step_no}: {self.session_manager.get_step_name(step_key)}[/dim]"
+                )
+            return True
+
+        if step_no == self._resume_from_step:
+            return Confirm.ask(
+                f"Reuse saved configuration for Step {step_no} ({self.session_manager.get_step_name(step_key)})?",
+                default=True,
+            )
+
+        return False
+
+    def _serialize_selected_models(self, models: List[Dict[str, Any]]) -> List[str]:
+        return [entry["relative_name"] for entry in models]
+
+    def _rehydrate_selected_models(self, saved_payload: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
+        saved_models = saved_payload.get("selected_models") if saved_payload else None
+        if not saved_models:
+            return None
+        available = {entry["relative_name"]: entry for entry in self._collect_trained_models()}
+        missing = [name for name in saved_models if name not in available]
+        if missing:
+            if self.console:
+                self.console.print(
+                    f"[yellow]Some saved models are missing on disk: {', '.join(missing)}[/yellow]"
+                )
+            return None
+        return [available[name] for name in saved_models]
+
+    def _serialize_pipeline_plan(self, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        serialized: List[Dict[str, Any]] = []
+        for entry in plan:
+            info = entry.get("info", {})
+            serialized.append(
+                {
+                    "id": entry.get("id"),
+                    "model": info.get("relative_name"),
+                    "scope": entry.get("scope"),
+                    "prefix": entry.get("prefix"),
+                }
+            )
+        return serialized
+
+    def _rehydrate_pipeline_plan(
+        self,
+        selected_models: List[Dict[str, Any]],
+        saved_payload: Dict[str, Any],
+    ) -> Optional[List[Dict[str, Any]]]:
+        saved_plan = saved_payload.get("plan")
+        if not isinstance(saved_plan, list) or not saved_plan:
+            return None
+
+        models_by_name = {entry["relative_name"]: entry for entry in selected_models}
+        plan: List[Dict[str, Any]] = []
+        missing_models: Set[str] = set()
+        for item in saved_plan:
+            model_name = item.get("model")
+            if model_name not in models_by_name:
+                missing_models.add(model_name or "unknown")
+                continue
+            plan.append(
+                {
+                    "id": item.get("id") or models_by_name[model_name]["relative_name"],
+                    "info": models_by_name[model_name],
+                    "scope": item.get("scope") or {"type": "full"},
+                    "prefix": item.get("prefix"),
+                }
+            )
+
+        if missing_models:
+            if self.console:
+                self.console.print(
+                    f"[yellow]Pipeline references missing models: {', '.join(sorted(missing_models))}[/yellow]"
+                )
+            return None
+
+        # Ensure deterministic ordering
+        plan.sort(key=lambda entry: saved_plan.index(next(item for item in saved_plan if item.get("model") == entry["info"]["relative_name"])))
+        return plan
+
+    def _load_dataset_from_state(self, data_source: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        try:
+            if data_source.get("type") == "file":
+                file_path = Path(data_source["path"]).expanduser()
+                file_format = data_source.get("format", "").lower()
+                if file_format == "csv":
+                    return pd.read_csv(file_path)
+                if file_format == "tsv":
+                    return pd.read_csv(file_path, sep="\t")
+                if file_format == "excel":
+                    return pd.read_excel(file_path)
+                if file_format == "json":
+                    return pd.read_json(file_path)
+                if file_format == "jsonl":
+                    return pd.read_json(file_path, lines=True)
+                if file_format == "parquet":
+                    return pd.read_parquet(file_path)
+                if file_format in {"rdata", "rds"}:
+                    import pyreadr  # type: ignore
+
+                    result = pyreadr.read_r(file_path)
+                    if result.keys():
+                        first_key = next(iter(result.keys()))
+                        return result[first_key]
+                raise ValueError(f"Unsupported file format for resume: {file_format}")
+
+            if data_source.get("type") == "sql":
+                connection_string = data_source.get("connection_string")
+                table = data_source.get("table")
+                query = data_source.get("query")
+                limit = data_source.get("limit")
+
+                if not connection_string:
+                    raise ValueError("Missing connection string in saved session.")
+
+                engine = create_engine(connection_string)
+                try:
+                    if query:
+                        return pd.read_sql_query(text(query), engine)
+                    if not table:
+                        raise ValueError("Saved session missing table name.")
+                    sql = f"SELECT * FROM {table}"
+                    if limit:
+                        sql = f"{sql} LIMIT {int(limit)}"
+                    return pd.read_sql_query(text(sql), engine)
+                finally:
+                    engine.dispose()
+
+            raise ValueError("Unsupported data source type.")
+
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self.logger.error("Failed to reload dataset for session %s: %s", self.session_id, exc)
+            if self.console:
+                self.console.print(f"[yellow]Unable to reload dataset automatically: {exc}[/yellow]")
+            return None
+
+    def run(
+        self,
+        session_action: Optional[str] = None,
+        resume_session_id: Optional[str] = None,
+    ):
+        """Main entry point with session-aware navigation."""
         self._display_welcome()
 
+        if not self._initialize_session(session_action, resume_session_id):
+            return
+
+        selected_models: Optional[List[Dict[str, Any]]] = None
+        pipeline_plan: Optional[List[Dict[str, Any]]] = None
+        data_source: Optional[Dict[str, Any]] = None
+        df: Optional[pd.DataFrame] = None
+        column_mapping: Optional[Dict[str, Any]] = None
+        language_info: Optional[Dict[str, Any]] = None
+        correction_config: Optional[Dict[str, Any]] = None
+        annotation_config: Optional[Dict[str, Any]] = None
+        export_config: Optional[Dict[str, Any]] = None
+        execution_summary: Optional[Dict[str, Any]] = None
+
         try:
+            # ------------------------- STEP 1 -------------------------
             self._render_step_header(1, "Select Trained Models", "🎯 Pick the fine-tuned checkpoints you want to apply.")
-            selected_models = self._select_trained_models()
+            step_key = "select_models"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 1, saved_step)
+            if reuse and saved_step:
+                selected_models = self._rehydrate_selected_models(saved_step)
             if not selected_models:
-                return
+                self.session_manager.mark_step_started(step_key)
+                selected_models = self._select_trained_models()
+                if not selected_models:
+                    self.session_manager.mark_step_failed(step_key, "no_models_selected")
+                    self.session_manager.set_status("cancelled")
+                    return
+                self.session_manager.save_step(
+                    step_key,
+                    {"selected_models": self._serialize_selected_models(selected_models)},
+                    summary=f"{len(selected_models)} model(s)",
+                )
 
+            # ------------------------- STEP 2 -------------------------
             self._render_step_header(2, "Configure Pipeline", "⚙️ Order models, set priorities, optionally enable reduction.")
-            pipeline_plan = self._configure_pipeline(selected_models)
+            step_key = "configure_pipeline"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 2, saved_step)
+            if reuse and saved_step:
+                pipeline_plan = self._rehydrate_pipeline_plan(selected_models, saved_step)
             if not pipeline_plan:
-                return
+                self.session_manager.mark_step_started(step_key)
+                pipeline_plan = self._configure_pipeline(selected_models)
+                if not pipeline_plan:
+                    self.session_manager.mark_step_failed(step_key, "pipeline_cancelled")
+                    self.session_manager.set_status("cancelled")
+                    return
+                self.session_manager.save_step(
+                    step_key,
+                    {"plan": self._serialize_pipeline_plan(pipeline_plan)},
+                    summary=f"{len(pipeline_plan)} stage(s)",
+                )
 
+            # ------------------------- STEP 3 -------------------------
             self._render_step_header(3, "Choose Dataset", "📁 Load the texts you want to annotate.")
-            data_source = self._select_data_source()
-            if data_source is None:
-                return
+            step_key = "select_dataset"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 3, saved_step)
+            if reuse and saved_step:
+                data_source = saved_step.get("data_source")
+                if data_source and data_source.get("type") == "file":
+                    if not Path(data_source.get("path", "")).expanduser().exists():
+                        if self.console:
+                            self.console.print("[yellow]Saved dataset path not found. Please re-select.[/yellow]")
+                        data_source = None
+            if not data_source:
+                self.session_manager.mark_step_started(step_key)
+                data_source = self._select_data_source()
+                if data_source is None:
+                    self.session_manager.mark_step_failed(step_key, "dataset_cancelled")
+                    self.session_manager.set_status("cancelled")
+                    return
+                self.session_manager.save_step(
+                    step_key,
+                    {"data_source": data_source},
+                    summary=data_source.get("path") or data_source.get("display_name", "dataset"),
+                )
 
+            # ------------------------- STEP 4 -------------------------
             self._render_step_header(4, "Inspect & Map Columns", "🔍 Tell the studio where the text and identifiers live.")
-            df, column_mapping = self._load_and_analyze_data(data_source, pipeline_plan)
-            if df is None or column_mapping is None:
+            step_key = "map_columns"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 4, saved_step)
+            if reuse and saved_step:
+                column_mapping = saved_step.get("column_mapping")
+                df = self._load_dataset_from_state(data_source) if data_source else None
+                if df is not None:
+                    self._detect_factory_context(data_source, df)
+                if df is None or column_mapping is None:
+                    if self.console:
+                        self.console.print("[yellow]Failed to reuse saved column mapping. Restarting step interactively.[/yellow]")
+                    reuse = False
+            if not reuse:
+                self.session_manager.mark_step_started(step_key)
+                df, column_mapping = self._load_and_analyze_data(data_source, pipeline_plan)
+                if df is None or column_mapping is None:
+                    self.session_manager.mark_step_failed(step_key, "mapping_cancelled")
+                    self.session_manager.set_status("cancelled")
+                    return
+                row_count = int(df.shape[0]) if hasattr(df, "shape") else 0
+                self.session_manager.save_step(
+                    step_key,
+                    {
+                        "column_mapping": column_mapping,
+                        "row_count": row_count,
+                        "columns": list(df.columns),
+                    },
+                    summary=f"{row_count:,} rows detected",
+                )
+            elif df is None or column_mapping is None:
+                self.session_manager.mark_step_failed(step_key, "mapping_unavailable")
+                self.session_manager.set_status("failed")
                 return
 
+            # ------------------------- STEP 5 -------------------------
             self._render_step_header(5, "Name Output Columns", "📝 Define how prediction columns will be named.")
-            pipeline_plan = self._configure_output_columns(pipeline_plan, df, column_mapping)
+            step_key = "output_columns"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 5, saved_step)
+            if reuse and saved_step:
+                rehydrated_plan = self._rehydrate_pipeline_plan(selected_models, saved_step)
+                if rehydrated_plan:
+                    pipeline_plan = rehydrated_plan
+                else:
+                    reuse = False
+            if not reuse:
+                self.session_manager.mark_step_started(step_key)
+                pipeline_plan = self._configure_output_columns(pipeline_plan, df, column_mapping)
+                self.session_manager.save_step(
+                    step_key,
+                    {"plan": self._serialize_pipeline_plan(pipeline_plan)},
+                    summary="Output columns confirmed",
+                )
 
+            # ------------------------- STEP 6 -------------------------
             self._render_step_header(6, "Language Detection", "🌍 Verify language compatibility for your dataset.")
-            models_for_language = [entry["info"] for entry in pipeline_plan]
-            language_info = self._detect_and_validate_language(df, column_mapping, models_for_language)
-            if language_info is None:
-                return
+            step_key = "language_detection"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 6, saved_step)
+            if reuse and saved_step:
+                language_info = saved_step
+            if not reuse:
+                self.session_manager.mark_step_started(step_key)
+                models_for_language = [entry["info"] for entry in pipeline_plan]
+                language_info = self._detect_and_validate_language(df, column_mapping, models_for_language)
+                if language_info is None:
+                    self.session_manager.mark_step_failed(step_key, "language_validation_cancelled")
+                    self.session_manager.set_status("cancelled")
+                    return
+                self.session_manager.save_step(
+                    step_key,
+                    language_info,
+                    summary=f"Primary language: {language_info.get('primary_language')}",
+                )
 
+            # ------------------------- STEP 7 -------------------------
             self._render_step_header(7, "Text Correction", "✏️ Optional preprocessing applied before inference.")
-            correction_config = self._configure_correction()
+            step_key = "text_correction"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 7, saved_step)
+            if reuse and saved_step:
+                correction_config = saved_step
+            else:
+                self.session_manager.mark_step_started(step_key)
+                correction_config = self._configure_correction()
+                self.session_manager.save_step(
+                    step_key,
+                    correction_config or {},
+                    summary="Text correction configured",
+                )
 
+            # ------------------------- STEP 8 -------------------------
             self._render_step_header(8, "Annotation Options", "⚡ Parallelism, batching strategy, and dataset coverage.")
-            annotation_config = self._configure_annotation_options(pipeline_plan, df, column_mapping)
+            step_key = "annotation_options"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 8, saved_step)
+            if reuse and saved_step:
+                annotation_config = saved_step
+            else:
+                self.session_manager.mark_step_started(step_key)
+                annotation_config = self._configure_annotation_options(pipeline_plan, df, column_mapping)
+                self.session_manager.save_step(
+                    step_key,
+                    annotation_config,
+                    summary=f"Parallel: {'yes' if annotation_config.get('parallel') else 'no'}",
+                )
 
+            # ------------------------- STEP 9 -------------------------
             self._render_step_header(9, "Export Options", "💾 Choose what gets written to disk.")
-            export_config = self._configure_export_options()
+            step_key = "export_options"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 9, saved_step)
+            if reuse and saved_step:
+                export_config = saved_step
+            else:
+                self.session_manager.mark_step_started(step_key)
+                export_config = self._configure_export_options()
+                self.session_manager.save_step(step_key, export_config, summary="Export destinations configured")
 
+            # ------------------------- STEP 10 ------------------------
             self._render_step_header(10, "Review & Launch", "🚀 Final checks before the annotation run.")
-            if self._confirm_and_execute(
-                pipeline_plan, data_source, df, column_mapping,
-                language_info, correction_config, annotation_config, export_config
-            ):
-                self.console.print("\n[bold green]✓ Annotation completed successfully![/bold green]")
+            step_key = "review_launch"
+            saved_step = self.session_manager.get_step_data(step_key)
+            reuse = self._determine_step_reuse(step_key, 10, saved_step)
+            if reuse and saved_step and saved_step.get("executed"):
+                execution_summary = saved_step
+                if self.console:
+                    self.console.print("[dim]Previous execution already completed for this session. Skipping launch.[/dim]")
+            else:
+                self.session_manager.mark_step_started(step_key)
+                executed = self._confirm_and_execute(
+                    pipeline_plan,
+                    data_source,
+                    df,
+                    column_mapping,
+                    language_info,
+                    correction_config,
+                    annotation_config,
+                    export_config,
+                )
+                if executed:
+                    execution_summary = {
+                        "executed": True,
+                        "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                        "row_count": int(df.shape[0]) if hasattr(df, "shape") else None,
+                    }
+                    self.session_manager.save_step(
+                        step_key,
+                        execution_summary,
+                        summary="Annotation completed",
+                    )
+                    if self.console:
+                        self.console.print("\n[bold green]✓ Annotation completed successfully![/bold green]")
+                else:
+                    self.session_manager.mark_step_failed(step_key, "execution_cancelled")
+                    self.session_manager.set_status("cancelled")
+                    return
+
+            if execution_summary and execution_summary.get("executed"):
+                self.session_manager.set_status("completed")
 
         except KeyboardInterrupt:
-            self.console.print("\n[yellow]Annotation cancelled[/yellow]")
-        except Exception as e:
-            self.console.print(f"\n[bold red]✗ Error:[/bold red] {str(e)}", markup=False, highlight=False)
+            if self.console:
+                self.console.print("\n[yellow]Annotation cancelled[/yellow]")
+            self.session_manager.set_status("cancelled")
+        except Exception as exc:
+            if self.console:
+                self.console.print(f"\n[bold red]✗ Error:[/bold red] {exc}", markup=False, highlight=False)
             self.logger.exception("BERT Annotation Studio error")
+            self.session_manager.set_status("failed")
         finally:
             input("\nPress Enter to continue...")
 

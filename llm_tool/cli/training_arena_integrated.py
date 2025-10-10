@@ -2733,6 +2733,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 confirm = Confirm.ask("[bold yellow]Use these corrected keys?[/bold yellow]", default=True)
                 if confirm:
                     keys_to_train = corrected_keys
+                    annotation_keys = corrected_keys
                 else:
                     self.console.print("[yellow]Training cancelled. Please try again with correct key names.[/yellow]")
                     return None
@@ -10448,6 +10449,7 @@ def integrate_training_arena_in_annotator_factory(
     import pandas as pd
     import json
     df = pd.read_csv(csv_path)
+    annotated_mask_series = None  # local default; will be populated after analysis
     
     # Analyze dataset structure  
     detector = DataDetector()
@@ -10478,6 +10480,45 @@ def integrate_training_arena_in_annotator_factory(
     console.print(f"  [cyan]Annotation column:[/cyan] '{selected_annotation_column}'")
     console.print(f"  [cyan]Rows:[/cyan] {len(df):,}\n")
     
+    annotated_mask = pd.Series(False, index=df.index, dtype=bool)
+    if selected_annotation_column in df.columns:
+        annotation_series = df[selected_annotation_column]
+        if annotation_series.dtype == object:
+            annotation_str = annotation_series.fillna('').astype(str).str.strip()
+            valid_strings = ~(annotation_str.isin({'', 'nan', '{}', '[]'}))
+            annotation_mask = valid_strings
+        else:
+            annotation_mask = ~annotation_series.isna()
+        annotated_mask |= annotation_mask
+
+    for status_col in ["annotation_status_per_prompt", "annotation_status", "status"]:
+        if status_col in df.columns:
+            statuses = df[status_col].fillna('').astype(str).str.lower()
+            status_mask = (
+                statuses.str.contains('success')
+                | statuses.str.contains('complete')
+                | statuses.str.contains('done')
+            )
+            annotated_mask |= status_mask
+
+    text_non_empty = df[selected_text_column].fillna('').astype(str).str.strip().ne('')
+    annotated_mask &= text_non_empty
+
+    annotated_count = int(annotated_mask.sum())
+    total_text_rows = int(text_non_empty.sum())
+    use_annotated_subset = annotated_count > 0 and annotated_count < total_text_rows
+
+    if use_annotated_subset:
+        console.print(
+            f"[dim]Analytics focus on {annotated_count:,} annotated rows "
+            f"(out of {total_text_rows:,} texts).[/dim]"
+        )
+    elif annotated_count == 0 and total_text_rows > 0:
+        console.print("[yellow]⚠ No annotated rows detected; analytics will use all texts.[/yellow]")
+
+    annotated_subset_df = df.loc[annotated_mask] if use_annotated_subset else None
+    annotated_mask_series = annotated_mask if annotated_count > 0 else None
+
     # Import TrainingDataSessionManager for comprehensive logging
     from llm_tool.utils.training_data_utils import TrainingDataSessionManager
     from datetime import datetime
@@ -10535,7 +10576,10 @@ def integrate_training_arena_in_annotator_factory(
         data_path=csv_path,
         text_column=selected_text_column,  # Use the ACTUAL selected column, not temp
         display_results=True,
-        step_label=f"{resolve_step_label('text_length', 'STEP 5', context=step_context)}: Text Length Analysis"
+        step_label=f"{resolve_step_label('text_length', 'STEP 5', context=step_context)}: Text Length Analysis",
+        analysis_df=annotated_subset_df,
+        total_rows_reference=total_text_rows if total_text_rows else None,
+        subset_label="annotated rows" if use_annotated_subset else None,
     )
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
 
@@ -10595,43 +10639,76 @@ def integrate_training_arena_in_annotator_factory(
             from llm_tool.utils.language_detector import LanguageDetector
 
             if selected_text_column in df.columns:
-                # Analyze ALL texts (not just sample) for precise distribution
-                all_texts = df[selected_text_column].dropna().tolist()
+                temp_df = df[df[selected_text_column].notna()].copy()
 
-                if all_texts:
+                if not temp_df.empty:
                     detector = LanguageDetector()
                     lang_counts = {}
                     detected_languages_per_text = []  # Store language for each text
 
-                    # Progress indicator
-                    from tqdm import tqdm
-                    console.print(f"[dim]Analyzing {len(all_texts)} texts...[/dim]")
+                    if annotated_mask_series is not None:
+                        detection_flags = annotated_mask_series.reindex(temp_df.index, fill_value=False)
+                        annotated_detection_count = int(detection_flags.sum())
+                        limit_detection = annotated_detection_count < len(temp_df)
+                        if annotated_detection_count == 0:
+                            detection_flags = pd.Series(True, index=temp_df.index)
+                            annotated_detection_count = len(temp_df)
+                            limit_detection = False
+                    else:
+                        detection_flags = pd.Series(True, index=temp_df.index)
+                        annotated_detection_count = len(temp_df)
+                        limit_detection = False
 
-                    for text in tqdm(all_texts, desc="Detecting languages", disable=not HAS_RICH):
-                        if text and len(str(text).strip()) > 10:
-                            try:
-                                detected = detector.detect(str(text))
-                                if detected:
-                                    # Handle both dict and string returns
-                                    if isinstance(detected, dict):
-                                        lang = detected.get('language')
-                                        confidence = detected.get('confidence', 0)
-                                        # Use confidence threshold (optional)
-                                        if lang and confidence >= 0.7:  # 70% confidence threshold
-                                            lang_counts[lang] = lang_counts.get(lang, 0) + 1
-                                            detected_languages_per_text.append(lang)
-                                        else:
-                                            detected_languages_per_text.append(None)  # Low confidence
-                                    elif isinstance(detected, str):
-                                        lang_counts[detected] = lang_counts.get(detected, 0) + 1
-                                        detected_languages_per_text.append(detected)
+                    texts_list = temp_df[selected_text_column].astype(str).tolist()
+                    flags_list = detection_flags.astype(bool).tolist()
+
+                    if limit_detection:
+                        console.print(
+                            f"[dim]Analyzing {annotated_detection_count:,} annotated texts "
+                            f"(out of {len(temp_df):,}).[/dim]"
+                        )
+                    else:
+                        console.print(f"[dim]Analyzing {len(temp_df):,} texts...[/dim]")
+
+                    from tqdm import tqdm
+                    index_iterable = range(len(texts_list))
+                    if HAS_RICH:
+                        index_iterable = tqdm(index_iterable, desc="Detecting languages", disable=not HAS_RICH)
+
+                    for idx in index_iterable:
+                        text = texts_list[idx]
+                        analyze_text = flags_list[idx]
+
+                        if not analyze_text:
+                            detected_languages_per_text.append(None)
+                            continue
+
+                        stripped = text.strip()
+                        if not stripped or len(stripped) <= 10:
+                            detected_languages_per_text.append(None)
+                            continue
+
+                        try:
+                            detected = detector.detect(stripped)
+                            if detected:
+                                if isinstance(detected, dict):
+                                    lang = detected.get('language')
+                                    confidence = detected.get('confidence', 0)
+                                    if lang and confidence >= 0.7:
+                                        lang_counts[lang] = lang_counts.get(lang, 0) + 1
+                                        detected_languages_per_text.append(lang)
+                                    else:
+                                        detected_languages_per_text.append(None)
+                                elif isinstance(detected, str):
+                                    lang_counts[detected] = lang_counts.get(detected, 0) + 1
+                                    detected_languages_per_text.append(detected)
                                 else:
                                     detected_languages_per_text.append(None)
-                            except Exception as e:
-                                logger.debug(f"Language detection failed for text: {e}")
+                            else:
                                 detected_languages_per_text.append(None)
-                        else:
-                            detected_languages_per_text.append(None)  # Empty or too short text
+                        except Exception as e:
+                            logger.debug(f"Language detection failed for text: {e}")
+                            detected_languages_per_text.append(None)
 
                     if lang_counts:
                         # Store exact distribution
@@ -11333,6 +11410,7 @@ def integrate_training_arena_in_annotator_factory(
             confirm = Confirm.ask("[bold yellow]Use these corrected keys?[/bold yellow]", default=True)
             if confirm:
                 keys_to_train = corrected_keys
+                annotation_keys = corrected_keys
             else:
                 console.print("[yellow]Training cancelled. Please try again with correct key names.[/yellow]")
                 return None
