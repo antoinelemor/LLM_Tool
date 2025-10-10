@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,25 +10,22 @@ sota_models.py
 
 MAIN OBJECTIVE:
 ---------------
-This script provides state-of-the-art transformer models including DeBERTa-v3, RoBERTa,
-ELECTRA, ALBERT, BigBird, Longformer, and French-specific models (CamemBERTa-v2, FlauBERT,
-etc.) offering superior performance compared to standard BERT for various NLP tasks.
+Bundle state-of-the-art transformer wrappers (DeBERTa, RoBERTa, ELECTRA,
+Longformer, etc.) so the Training Arena can instantiate them through a
+unified BertBase-derived interface.
 
 Dependencies:
 -------------
-- transformers (HuggingFace model classes and tokenizers)
-- LLMTool.bert_base (base implementation)
+- transformers
+- llm_tool.trainers.bert_base
 
 MAIN FEATURES:
 --------------
-1) DeBERTa-v3 models (XSmall, Base, Large) with disentangled attention
-2) RoBERTa variants (Base, Large, Distilled) with robust pretraining
-3) ELECTRA models (Small, Base, Large) for efficient discrimination
-4) ALBERT models (Base, Large, XLarge) with parameter sharing
-5) Long-context models (BigBird, Longformer) for documents up to 4096 tokens
-6) Multilingual models (mDeBERTa-v3, XLM-RoBERTa) for 100+ languages
-7) French-specific models (CamemBERTa-v2, FlauBERT, DistilCamemBERT, FrALBERT, FrELECTRA, BARThez)
-8) All models inherit full training pipeline from BertBase
+1) Provide DeBERTa-v3 variants tuned for disparate resource envelopes
+2) Wrap RoBERTa, ELECTRA, and ALBERT families with consistent constructors
+3) Expose long-context backbones such as BigBird, Longformer, and LED
+4) Include multilingual options like mDeBERTa and XLM-RoBERTa hubs
+5) Offer French-specific models tailored to CamemBERT and FlauBERT ecosystems
 
 Author:
 -------

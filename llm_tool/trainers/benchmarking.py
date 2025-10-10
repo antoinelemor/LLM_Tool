@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,28 +10,38 @@ benchmarking.py
 
 MAIN OBJECTIVE:
 ---------------
-This script provides comprehensive benchmarking capabilities for comparing multiple
-models on datasets, with automatic language detection, model selection, detailed
-logging, and CSV/JSON result export including HuggingFace model identifiers.
+Benchmark multiple transformer models on labelled datasets with automatic
+language handling, dataset preparation, and metrics aggregation.
 
 Dependencies:
 -------------
-- torch (model training)
-- numpy (metrics calculation)
-- LLMTool.model_selector (model selection)
-- LLMTool.multilingual_selector (language analysis)
-- LLMTool.benchmark_dataset_builder (dataset preparation)
+- csv
+- json
+- os
+- random
+- shutil
+- dataclasses
+- pathlib
+- typing
+- numpy
+- torch
+- llm_tool.utils.logging_utils
+- llm_tool.trainers.bert_base
+- llm_tool.trainers.models
+- llm_tool.trainers.benchmark_dataset_builder
+- llm_tool.trainers.model_selector
+- llm_tool.trainers.multilingual_selector
+- llm_tool.trainers.sota_models
+- llm_tool.trainers.data_utils
+- llm_tool.utils.training_paths
 
 MAIN FEATURES:
 --------------
-1) Comprehensive model benchmarking with automatic language detection
-2) Language-aware model selection (French models for French, English for English)
-3) Detailed CSV and JSON logging with HuggingFace model names
-4) Support for multilingual datasets with per-language metrics
-5) Automatic dataset building with class balancing options
-6) Model caching for efficient repeated runs
-7) Interactive model selection based on benchmark results
-8) Integration with vitrine pipeline for result aggregation
+1) Configure benchmark runs with per-category, per-language training loops
+2) Auto-build balanced datasets and manage reinforcement rescue strategies
+3) Select candidate models based on language coverage and resource profiles
+4) Persist metrics, logs, and best-model snapshots for each experiment
+5) Aggregate results into CSV/JSON outputs for reporting and analysis
 
 Author:
 -------

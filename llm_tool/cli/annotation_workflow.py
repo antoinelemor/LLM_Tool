@@ -1,9 +1,41 @@
+#!/usr/bin/env python3
 """
-Shared annotation workflow utilities bridging Annotator (Mode 1) and
-Annotator Factory (Mode 2).
+PROJECT:
+-------
+LLMTool
 
-The goal is to centralise the interactive annotation workflow so the CLI
-modes delegate to a single module while preserving their specific behaviour.
+TITLE:
+------
+annotation_workflow.py
+
+MAIN OBJECTIVE:
+---------------
+Unify the interactive annotation workflow used by the Annotator and Annotator
+Factory CLIs, covering directory scaffolding, step tracking, and resume logic.
+
+Dependencies:
+-------------
+- copy
+- datetime
+- enum
+- pathlib
+- typing
+- rich
+- llm_tool.utils.language_detector
+- llm_tool.utils.data_detector
+- llm_tool.utils.session_summary
+
+MAIN FEATURES:
+--------------
+1) Create mode-specific session directories and metadata scaffolds
+2) Normalise column selections and dataset context across CLI prompts
+3) Track resume steps through AnnotationResumeTracker with step status caching
+4) Persist session progress to resume.json files via shared summary helpers
+5) Render dataset and workflow previews with Rich-powered tables and prompts
+
+Author:
+-------
+Antoine Lemor
 """
 
 from __future__ import annotations
@@ -2827,7 +2859,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                     cli.console.print("\n[yellow]All available rows are already annotated![/yellow]")
                     continue_anyway = Confirm.ask("Continue with relaunch mode?", default=False)
                     if not continue_anyway:
-                        return
+                        return False
                     action_mode = 'relaunch'
                 else:
                     cli.console.print("[yellow]You can annotate:[/yellow]")
@@ -2905,7 +2937,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         api_key = cli._get_api_key(provider)
         if not api_key:
             cli.console.print(f"[red]API key required for {provider}[/red]")
-            return
+            return False
 
     # Build pipeline config
     pipeline_config = {
@@ -2992,6 +3024,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         new_metadata['annotation_session']['timestamp'] = timestamp
         new_metadata['annotation_session']['relaunch_from'] = str(metadata_file.name)
         new_metadata['annotation_session']['action_mode'] = 'relaunch'
+        new_metadata['session_id'] = session_id
         if 'output' not in new_metadata:
             new_metadata['output'] = {}
         new_metadata['output']['output_path'] = str(default_output_path)
@@ -3011,6 +3044,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         resume_metadata['annotation_session']['timestamp'] = timestamp
         resume_metadata['annotation_session']['resume_from'] = str(metadata_file.name)
         resume_metadata['annotation_session']['action_mode'] = 'resume'
+        resume_metadata['session_id'] = session_id
         if 'output' not in resume_metadata:
             resume_metadata['output'] = {}
         resume_metadata['output']['output_path'] = str(default_output_path)
@@ -3057,7 +3091,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
             if state.errors:
                 error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
                 cli.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
-                return
+                return False
 
         # Display results
         annotation_results = state.annotation_results or {}
@@ -3149,3 +3183,6 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     except Exception as exc:
         cli.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
         cli.logger.exception("Resume/Relaunch annotation failed")
+        return False
+
+    return True

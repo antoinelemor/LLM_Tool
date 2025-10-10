@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,19 +10,28 @@ __init__.py
 
 MAIN OBJECTIVE:
 ---------------
-This script initializes the LLMTool package, exposing all
-public classes and functions for easy import.
+Expose the full training toolkit—base classes, language models, SOTA backbones,
+selection utilities, and trainers—through a single import location.
 
 Dependencies:
 -------------
-- All internal modules of the package
+- llm_tool.trainers.bert_abc
+- llm_tool.trainers.bert_base
+- llm_tool.trainers.models
+- llm_tool.trainers.sota_models
+- llm_tool.trainers.model_selector
+- llm_tool.trainers.multilingual_selector
+- llm_tool.trainers.multi_label_trainer
+- llm_tool.trainers.benchmarking
+- llm_tool.trainers.parallel_inference
 
 MAIN FEATURES:
 --------------
-1) Imports and exposes all model classes (BERT variants, SOTA models, multilingual models)
-2) Exposes utility functions for model selection and data processing
-3) Provides training orchestration tools (MultiLabelTrainer, BenchmarkRunner)
-4) Includes CLI interface for interactive training
+1) Re-export BertABC, BertBase, and language-specific model wrappers
+2) Surface SOTA transformer classes for immediate use in training flows
+3) Provide helper utilities for automatic model and language selection
+4) Include multi-label, benchmarking, and dataset builder entry points
+5) Keep backward compatibility by centralising Trainer namespace access
 
 Author:
 -------

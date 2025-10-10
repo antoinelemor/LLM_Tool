@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,26 +10,28 @@ multilingual_selector.py
 
 MAIN OBJECTIVE:
 ---------------
-This script provides sophisticated multilingual model selection based on language
-distribution analysis, automatically recommending optimal models (mDeBERTa-v3,
-XLM-RoBERTa) and creating ensembles for robust cross-lingual performance.
+Analyse language distributions and recommend multilingual transformer models,
+including ensemble strategies and resource-aware guidance.
 
 Dependencies:
 -------------
-- numpy (statistical analysis)
-- langdetect (language detection)
-- LLMTool.sota_models (multilingual model implementations)
+- typing
+- dataclasses
+- enum
+- logging
+- collections
+- numpy
+- llm_tool.trainers.bert_base
+- llm_tool.trainers.sota_models
+- llm_tool.trainers.models
 
 MAIN FEATURES:
 --------------
-1) Automatic language detection and distribution analysis
-2) Performance matrix for 100+ languages across models
-3) Diversity score calculation for language balance
-4) Model recommendation based on language coverage
-5) Ensemble creation for robust multilingual performance
-6) Resource requirement estimation
-7) Task-specific optimization (classification, sentiment, NER, QA)
-8) Performance prediction based on language distribution
+1) Model language distribution via LanguageDistribution and helper enums
+2) Score multilingual backbones using curated performance matrices
+3) Recommend single-model or ensemble strategies tailored to datasets
+4) Estimate resource requirements and provide deployment-friendly hints
+5) Offer utilities to build multilingual ensembles for the training pipeline
 
 Author:
 -------

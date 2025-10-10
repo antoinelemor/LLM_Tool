@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,27 +10,33 @@ model_selector.py
 
 MAIN OBJECTIVE:
 ---------------
-This script implements an intelligent model selection system that recommends optimal
-transformer models based on task complexity, resource constraints, language requirements,
-and performance needs, with built-in benchmarking capabilities for empirical comparison.
+Recommend transformer backbones suited to dataset difficulty, language mix,
+and hardware constraints, with optional benchmarking for validation.
 
 Dependencies:
 -------------
-- torch (PyTorch for benchmarking)
-- numpy (numerical operations)
-- LLMTool.sota_models (SOTA model implementations)
-- LLMTool.models (language-specific models)
+- typing
+- dataclasses
+- enum
+- json
+- os
+- shutil
+- time
+- numpy
+- torch
+- logging
+- llm_tool.trainers.bert_base
+- llm_tool.trainers.sota_models
+- llm_tool.trainers.models
+- llm_tool.utils.training_paths
 
 MAIN FEATURES:
 --------------
-1) Comprehensive model profiling with 30+ pre-configured models
-2) Language-aware selection (English, French, multilingual, etc.)
-3) Task complexity assessment (simple to extreme)
-4) Resource profile matching (minimal to premium hardware)
-5) Empirical benchmarking on user data with detailed metrics
-6) Automatic model recommendation based on multi-criteria scoring
-7) Performance vs efficiency trade-off optimization
-8) Support for long-context models (BigBird, Longformer)
+1) Maintain rich model profiles describing capacity, memory, and accuracy
+2) Map task complexity and resource profiles to candidate model families
+3) Provide automatic selection heuristics with override hooks for users
+4) Run optional benchmarking loops to compare shortlisted models empirically
+5) Return structured recommendations with rationale and deployment guidance
 
 Author:
 -------

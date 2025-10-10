@@ -1,11 +1,37 @@
 #!/usr/bin/env python3
 """
-Utilities to standardise resume metadata across interactive modes.
+PROJECT:
+-------
+LLMTool
 
-Each interactive workflow (Annotator, Annotator Factory, Training Arena,
-BERT Annotation Studio) persists a ``resume.json`` file alongside its
-session artefacts. The helpers in this module keep the schema consistent
-while allowing each mode to attach mode-specific context.
+TITLE:
+------
+session_summary.py
+
+MAIN OBJECTIVE:
+---------------
+Maintain a consistent resume metadata schema for interactive sessions and
+provide helpers to read, merge, and aggregate summaries across workflows.
+
+Dependencies:
+-------------
+- json
+- dataclasses
+- datetime
+- pathlib
+- typing
+
+MAIN FEATURES:
+--------------
+1) Normalised SessionSummary dataclass with timestamp management
+2) Robust JSON serialisation/deserialisation helpers with fallbacks
+3) Merge utilities that reconcile persisted and in-memory updates safely
+4) Collection helpers to surface recent sessions per interactive mode
+5) Step tracking conveniences for resume prompts and status reporting
+
+Author:
+-------
+Antoine Lemor
 """
 
 from __future__ import annotations

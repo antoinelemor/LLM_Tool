@@ -170,6 +170,9 @@ from llm_tool.utils.training_paths import get_training_logs_base
 from . import training_arena_integrated as training_arena
 from .annotation_workflow import (
     AnnotationMode,
+    ANNOTATOR_RESUME_STEPS,
+    FACTORY_RESUME_STEPS,
+    AnnotationResumeTracker,
     create_session_directories,
     execute_from_metadata,
     run_annotator_workflow,
@@ -5948,14 +5951,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         if not columns:
             return
 
-        table = Table(title="📊 Colonnes disponibles", box=box.SIMPLE_HEAD, show_lines=False)
+        table = Table(title="📊 Available Columns", box=box.SIMPLE_HEAD, show_lines=False)
         if show_indices:
             table.add_column("#", style="cyan", justify="right", width=3)
-        table.add_column("Colonne", style="green", overflow="fold")
+        table.add_column("Column", style="green", overflow="fold")
         table.add_column("Type", style="yellow", no_wrap=True)
         if include_detection:
-            table.add_column("Profil", style="magenta", overflow="fold")
-        table.add_column("Extrait", style="white", overflow="fold")
+            table.add_column("Profile", style="magenta", overflow="fold")
+        table.add_column("Sample", style="white", overflow="fold")
 
         for idx, col in enumerate(columns, 1):
             series = df[col]
@@ -5984,9 +5987,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             table.add_row(*row)
 
         if len(df.columns) > max_columns:
-            table.caption = (
-                f"Affichage des {max_columns} premières colonnes sur {len(df.columns)}"
-            )
+            table.caption = f"Showing first {max_columns} of {len(df.columns)} columns"
 
         self.console.print(table)
 
@@ -6001,7 +6002,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             samples = df[highlight].dropna().astype(str).head(sample_rows)
             if not samples.empty:
                 text_table = Table(
-                    title=f"📝 Extraits – {highlight}",
+                    title=f"📝 Samples – {highlight}",
                     box=box.SIMPLE_HEAD,
                     show_header=False,
                 )
@@ -6358,6 +6359,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             session_info['parent_session_id'] = previous_session_id
 
         session_info['session_id'] = session_id
+        session_info['timestamp'] = timestamp
         metadata['session_id'] = session_id
 
         if is_factory:
@@ -6365,13 +6367,49 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         else:
             session_dirs = self._create_annotator_session_directories(session_id)
 
-        execute_from_metadata(
+        session_name = session_info.get('session_name', session_id)
+        step_catalog = FACTORY_RESUME_STEPS if is_factory else ANNOTATOR_RESUME_STEPS
+        tracker = AnnotationResumeTracker(
+            mode=AnnotationMode.FACTORY if is_factory else AnnotationMode.ANNOTATOR,
+            session_id=session_id,
+            session_dirs=session_dirs,
+            step_catalog=step_catalog,
+            session_name=session_name,
+        )
+        tracker.update_status("active")
+        run_step_no = 6
+
+        tracker.mark_step(
+            run_step_no,
+            status="in_progress",
+            detail="Running annotation from saved parameters",
+            overall_status="active",
+        )
+
+        succeeded = execute_from_metadata(
             self,
             metadata,
             action_mode,
             metadata_file,
             session_dirs=session_dirs
         )
+
+        if succeeded:
+            tracker.mark_step(
+                run_step_no,
+                status="completed",
+                detail="Annotation completed from saved parameters",
+                overall_status="completed",
+            )
+            return
+        else:
+            tracker.mark_step(
+                run_step_no,
+                status="failed",
+                detail="Annotation run failed",
+                overall_status="failed",
+            )
+            return
 
     def _clean_metadata(self):
         """Clean old metadata files"""

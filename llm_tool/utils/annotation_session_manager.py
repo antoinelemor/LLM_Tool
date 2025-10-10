@@ -1,13 +1,40 @@
 #!/usr/bin/env python3
 """
-Utilities to provide persistent session logging and resume support for
-the BERT Annotation Studio workflow.
+PROJECT:
+-------
+LLMTool
 
-This module mirrors the capabilities offered in other interactive modes:
-each session is recorded under ``logs/annotation_studio/{session_id}``,
-with JSON metadata that tracks step progression, user inputs, and
-artifacts. When re-launching the studio, the manager makes it possible
-to relaunch or resume any session with a detailed step navigator.
+TITLE:
+------
+annotation_session_manager.py
+
+MAIN OBJECTIVE:
+---------------
+Provide persistent session tracking for the BERT Annotation Studio so users
+can resume interactive pipelines with full step history, artefacts, and logs.
+
+Dependencies:
+-------------
+- json
+- logging
+- dataclasses
+- datetime
+- pathlib
+- typing
+- rich
+- llm_tool.utils.session_summary
+
+MAIN FEATURES:
+--------------
+1) Create, resume, and close annotation studio sessions with timestamped metadata
+2) Persist per-step payloads and artefacts for reproducible restarts
+3) Synchronise session state with shared SessionSummary infrastructure
+4) Offer helper APIs to update step status, cache results, and log activity
+5) Render session overviews and step tables through Rich when available
+
+Author:
+-------
+Antoine Lemor
 """
 
 from __future__ import annotations

@@ -1,5 +1,36 @@
 #!/usr/bin/env python3
-"""Shared helpers to centralize training output directories."""
+"""
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+training_paths.py
+
+MAIN OBJECTIVE:
+---------------
+Centralise session-aware filesystem paths for the Training Arena so logs,
+metrics, and metadata stay consistent across workflows and overrideable
+by the CLI.
+
+Dependencies:
+-------------
+- pathlib
+- typing
+
+MAIN FEATURES:
+--------------
+1) Configure and reset the base directory used for training sessions
+2) Generate per-session directories for metrics, data, and metadata
+3) Allow explicit session directory overrides outside the default hierarchy
+4) Provide helpers to retrieve reproducible session subpaths everywhere
+5) Resolve metrics output locations while honouring user overrides
+
+Author:
+-------
+Antoine Lemor
+"""
 
 from __future__ import annotations
 

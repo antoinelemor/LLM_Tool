@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,28 +10,37 @@ multi_label_trainer.py
 
 MAIN OBJECTIVE:
 ---------------
-This script implements a sophisticated multi-label training system that trains
-separate binary classifiers for each label in multi-label datasets, with support
-for language-specific models, parallel training, and automatic model organization.
+Train and manage collections of binary or multi-class transformers for
+multi-label datasets with language awareness and optional reinforcement.
 
 Dependencies:
 -------------
-- pandas & numpy (data handling)
-- concurrent.futures (parallel training)
-- LLMTool.bert_base_enhanced (model training)
-- LLMTool.model_selector (automatic model selection)
-- LLMTool.multilingual_selector (language-specific models)
+- os
+- json
+- logging
+- typing
+- dataclasses
+- collections
+- concurrent.futures
+- pandas
+- numpy
+- tqdm
+- csv
+- datetime
+- llm_tool.trainers.data_utils
+- llm_tool.trainers.bert_base
+- llm_tool.trainers.multilingual_selector
+- llm_tool.trainers.model_selector
+- llm_tool.trainers.sota_models
+- llm_tool.utils.training_paths
 
 MAIN FEATURES:
 --------------
-1) Trains separate binary classifiers for each label in multi-label data
-2) Language-aware training (separate models per language or multilingual)
-3) Automatic model naming convention (label_language format)
-4) Parallel training support for multiple models simultaneously
-5) Automatic model selection based on data characteristics
-6) Comprehensive performance tracking and logging
-7) Organized output structure with model summaries
-8) Support for both JSONL and CSV multi-label formats
+1) Convert multi-label samples into per-label training corpora
+2) Select models automatically per label and language with fallback heuristics
+3) Support parallel training via thread or process pools with progress bars
+4) Integrate reinforced learning loops when classes underperform
+5) Persist metrics, models, and training artefacts in session-aware directories
 
 Author:
 -------

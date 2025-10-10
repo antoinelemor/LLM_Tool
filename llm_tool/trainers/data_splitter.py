@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,26 +10,25 @@ data_splitter.py
 
 MAIN OBJECTIVE:
 ---------------
-This script provides advanced data splitting functionality with stratification
-by labels and languages, ensuring balanced distribution across train/validation/test
-sets while maintaining class proportions and language representation.
+Split datasets into train/validation/test partitions while maintaining
+label and language balance for both single and multi-label workflows.
 
 Dependencies:
 -------------
-- numpy (random sampling)
-- random (shuffling and sampling)
-- logging (status reporting)
+- random
+- typing
+- collections
+- numpy
+- dataclasses
+- logging
 
 MAIN FEATURES:
 --------------
-1) Stratified splitting maintaining label distribution across splits
-2) Language stratification for multilingual datasets
-3) Multi-label compatibility with proper distribution
-4) Flexible train/validation/test ratio configuration
-5) Minimum sample guarantee per stratum
-6) Reproducible splits with random seed control
-7) Verbose logging of split statistics
-8) Automatic adjustment for small strata
+1) Configure stratification behaviour through the SplitConfig dataclass
+2) Perform label-aware splits with optional language stratification
+3) Support multi-label inputs by deriving composite stratification keys
+4) Guarantee minimum sample counts per stratum and normalise ratios
+5) Provide verbose logging and helper utilities for downstream inspection
 
 Author:
 -------

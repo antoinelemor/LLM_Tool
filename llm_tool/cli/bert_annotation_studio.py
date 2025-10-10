@@ -56,6 +56,7 @@ import os
 import json
 import re
 from collections import Counter, defaultdict
+import itertools
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Callable, Set
 from datetime import datetime
@@ -114,6 +115,8 @@ class BERTAnnotationStudio:
         self.models_dir = Path(getattr(self.settings.paths, "models_dir", "models"))
         self.data_dir = Path(getattr(self.settings.paths, "data_dir", "data"))
         self._language_assignments: Optional[pd.Series] = None
+        self._language_annotation_mask: Optional[pd.Series] = None
+        self._allowed_annotation_languages: List[str] = []
         self._total_steps: int = 9
         self._is_factory_context: bool = False
         self._annotated_row_mask: Optional[pd.Series] = None
@@ -628,10 +631,35 @@ class BERTAnnotationStudio:
                     self.console.print("[dim]Previous execution already completed for this session. Skipping launch.[/dim]")
             else:
                 self.session_manager.mark_step_started(step_key)
+                df_for_execution = df
+                language_mask = getattr(self, "_language_annotation_mask", None)
+                allowed_languages = getattr(self, "_allowed_annotation_languages", [])
+                if df is not None and language_mask is not None and len(language_mask) == len(df):
+                    filtered_df = df[language_mask].copy()
+                    retained_rows = len(filtered_df)
+                    skipped_rows = len(df) - retained_rows
+                    if retained_rows == 0:
+                        self.console.print("[red]✗ No rows eligible for annotation after applying language filters.[/red]")
+                        self.session_manager.mark_step_failed(step_key, "language_filter_empty")
+                        self.session_manager.set_status("cancelled")
+                        return
+                    if skipped_rows > 0:
+                        self.console.print(
+                            f"[dim]Language filter applied before execution: {retained_rows:,} rows retained "
+                            f"({skipped_rows:,} skipped).[/dim]"
+                        )
+                    df_for_execution = filtered_df
+                    scope_cfg = annotation_config.get('scope', {})
+                    if isinstance(scope_cfg, dict):
+                        if scope_cfg.get('type') in {'head', 'random'}:
+                            scope_cfg['size'] = min(int(scope_cfg.get('size', retained_rows)), retained_rows)
+                        annotation_config['scope'] = scope_cfg
+                if allowed_languages:
+                    annotation_config['languages_to_annotate'] = allowed_languages
                 executed = self._confirm_and_execute(
                     pipeline_plan,
                     data_source,
-                    df,
+                    df_for_execution,
                     column_mapping,
                     language_info,
                     annotation_config,
@@ -641,7 +669,7 @@ class BERTAnnotationStudio:
                     execution_summary = {
                         "executed": True,
                         "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                        "row_count": int(df.shape[0]) if hasattr(df, "shape") else None,
+                        "row_count": int(df_for_execution.shape[0]) if hasattr(df_for_execution, "shape") else None,
                     }
                     self.session_manager.save_step(
                         step_key,
@@ -710,6 +738,15 @@ class BERTAnnotationStudio:
             for idx, model in enumerate(ordered_models, 1):
                 macro = model['metrics'].get('macro_f1')
                 macro_text = f"{macro:.3f}" if isinstance(macro, (int, float)) else "—"
+                per_language_metrics = model.get("metrics_per_language") or model['metrics'].get('per_language', {})
+                if per_language_metrics:
+                    per_parts = []
+                    for lang_key in sorted(per_language_metrics):
+                        value = per_language_metrics[lang_key]
+                        if isinstance(value, (int, float)):
+                            per_parts.append(f"{lang_key}:{value:.3f}")
+                    if per_parts:
+                        macro_text = f"{macro_text}\n[dim]{' | '.join(per_parts)}[/dim]"
                 id2label_pairs = model.get("id2label_pairs") or []
                 label_total = model.get("label_count") or len(id2label_pairs)
                 model_display = self._condense_relative_name(model['relative_name'])
@@ -717,11 +754,13 @@ class BERTAnnotationStudio:
                 if base_display and base_display.lower() not in model_display.lower():
                     model_display = f"{model_display}\n[dim]{base_display}[/dim]"
                 task_display = str(model.get("label_value") or "—")
+                confirmed_langs = model.get("confirmed_languages") or [model.get("language")]
+                lang_display = ", ".join(confirmed_langs)
                 summary.add_row(
                     str(idx),
                     model_display,
                     task_display,
-                    model['language'],
+                    lang_display,
                     str(label_total),
                     self._format_id2label_pairs(id2label_pairs),
                     macro_text,
@@ -1413,6 +1452,17 @@ class BERTAnnotationStudio:
             relative_name = str(model_dir.relative_to(self.models_dir)).replace(os.sep, "/")
             base_model = model_dir.name
             language = self._infer_language(model_dir, base_model, config)
+            confirmed_langs_raw = config.get("confirmed_languages") or []
+            confirmed_languages = sorted(
+                {
+                    (LanguageNormalizer.normalize_language(lang) or str(lang).strip() or "UNKNOWN").upper()
+                    for lang in confirmed_langs_raw
+                    if lang is not None
+                }
+            )
+            if not confirmed_languages:
+                fallback_lang = LanguageNormalizer.normalize_language(language) or language or "UNKNOWN"
+                confirmed_languages = [str(fallback_lang).upper()]
 
             id2label_pairs = self._extract_id2label_pairs(config)
             if not id2label_pairs and metadata_label_names:
@@ -1475,9 +1525,11 @@ class BERTAnnotationStudio:
                     "relative_name": relative_name,
                     "base_model": base_model,
                     "language": language,
-                    "is_multilingual": language == "MULTI",
+                    "confirmed_languages": confirmed_languages,
+                    "is_multilingual": language == "MULTI" or len(confirmed_languages) > 1,
                     "label_count": label_count if label_count else 0,
                     "metrics": metrics,
+                    "metrics_per_language": metrics.get("per_language", {}) if isinstance(metrics, dict) else {},
                     "updated_at": updated_at,
                     "column_prefix": self._sanitize_model_prefix(relative_name),
                     "label_value": label_value,
@@ -1506,7 +1558,21 @@ class BERTAnnotationStudio:
             latest = data[-1]
             averages = latest.get("averages", {})
             macro = averages.get("macro_f1") or averages.get("f1_macro")
-            return {"macro_f1": macro, "raw": latest}
+            per_language: Dict[str, float] = {}
+            metrics_by_language = latest.get("metrics", {}) or {}
+            for lang_code, values in metrics_by_language.items():
+                if not isinstance(values, dict):
+                    continue
+                normalized = LanguageNormalizer.normalize_language(lang_code) or str(lang_code)
+                lang_key = normalized.upper()
+                score = values.get("macro_f1") or values.get("f1_macro")
+                if isinstance(score, (int, float)):
+                    per_language[lang_key] = float(score)
+            return {
+                "macro_f1": macro,
+                "per_language": per_language,
+                "raw": latest,
+            }
 
         return {}
 
@@ -2445,6 +2511,8 @@ class BERTAnnotationStudio:
     ) -> Tuple[Optional[pd.DataFrame], Optional[Dict]]:
         """Load the dataset and help the user map mandatory columns."""
         self._language_assignments = None
+        self._language_annotation_mask = None
+        self._allowed_annotation_languages = []
         model_infos: List[Dict[str, Any]] = [
             entry["info"] if isinstance(entry, dict) and "info" in entry else entry
             for entry in (models_or_plan or [])
@@ -2705,6 +2773,33 @@ class BERTAnnotationStudio:
             entry["info"] if isinstance(entry, dict) and "info" in entry else entry
             for entry in (models_or_plan or [])
         ]
+        model_language_map: Dict[str, List[str]] = {}
+        language_to_models: Dict[str, List[Dict[str, Any]]] = {}
+        for model in model_infos:
+            model_key = model.get("relative_name") or str(
+                model.get("label_value")
+                or model.get("base_model")
+                or model.get("path")
+                or "model"
+            )
+            raw_langs = model.get("confirmed_languages") or [model.get("language")]
+            normalized_langs = sorted(
+                {
+                    (LanguageNormalizer.normalize_language(lang) or str(lang).strip() or "UNKNOWN").upper()
+                    for lang in raw_langs
+                    if lang is not None
+                }
+            )
+            if not normalized_langs:
+                fallback_lang = (
+                    LanguageNormalizer.normalize_language(model.get("language"))
+                    or model.get("language")
+                    or "UNKNOWN"
+                )
+                normalized_langs = [str(fallback_lang).upper()]
+            model_language_map[model_key] = normalized_langs
+            for lang in normalized_langs:
+                language_to_models.setdefault(lang, []).append(model)
 
         self.console.print("\n[cyan]We analyse a sample of texts to infer the language.[/cyan]")
         self.console.print("[cyan]If you already track language codes, you can reuse that column to avoid auto-detection.[/cyan]\n")
@@ -2764,13 +2859,16 @@ class BERTAnnotationStudio:
 
         self._present_language_analysis(analysis_results)
 
+        language_counts_upper: Dict[str, int] = {}
+        for lang, count in language_counts.items():
+            normalized = LanguageNormalizer.normalize_language(lang) or lang
+            key = normalized.upper()
+            language_counts_upper[key] = language_counts_upper.get(key, 0) + count
+        language_counts = language_counts_upper
+
         sorted_langs = sorted(language_counts.items(), key=lambda item: item[1], reverse=True)
-        primary_lang = LanguageNormalizer.normalize_language(sorted_langs[0][0]) or sorted_langs[0][0]
-        primary_lang = primary_lang.upper()
-        unique_languages = {
-            (LanguageNormalizer.normalize_language(lang) or lang).upper()
-            for lang in language_counts.keys()
-        }
+        primary_lang = sorted_langs[0][0]
+        unique_languages = set(language_counts.keys())
 
         if detection_source == "column" and language_column:
             column_mapping['language'] = language_column
@@ -2782,12 +2880,12 @@ class BERTAnnotationStudio:
         else:
             column_mapping['language'] = '__detected_language__'
 
-        model_languages = {m['language'] for m in model_infos}
-        has_multilingual = any(m.get('is_multilingual', False) for m in model_infos)
-        model_lang_str = ", ".join(sorted(model_languages))
+        languages_supported = set(itertools.chain.from_iterable(model_language_map.values()))
+        has_multilingual = any(len(langs) > 1 for langs in model_language_map.values())
+        model_lang_str = ", ".join(sorted(languages_supported)) if languages_supported else "—"
         self.console.print(f"[cyan]Model language(s): {model_lang_str} • Primary data language: {primary_lang}[/cyan]")
 
-        is_compatible = has_multilingual or primary_lang in model_languages
+        is_compatible = not model_language_map or primary_lang in languages_supported or has_multilingual
         if is_compatible:
             self.console.print("[green]✓ At least one model is compatible with detected language[/green]")
         else:
@@ -2800,13 +2898,94 @@ class BERTAnnotationStudio:
         if len(unique_languages) > 1 and not has_multilingual:
             self.console.print("[yellow]⚠ Multiple languages detected but the model is monolingual.[/yellow]")
 
-        return {
+        languages_detected_sorted = sorted(unique_languages)
+        languages_without_model = sorted(lang for lang in unique_languages if lang not in languages_supported)
+        languages_to_annotate = sorted(lang for lang in unique_languages if lang in languages_supported)
+
+        language_series = self._language_assignments
+        if language_series is None or len(language_series) != len(df):
+            language_series = self._get_or_compute_row_languages(
+                df,
+                column_mapping,
+                {
+                    'language_column': language_column,
+                    'detection_source': detection_source,
+                },
+            )
+        language_series = language_series.astype(str).str.upper()
+        self._language_assignments = language_series
+
+        language_mask = (
+            language_series.isin(languages_to_annotate)
+            if languages_to_annotate
+            else pd.Series([True] * len(language_series), index=language_series.index)
+        )
+        eligible_count = int(language_mask.sum())
+        skipped_count = len(language_series) - eligible_count
+
+        if languages_detected_sorted:
+            self.console.print("\n[bold]🔗 Language → Model mapping[/bold]")
+            for lang in languages_detected_sorted:
+                models_for_lang = language_to_models.get(lang, [])
+                if models_for_lang:
+                    formatted_models: List[str] = []
+                    for mdl in models_for_lang:
+                        display_name = self._condense_relative_name(
+                            mdl.get("relative_name")
+                            or mdl.get("label_value")
+                            or str(mdl.get("base_model") or "model")
+                        )
+                        per_metrics = mdl.get("metrics_per_language") or mdl.get("metrics", {}).get("per_language", {})
+                        score = per_metrics.get(lang) if isinstance(per_metrics, dict) else None
+                        if isinstance(score, (int, float)):
+                            formatted_models.append(f"{display_name} ({score:.3f})")
+                        else:
+                            formatted_models.append(display_name)
+                    self.console.print(f"  • {lang}: {', '.join(formatted_models)}")
+                else:
+                    self.console.print(f"[yellow]  • {lang}: no selected model — rows skipped[/yellow]")
+
+        if skipped_count > 0:
+            self.console.print(
+                f"[dim]Language filter will retain {eligible_count:,} rows "
+                f"({skipped_count:,} skipped without coverage).[/dim]"
+            )
+        else:
+            self.console.print(f"[dim]All {eligible_count:,} rows match the selected model languages.[/dim]")
+
+        if eligible_count == 0:
+            self.console.print(
+                "[red]✗ No rows remain after applying language compatibility filters. "
+                "Select another model or adjust your dataset.[/red]"
+            )
+            return None
+
+        self._language_annotation_mask = language_mask
+        self._allowed_annotation_languages = languages_to_annotate
+
+        language_info = {
             'primary_language': primary_lang,
-            'languages': sorted(unique_languages),
-            'counts': {lang.upper(): count for lang, count in language_counts.items()},
+            'languages': languages_detected_sorted,
+            'counts': {lang: int(language_counts.get(lang, 0)) for lang in languages_detected_sorted},
             'language_column': language_column,
             'detection_source': detection_source,
+            'model_languages': model_language_map,
+            'language_to_models': {
+                lang: [
+                    mdl.get("relative_name")
+                    or str(mdl.get("label_value") or mdl.get("base_model") or "model")
+                    for mdl in language_to_models.get(lang, [])
+                ]
+                for lang in languages_detected_sorted
+            },
+            'languages_supported': sorted(languages_supported),
+            'languages_to_annotate': languages_to_annotate,
+            'languages_without_model': languages_without_model,
+            'eligible_row_count': eligible_count,
+            'skipped_row_count': skipped_count,
+            'total_row_count': int(len(df)),
         }
+        return language_info
 
     def _configure_annotation_options(
         self,
@@ -2818,7 +2997,21 @@ class BERTAnnotationStudio:
         gpu_available = resources.gpu.available
         recommendations = resources.get_recommendation()
         recommended_batch = max(8, recommendations.get('batch_size', 16))
-        total_rows = len(df)
+        language_mask = getattr(self, "_language_annotation_mask", None)
+        usable_df = df
+        if language_mask is not None and len(language_mask) == len(df):
+            eligible_rows = int(language_mask.sum())
+            if eligible_rows <= 0:
+                self.console.print("[red]✗ No eligible rows remain for annotation after language filtering.[/red]")
+                raise ValueError("Language filter removed all rows")
+            if eligible_rows < len(df):
+                skipped = len(df) - eligible_rows
+                self.console.print(
+                    f"[dim]Language filter active: {eligible_rows:,}/{len(df):,} rows eligible "
+                    f"({skipped:,} skipped).[/dim]"
+                )
+            usable_df = df[language_mask]
+        total_rows = len(usable_df)
 
         self.console.print("\n[cyan]Tune how inference workers run and decide how much of the dataset to annotate.[/cyan]\n")
 
@@ -2949,6 +3142,9 @@ class BERTAnnotationStudio:
             scope = {"type": "full"}
 
         annotation_config['scope'] = scope
+        annotation_config.setdefault('disable_tqdm', False)
+        annotation_config['show_progress'] = True
+        annotation_config['eligible_rows'] = total_rows
         return annotation_config
 
     def _configure_export_options(self) -> Dict[str, Any]:

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,21 +10,23 @@ bert_abc.py
 
 MAIN OBJECTIVE:
 ---------------
-This script defines the abstract base class for all BERT model implementations,
-ensuring consistent interface across different model variants.
+Define the abstract base contract that all Bert-based trainers must follow,
+ensuring consistent encode, training, and prediction interfaces.
 
 Dependencies:
 -------------
-- torch
-- abc (Abstract Base Classes)
+- abc
 - typing
+- torch.types
+- torch.utils.data
 
 MAIN FEATURES:
 --------------
-1) Defines abstract methods for model initialization
-2) Specifies interface for text encoding and data loading
-3) Establishes contract for training and prediction methods
-4) Ensures consistent API across all BERT variants
+1) Declare constructor requirements shared by every Bert implementation
+2) Specify the encode API for turning raw text into tensors
+3) Enforce training and prediction method signatures across subclasses
+4) Provide hooks for on-disk prediction using saved checkpoints
+5) Standardise time formatting helpers used by downstream dashboards
 
 Author:
 -------

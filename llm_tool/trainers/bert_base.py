@@ -1,7 +1,8 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
-AugmentedSocialScientistFork
+LLMTool
 
 TITLE:
 ------
@@ -9,29 +10,43 @@ bert_base.py
 
 MAIN OBJECTIVE:
 ---------------
-This script implements the base BERT model class with comprehensive training,
-evaluation, and prediction capabilities including reinforced learning, per-language
-metrics tracking, and automatic device detection (CUDA/MPS/CPU).
+Implement the core BertBase trainer with encoding, training, evaluation,
+reinforced learning, logging, and device management for transformer models.
 
 Dependencies:
 -------------
-- torch (PyTorch for deep learning)
-- transformers (HuggingFace transformers library)
-- numpy (numerical operations)
-- scikit-learn (metrics calculation)
-- tqdm (progress bars)
-- colorama & tabulate (enhanced console output)
+- datetime
+- random
+- time
+- os
+- shutil
+- csv
+- copy
+- json
+- warnings
+- typing
+- collections
+- pathlib
+- numpy
+- torch
+- scipy
+- sklearn
+- transformers
+- tqdm
+- rich
+- colorama
+- tabulate
+- llm_tool.utils.training_paths
+- llm_tool.trainers.bert_abc
+- llm_tool.utils.logging_utils
 
 MAIN FEATURES:
 --------------
-1) Automatic device detection (CUDA GPU, Apple Silicon MPS, or CPU)
-2) Text encoding and tokenization with attention masks
-3) Comprehensive training with per-epoch checkpointing and metrics logging
-4) Reinforced learning for imbalanced datasets (automatic trigger when F1 < 0.60)
-5) Per-language performance tracking for multilingual datasets
-6) CSV and JSON logging of all training metrics
-7) Model saving/loading with HuggingFace compatibility
-8) Batch prediction with softmax probabilities
+1) Detect hardware capabilities and configure optimised training pipelines
+2) Encode text into TensorDatasets with attention masks and metadata
+3) Train models with learning rate scheduling, logging, and checkpointing
+4) Trigger reinforced learning loops when class metrics fall below thresholds
+5) Generate comprehensive progress dashboards and export metrics to disk
 
 Author:
 -------

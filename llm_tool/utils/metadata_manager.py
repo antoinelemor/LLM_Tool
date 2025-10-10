@@ -1,6 +1,43 @@
+#!/usr/bin/env python3
 """
-Comprehensive Metadata Management System for Training Arena
-Ensures complete session persistence and perfect resume capability.
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+metadata_manager.py
+
+MAIN OBJECTIVE:
+---------------
+Capture exhaustive training session metadata for the Training Arena with
+backups, resume integration, and checkpoint management to guarantee perfect
+reproducibility.
+
+Dependencies:
+-------------
+- json
+- logging
+- pathlib
+- datetime
+- typing
+- hashlib
+- platform
+- sys
+- llm_tool.utils.training_paths
+- llm_tool.utils.session_summary
+
+MAIN FEATURES:
+--------------
+1) Persist comprehensive training metadata with automatic backup rotation
+2) Update and validate existing metadata while keeping resume summaries in sync
+3) Extract dataset, language, split, and hyperparameter details from bundles
+4) Manage checkpoint serialisation and recovery across reinforcement cycles
+5) Generate hash fingerprints and environment descriptors for provenance
+
+Author:
+-------
+Antoine Lemor
 """
 
 import json

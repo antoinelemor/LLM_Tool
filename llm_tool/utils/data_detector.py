@@ -1,10 +1,41 @@
 #!/usr/bin/env python3
 """
-Utilities to analyse datasets for the CLI workflows.
+PROJECT:
+-------
+LLMTool
 
-This module centralises the dataset detection logic that used to live in
-`advanced_cli.py` so it can be reused by both the Training Arena and
-Annotator Factory integrations without circular imports.
+TITLE:
+------
+data_detector.py
+
+MAIN OBJECTIVE:
+---------------
+Detect and analyse candidate datasets for annotation and training workflows,
+providing structural metadata, column heuristics, and readiness diagnostics.
+
+Dependencies:
+-------------
+- json
+- logging
+- re
+- collections
+- dataclasses
+- pathlib
+- typing
+- pandas
+- pyreadr
+
+MAIN FEATURES:
+--------------
+1) Recursively scan directories to surface supported dataset formats
+2) Inspect files with pandas to infer schema, label columns, and sizes
+3) Estimate textual content, annotation structure, and JSON-rich fields
+4) Score potential language, label, and annotation columns for the CLI
+5) Produce detailed analysis payloads reused by CLI wizards and reports
+
+Author:
+-------
+Antoine Lemor
 """
 
 from __future__ import annotations

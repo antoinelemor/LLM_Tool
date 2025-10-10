@@ -1,6 +1,33 @@
+#!/usr/bin/env python3
 """
-Smart Reinforced Training Parameters
-Adapts reinforced training parameters based on model characteristics and failure mode
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+reinforced_params.py
+
+MAIN OBJECTIVE:
+---------------
+Derive reinforced training hyperparameters based on prior model performance
+so low-performing classes receive corrective optimisation.
+
+Dependencies:
+-------------
+- builtins
+
+MAIN FEATURES:
+--------------
+1) Compute learning rate, class weights, and epoch adjustments per scenario
+2) Apply model-specific tweaks for architectures such as XLM-R, ALBERT, or DeBERTa
+3) Support multi-class weighting using per-class F1 feedback
+4) Expose early stopping recommendations tuned for reinforcement runs
+5) Suggest additional techniques (focal loss, mixup, scheduling) when needed
+
+Author:
+-------
+Antoine Lemor
 """
 
 def get_reinforced_params(model_name: str, best_f1_1: float, original_lr: float = 5e-5, num_classes: int = 2, class_f1_scores: list = None):

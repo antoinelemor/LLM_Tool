@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,27 +10,27 @@ data_utils.py
 
 MAIN OBJECTIVE:
 ---------------
-This script provides comprehensive data handling utilities with metadata support,
-enabling language-specific performance tracking, stratified sampling, and preserving
-sample metadata throughout the training pipeline for social science research.
+Offer rich data structures and helpers for preparing training datasets,
+preserving metadata, and tracking performance across labels and languages.
 
 Dependencies:
 -------------
-- torch (PyTorch tensors and datasets)
-- numpy (numerical operations)
-- json & csv (file I/O)
-- scikit-learn (metrics calculation)
+- json
+- csv
+- typing
+- dataclasses
+- collections
+- numpy
+- torch
+- logging
 
 MAIN FEATURES:
 --------------
-1) DataSample class for structured data with metadata (ID, language, custom fields)
-2) MetadataDataset for preserving metadata alongside tensors
-3) Enhanced DataLoader supporting JSONL and CSV with metadata extraction
-4) PerformanceTracker for language-specific and stratified metrics
-5) Automatic language detection for samples
-6) Data splitting with stratification by language and label
-7) Batch-wise performance tracking during training
-8) Comprehensive metrics export (confusion matrices, per-class metrics)
+1) Provide DataSample and MetadataDataset abstractions that retain metadata
+2) Implement safe conversion utilities for numpy/pandas interoperability
+3) Deliver loaders that build TensorDataset objects with aligned metadata
+4) Track per-label and per-language metrics via PerformanceTracker helpers
+5) Export utilities for serialising metrics and confusion matrices to JSON/CSV
 
 Author:
 -------

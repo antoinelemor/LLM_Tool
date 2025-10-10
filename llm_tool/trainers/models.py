@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,23 +10,22 @@ models.py
 
 MAIN OBJECTIVE:
 ---------------
-This script defines language-specific BERT model variants for multilingual NLP tasks,
-providing pre-configured models for Arabic, Chinese, French (CamemBERT), German, Hindi,
-Italian, Portuguese, Russian, Spanish, Swedish, and cross-lingual (XLM-RoBERTa) applications.
+Provide ready-to-train wrappers around language-specific BERT families and
+expose state-of-the-art variants for use inside the Training Arena.
 
 Dependencies:
 -------------
-- transformers (HuggingFace model classes)
-- LLMTool.bert_base (base implementation)
-- LLMTool.sota_models (SOTA model imports)
+- transformers
+- llm_tool.trainers.bert_base
+- llm_tool.trainers.sota_models
 
 MAIN FEATURES:
 --------------
-1) Pre-configured BERT models for 11+ languages
-2) Each model uses appropriate tokenizer and pre-trained weights
-3) Simple initialization with automatic language-specific defaults
-4) Inherits all training capabilities from BertBase
-5) Convenient imports of SOTA models (DeBERTa, RoBERTa, ELECTRA, etc.)
+1) Offer BertBase-derived classes for major languages with correct tokenizers
+2) Keep a canonical Bert wrapper for generic English fine-tuning workflows
+3) Integrate CamemBERT, XLM-R, and other multilingual backbones seamlessly
+4) Surface SOTA model imports so trainer modules share a unified entrypoint
+5) Simplify model instantiation by standardising constructor signatures
 
 Author:
 -------

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,27 +10,28 @@ parallel_inference.py
 
 MAIN OBJECTIVE:
 ---------------
-This script provides high-throughput parallel inference capabilities using multiple
-GPUs/CPUs for efficient batch prediction, automatically distributing work across
-available devices and managing memory efficiently.
+Run high-throughput inference across multiple CPUs or GPUs by distributing
+transformer workloads and managing per-worker model caches.
 
 Dependencies:
 -------------
-- torch (PyTorch with multiprocessing)
-- numpy (array operations)
-- tqdm (progress tracking)
-- LLMTool.models (model implementations)
+- math
+- os
+- queue
+- sys
+- typing
+- numpy
+- torch
+- tqdm
+- llm_tool.trainers.models
 
 MAIN FEATURES:
 --------------
-1) Automatic device detection and allocation (CUDA, MPS, CPU)
-2) Multi-GPU parallel processing with load balancing
-3) Efficient batch processing with adaptive batch sizes
-4) Memory-efficient model loading per worker
-5) Progress tracking with tqdm
-6) Support for all package models (BERT variants, SOTA models)
-7) Automatic fallback to CPU when GPU unavailable
-8) Spawn-based start method on macOS/Metal to avoid fork crashes
+1) Detect available CUDA or MPS devices and configure worker processes
+2) Cache tokenizers and models per worker to avoid redundant loading
+3) Chunk prediction requests intelligently based on device batch capacity
+4) Orchestrate multiprocessing queues with graceful fallbacks to CPU
+5) Expose helpers that map language codes to the right model backends
 
 Author:
 -------

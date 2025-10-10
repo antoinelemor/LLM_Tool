@@ -1,10 +1,40 @@
-"""Utilities for building training-ready datasets from heterogeneous sources.
+#!/usr/bin/env python3
+"""
+PROJECT:
+-------
+LLMTool
 
-This module centralises the logic that was previously scattered across the
-AugmentedSocialScientist toolkit so the Training Studio can ingest the same
-range of formats (LLM JSON annotations, category CSVs, binary long tables,
-JSONL with metadata, …) and produce normalised assets that plug directly into
-`ModelTrainer` or `MultiLabelTrainer`.
+TITLE:
+------
+training_data_builder.py
+
+MAIN OBJECTIVE:
+---------------
+Convert heterogeneous annotation exports into trainer-ready datasets for the
+Training Arena, handling session-aware output paths and metadata collection.
+
+Dependencies:
+-------------
+- dataclasses
+- pathlib
+- typing
+- json
+- logging
+- datetime
+- pandas
+- llm_tool.utils.annotation_to_training
+
+MAIN FEATURES:
+--------------
+1) Support multiple input formats (LLM JSON, category CSV, JSONL, binary tables)
+2) Construct TrainingDataBundle objects with strategy and metadata details
+3) Manage session-scoped output directories for reproducible pipelines
+4) Provide helper methods that transform raw annotations into flat datasets
+5) Produce trainer configuration snippets tailored to downstream trainers
+
+Author:
+-------
+Antoine Lemor
 """
 
 from __future__ import annotations
@@ -753,4 +783,3 @@ class TrainingDatasetBuilder:
     @staticmethod
     def _slugify(value: str) -> str:
         return "".join(char if char.isalnum() else "_" for char in value).strip("_") or "category"
-

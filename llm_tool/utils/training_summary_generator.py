@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,32 +10,28 @@ training_summary_generator.py
 
 MAIN OBJECTIVE:
 ---------------
-Comprehensive summary file generation for Training Arena sessions.
-Creates detailed CSV and JSONL summary files at the end of each training cycle
-with complete metrics, dataset information, model details, and training parameters.
+Generate final CSV and JSONL summaries for Training Arena sessions by
+aggregating metrics, metadata, dataset insights, and timing information.
 
 Dependencies:
 -------------
-- pandas
-- numpy
 - json
 - csv
+- logging
+- numpy
+- pandas
 - pathlib
 - datetime
-- logging
+- typing
+- collections
 
 MAIN FEATURES:
 --------------
-1) Generate comprehensive CSV summary with all metrics
-2) Generate comprehensive JSONL summary with complete session data
-3) Dataset distribution analysis with detailed statistics
-4) Model performance aggregation across all training modes
-5) Time tracking and duration calculations
-6) Robust error handling with fallback mechanisms
-7) Support for benchmark and normal training modes
-8) Language-specific metrics aggregation
-9) Hyperparameter tracking
-10) Research reproducibility support
+1) Load training metadata, metrics, and best model snapshots for a session
+2) Analyse datasets, label distributions, and timing information holistically
+3) Produce canonical CSV and JSONL summaries along with versioned copies
+4) Export top-model leaderboards to support reporting and follow-up analysis
+5) Provide robust error handling that still emits partial summaries if needed
 
 Author:
 -------

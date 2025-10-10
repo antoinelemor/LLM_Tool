@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 PROJECT:
 -------
@@ -9,26 +10,28 @@ benchmark_dataset_builder.py
 
 MAIN OBJECTIVE:
 ---------------
-This script provides automatic dataset building for benchmarking with train/test
-splitting, optional class balancing through undersampling/oversampling, language
-tracking, and comprehensive CSV logging of dataset statistics.
+Prepare balanced benchmark datasets with train/test splits, optional class
+balancing, language tracking, and CSV logging for the Training Arena.
 
 Dependencies:
 -------------
-- scikit-learn (train_test_split)
-- numpy (data manipulation)
-- csv & json (file I/O)
+- csv
+- json
+- random
+- collections
+- dataclasses
+- pathlib
+- typing
+- numpy
+- sklearn.model_selection
 
 MAIN FEATURES:
 --------------
-1) Automatic train/test split creation from raw data files
-2) Class balancing options (undersample majority or oversample minority)
-3) Stratified splitting to maintain class distribution
-4) Per-sample language tracking for multilingual datasets
-5) Comprehensive metadata tracking (class distribution, balance ratios)
-6) CSV logging of dataset statistics with timestamps
-7) Support for JSONL and JSON data formats
-8) Minimum samples per class guarantee
+1) Load JSON and JSONL sources into balanced train/test splits
+2) Apply undersampling or oversampling strategies per configuration
+3) Track language distributions and dataset metadata alongside splits
+4) Persist split files and optional CSV logs for downstream benchmarking
+5) Provide helper structures summarising class balance and dataset stats
 
 Author:
 -------
