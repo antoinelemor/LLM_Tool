@@ -49,6 +49,7 @@ import json
 import time
 import logging
 import glob
+import csv
 import shutil
 import copy
 import numpy as np
@@ -173,6 +174,7 @@ from .annotation_workflow import (
     ANNOTATOR_RESUME_STEPS,
     FACTORY_RESUME_STEPS,
     AnnotationResumeTracker,
+    _launch_model_annotation_stage,
     create_session_directories,
     execute_from_metadata,
     run_annotator_workflow,
@@ -1679,6 +1681,18 @@ class AdvancedCLI:
                 path for path in metadata_dir.rglob("*_metadata_*.json") if path.is_file()
             )
 
+        # New training metadata layout (v2.0+)
+        training_metadata_dir = session_dir / "training_session_metadata"
+        if training_metadata_dir.exists():
+            for filename in ("training_metadata.json", "training_metadata_backup.json"):
+                candidate = training_metadata_dir / filename
+                if candidate.exists() and candidate.is_file():
+                    candidates.append(candidate)
+
+        legacy_training_metadata = session_dir / "training_metadata.json"
+        if legacy_training_metadata.exists() and legacy_training_metadata.is_file():
+            candidates.append(legacy_training_metadata)
+
         legacy_dir = getattr(self.settings.paths, "data_dir", Path("data")) / "annotations"
         if legacy_dir.exists():
             pattern = f"*{session_id}*_metadata_*.json"
@@ -1713,10 +1727,141 @@ class AdvancedCLI:
             metadata_path = metadata_files[0]
             try:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                metadata = self._normalize_factory_metadata(metadata, metadata_path)
             except Exception:
                 continue
             candidates.append((metadata_path, metadata, record))
         return candidates
+
+    def _normalize_factory_metadata(self, metadata: Dict[str, Any], metadata_path: Path) -> Dict[str, Any]:
+        """
+        Bring training-metadata payloads in line with legacy annotator metadata schema.
+
+        The Annotator Factory originally stored annotation parameters under ``metadata/*.json``.
+        Newer runs write comprehensive training metadata to ``training_session_metadata/``.
+        Resume workflows still expect the legacy layout, so we synthesize the required fields.
+        """
+        if not isinstance(metadata, dict):
+            return {}
+
+        # Already in legacy format
+        if metadata.get("annotation_session") and metadata.get("data_source"):
+            return metadata
+
+        training_session = metadata.get("training_session")
+        dataset_config = metadata.get("dataset_config", {})
+        model_config = metadata.get("model_config", {})
+        training_params = metadata.get("training_params", {})
+        output_paths = metadata.get("output_paths", {})
+        training_context = metadata.get("training_context", {})
+        execution_status = metadata.get("execution_status", {})
+        text_analysis = metadata.get("text_analysis", {})
+
+        if not training_session:
+            return metadata
+
+        # Derive data source information
+        source_file = (
+            dataset_config.get("source_file")
+            or dataset_config.get("primary_file")
+            or output_paths.get("annotated_dataset")
+        )
+        file_name = Path(source_file).name if source_file else None
+        data_format = None
+        if file_name:
+            suffix = Path(file_name).suffix.lower()
+            data_format = suffix.lstrip(".") if suffix else None
+
+        total_rows = (
+            dataset_config.get("total_samples")
+            or dataset_config.get("rows")
+            or text_analysis.get("rows_available")
+            or text_analysis.get("rows_analyzed")
+        )
+        data_source = {
+            "file_path": source_file,
+            "file_name": file_name,
+            "data_format": data_format or dataset_config.get("format") or "unknown",
+            "text_column": dataset_config.get("text_column", "text"),
+            "total_rows": total_rows,
+            "sampling_strategy": training_context.get("sampling_strategy") or "N/A",
+        }
+
+        actual_models = model_config.get("actual_models_trained") or []
+        if isinstance(actual_models, list) and actual_models:
+            fallback_model = actual_models[0]
+        else:
+            fallback_model = None
+        model_name = (
+            model_config.get("selected_model")
+            or model_config.get("quick_model_name")
+            or fallback_model
+        )
+
+        model_configuration = {
+            "provider": model_config.get("provider") or "huggingface",
+            "model_name": model_name,
+            "temperature": training_context.get("annotation_config", {}).get("temperature", "N/A"),
+            "max_tokens": training_context.get("annotation_config", {}).get("max_tokens", "N/A"),
+            "epochs": model_config.get("epochs") or training_params.get("epochs"),
+            "learning_rate": training_params.get("learning_rate"),
+        }
+
+        processing_configuration = {
+            "parallel_workers": training_context.get("parallel_workers", 1),
+            "batch_size": training_params.get("batch_size") or model_config.get("batch_size"),
+            "reinforced_learning": bool(model_config.get("reinforced_learning") or training_params.get("use_reinforcement")),
+        }
+
+        output = {
+            "output_path": source_file or output_paths.get("annotated_dataset"),
+            "models_dir": output_paths.get("models_dir"),
+            "metrics_dir": output_paths.get("logs_dir") or output_paths.get("metrics_dir"),
+            "training_files": dataset_config.get("training_files"),
+        }
+
+        export_preferences = training_context.get("export_preferences", {})
+
+        is_resume = bool(
+            metadata.get("resume_mode")
+            or training_context.get("resume_mode")
+            or "resume" in metadata_path.stem
+        )
+
+        training_workflow = {
+            "training_enabled": True,
+            "training_mode": model_config.get("training_mode", "quick"),
+            "training_params_file": str(metadata_path),
+            "models_trained": model_config.get("actual_models_trained"),
+            "status": execution_status.get("status"),
+            "resume_mode": is_resume,
+            "session_dir": output_paths.get("session_dir"),
+            "last_update": metadata.get("last_updated"),
+        }
+
+        normalized = {
+            "annotation_session": {
+                "workflow": training_session.get("workflow", "Annotator Factory - Training"),
+                "timestamp": training_session.get("session_id") or metadata.get("created_at"),
+                "tool_version": training_session.get("tool_version"),
+                "mode": training_session.get("mode"),
+                "status": execution_status.get("status"),
+                "action_mode": "resume" if is_resume else training_session.get("mode", "quick"),
+            },
+            "data_source": data_source,
+            "model_configuration": model_configuration,
+            "prompts": training_context.get("annotation_prompts", []),
+            "processing_configuration": processing_configuration,
+            "output": output,
+            "export_preferences": export_preferences,
+            "training_workflow": training_workflow,
+            "session_id": training_session.get("session_id"),
+            "resume_mode": is_resume,
+        }
+
+        # Preserve original payload for advanced actions if needed later
+        normalized["_factory_training_metadata"] = metadata
+        return normalized
 
     def resume_center(self) -> None:
         """Unified dashboard listing resumable sessions across all modes."""
@@ -2583,6 +2728,7 @@ class AdvancedCLI:
         # Check what phases are completed
         annotation_complete = False
         training_complete = False
+        stored_trained_model_paths: Dict[str, str] = {}
 
         if action_mode == 'resume':
             # Try to find annotation output file
@@ -2620,25 +2766,125 @@ class AdvancedCLI:
             if training_params_file and Path(training_params_file).exists():
                 self.console.print(f"[green]✓ Found training parameters: {Path(training_params_file).name}[/green]")
 
-                # Check if model was saved
-                model_dir = Path(original_output).parent / f"{Path(original_output).stem}_model"
-                if model_dir.exists():
-                    self.console.print(f"[green]✓ Found trained model: {model_dir.name}[/green]")
-                    training_complete = True
+            if isinstance(training_workflow.get('trained_model_paths'), dict):
+                stored_trained_model_paths.update(training_workflow['trained_model_paths'])
+
+            training_context_meta = metadata.get('training_context', {})
+            if isinstance(training_context_meta.get('trained_model_paths'), dict):
+                stored_trained_model_paths.update(training_context_meta['trained_model_paths'])
+
+            usable_models: List[Path] = []
+            for _, candidate_path in stored_trained_model_paths.items():
+                candidate = Path(candidate_path).expanduser()
+                if candidate.is_file():
+                    candidate = candidate.parent
+                if candidate.exists():
+                    usable_models.append(candidate.resolve())
+
+            if usable_models:
+                unique_models = []
+                for path in usable_models:
+                    if path not in unique_models:
+                        unique_models.append(path)
+                training_complete = True
+                if self.console:
+                    self.console.print(f"[green]✓ Detected {len(unique_models)} trained model(s) ready for deployment[/green]")
+            else:
+                if original_output:
+                    model_dir = Path(original_output).parent / f"{Path(original_output).stem}_model"
+                    if model_dir.exists():
+                        self.console.print(f"[green]✓ Found trained model: {model_dir.name}[/green]")
+                        training_complete = True
+                        stored_trained_model_paths[model_dir.name] = str(model_dir)
+
+            if training_complete and stored_trained_model_paths:
+                training_workflow['trained_model_paths'] = {
+                    str(k): str(v) for k, v in stored_trained_model_paths.items()
+                }
 
         # Determine what to run
         run_annotation = not annotation_complete or action_mode == 'relaunch'
         run_training = not training_complete or action_mode == 'relaunch'
+        run_model_annotation = True
 
-        if action_mode == 'resume' and annotation_complete and training_complete:
-            self.console.print("\n[yellow]✓ Both annotation and training are already complete![/yellow]")
-            retry_training = Confirm.ask("Re-run training with same annotations?", default=False)
-            if retry_training:
-                run_annotation = False
+        # Pre-build prompt configurations for downstream stages (training + deployment)
+        prompt_configs_for_training: List[Dict[str, Any]] = []
+        for p in prompts:
+            prompt_configs_for_training.append({
+                'prompt': {
+                    'keys': p.get('expected_keys', []),
+                    'content': p.get('prompt_content', p.get('prompt', '')),
+                    'name': p.get('name', 'prompt')
+                },
+                'prefix': p.get('prefix', '')
+            })
+
+        resume_stage = None
+        if action_mode == 'resume':
+            stage_info = {
+                "1": {
+                    "label": "LLM Annotation (restart pipeline)",
+                    "available": True,
+                    "status": "[green]Ready[/green]",
+                },
+                "2": {
+                    "label": "Model Training (reuse annotated data)",
+                    "available": annotation_complete,
+                    "status": "[green]Ready[/green]" if annotation_complete else "[red]Annotation output missing[/red]",
+                },
+                "3": {
+                    "label": "Deploy & Annotate (BERT Studio)",
+                    "available": training_complete,
+                    "status": "[green]Ready[/green]" if training_complete else "[red]Trained models unavailable[/red]",
+                },
+            }
+
+            default_stage = "1"
+            if annotation_complete:
+                default_stage = "2" if not training_complete else "3"
+
+            stage_table = Table(title="Resume Stage Selection", border_style="cyan")
+            stage_table.add_column("#", justify="center", style="bold cyan", width=4)
+            stage_table.add_column("Stage", style="white")
+            stage_table.add_column("Status", style="magenta")
+
+            for stage_key in ("1", "2", "3"):
+                info = stage_info[stage_key]
+                stage_table.add_row(stage_key, info["label"], info["status"])
+
+            self.console.print(stage_table)
+
+            while True:
+                resume_stage = Prompt.ask(
+                    "\n[bold yellow]Select stage to resume from[/bold yellow]",
+                    choices=["1", "2", "3"],
+                    default=default_stage
+                )
+                selection = stage_info[resume_stage]
+                if selection["available"]:
+                    break
+                self.console.print(f"[yellow]⚠️  {selection['label']} is not available. Please choose another stage.[/yellow]")
+
+            self.console.print(f"\n[cyan]Resuming from: {stage_info[resume_stage]['label']}[/cyan]\n")
+
+            if resume_stage == "1":
+                run_annotation = True
                 run_training = True
-            else:
-                self.console.print("[yellow]Nothing to do. Workflow is complete.[/yellow]")
-                return
+            elif resume_stage == "2":
+                run_annotation = False
+                if training_complete:
+                    rerun_training = Confirm.ask(
+                        "Training already completed. Re-run the training phase?",
+                        default=False
+                    )
+                    run_training = rerun_training
+                    if not rerun_training:
+                        self.console.print("[cyan]Using existing trained models.[/cyan]")
+                else:
+                    run_training = True
+            elif resume_stage == "3":
+                run_annotation = False
+                run_training = False
 
         # ============================================================
         # PHASE 1: ANNOTATION (if needed)
@@ -2833,32 +3079,70 @@ class AdvancedCLI:
         # ============================================================
         # PHASE 2: TRAINING (if needed)
         # ============================================================
+        training_results_summary: Optional[Dict[str, Any]] = None
         if run_training:
             self.console.print("\n[bold cyan]🎓 Phase 2: Model Training[/bold cyan]\n")
-
-            # Build prompt_configs for training workflow
-            prompt_configs_for_training = []
-            for p in prompts:
-                prompt_configs_for_training.append({
-                    'prompt': {
-                        'keys': p.get('expected_keys', []),
-                        'content': p.get('prompt_content', p.get('prompt', '')),
-                        'name': p.get('name', 'prompt')
-                    },
-                    'prefix': p.get('prefix', '')
-                })
-
-            # Execute training workflow
-            self._post_annotation_training_workflow(
+            training_results_summary = self._post_annotation_training_workflow(
                 output_file=output_file,
                 text_column=text_column,
                 prompt_configs=prompt_configs_for_training,
                 session_id=session_id,
                 session_dirs=session_dirs if 'session_dirs' in locals() else None
             )
-
         else:
-            self.console.print(f"\n[yellow]⏭️  Skipping training (already complete)[/yellow]\n")
+            self.console.print("\n[yellow]⏭️  Skipping training (using existing models)[/yellow]\n")
+            training_results_summary = self._load_saved_factory_training_results(
+                session_id=session_id,
+                session_dirs=session_dirs if 'session_dirs' in locals() else None,
+                training_workflow=training_workflow
+            )
+            if not training_results_summary and stored_trained_model_paths:
+                normalized_paths = {
+                    str(k): str(Path(v).expanduser())
+                    for k, v in stored_trained_model_paths.items()
+                }
+                training_results_summary = {
+                    "status": "completed",
+                    "session_id": session_id,
+                    "training_result": {
+                        "trained_models": normalized_paths,
+                        "models_trained": list(normalized_paths.keys()),
+                    },
+                    "trained_model_paths": normalized_paths,
+                }
+
+        if training_results_summary and training_results_summary.get("training_result"):
+            training_workflow['status'] = training_results_summary.get("status", "completed")
+            training_workflow['models_trained'] = training_results_summary["training_result"].get("models_trained", [])
+            training_workflow['trained_model_paths'] = training_results_summary["training_result"].get("trained_models", {})
+            training_workflow['last_update'] = datetime.now().isoformat()
+
+        # ============================================================
+        # PHASE 3: DEPLOY & ANNOTATE WITH TRAINED MODELS
+        # ============================================================
+        if run_model_annotation:
+            if training_results_summary and training_results_summary.get("training_result"):
+                model_annotation_summary = _launch_model_annotation_stage(
+                    self,
+                    session_id=session_id,
+                    session_dirs=session_dirs if 'session_dirs' in locals() else None,
+                    training_results=training_results_summary,
+                    prompt_configs=prompt_configs_for_training,
+                    text_column=text_column,
+                    annotation_output=output_file,
+                    dataset_path=data_path,
+                )
+                if isinstance(model_annotation_summary, dict):
+                    status = model_annotation_summary.get("status", "completed")
+                    detail = model_annotation_summary.get("detail")
+                    if status != "completed":
+                        self.console.print(
+                            f"[yellow]⚠️  Model annotation stage reported status '{status}': {detail}[/yellow]"
+                        )
+            else:
+                self.console.print(
+                    "[yellow]⚠️  Skipping deployment annotation stage: trained model artifacts not found.[/yellow]"
+                )
 
         self.console.print("\n[bold green]✅ Workflow complete![/bold green]")
 
@@ -2922,7 +3206,7 @@ class AdvancedCLI:
 
             # The integration handles everything including asking if user wants to train
             # and running the complete Training Arena workflow
-            return
+            return training_results
 
             annotation_col = annotation_cols[0]
             df_annotated = df[df[annotation_col].notna()].copy()
@@ -3463,6 +3747,72 @@ class AdvancedCLI:
         except Exception as e:
             self.console.print(f"[red]Training workflow error: {e}[/red]")
             self.logger.exception("Post-annotation training workflow failed")
+
+    def _load_saved_factory_training_results(
+        self,
+        session_id: str,
+        session_dirs: Optional[Dict[str, Any]],
+        training_workflow: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Reconstruct training result payload from a prior Annotator Factory session."""
+        metrics_dir: Optional[Path] = None
+        if session_dirs and session_dirs.get("training_metrics"):
+            metrics_dir = Path(session_dirs["training_metrics"])
+
+        if not metrics_dir:
+            metrics_dir = Path("logs") / "annotator_factory" / session_id / "training_metrics"
+
+        if not metrics_dir.exists():
+            return None
+
+        trained_models: Dict[str, str] = {}
+        for best_file in metrics_dir.glob("normal_training/**/*best.csv"):
+            try:
+                with best_file.open(newline='', encoding='utf-8') as fh:
+                    reader = csv.DictReader(fh)
+                    rows = list(reader)
+                if not rows:
+                    continue
+                row = rows[-1]
+                saved_model_path = row.get("saved_model_path") or row.get("model_path")
+                if not saved_model_path:
+                    continue
+                model_path = Path(saved_model_path).expanduser()
+                if not model_path.is_absolute():
+                    model_path = (best_file.parent / saved_model_path).resolve()
+                else:
+                    model_path = model_path.resolve()
+                if not model_path.exists():
+                    continue
+
+                relative_parts = best_file.relative_to(metrics_dir).parts
+                category_name = row.get("category")
+                if not category_name and len(relative_parts) > 1:
+                    category_name = relative_parts[1]
+                category_name = category_name or model_path.stem
+
+                trained_models[category_name] = str(model_path)
+            except Exception as exc:
+                self.logger.debug("Unable to inspect training artifact %s: %s", best_file, exc)
+
+        if not trained_models:
+            return None
+
+        # Update training workflow status snapshot if provided
+        if training_workflow is not None:
+            training_workflow['status'] = training_workflow.get('status', 'completed')
+            training_workflow['models_trained'] = list(trained_models.keys())
+            training_workflow['last_update'] = datetime.now().isoformat()
+
+        return {
+            "status": "completed",
+            "session_id": session_id,
+            "training_result": {
+                "trained_models": trained_models,
+                "models_trained": list(trained_models.keys()),
+            },
+            "training_logs_dir": str(metrics_dir),
+        }
 
     def _get_model_description(self, model_name: str) -> str:
         """Get factual description for a model based on its name"""

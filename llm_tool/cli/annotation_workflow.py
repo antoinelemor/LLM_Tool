@@ -44,7 +44,7 @@ import copy
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
@@ -121,6 +121,7 @@ def create_session_directories(mode: AnnotationMode, session_id: str) -> Dict[st
             "labelstudio": base_dir / "validation_exports" / "labelstudio",
             "training_metrics": base_dir / "training_metrics",
             "training_data": base_dir / "training_data",
+            "model_annotation": base_dir / "model_annotation",
         }
     else:
         base_dir = Path("logs") / "annotator" / session_id
@@ -160,8 +161,329 @@ FACTORY_RESUME_STEPS = {
     6: {"key": "run_annotation", "name": "Execute annotation"},
     7: {"key": "training_prep", "name": "Prepare training data"},
     8: {"key": "training_launch", "name": "Launch training arena"},
-    9: {"key": "post_actions", "name": "Exports & reports"},
+    9: {"key": "model_annotation", "name": "Deploy trained models"},
+    10: {"key": "post_actions", "name": "Exports & reports"},
 }
+
+def _launch_model_annotation_stage(
+    cli,
+    *,
+    session_id: Optional[str],
+    session_dirs: Optional[Dict[str, Path]],
+    training_results: Optional[Dict[str, Any]],
+    prompt_configs: List[Dict[str, Any]],
+    text_column: str,
+    annotation_output: Optional[str],
+    dataset_path: Optional[Path],
+) -> Optional[Dict[str, Any]]:
+    """Launch BERT Annotation Studio with freshly trained models."""
+    from pathlib import Path
+    from rich.align import Align
+    from llm_tool.cli.banners import BANNERS, STEP_NUMBERS, STEP_LABEL
+    from llm_tool.cli.bert_annotation_studio import BERTAnnotationStudio
+    from llm_tool.utils.annotation_session_manager import AnnotationStudioSessionManager
+
+    training_payload = (training_results or {}).get("training_result") or {}
+
+    session_identifier: Optional[str] = None
+    if isinstance(training_results, dict):
+        session_identifier = training_results.get("session_id")
+    if not session_identifier:
+        session_identifier = session_id
+
+    session_model_root: Optional[Path] = None
+    if session_identifier:
+        session_model_root = Path("models") / session_identifier
+
+    model_candidates: List[Tuple[Optional[str], Union[str, Path]]] = []
+
+    def _collect_model_candidates(data: Any, hint_name: Optional[str] = None) -> None:
+        if isinstance(data, dict):
+            # Direct mapping (name -> path)
+            if data and all(isinstance(k, str) for k in data.keys()) and all(
+                isinstance(v, (str, Path)) for v in data.values()
+            ):
+                for key, value in data.items():
+                    model_candidates.append((key, value))
+            # Dict with explicit path fields
+            path_value = data.get("model_path") or data.get("path")
+            if path_value:
+                candidate_name = (
+                    data.get("model_name")
+                    or data.get("name")
+                    or data.get("label_value")
+                    or data.get("category_name")
+                    or data.get("label_key")
+                    or hint_name
+                )
+                model_candidates.append((candidate_name, path_value))
+            for key, value in data.items():
+                next_hint = hint_name
+                if isinstance(key, str):
+                    next_hint = key
+                _collect_model_candidates(value, next_hint)
+        elif isinstance(data, (list, tuple, set)):
+            for item in data:
+                _collect_model_candidates(item, hint_name)
+
+    _collect_model_candidates(training_payload)
+
+    top_level_trained = training_results.get("trained_model_paths") if isinstance(training_results, dict) else {}
+    if isinstance(top_level_trained, dict):
+        for key, value in top_level_trained.items():
+            model_candidates.append((key, value))
+
+    aggregated_models: Dict[str, Path] = {}
+    existing_models: List[Tuple[str, Path]] = []
+    seen_paths: Set[Path] = set()
+
+    def _resolve_model_dir(path_value: Union[str, Path]) -> Optional[Path]:
+        try:
+            candidate = Path(path_value).expanduser()
+        except Exception:
+            return None
+        if candidate.is_file():
+            candidate = candidate.parent
+        candidate = candidate.resolve()
+        if candidate.is_file():
+            candidate = candidate.parent
+        if (candidate / "config.json").exists():
+            return candidate
+        for sub_dir in ("model", "best_model", "checkpoint-best"):
+            option = candidate / sub_dir
+            if option.is_dir() and (option / "config.json").exists():
+                return option.resolve()
+        try:
+            config_path = next(candidate.glob("**/config.json"))
+        except StopIteration:
+            return None
+        except Exception:
+            return None
+        return config_path.parent.resolve()
+
+    def _register_model(name_hint: Optional[str], path_value: Union[str, Path]) -> None:
+        resolved_dir = _resolve_model_dir(path_value)
+        if resolved_dir is None or not resolved_dir.exists():
+            return
+        if resolved_dir in seen_paths:
+            return
+        display_name = name_hint
+        if session_model_root and session_model_root.exists():
+            try:
+                relative = resolved_dir.relative_to(session_model_root)
+                display_name = relative.as_posix()
+            except ValueError:
+                pass
+        if not display_name:
+            display_name = resolved_dir.name
+        seen_paths.add(resolved_dir)
+        aggregated_models[str(display_name)] = resolved_dir
+        existing_models.append((str(display_name), resolved_dir))
+
+    for candidate_name, candidate_path in model_candidates:
+        if not candidate_path:
+            continue
+        _register_model(candidate_name, candidate_path)
+
+    if not existing_models and session_identifier:
+        loader = getattr(cli, "_load_saved_factory_training_results", None)
+        if callable(loader):
+            try:
+                recon = loader(
+                    session_id=session_identifier,
+                    session_dirs=session_dirs,
+                    training_workflow={},
+                )
+            except Exception:  # pragma: no cover - defensive
+                recon = None
+            if recon:
+                recon_models = recon.get("training_result", {}).get("trained_models") or {}
+                for model_name, model_path in recon_models.items():
+                    _register_model(model_name, model_path)
+
+    if not existing_models and session_identifier:
+        fallback_root = Path("models") / session_identifier / "normal_training"
+        if fallback_root.exists():
+            try:
+                for config_path in fallback_root.glob("**/config.json"):
+                    rel_name = config_path.parent.relative_to(fallback_root).as_posix()
+                    _register_model(rel_name, config_path.parent)
+            except Exception:
+                pass
+
+    factory_trained_map: Dict[str, Path] = {}
+    if isinstance(training_results, dict):
+        raw_trained = training_results.get("trained_model_paths")
+        if not raw_trained:
+            raw_trained = (training_results.get("training_result") or {}).get("trained_model_paths")
+        if not raw_trained:
+            raw_trained = (training_results.get("training_result") or {}).get("trained_models")
+        if isinstance(raw_trained, dict):
+            for name, value in raw_trained.items():
+                resolved = _resolve_model_dir(value)
+                if resolved is None:
+                    continue
+                factory_trained_map[str(name)] = resolved
+
+    def _safe_resolve_path(candidate: Path) -> Path:
+        try:
+            return candidate.resolve()
+        except Exception:
+            return candidate
+
+    if factory_trained_map:
+        target_paths: List[Path] = []
+        for path in factory_trained_map.values():
+            target_paths.append(_safe_resolve_path(path))
+
+        filtered_models: List[Tuple[str, Path]] = []
+        for display_name, model_path in existing_models:
+            resolved_model_path = _safe_resolve_path(model_path)
+            if resolved_model_path in target_paths:
+                filtered_models.append((display_name, model_path))
+
+        ordered_models: List[Tuple[str, Path]] = []
+        for model_name, target_path in factory_trained_map.items():
+            resolved_target = _safe_resolve_path(target_path)
+
+            matched_entry = next(
+                (
+                    (display_name, model_path)
+                    for display_name, model_path in filtered_models
+                    if _safe_resolve_path(model_path) == resolved_target
+                ),
+                None,
+            )
+            if matched_entry:
+                ordered_models.append(matched_entry)
+            else:
+                ordered_models.append((model_name, target_path))
+
+        existing_models = ordered_models
+        aggregated_models = {
+            name: path
+            for name, path in aggregated_models.items()
+            if any(
+                _safe_resolve_path(path)
+                == _safe_resolve_path(target)
+                for target in factory_trained_map.values()
+            )
+        }
+
+        trimmed_map = {
+            name: str(path)
+            for name, path in factory_trained_map.items()
+        }
+        if isinstance(training_results, dict):
+            training_results["trained_model_paths"] = trimmed_map
+            training_results.setdefault("training_result", {}).update(
+                {
+                    "trained_models": trimmed_map,
+                    "trained_model_paths": trimmed_map,
+                }
+            )
+
+    if training_results is not None:
+        training_entry = training_results.setdefault("training_result", {})
+        combined_map: Dict[str, str] = {}
+        if isinstance(training_entry.get("trained_models"), dict):
+            combined_map.update(
+                {
+                    str(k): str(Path(v).expanduser())
+                    for k, v in training_entry["trained_models"].items()
+                    if v
+                }
+            )
+        combined_map.update({name: str(path) for name, path in aggregated_models.items()})
+        if combined_map:
+            training_entry["trained_models"] = combined_map
+            training_entry["models_trained"] = list(combined_map.keys())
+            training_results["trained_model_paths"] = combined_map
+
+    if not existing_models:
+        if cli.console:
+            cli.console.print("\n[yellow]No trained models detected; skipping deployment annotation stage.[/yellow]")
+        return {"status": "skipped", "detail": "No trained models available"}
+
+    if cli.console:
+        cli.console.print()
+        for line in STEP_LABEL.split('\n'):
+            cli.console.print(Align.center(f"[bold {BANNERS['deploy_and_annotate']['color']}]{line}[/bold {BANNERS['deploy_and_annotate']['color']}]"))
+        for line in STEP_NUMBERS['3/3'].split('\n'):
+            cli.console.print(Align.center(f"[bold {BANNERS['deploy_and_annotate']['color']}]{line}[/bold {BANNERS['deploy_and_annotate']['color']}]"))
+        cli.console.print()
+        for line in BANNERS['deploy_and_annotate']['ascii'].split('\n'):
+            cli.console.print(Align.center(f"[bold {BANNERS['deploy_and_annotate']['color']}]{line}[/bold {BANNERS['deploy_and_annotate']['color']}]"))
+        cli.console.print(Align.center(f"[{BANNERS['deploy_and_annotate']['color']}]{BANNERS['deploy_and_annotate']['tagline']}[/{BANNERS['deploy_and_annotate']['color']}]"))
+        cli.console.print()
+        cli.console.print("[bold cyan]Deploy newly trained models for production-grade annotations.[/bold cyan]\n")
+        for idx, (name, path) in enumerate(existing_models, 1):
+            cli.console.print(f"  {idx}. [cyan]{name}[/cyan] → {path}")
+
+    session_base_dir: Optional[Path] = None
+    if session_dirs:
+        base_candidate = session_dirs.get("model_annotation")
+        if base_candidate:
+            session_base_dir = Path(base_candidate)
+    if session_base_dir is None and session_dirs and session_dirs.get("session_root"):
+        session_base_dir = Path(session_dirs["session_root"]) / "model_annotation"
+    if session_base_dir is None:
+        fallback_root = Path("logs") / "annotator_factory"
+        fallback_id = session_id or "factory_session"
+        session_base_dir = fallback_root / fallback_id / "model_annotation"
+    session_base_dir.mkdir(parents=True, exist_ok=True)
+
+    default_slug = AnnotationStudioSessionManager.slugify(f"{session_id}_bert") if session_id else "bert_annotation"
+    factory_context = {
+        "session_id": session_id,
+        "training_results": training_results,
+        "annotation_output": str(annotation_output) if annotation_output else None,
+        "text_column": text_column,
+        "prompt_configs": prompt_configs,
+    }
+
+    ordered_model_paths = [path for _, path in existing_models]
+
+    studio = BERTAnnotationStudio(
+        console=cli.console,
+        settings=cli.settings,
+        logger=cli.logger,
+        session_base_dir=session_base_dir,
+        allowed_model_paths=[path for _, path in existing_models],
+        default_session_slug=default_slug,
+        factory_session_id=session_id,
+        factory_context={
+            **factory_context,
+            "dataset_path": str(dataset_path) if dataset_path else None,
+            "model_paths": [str(path) for path in ordered_model_paths],
+        },
+    )
+
+    try:
+        result = studio.run_factory_pipeline(
+            ordered_model_paths=ordered_model_paths,
+            dataset_path=dataset_path,
+            text_column=text_column,
+        )
+        if isinstance(result, dict):
+            return result
+        return {
+            "status": "completed",
+            "detail": f"Model annotation executed with {len(existing_models)} model(s)",
+            "extra": {
+                "models_used": [str(path) for _, path in existing_models],
+                "annotation_session_dir": str(session_base_dir),
+            },
+        }
+    except KeyboardInterrupt:
+        if cli.console:
+            cli.console.print("\n[yellow]Model annotation cancelled by user.[/yellow]")
+        return {"status": "cancelled", "detail": "User cancelled model annotation"}
+    except Exception as exc:
+        cli.logger.exception("Model annotation stage failed")
+        if cli.console:
+            cli.console.print(f"[red]Model annotation failed:[/red] {exc}")
+        return {"status": "failed", "detail": str(exc)}
 
 
 class AnnotationResumeTracker:
@@ -2676,7 +2998,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         # ============================================================
         # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)
         # ============================================================
-        cli._post_annotation_training_workflow(
+        training_results = cli._post_annotation_training_workflow(
             output_file=output_file,
             text_column=text_column,
             prompt_configs=prompt_configs,
@@ -2688,6 +3010,36 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             detail="Training workflow executed",
             extra={"training_session_id": session_id},
         )
+
+        model_annotation_summary = _launch_model_annotation_stage(
+            cli,
+            session_id=session_id,
+            session_dirs=session_dirs,
+            training_results=training_results,
+            prompt_configs=prompt_configs,
+            text_column=text_column,
+            annotation_output=output_file,
+            dataset_path=data_path,
+        )
+
+        if isinstance(model_annotation_summary, dict):
+            status = model_annotation_summary.get("status", "completed")
+            detail = model_annotation_summary.get("detail")
+            extra = model_annotation_summary.get("extra")
+            overall_status = status if status in {"failed", "cancelled"} else None
+            tracker.mark_step(
+                9,
+                status=status,
+                detail=detail,
+                overall_status=overall_status,
+                extra=extra,
+            )
+        else:
+            tracker.mark_step(
+                9,
+                status="skipped",
+                detail="Model annotation stage skipped",
+            )
 
         # Export to Doccano JSONL if requested
         if export_to_doccano:
@@ -2730,7 +3082,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 )
 
         tracker.mark_step(
-            9,
+            10,
             detail="Factory workflow complete",
             extra={
                 "export_doccano": export_to_doccano,
@@ -3126,12 +3478,23 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                 'prefix': p.get('prefix', '')
             })
 
-        cli._post_annotation_training_workflow(
+        training_results = cli._post_annotation_training_workflow(
             output_file=output_file,
             text_column=data_source.get('text_column', 'text'),
             prompt_configs=prompt_configs_for_training,
             session_id=session_id,
             session_dirs=None  # No session_dirs in resume context
+        )
+
+        _launch_model_annotation_stage(
+            cli,
+            session_id=session_id,
+            session_dirs=None,
+            training_results=training_results,
+            prompt_configs=prompt_configs_for_training,
+            text_column=data_source.get('text_column', 'text'),
+            annotation_output=output_file,
+            dataset_path=data_path,
         )
 
         # Export to Doccano JSONL if enabled in preferences

@@ -599,10 +599,51 @@ def _training_studio_confirm_and_execute(
 
     training_result = None
     runtime_params = {}  # Will store actual parameters used during training
+    trained_models_map: Dict[str, str] = {}
     try:
         # Only quick mode is supported
         training_result = self._training_studio_run_quick(bundle, model_config, quick_params, session_id)
         runtime_params = training_result.get('runtime_params', {}) if training_result else {}
+        def _merge_trained_models(source: Optional[Dict[str, Any]]) -> None:
+            if not isinstance(source, dict):
+                return
+            for key, value in source.items():
+                if not value:
+                    continue
+                try:
+                    resolved = Path(value).expanduser().resolve()
+                except Exception:
+                    resolved = Path(value).expanduser()
+                trained_models_map[str(key)] = str(resolved)
+
+        if training_result and isinstance(training_result.get('trained_models'), dict):
+            _merge_trained_models(training_result.get('trained_models'))
+
+        session_identifier = session_id or getattr(self, 'current_session_id', None)
+        loader = getattr(self, "_load_saved_factory_training_results", None)
+        if callable(loader) and session_identifier:
+            try:
+                recon = loader(
+                    session_id=session_identifier,
+                    session_dirs=None,
+                    training_workflow={}
+                )
+            except Exception:  # pragma: no cover - defensive
+                recon = None
+            if recon:
+                _merge_trained_models(
+                    recon.get("training_result", {}).get("trained_models")
+                )
+
+        if trained_models_map:
+            if training_result is None:
+                training_result = {}
+            existing_map = training_result.get('trained_models')
+            if isinstance(existing_map, dict):
+                _merge_trained_models(existing_map)
+            training_result['trained_models'] = trained_models_map
+            training_result['models_trained'] = list(trained_models_map.keys())
+            training_result['trained_model_paths'] = trained_models_map
 
         # Update POST-TRAINING metadata with COMPLETE information
         if save_metadata and metadata_path:
@@ -615,19 +656,20 @@ def _training_studio_confirm_and_execute(
                     'completed_at': datetime.now().isoformat(),
                     'models_trained': training_result.get('models_trained', []) if training_result else [],
                     'best_model': training_result.get('best_model') if training_result else None,
-                    'best_f1': training_result.get('best_f1') if training_result else None
+                    'best_f1': training_result.get('best_f1') if training_result else None,
+                    'trained_model_paths': trained_models_map
                 }
 
                 # Update both execution_status AND model_config with runtime params
                 self._update_training_metadata(
                     metadata_path,
                     execution_status=execution_status,
+                    training_context={'trained_model_paths': trained_models_map},
                     model_config=final_model_config
                 )
                 self.console.print(f"\n[green]✅ Training metadata updated with complete parameters[/green]\n")
             except Exception as e:
                 self.logger.error(f"Failed to update metadata: {e}")
-
         # Generate comprehensive training data logs AFTER training completion
         if hasattr(self, 'current_session_manager') and self.current_session_manager:
             try:
@@ -636,28 +678,29 @@ def _training_studio_confirm_and_execute(
                     'training_result': training_result,
                     'runtime_params': runtime_params,
                     'models_trained': training_result.get('models_trained', []) if training_result else [],
+                    'trained_model_paths': trained_models_map,
                 }
                 self._log_training_data_distributions(bundle, training_context=training_context)
             except Exception as e:
                 self.logger.warning(f"Could not generate comprehensive training logs: {e}")
 
-        # Generate comprehensive summary files (CSV and JSONL) at the end of training
-        try:
-            from llm_tool.utils.training_summary_generator import generate_training_summaries
+            # Generate comprehensive summary files (CSV and JSONL) at the end of training
+            try:
+                from llm_tool.utils.training_summary_generator import generate_training_summaries
 
-            self.console.print("\n[bold cyan]📊 Generating Comprehensive Training Summaries...[/bold cyan]")
-            csv_path, jsonl_path = generate_training_summaries(session_id)
+                self.console.print("\n[bold cyan]📊 Generating Comprehensive Training Summaries...[/bold cyan]")
+                csv_path, jsonl_path = generate_training_summaries(session_id)
 
-            self.console.print("[green]✓ Training summaries generated successfully:[/green]")
-            self.console.print(f"  • CSV Summary: [cyan]{csv_path.name}[/cyan]")
-            self.console.print(f"  • JSONL Summary: [cyan]{jsonl_path.name}[/cyan]")
-            self.console.print(f"\n[dim]Full paths:[/dim]")
-            self.console.print(f"  • {csv_path}")
-            self.console.print(f"  • {jsonl_path}")
+                self.console.print("[green]✓ Training summaries generated successfully:[/green]")
+                self.console.print(f"  • CSV Summary: [cyan]{csv_path.name}[/cyan]")
+                self.console.print(f"  • JSONL Summary: [cyan]{jsonl_path.name}[/cyan]")
+                self.console.print(f"\n[dim]Full paths:[/dim]")
+                self.console.print(f"  • {csv_path}")
+                self.console.print(f"  • {jsonl_path}")
 
-        except Exception as e:
-            self.logger.error(f"Failed to generate training summaries: {e}")
-            self.console.print(f"[yellow]⚠️  Could not generate comprehensive summaries: {e}[/yellow]")
+            except Exception as e:
+                self.logger.error(f"Failed to generate training summaries: {e}")
+                self.console.print(f"[yellow]⚠️  Could not generate comprehensive summaries: {e}[/yellow]")
 
     except Exception as e:
         # Update metadata with failure status
@@ -672,6 +715,9 @@ def _training_studio_confirm_and_execute(
             except:
                 pass
         raise  # Re-raise the exception
+
+    # Return the complete training result payload to callers (Annotator Factory integration relies on this)
+    return training_result
 
 def _ensure_training_models_loaded(self) -> None:
     if self.available_trainer_models:
@@ -10523,6 +10569,83 @@ def integrate_training_arena_in_annotator_factory(
     cli_instance.current_session_id = actual_session_id
     cli_instance.current_session_manager = session_manager
 
+    trained_models_map: Dict[str, str] = {}
+    session_model_root: Optional[Path] = None
+    if actual_session_id:
+        try:
+            session_model_root = (Path("models") / actual_session_id).resolve()
+        except Exception:
+            session_model_root = None
+
+    seen_model_paths: Set[Path] = set()
+
+    def _resolve_model_path(raw_value: Any) -> Optional[Path]:
+        if raw_value is None:
+            return None
+        try:
+            candidate = Path(str(raw_value)).expanduser()
+        except Exception:
+            return None
+        if candidate.is_file():
+            candidate = candidate.parent
+        try:
+            candidate = candidate.resolve()
+        except Exception:
+            candidate = candidate.absolute()
+        if session_model_root and session_model_root.exists():
+            try:
+                candidate.relative_to(session_model_root)
+            except ValueError:
+                return None
+        if not candidate.exists():
+            return None
+        if (candidate / "config.json").exists():
+            return candidate
+        for sub_dir in ("model", "best_model", "checkpoint-best"):
+            option = candidate / sub_dir
+            if (option / "config.json").exists():
+                return option.resolve()
+        try:
+            config_path = next(candidate.glob("**/config.json"))
+            return config_path.parent.resolve()
+        except StopIteration:
+            return None
+        except Exception:
+            return None
+
+    def _merge_trained_models(source: Any, name_hint: Optional[str] = None) -> None:
+        if source is None:
+            return
+        if isinstance(source, dict):
+            for key, value in source.items():
+                _merge_trained_models(value, str(key))
+            return
+        if isinstance(source, (list, tuple, set)):
+            for item in source:
+                _merge_trained_models(item, name_hint)
+            return
+        resolved = _resolve_model_path(source)
+        if resolved is None:
+            return
+        if resolved in seen_model_paths:
+            return
+        seen_model_paths.add(resolved)
+        model_name = name_hint or resolved.name
+        if model_name in trained_models_map:
+            existing_path = Path(trained_models_map[model_name])
+            try:
+                if existing_path.resolve() == resolved:
+                    return
+            except Exception:
+                pass
+            suffix = 2
+            candidate_name = f"{model_name}_{suffix}"
+            while candidate_name in trained_models_map:
+                suffix += 1
+                candidate_name = f"{model_name}_{suffix}"
+            model_name = candidate_name
+        trained_models_map[model_name] = str(resolved)
+
     # Initialize builder with session-based organization
     if session_dirs and "session_root" in session_dirs:
         # Use factory session root directly, with training_data subdirectory
@@ -11857,11 +11980,10 @@ def integrate_training_arena_in_annotator_factory(
             bundle.metadata['text_length_stats'] = text_length_stats
 
 
-    
     # ========================================================================
     # Save metadata to Annotator Factory session
     # ========================================================================
-    
+
     if bundle and session_dirs:
         metadata_file = session_dirs.get("session_root", Path("data")) / "training_metadata.json"
         metadata_file.parent.mkdir(parents=True, exist_ok=True)
@@ -11913,6 +12035,34 @@ def integrate_training_arena_in_annotator_factory(
             step_context="factory_quick"
         )
 
+    if training_result:
+        _merge_trained_models(training_result.get('trained_model_paths'))
+        _merge_trained_models(training_result.get('trained_models'))
+
+    loader = getattr(cli_instance, "_load_saved_factory_training_results", None)
+    if callable(loader):
+        try:
+            reconstructed = loader(
+                session_id=actual_session_id,
+                session_dirs=session_dirs,
+                training_workflow={}
+            )
+        except Exception:
+            reconstructed = None
+        if reconstructed:
+            _merge_trained_models(reconstructed.get("training_result", {}).get("trained_models"))
+
+    if trained_models_map:
+        if training_result is None:
+            training_result = {}
+        training_result['trained_models'] = dict(trained_models_map)
+        training_result['trained_model_paths'] = dict(trained_models_map)
+        training_result['models_trained'] = list(trained_models_map.keys())
+        if bundle:
+            bundle.metadata.setdefault('trained_models', {})
+            bundle.metadata['trained_models'] = dict(trained_models_map)
+            bundle.metadata['trained_model_paths'] = dict(trained_models_map)
+
     # Display where the training reports are saved (for Annotator Factory)
     if session_dirs and "session_root" in session_dirs and session_manager:
         console.print("\n[bold cyan]📂 Training Data Organization:[/bold cyan]")
@@ -11936,7 +12086,8 @@ def integrate_training_arena_in_annotator_factory(
         "bundle": bundle,
         "metadata": bundle.metadata if bundle else {},
         "training_result": training_result,
-        "training_logs_dir": session_manager.session_dir if session_manager else None
+        "training_logs_dir": session_manager.session_dir if session_manager else None,
+        "trained_model_paths": trained_models_map,
     }
 
 

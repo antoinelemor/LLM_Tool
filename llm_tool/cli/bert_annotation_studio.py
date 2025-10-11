@@ -59,7 +59,7 @@ from collections import Counter, defaultdict
 import textwrap
 import itertools
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Callable, Set
+from typing import Dict, List, Any, Optional, Tuple, Callable, Set, Iterable, Union, Mapping
 from datetime import datetime
 import time
 import shutil
@@ -119,7 +119,18 @@ MODEL_LANGUAGE_MAP = {
 class BERTAnnotationStudio:
     """Advanced annotation studio for trained BERT models"""
 
-    def __init__(self, console: Console, settings, logger):
+    def __init__(
+        self,
+        console: Console,
+        settings,
+        logger,
+        *,
+        session_base_dir: Optional[Union[str, Path]] = None,
+        allowed_model_paths: Optional[Iterable[Union[str, Path]]] = None,
+        default_session_slug: Optional[str] = None,
+        factory_session_id: Optional[str] = None,
+        factory_context: Optional[Dict[str, Any]] = None,
+    ):
         self.console = console
         self.settings = settings
         self.logger = logger
@@ -133,16 +144,65 @@ class BERTAnnotationStudio:
         self._annotated_row_mask: Optional[pd.Series] = None
         self._factory_annotated_count: int = 0
         self._factory_notice_shown: Set[str] = set()
+        allowed_set: Optional[Set[Path]] = None
+        if allowed_model_paths:
+            allowed_set = set()
+            for candidate in allowed_model_paths:
+                try:
+                    allowed_set.add(Path(candidate).expanduser().resolve())
+                except Exception:
+                    allowed_set.add(Path(candidate).expanduser())
+        self._allowed_model_paths: Optional[Set[Path]] = allowed_set
 
+        base_dir = Path(session_base_dir).expanduser() if session_base_dir else Path("logs") / "annotation_studio"
         self.session_manager = AnnotationStudioSessionManager(
-            base_dir=Path("logs") / "annotation_studio",
+            base_dir=base_dir,
             console=self.console,
             logger=self.logger,
         )
+
+        self._session_base_dir = base_dir
+        sanitized_default = (
+            AnnotationStudioSessionManager.slugify(default_session_slug)
+            if default_session_slug
+            else "bert_annotation"
+        )
+        self._default_session_slug = sanitized_default
+        self._factory_session_id = factory_session_id
+        self._factory_context: Dict[str, Any] = dict(factory_context or {})
+        self._factory_launch_config: Optional[Dict[str, Any]] = None
+        self._factory_launch_active: bool = False
+
         self.session_id: Optional[str] = None
         self._resume_mode: bool = False
         self._resume_from_step: int = 1
         self._step_cache: Dict[str, Any] = {}
+
+    @staticmethod
+    def _sanitize_for_metadata(payload: Any, depth: int = 0) -> Any:
+        """
+        Convert arbitrary objects into JSON-serialisable structures.
+
+        Non-serialisable values are replaced by their string representation so
+        session metadata can always be persisted.
+        """
+        if depth > 6:  # avoid excessively deep recursion
+            return str(payload)
+        if payload is None or isinstance(payload, (str, int, float, bool)):
+            return payload
+        if isinstance(payload, Path):
+            return str(payload)
+        if isinstance(payload, Mapping):
+            return {
+                str(key): BERTAnnotationStudio._sanitize_for_metadata(value, depth + 1)
+                for key, value in payload.items()
+            }
+        if isinstance(payload, (list, tuple, set)):
+            return [
+                BERTAnnotationStudio._sanitize_for_metadata(item, depth + 1)
+                for item in payload
+            ]
+        return str(payload)
 
     # ------------------------------------------------------------------
     # Session lifecycle helpers
@@ -161,7 +221,7 @@ class BERTAnnotationStudio:
 
         raw_name = Prompt.ask(
             "[bold yellow]Enter session name[/bold yellow]",
-            default="bert_annotation",
+            default=getattr(self, "_default_session_slug", "bert_annotation"),
         ).strip()
         slug = AnnotationStudioSessionManager.slugify(raw_name)
         if self.console and slug != raw_name:
@@ -445,10 +505,26 @@ class BERTAnnotationStudio:
         resume_session_id: Optional[str] = None,
     ):
         """Main entry point with session-aware navigation."""
-        self._display_welcome()
+        factory_mode = self._factory_launch_active and self._factory_launch_config is not None
 
-        if not self._initialize_session(session_action, resume_session_id):
-            return
+        if factory_mode:
+            slug = self._default_session_slug or "bert_annotation"
+            if self.console:
+                self.console.print(
+                    f"\n[cyan]Annotator Factory: launching annotation studio session '{slug}'.[/cyan]\n"
+                )
+            self.session_id = self.session_manager.start_new_session(slug)
+            self._resume_mode = False
+            self._resume_from_step = 1
+            if self._factory_context:
+                sanitized_context = self._sanitize_for_metadata(self._factory_context)
+                self.session_manager.metadata.setdefault("factory_context", sanitized_context)
+                # Persist immediately so the session folder mirrors the factory structure
+                self.session_manager._touch_metadata()
+        else:
+            self._display_welcome()
+            if not self._initialize_session(session_action, resume_session_id):
+                return
 
         selected_models: Optional[List[Dict[str, Any]]] = None
         pipeline_plan: Optional[List[Dict[str, Any]]] = None
@@ -514,17 +590,33 @@ class BERTAnnotationStudio:
                             self.console.print("[yellow]Saved dataset path not found. Please re-select.[/yellow]")
                         data_source = None
             if not data_source:
-                self.session_manager.mark_step_started(step_key)
-                data_source = self._select_data_source()
-                if data_source is None:
-                    self.session_manager.mark_step_failed(step_key, "dataset_cancelled")
-                    self.session_manager.set_status("cancelled")
-                    return
-                self.session_manager.save_step(
-                    step_key,
-                    {"data_source": data_source},
-                    summary=data_source.get("path") or data_source.get("display_name", "dataset"),
-                )
+                factory_source: Optional[Dict[str, Any]] = None
+                if factory_mode:
+                    factory_source = self._build_factory_data_source()
+                    if factory_source:
+                        self.session_manager.mark_step_started(step_key)
+                        data_source = factory_source
+                        self.session_manager.save_step(
+                            step_key,
+                            {"data_source": data_source},
+                            summary=str(Path(data_source["path"]).name),
+                        )
+                        if self.console:
+                            self.console.print(
+                                f"[cyan]Annotator Factory: using dataset {data_source['path']}[/cyan]"
+                            )
+                if not data_source:
+                    self.session_manager.mark_step_started(step_key)
+                    data_source = self._select_data_source()
+                    if data_source is None:
+                        self.session_manager.mark_step_failed(step_key, "dataset_cancelled")
+                        self.session_manager.set_status("cancelled")
+                        return
+                    self.session_manager.save_step(
+                        step_key,
+                        {"data_source": data_source},
+                        summary=data_source.get("path") or data_source.get("display_name", "dataset"),
+                    )
 
             # ------------------------- STEP 4 -------------------------
             self._render_step_header(4, "Inspect & Map Columns", "🔍 Tell the studio where the text and identifiers live.")
@@ -547,6 +639,8 @@ class BERTAnnotationStudio:
                     self.session_manager.mark_step_failed(step_key, "mapping_cancelled")
                     self.session_manager.set_status("cancelled")
                     return
+                if factory_mode and df is not None and column_mapping is not None:
+                    column_mapping = self._apply_factory_column_defaults(df, column_mapping)
                 row_count = int(df.shape[0]) if hasattr(df, "shape") else 0
                 self.session_manager.save_step(
                     step_key,
@@ -1302,54 +1396,61 @@ class BERTAnnotationStudio:
 
         self._print_table(model_table)
 
-        self.console.print("\n[bold magenta]Selection Options:[/bold magenta]")
-        self.console.print("[dim][1] Single model (pick one)[/dim]")
-        self.console.print("[dim][2] Multiple models (enter list: e.g., 1,3,5)[/dim]")
-        self.console.print("[dim][3] All available models[/dim]\n")
+        auto_select = self._factory_launch_active
 
-        selection_mode = Prompt.ask(
-            "[cyan]Choose a mode[/cyan]",
-            choices=["1", "2", "3"],
-            default="1"
-        )
+        if auto_select:
+            selection = list(range(1, len(model_entries) + 1))
+            if self.console:
+                self.console.print("\n[dim]Annotator Factory: automatically queuing all newly trained models.[/dim]\n")
+        else:
+            self.console.print("\n[bold magenta]Selection Options:[/bold magenta]")
+            self.console.print("[dim][1] Single model (pick one)[/dim]")
+            self.console.print("[dim][2] Multiple models (enter list: e.g., 1,3,5)[/dim]")
+            self.console.print("[dim][3] All available models[/dim]\n")
 
-        def parse_indices(raw: str) -> List[int]:
-            parts = [chunk.strip() for chunk in raw.replace(";", ",").split(",") if chunk.strip()]
-            indices: List[int] = []
-            for part in parts:
-                if not part.isdigit():
-                    raise ValueError
-                value = int(part)
-                if value < 1 or value > len(model_entries):
-                    raise ValueError
-                if value not in indices:
-                    indices.append(value)
-            if not indices:
-                raise ValueError
-            return indices
-
-        if selection_mode == "1":
-            choice = Prompt.ask(
-                "\n[cyan]Select model[/cyan]",
-                choices=[str(i) for i in range(1, len(model_entries) + 1)],
+            selection_mode = Prompt.ask(
+                "[cyan]Choose a mode[/cyan]",
+                choices=["1", "2", "3"],
                 default="1"
             )
-            selection = [int(choice)]
-        elif selection_mode == "2":
-            while True:
-                raw = Prompt.ask(
-                    "\n[cyan]Model indices (e.g.: 1,3,4)[/cyan]",
+
+            def parse_indices(raw: str) -> List[int]:
+                parts = [chunk.strip() for chunk in raw.replace(";", ",").split(",") if chunk.strip()]
+                indices: List[int] = []
+                for part in parts:
+                    if not part.isdigit():
+                        raise ValueError
+                    value = int(part)
+                    if value < 1 or value > len(model_entries):
+                        raise ValueError
+                    if value not in indices:
+                        indices.append(value)
+                if not indices:
+                    raise ValueError
+                return indices
+
+            if selection_mode == "1":
+                choice = Prompt.ask(
+                    "\n[cyan]Select model[/cyan]",
+                    choices=[str(i) for i in range(1, len(model_entries) + 1)],
                     default="1"
                 )
-                try:
-                    selection = parse_indices(raw)
-                    break
-                except ValueError:
-                    self.console.print("[red]Please enter valid indices separated by commas.[/red]")
-        else:
-            selection = list(range(1, len(model_entries) + 1))
+                selection = [int(choice)]
+            elif selection_mode == "2":
+                while True:
+                    raw = Prompt.ask(
+                        "\n[cyan]Model indices (e.g.: 1,3,4)[/cyan]",
+                        default="1"
+                    )
+                    try:
+                        selection = parse_indices(raw)
+                        break
+                    except ValueError:
+                        self.console.print("[red]Please enter valid indices separated by commas.[/red]")
+            else:
+                selection = list(range(1, len(model_entries) + 1))
 
-        if len(selection) > 1:
+        if (not auto_select) and len(selection) > 1:
             if self.console:
                 self.console.print(
                     "\n[cyan]Execution order decides which model runs first during inference.[/cyan]"
@@ -1437,6 +1538,14 @@ class BERTAnnotationStudio:
             model_dir = config_path.parent
             if not model_dir.is_dir():
                 continue
+
+            if self._allowed_model_paths:
+                try:
+                    resolved_dir = model_dir.resolve()
+                except Exception:
+                    resolved_dir = model_dir
+                if resolved_dir not in self._allowed_model_paths:
+                    continue
 
             has_weights = any(
                 model_dir.glob(pattern)
@@ -2509,6 +2618,54 @@ class BERTAnnotationStudio:
 
         self.console.print(f"[green]✓ Format: {file_format.upper()}[/green]")
         return {'type': 'file', 'path': str(file_path), 'format': file_format}
+
+    def _build_factory_data_source(self) -> Optional[Dict[str, Any]]:
+        """Return a pre-configured data source when launched from Annotator Factory."""
+        if not self._factory_launch_active:
+            return None
+        config = self._factory_launch_config or {}
+        dataset_path = config.get("dataset_path")
+        if not dataset_path:
+            return None
+        candidate = Path(dataset_path).expanduser()
+        if not candidate.exists():
+            if self.console:
+                self.console.print(f"[yellow]Annotator Factory: dataset not found at {candidate}[/yellow]")
+            return None
+        format_map = {
+            '.csv': 'csv',
+            '.tsv': 'tsv',
+            '.xlsx': 'excel',
+            '.xls': 'excel',
+            '.json': 'json',
+            '.jsonl': 'jsonl',
+            '.parquet': 'parquet',
+            '.rdata': 'rdata',
+            '.rds': 'rds',
+        }
+        detected_format = format_map.get(candidate.suffix.lower())
+        if not detected_format:
+            if self.console:
+                self.console.print(f"[yellow]Annotator Factory: unsupported dataset format {candidate.suffix}[/yellow]")
+            return None
+        return {
+            'type': 'file',
+            'path': str(candidate),
+            'format': detected_format,
+        }
+
+    def _apply_factory_column_defaults(
+        self,
+        df: pd.DataFrame,
+        column_mapping: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Inject factory-provided defaults (like the text column) into the column mapping."""
+        config = self._factory_launch_config or {}
+        desired_text = config.get("text_column")
+        if desired_text and desired_text in df.columns:
+            column_mapping = dict(column_mapping)
+            column_mapping['text'] = desired_text
+        return column_mapping
 
     def _select_sql_source(self) -> Optional[Dict[str, Any]]:
         """Interactive SQL source selector with connection helper."""
@@ -3687,3 +3844,48 @@ class BERTAnnotationStudio:
             if self.console:
                 self.console.print(f"[bold red]✗ Error during annotation:[/bold red] {exc}", markup=True)
             return False
+
+    def run_factory_pipeline(
+        self,
+        *,
+        ordered_model_paths: Optional[Iterable[Union[str, Path]]] = None,
+        dataset_path: Optional[Union[str, Path]] = None,
+        text_column: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Launch the interactive studio while constraining selectable models for Annotator Factory."""
+        resolved_paths: List[Path] = []
+        allowed: Optional[Set[Path]] = None
+        if ordered_model_paths:
+            allowed = set()
+            for candidate in ordered_model_paths:
+                try:
+                    resolved = Path(candidate).expanduser().resolve()
+                except Exception:
+                    resolved = Path(candidate).expanduser()
+                allowed.add(resolved)
+                resolved_paths.append(resolved)
+        self._allowed_model_paths = allowed
+
+        self._factory_launch_config = {
+            "dataset_path": Path(dataset_path).expanduser() if dataset_path else None,
+            "text_column": text_column,
+            "model_paths": resolved_paths,
+        }
+        self._factory_launch_active = True
+
+        if self.console:
+            self.console.print(
+                "[cyan]Launching BERT Annotation Studio to complete the Deploy & Annotate stage.[/cyan]"
+            )
+
+        try:
+            self.run()
+        finally:
+            self._allowed_model_paths = None
+            self._factory_launch_active = False
+            self._factory_launch_config = None
+
+        return {
+            "status": "completed",
+            "detail": "Interactive annotation studio launched",
+        }
