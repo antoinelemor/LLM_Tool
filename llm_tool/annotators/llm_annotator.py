@@ -528,6 +528,14 @@ class LLMAnnotator:
         log_path = config.get('log_path')
         output_format = config.get('output_format', config.get('data_source', 'csv'))
 
+        if not tasks:
+            message = "[ANNOTATOR] No tasks to process after filtering; returning original dataset."
+            if self.progress_manager:
+                self.progress_manager.show_warning(message)
+            else:
+                self.logger.warning(message)
+            return full_data
+
         # Report initial progress - DEBUG with file logging
         import sys
         try:

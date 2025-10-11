@@ -9225,22 +9225,125 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if HAS_RICH and self.console:
             doc_text = """
-# LLMTool Documentation
+# LLMTool – Documentation & Help
 
-## Quick Start
-1. Ensure you have models available (Ollama or API keys)
-2. Prepare your dataset (CSV, JSON, etc.)
-3. Use Quick Start Wizard for automatic configuration
+```
+┌──────────────────────────────┐
+│  DATA  →  AI Annotation  →   │
+│  QC / Training  →  Inference │
+│         ↘ Resume & Review ↗  │
+└──────────────────────────────┘
+```
 
-## Features
-- **Auto-detection**: Automatically finds models and datasets
-- **Smart defaults**: Intelligent configuration suggestions
-- **Profile system**: Save and reuse configurations
-- **Benchmarking**: Compare multiple models automatically
+## Before You Dive In
+- Create or pick a workspace folder that contains your data (for example `data/customer_reviews.csv`) and prompts (`prompts/`).
+- Hosted models (OpenAI, Anthropic, Google, etc.) need API keys in environment variables. Local models (Ollama, Llama.cpp) must be running before you start LLMTool.
+- Persistent configuration lives in `~/.llm_tool/`; reusable execution profiles live in `~/.llmtool/profiles/`.
+- The banner at launch tells you which GPUs/CPUs are available, which LLM providers are detected, and how many datasets were found in the current directory.
 
-## Support
-- GitHub: https://github.com/antoine-lemor/LLMTool
-- Email: support@llmtool.ai
+## Mode 1 - The Annotator (Zero-Shot Lab)
+**Purpose**: Turn raw text into AI-generated annotations you can export for human review or training.
+
+1. Choose **Smart Annotate**. Provide a session name (e.g. `customer_reviews_20250304_101500`). LLMTool creates matching folders in `annotations_output/` and `logs/`.
+2. Dataset detection proposes text columns (e.g. `review_body`) and ID columns. Confirm or override.
+3. Load prompts: select `prompts/sentiment_prompt.txt`, optionally add prefixes (like `p1_`). If you need help designing a prompt, run the built-in Social Science Prompt Wizard.
+4. Pick a model: `openai:gpt-4o-mini`, `anthropic:claude-3-haiku`, or a local model such as `ollama:llama3.2`. LLMTool validates that the provider is reachable.
+5. Configure execution: batch size, retry budget (five JSON repairs max per record), incremental save cadence, and export formats (CSV, JSONL, Label Studio, Doccano).
+6. Start annotation. The live panel shows successes, retries, and skipped rows. Checkpoints are written every few dozen rows so you can resume if the run stops.
+
+**Hard-coded example**  
+Input file: `data/customer_reviews.csv` (`review_id`, `review_body`)  
+Output files:
+- `annotations_output/20250304_101500_customer_reviews/data/customer_reviews_annotated.csv`
+- `annotations_output/20250304_101500_customer_reviews/exports/labelstudio/customer_reviews.jsonl`
+- `annotations_output/.../prompts/` contains a frozen copy of every prompt used.
+
+## Mode 2 - The Annotator Factory (Pipeline Orchestrator)
+**Purpose**: Chain annotation, cleaning, language detection, dataset splitting, and training hand-off.
+
+1. Load a dataset (such as `data/support_tickets.parquet`). A quality report checks missing values, language consistency, and existing labels.
+2. The factory can reuse your last Annotator configuration or guide you through a fresh setup.
+3. Once annotation completes, the pipeline normalizes outputs into `text`, `label`, `confidence`, `language_detected`, and optional metadata columns.
+4. Configure training splits (default 80/10/10 stratified) and choose a validation sampling strategy (e.g. confidence-weighted).
+5. The pipeline writes train-ready files to `logs/annotator_factory/<session_id>/train_ready/`, plus a detailed JSON report capturing class balance, language stats, and prompt provenance.
+6. Optional final step: launch the Training Arena immediately using the freshly prepared data.
+
+**Hard-coded example**  
+`logs/annotator_factory/factory_session_20250304_111000/train_ready/support_tickets_train.csv`  
+`logs/annotator_factory/.../reports/factory_report.json`
+
+## Mode 3 - Training Arena (Model Benchmarking Studio)
+**Purpose**: Train and compare 50+ transformer models, including multilingual, long-document, and multi-label options.
+
+1. Point to a supervised dataset (for example the `support_tickets_train.csv` produced by the factory).
+2. Select the text column, label column(s), and optional multi-label or hierarchical fields.
+3. Review automatic diagnostics: token-length histograms, language detection, imbalance warnings. The tool recommends long-document models if >20% of samples exceed 512 tokens.
+4. Choose token strategies (truncation, sliding window, dynamic padding) and multilingual handling (shared model vs per-language training).
+5. Pick candidate architectures such as `bert-base-multilingual-cased`, `xlm-roberta-large`, `longformer-base-4096`, and configure epochs (default 3), reinforcement learning toggles, and batch sizes (auto-adjusted to GPU memory).
+6. Monitor the rich console: per-epoch metrics, live confusion matrices, macro/micro F1, precision and recall. Artifacts (logs, charts, checkpoints) are stored in `logs/training_arena/<session_id>/`.
+
+**Hard-coded example**  
+`logs/training_arena/support_ticket_models/models/xlm-roberta-large-best/` – best-performing checkpoint  
+`logs/training_arena/support_ticket_models/reports/model_rankings.csv` – side-by-side comparison
+
+## Mode 4 - BERT Annotation Studio (Production Inference)
+**Purpose**: Run trained models at scale with GPU/CPU parallelism, confidence scoring, and export options.
+
+1. Choose a checkpoint directory (e.g. `logs/training_arena/support_ticket_models/models/xlm-roberta-large-best/`).
+2. Select a data source: file (`data/new_support_tickets.csv`), PostgreSQL query, or JSONL export.
+3. Configure inference settings: batch size, confidence thresholds, calibration, and export targets (CSV, JSONL, SQL).
+4. Optional extras: deduplicate by ID, normalize languages, persist logits and top-k alternatives.
+5. Results are saved under `logs/annotation_studio/<session_id>/scored/` with an `inference_report.json` summarizing throughput and class distributions.
+
+**Hard-coded example**  
+`logs/annotation_studio/bert_session_20250304_150000/scored/new_support_tickets_predictions.csv`
+
+## Mode 5 - Validation Lab (Quality Control Workshop)
+**Purpose**: Audit and compare annotation sources (LLM vs human, double annotation, etc.).
+
+- Draw stratified samples (by class, by confidence intervals) for manual review.
+- Compute agreement metrics: Cohen’s Kappa, accuracy, precision/recall per label.
+- Highlight discrepancies where two annotators or runs disagree on the same `case_id`.
+
+**Hard-coded example**  
+Input: `annotations_output/20250304_101500_customer_reviews/data/customer_reviews_annotated.csv` vs `data/customer_reviews_validated.csv`  
+Output: `logs/validation_lab/quality_review_20250304/report/comparison_summary.json`
+
+## Mode 6 - Profile Manager (Configuration Vault)
+**Purpose**: Save, share, and relaunch complete run configurations.
+
+- Each profile file (e.g. `~/.llmtool/profiles/baseline_sentiment.json`) stores parameters, metrics, and notes.
+- The manager lists recent profiles, abbreviates key settings, and lets you clone or delete them.
+- Loading a profile pre-fills every screen in the corresponding mode; tweak before hitting run.
+
+**Hard-coded example**  
+Profile `baseline_sentiment` created after a Mode 1 run can be reapplied to `data/customer_reviews_march.csv` without re-entering prompts or model choices.
+
+## Mode 7 - Documentation & Help (You Are Here)
+- Use this screen whenever you need a refresher on workflows, file locations, or troubleshooting steps.
+- The content updates as new capabilities ship. Bookmark notable sections for your team.
+
+## Mode 8 - Resume Center (Mission Control)
+**Purpose**: View and restart sessions across all modes.
+
+- Displays status (`RUNNING`, `COMPLETED`, `FAILED`), last executed step, key metrics, and timestamps for Annotator, Factory, Training Arena, and BERT Studio sessions.
+- Offers quick actions: resume exactly where you stopped (e.g. relaunch Training Arena at Step 11) or clone configuration into a brand-new session.
+
+**Hard-coded example**  
+Selecting `factory_session_20250304_111000` reopens the Annotator Factory at the dataset splitting step; picking `training_session_20250304_123000` shows the final benchmark dashboard without rerunning training.
+
+## Where Everything Lands
+- `annotations_output/<timestamp_session>/`: annotated datasets, copied prompts, configuration snapshots, run logs.
+- `logs/<mode>/<session_id>/`: granular reports, metrics, checkpoints, and metadata for each workflow stage.
+- `logs/application/`: timestamped diagnostic logs (`llmtool_<timestamp>.log`) useful when reporting issues.
+- `~/.llmtool/profiles/`: reusable profiles plus `history.json` tracking past executions.
+
+## Troubleshooting Checklist
+- **“No API key detected”** – open Profile Manager, enter the key under Provider Settings, or set environment variables before launching.
+- **“Some rows remain unannotated”** – inspect retry counts in the annotation summary and read `logs/annotator/<session_id>/annotator.log` for the failing prompts.
+- **“Driver missing (pyreadr / psycopg2 / pymysql)”** – install only the required extra dependency, then rerun.
+- **“Out of memory”** – reduce batch sizes based on the recommendations in the resource banner; for very long texts, consider Longformer/BigBird models.
+- **Need more help?** – consult `README.md`, the `docs/` folder, or raise an issue at https://github.com/antoine-lemor/LLMTool. When emailing support@llmtool.ai attach the relevant `logs/application/llmtool_<timestamp>.log`.
             """
 
             md = Markdown(doc_text)

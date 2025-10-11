@@ -1047,5 +1047,9 @@ class PipelineController:
 
     def cleanup(self):
         """Cleanup resources"""
-        self.executor.shutdown(wait=True)
+        if self.executor:
+            try:
+                self.executor.shutdown(wait=True)
+            except Exception as exc:
+                self.logger.warning(f"Executor shutdown encountered an issue: {exc}")
         self.logger.info("Pipeline controller cleaned up")

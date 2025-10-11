@@ -303,7 +303,12 @@ def run_api_mode(args):
     )
 
     # Add API routes
-    from .api import routes
+    try:
+        from .api import routes
+    except ImportError as exc:
+        logging.error("API mode is not available because the API module is missing: %s", exc)
+        logging.error("Install the optional API components or remove the --api flag.")
+        sys.exit(1)
     app.include_router(routes.router)
 
     # Run server
@@ -342,6 +347,24 @@ def run_direct_action(args):
             logging.info(f"Annotating {args.annotate}")
             config['file_path'] = args.annotate
             config['mode'] = 'file'
+            if 'data_source' not in config:
+                data_source = None
+                suffix = Path(args.annotate).suffix.lower()
+                mapping = {
+                    '.csv': 'csv',
+                    '.tsv': 'csv',
+                    '.txt': 'csv',
+                    '.xlsx': 'excel',
+                    '.xls': 'excel',
+                    '.parquet': 'parquet',
+                    '.json': 'json',
+                    '.jsonl': 'jsonl'
+                }
+                data_source = mapping.get(suffix)
+                if not data_source:
+                    logging.error(f"Could not infer data source from extension '{suffix}'. Please specify a supported format (csv, excel, parquet, json, jsonl).")
+                    sys.exit(1)
+                config['data_source'] = data_source
             results = controller.run_annotation(config)
             logging.info(f"Annotation complete: {results.get('total_annotated', 0)} items processed")
 
