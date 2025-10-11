@@ -166,33 +166,39 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
 ## 🧭 Architecture at a Glance
 
 ```
-┌───────────────┐   ┌──────────────────────┐   ┌────────────────┐
-│  Rich CLI &   │──▶│  Pipeline Controller │──▶│ LLM Annotators │
-│  Wizards      │   │  (sessions, resume)  │   │ & Prompt Tools │
-└───────────────┘   └──────────┬───────────┘   └────────┬───────┘
-                               │                        │
-                               ▼                        ▼
-                       ┌────────────────┐      ┌────────────────┐
-                       │  Trainers &    │      │  Validators &  │
-                       │  Benchmarking  │      │  QA Pipelines  │
-                       └────────┬───────┘      └────────┬───────┘
-                                │                       │
-                                ▼                       ▼
-             ┌──────────────────────────────┐  ┌──────────────────────┐
-             │  Utils (data, language,      │  │  Artefacts & Storage │
-             │  resources, session logs)    │  │  (outputs, models,   │
-             └──────────────────────────────┘  │  logs, profiles)     │
-                                               └──────────────────────┘
+┌──────────────────────────────────────────────┐
+│ 1. Prompt & schema design                    │
+│    Researchers describe concepts/categories  │
+│    • Prompt Wizard + AI drafting assistance  │
+└───────────────┬──────────────────────────────┘
+                │ structured prompt schema
+                ▼
+┌──────────────────────────────────────────────┐
+│ 2. LLM-driven annotation of the source corpus│
+│    • Cloud (GPT/Claude/Gemini) or local LLMs │
+│    • JSON repair, confidence scoring, resume │
+└───────────────┬──────────────────────────────┘
+                │ high quality annotated dataset
+                ▼
+┌──────────────────────────────────────────────┐
+│ 3. Multilingual training & benchmarking      │
+│    • 50+ transformer backbones               │
+│    • Auto language routing & reinforcement   │
+└───────────────┬──────────────────────────────┘
+                │ production checkpoints & metrics
+                ▼
+┌──────────────────────────────────────────────┐
+│ 4. Large-scale annotation & validation       │
+│    • BERT Annotation Studio for deployment   │
+│    • Validation Lab for QA & reviewer packs  │
+└──────────────────────────────────────────────┘
 ```
 
-- **Rich CLI & Wizards** – `llm_tool/cli/advanced_cli.py` drives the interactive dashboard, profile manager, and Social Science Prompt Wizard with Rich layouts.
-- **Pipeline Controller** – `llm_tool/pipelines/pipeline_controller.py` plus the enhanced wrapper orchestrate annotation, validation, training, and deployment phases with resume support.
-- **LLM Annotators** – `llm_tool/annotators/llm_annotator.py` combines API/local clients, JSON repairing, sample size estimation, and multi-prompt management.
-- **Trainers & Benchmarking** – `llm_tool/trainers/*` handle single- and multi-label training, automatic model selection, reinforcement loops, and metrics persistence.
-- **Validation & QA** – `llm_tool/validators/annotation_validator.py` prepares stratified samples, agreement scores, and exports for human review.
-- **Utility Services** – `llm_tool/utils/*` provide dataset discovery, language detection (Lingua/langid/fastText ensemble), resource monitoring, session summaries, and training data conversion.
-- **Configuration & Security** – `llm_tool/config/settings.py` and `config/api_key_manager.py` manage encrypted credentials, paths, and logging defaults.
-- **Artefact Stores** – runtime data lands in `annotations_output/`, trained checkpoints in `models/`, logs under `logs/` and `logs/application/`, while global profiles live in `~/.llm_tool/`.
+- **Step 1 – Prompt design**: `llm_tool/cli/advanced_cli.py` with `annotators/prompt_wizard.py` captures the research taxonomy, optionally enlisting GPT/Ollama to draft crisp definitions and examples.
+- **Step 2 – LLM annotation**: `annotators/llm_annotator.py` applies the schema to the initial corpus, handling retries, JSON cleansing, sample-size estimation, and incremental checkpoints.
+- **Step 3 – Model training**: `trainers/model_trainer.py`, `trainers/multi_label_trainer.py`, and `trainers/training_data_builder.py` transform those annotations into multilingual benchmarks, select best-performing models, and persist artefacts.
+- **Step 4 – Scaled inference & QA**: `cli/bert_annotation_studio.py` deploys checkpoints on large databases, while `validators/annotation_validator.py` orchestrates stratified sampling, agreement metrics, and exportable review sets.
+- **Supporting services**: `utils/*` cover dataset discovery, language detection, resource monitoring, and session logging; `config/settings.py` secures credentials and paths; all artefacts land in `annotations_output/`, `models/`, `logs/`, and `~/.llm_tool/`.
 
 ---
 
