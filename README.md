@@ -89,7 +89,11 @@ As a social science researcher, you might have:
 ## 📋 Table of Contents
 
 - [What is LLM Tool?](#-what-is-llm-tool)
+- [Rapid Start Cheat Sheet](#-rapid-start-cheat-sheet)
 - [How It Works: The Workflow](#-how-it-works-the-workflow)
+- [Architecture at a Glance](#-architecture-at-a-glance)
+- [Features](#-features)
+- [Workflow Intelligence & Tooling](#-workflow-intelligence--tooling)
 - [Installation](#-installation)
   - [Step-by-Step Installation (VSCode)](#step-by-step-installation-vscode)
   - [Step-by-Step Installation (Terminal Only)](#step-by-step-installation-terminal-only)
@@ -99,11 +103,33 @@ As a social science researcher, you might have:
   - [Mode 3: Training Arena](#mode-3-training-arena)
   - [Mode 4: BERT Annotation Studio](#mode-4-bert-annotation-studio)
   - [Mode 5: Validation Lab](#mode-5-validation-lab)
+- [Mode Playbook (Detailed Guide)](#-mode-playbook-detailed-guide)
 - [Complete Example: From Raw Data to Trained Model](#-complete-example-from-raw-data-to-trained-model)
+- [Outputs & Directory Layout](#-outputs--directory-layout)
+- [Data Connectors & Providers](#-data-connectors--providers)
+- [Model Zoo Overview](#-model-zoo-overview)
+- [Monitoring & Logs](#-monitoring--logs)
 - [FAQ](#-faq)
 - [Troubleshooting](#-troubleshooting)
 - [Citation](#-citation)
 - [License](#-license)
+
+## 🚀 Rapid Start Cheat Sheet
+
+> Ten minutes to move from checkout to your first annotated dataset.
+
+1. **Install prerequisites** – Python 3.11+, Git, and (optionally) [Ollama](https://ollama.ai) for fully local LLMs. On macOS: `brew install python@3.11` then `brew install --cask ollama`.
+2. **Clone the repository**  
+   `git clone https://github.com/antoine-lemor/LLM_Tool.git && cd LLM_Tool`
+3. **Run the installer** – `chmod +x install.sh && ./install.sh --all` (creates `.venv`, installs extras, runs verification).
+4. **Activate the virtualenv** – `source .venv/bin/activate` (Windows: `.venv\Scripts\activate`).
+5. **Launch the CLI** – `llm-tool` shows the Rich main menu.
+6. **Configure providers (optional)** – Mode 6 → Resume Center → add API keys (OpenAI/Anthropic/Gemini) or set Ollama as default.
+7. **Annotate a sample** – Mode 1 → pick `data/AI_catégo_pour_antoine_phrases.csv` → choose columns → select `ollama:llama3.2` or `gpt-4o-mini` → run.
+8. **Check quality** – Mode 5 → load the same output → request a 50-item stratified sample for review.
+9. **Train a model** – Mode 3 → import the annotated CSV from `annotations_output/.../data/` → accept recommended multilingual models → run benchmarks.
+10. **Deploy predictions** – Mode 4 → load the best checkpoint → annotate another dataset or rerun the original corpus at scale.
+11. **Explore artefacts** – `annotations_output/`, `models/`, and `logs/` capture everything; see [Outputs & Directory Layout](#-outputs--directory-layout).
 
 ---
 
@@ -134,6 +160,39 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
 ```
 
 **Use when**: You already have annotated training data and want the best custom model.
+
+---
+
+## 🧭 Architecture at a Glance
+
+```
+┌───────────────┐   ┌──────────────────────┐   ┌────────────────┐
+│  Rich CLI &   │──▶│  Pipeline Controller │──▶│ LLM Annotators │
+│  Wizards      │   │  (sessions, resume)  │   │ & Prompt Tools │
+└───────────────┘   └──────────┬───────────┘   └────────┬───────┘
+                               │                        │
+                               ▼                        ▼
+                       ┌────────────────┐      ┌────────────────┐
+                       │  Trainers &    │      │  Validators &  │
+                       │  Benchmarking  │      │  QA Pipelines  │
+                       └────────┬───────┘      └────────┬───────┘
+                                │                       │
+                                ▼                       ▼
+             ┌──────────────────────────────┐  ┌──────────────────────┐
+             │  Utils (data, language,      │  │  Artefacts & Storage │
+             │  resources, session logs)    │  │  (outputs, models,   │
+             └──────────────────────────────┘  │  logs, profiles)     │
+                                               └──────────────────────┘
+```
+
+- **Rich CLI & Wizards** – `llm_tool/cli/advanced_cli.py` drives the interactive dashboard, profile manager, and Social Science Prompt Wizard with Rich layouts.
+- **Pipeline Controller** – `llm_tool/pipelines/pipeline_controller.py` plus the enhanced wrapper orchestrate annotation, validation, training, and deployment phases with resume support.
+- **LLM Annotators** – `llm_tool/annotators/llm_annotator.py` combines API/local clients, JSON repairing, sample size estimation, and multi-prompt management.
+- **Trainers & Benchmarking** – `llm_tool/trainers/*` handle single- and multi-label training, automatic model selection, reinforcement loops, and metrics persistence.
+- **Validation & QA** – `llm_tool/validators/annotation_validator.py` prepares stratified samples, agreement scores, and exports for human review.
+- **Utility Services** – `llm_tool/utils/*` provide dataset discovery, language detection (Lingua/langid/fastText ensemble), resource monitoring, session summaries, and training data conversion.
+- **Configuration & Security** – `llm_tool/config/settings.py` and `config/api_key_manager.py` manage encrypted credentials, paths, and logging defaults.
+- **Artefact Stores** – runtime data lands in `annotations_output/`, trained checkpoints in `models/`, logs under `logs/` and `logs/application/`, while global profiles live in `~/.llm_tool/`.
 
 ---
 
@@ -170,6 +229,21 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
 - Inter-annotator agreement (Cohen's Kappa)
 - Stratified sampling for review
 - Schema validation with Pydantic
+
+---
+
+## 🧠 Workflow Intelligence & Tooling
+
+LLM Tool bundles a set of purposeful assistants so researchers can focus on methodology rather than plumbing.
+
+- **Dataset radar** – `DataDetector` scans folders recursively, infers candidate text/label columns, and surfaces stats (row counts, average text length, language hints) before you commit to a run.
+- **Prompt craftsmanship** – The Social Science Prompt Wizard (`annotators/prompt_wizard.py`) guides schema design, generates definitions with LLM assistance, sanitises JSON keys, and stores reusable templates.
+- **Resumable pipelines** – `AnnotationResumeTracker`, `TrainingDatasetBuilder`, and `AnnotationStudioSessionManager` capture every stage (steps, payloads, artefacts) so you can exit and resume without losing context.
+- **Live situational awareness** – The enhanced pipeline wrapper streams real annotation JSON samples, training benchmarks, and warnings into Rich dashboards, while `resource_display.py` prints GPU/CPU/RAM availability with guidance.
+- **Quality fences** – JSON outputs are validated and auto-repaired up to five times, schema inconsistencies are flagged before exports, and validation runs compute agreement metrics with fully traceable provenance.
+- **Security guardrails** – API keys are encrypted with Fernet, file permissions are hardened (`0700/0600`), warnings appear if encryption libraries are missing, and environment variables override stored secrets for reproducible jobs.
+- **Local-first philosophy** – Ollama/LlamaCPP clients run entirely offline, datasets never leave your machine, and all artefacts write to the project workspace or `~/.llm_tool`.
+- **Verification script** – `verify_installation.py` checks versions, dependency health, and GPU availability to simplify classroom or lab deployments.
 
 ---
 
@@ -303,16 +377,16 @@ llm-tool
 
 You should see the main menu:
 ```
-╭─────────────────────────────────── Main Menu ────────────────────────────────────╮
-│ 1  🎨 The Annotator - LLM Tool annotates, you decide                             │
-│ 2  🏭 The Annotator Factory - Clone The Annotator into ML Models                 │
-│ 3  🎮 Training Arena - Train Your Own Models                                     │
-│ 4  🤖 BERT Annotation Studio - Annotate with Trained Models                      │
-│ 5  🔍 Validation Lab - Quality Assurance Tools                                   │
-│ 6  💾 Profile Manager - Save & Load Configurations                               │
-│ 7  📚 Documentation & Help                                                       │
-│ 0  ❌ Exit                                                                       │
-╰──────────────────────────────────────────────────────────────────────────────────╯
+                               ╭─────────────────────────── Main Menu ───────────────────────────╮
+                               │ 1  🎨 The Annotator - LLM Tool annotates, you decide             │
+                               │ 2  🏭 The Annotator Factory - Clone The Annotator into ML Models │
+                               │ 3  🎮 Training Arena - Train Your Own Models                     │
+                               │ 4  🤖 BERT Annotation Studio - Annotate with Trained Models      │
+                               │ 5  🔍 Validation Lab - Quality Assurance Tools                   │
+                               │ 6  📂 Resume Center - Manage Sessions & Configurations           │
+                               │ 7  📚 Documentation & Help                                       │
+                               │ 0  ❌ Exit                                                       │
+                               ╰──────────────────────────────────────────────────────────────────╯
 
 Select option [0/1/2/3/4/5/6/7] (1):
 ```
@@ -447,7 +521,7 @@ LLM Tool stores API keys securely with encryption. Run the interactive CLI to se
 llm-tool
 ```
 
-Navigate to **Profile Manager → API Key Configuration** and add your keys:
+Navigate to **Resume Center → API Key Configuration** and add your keys:
 - OpenAI API Key (for GPT-4, o1, o3 models)
 - Anthropic API Key (for Claude models)
 - Google API Key (for Gemini models)
@@ -466,16 +540,16 @@ llm-tool
 
 You'll see the main menu:
 ```
-╭─────────────────────────────────── Main Menu ────────────────────────────────────╮
-│ 1  🎨 The Annotator - LLM Tool annotates, you decide                             │
-│ 2  🏭 The Annotator Factory - Clone The Annotator into ML Models                 │
-│ 3  🎮 Training Arena - Train Your Own Models                                     │
-│ 4  🤖 BERT Annotation Studio - Annotate with Trained Models                      │
-│ 5  🔍 Validation Lab - Quality Assurance Tools                                   │
-│ 6  💾 Profile Manager - Save & Load Configurations                               │
-│ 7  📚 Documentation & Help                                                       │
-│ 0  ❌ Exit                                                                       │
-╰──────────────────────────────────────────────────────────────────────────────────╯
+                               ╭─────────────────────────── Main Menu ───────────────────────────╮
+                               │ 1  🎨 The Annotator - LLM Tool annotates, you decide             │
+                               │ 2  🏭 The Annotator Factory - Clone The Annotator into ML Models │
+                               │ 3  🎮 Training Arena - Train Your Own Models                     │
+                               │ 4  🤖 BERT Annotation Studio - Annotate with Trained Models      │
+                               │ 5  🔍 Validation Lab - Quality Assurance Tools                   │
+                               │ 6  📂 Resume Center - Manage Sessions & Configurations           │
+                               │ 7  📚 Documentation & Help                                       │
+                               │ 0  ❌ Exit                                                       │
+                               ╰──────────────────────────────────────────────────────────────────╯
 ```
 
 ### 3. Quick Annotation Example (Using Ollama - 100% Local)
@@ -1235,6 +1309,23 @@ Export quality report? [y/n] (y): y
 
 ---
 
+## 🗂 Mode Playbook (Detailed Guide)
+
+Need a structured checklist for each mode? The **Mode Playbook** in `docs/modes_reference.md` distils the CLI into repeatable steps with inputs, outputs, logging paths, and hand-offs.
+
+| Mode | What it delivers | Deep dive |
+|------|------------------|-----------|
+| Mode 1 – The Annotator | Zero-shot LLM annotation with JSON repair, sampling, and exports. | [docs/modes_reference.md#mode-1--the-annotator](docs/modes_reference.md#mode-1--the-annotator) |
+| Mode 2 – Annotator Factory | End-to-end pipeline tying annotation, cleaning, splitting, and training launches. | [docs/modes_reference.md#mode-2--the-annotator-factory](docs/modes_reference.md#mode-2--the-annotator-factory) |
+| Mode 3 – Training Arena | Multilingual benchmarks across 50+ transformer architectures. | [docs/modes_reference.md#mode-3--training-arena](docs/modes_reference.md#mode-3--training-arena) |
+| Mode 4 – BERT Annotation Studio | Production inference with checkpoint orchestration and rich monitoring. | [docs/modes_reference.md#mode-4--bert-annotation-studio](docs/modes_reference.md#mode-4--bert-annotation-studio) |
+| Mode 5 – Validation Lab | QA lab for sampling, agreement metrics, and reviewer packs. | [docs/modes_reference.md#mode-5--validation-lab](docs/modes_reference.md#mode-5--validation-lab) |
+| Mode 6 – Profile Manager | Encrypted credential vault and reusable prompt/model presets. | [docs/modes_reference.md#mode-6--profile-manager](docs/modes_reference.md#mode-6--profile-manager) |
+
+> Tip: From inside the CLI you can press `?` on most prompts to open the same guidance inline. The playbook mirrors that content in a printable format for classroom handouts or lab manuals.
+
+---
+
 ## 📖 Complete Example: From Raw Data to Trained Model
 
 **Scenario**: You're a political scientist studying online political discourse. You have 10,000 tweets about a recent election and want to classify them by **sentiment** (positive/negative/neutral) and **topic** (economy/immigration/healthcare/other).
@@ -1314,6 +1405,97 @@ Open `election_tweets_classified.csv` in Excel/R/Python:
 **Total Time**: ~45 minutes (from raw data to 10,000 classified tweets)
 
 **Total Cost**: $0 (using Ollama locally)
+
+---
+
+## 📁 Outputs & Directory Layout
+
+```
+LLM_Tool/
+├── annotations_output/
+│   └── <session_id>/
+│       ├── data/                  # CSV/JSONL outputs (incremental + final)
+│       ├── prompts/               # Frozen prompt definitions per run
+│       ├── validation_exports/    # Label Studio / Doccano packets
+│       ├── training_data/         # Factory pre-processed corpora
+│       └── metadata/              # Resume files, stats, run manifests
+├── models/
+│   └── <session_id>/
+│       ├── checkpoints/           # Hugging Face-compatible model weights
+│       ├── metrics/               # JSON + HTML benchmarking reports
+│       └── training_logs/         # Trainer transcripts and charts
+├── logs/
+│   ├── annotator/                 # Mode 1 session logs
+│   ├── annotator_factory/         # Mode 2 pipeline logs
+│   ├── training_arena/            # Mode 3 resumes + diagnostics
+│   ├── annotation_studio/         # Mode 4 session caches
+│   └── application/               # Global logs (llmtool_<timestamp>.log)
+├── cache/                         # Temporary datasets, embeddings, etc.
+├── prompts/                       # User-authored prompt templates
+└── ~/.llm_tool/
+    ├── api_keys.enc               # Encrypted credentials
+    ├── profiles/                  # Saved mode configurations
+    └── history.json               # Execution history for quick resume
+```
+
+Keep these directories under version control (where appropriate) to guarantee reproducibility and shareable research artefacts.
+
+---
+
+## 🔌 Data Connectors & Providers
+
+| Source | Status | Notes |
+|--------|--------|-------|
+| CSV / TSV | ✅ | Delimited files with auto encoding detection and chunked loading. |
+| Excel (`.xlsx`, `.xls`) | ✅ | Uses `pandas` with sheet selection prompts. |
+| JSON / JSONL | ✅ | Supports nested fields, `jsonl` streaming, optional schema hints. |
+| Parquet | ✅ | Fast columnar loading, ideal for large corpora. |
+| PostgreSQL | ✅ | Connect via DSN; supports SQL filtering and sampling. |
+| RData / RDS | ✅ (optional `pyreadr`) | Load labelled datasets from R workflows. |
+| Remote APIs | ⏳ | Export to Label Studio/Doccano; reconnect using their SDKs if needed. |
+
+LLM providers available in Mode 1 and 2:
+
+- **OpenAI** – GPT-4, GPT-4o, o1, o3 family via `openai` SDK.
+- **Anthropic** – Claude 3.x models via `anthropic` SDK.
+- **Google** – Gemini 1.5 Pro/Flash via `google-generativeai`.
+- **Ollama** – Local inference (`ollama pull llama3.2`, `gemma2`, etc.).
+- **Llama.cpp** – Direct GPU/CPU inference using `llama-cpp-python`.
+
+Each provider can be pinned per profile; the CLI tracks preferred models and warns if credentials are missing.
+
+---
+
+## 🤖 Model Zoo Overview
+
+**LLM annotation engines (Mode 1/2)**:
+
+- GPT-4(o/o1/o3), Claude 3.5 Sonnet/Haiku, Gemini 1.5 Pro/Flash.
+- Local choices: Llama 3.3/3.2, Gemma 2, Mistral, Mixtral, Phi 3, Command-R, etc.
+- JSON validation ensures outputs conform to structured schema regardless of provider.
+
+**Training backbones (Mode 3)** – curated sets per language:
+
+- **English**: BERT base/large, RoBERTa base/large, DeBERTa v3, ELECTRA, ALBERT.
+- **French**: CamemBERT, FlauBERT, BARThez, DistilCamemBERT.
+- **Spanish**: BETO, RoBERTa-BNE, MarIA.
+- **German**: GBERT, German BERT cased.
+- **Multilingual**: XLM-RoBERTa (base/large), mDeBERTa, DistilBERT multilingual, mMiniLM.
+- **Long sequence**: Longformer, BigBird, LongT5 for legislative debates or interviews.
+- **Multi-label toolkit**: Binary one-vs-all, automatic multiclass grouping, reinforced epochs, per-label model selection.
+
+Trained checkpoints are standard Hugging Face directories and can be pushed to private/model hubs if desired.
+
+---
+
+## 📈 Monitoring & Logs
+
+- **Installation diagnostics** – `python verify_installation.py` prints dependency versions, GPU availability (CUDA/MPS), and CLI entry-point checks.
+- **Runtime dashboards** – Rich panels display annotation throughput, retry counts, benchmark leaderboards, and resource usage.
+- **Application logs** – `logs/application/llmtool_<timestamp>.log` captures warnings, stack traces, configuration snapshots (without secrets).
+- **Mode-specific logs** – Each session folder (`logs/<mode>/<session>/`) contains `resume.json`, human-readable transcripts, and progress JSON for programmatic inspection.
+- **Metrics & Reports** – Training metrics in `models/<session>/metrics/`, validation HTML reports in `annotations_output/<session>/validation_exports/quality_report.html`.
+- **Data provenance** – Session summaries (`logs/.../summary.json`) record data sources, prompt versions, model hashes, and environment info for replication packages.
 
 ---
 

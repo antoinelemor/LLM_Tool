@@ -1566,9 +1566,8 @@ class AdvancedCLI:
                 ("3", "🎮 Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
                 ("4", "🤖 BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
                 ("5", "🔍 Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement [⚠️ IN DEVELOPMENT]"),
-                ("6", "💾 Profile Manager - Save & Load Configurations"),
+                ("6", "📂 Resume Center - Manage Sessions & Configurations"),
                 ("7", "📚 Documentation & Help"),
-                ("8", "📂 Resume Center - Manage Saved Sessions"),
                 ("0", "❌ Exit")
             ]
 
@@ -1593,7 +1592,7 @@ class AdvancedCLI:
             # Smart prompt with validation (now 0-7 since we have 8 options)
             choice = Prompt.ask(
                 "\n[bold yellow]Select option[/bold yellow]",
-                choices=["0", "1", "2", "3", "4", "5", "6", "7", "8"],
+                choices=["0", "1", "2", "3", "4", "5", "6", "7"],
                 default="1"
             )
 
@@ -1606,9 +1605,8 @@ class AdvancedCLI:
             print("3. Training Arena - Train 50+ Models (Multi-Label & Benchmarking)")
             print("4. BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU)")
             print("5. Validation Lab - Quality Scoring & Sampling [⚠️ IN DEVELOPMENT]")
-            print("6. Profile Manager - Save & Load Configurations")
+            print("6. Resume Center - Manage Sessions & Configurations")
             print("7. Documentation & Help")
-            print("8. Resume Center - Manage Saved Sessions")
             print("0. Exit")
             print("-"*50)
 
@@ -1616,7 +1614,7 @@ class AdvancedCLI:
             if suggestions:
                 print(f"💡 {suggestions}")
 
-            choice = input("\nSelect option (0-8): ").strip()
+            choice = input("\nSelect option (0-7): ").strip()
 
         return choice
 
@@ -1639,10 +1637,10 @@ class AdvancedCLI:
         else:
             suggestions.append("No datasets in current directory")
 
-        # Check for recent profiles
+        # Check for recent saved configurations
         recent_profiles = self.profile_manager.list_profiles()
         if recent_profiles:
-            suggestions.append(f"Last: {recent_profiles[0].name}")
+            suggestions.append(f"Resume config: {recent_profiles[0].name}")
 
         return " | ".join(suggestions) if suggestions else ""
 
@@ -5297,11 +5295,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 elif choice == "5":
                     self.validation_lab()
                 elif choice == "6":
-                    self.profile_manager_ui()
+                    self.resume_center()
                 elif choice == "7":
                     self.show_documentation()
-                elif choice == "8":
-                    self.resume_center()
                 elif choice == "0":
                     if HAS_RICH and self.console:
                         self.console.print("\n[bold cyan]Thank you for using LLMTool! 👋[/bold cyan]\n")
@@ -9309,28 +9305,19 @@ Output files:
 Input: `annotations_output/20250304_101500_customer_reviews/data/customer_reviews_annotated.csv` vs `data/customer_reviews_validated.csv`  
 Output: `logs/validation_lab/quality_review_20250304/report/comparison_summary.json`
 
-## Mode 6 - Profile Manager (Configuration Vault)
-**Purpose**: Save, share, and relaunch complete run configurations.
+## Mode 6 - Resume Center (Sessions & Configuration Vault)
+**Purpose**: View and restart sessions across all modes while managing saved configurations.
 
-- Each profile file (e.g. `~/.llmtool/profiles/baseline_sentiment.json`) stores parameters, metrics, and notes.
-- The manager lists recent profiles, abbreviates key settings, and lets you clone or delete them.
-- Loading a profile pre-fills every screen in the corresponding mode; tweak before hitting run.
+- Displays status (`RUNNING`, `COMPLETED`, `FAILED`), last executed step, key metrics, and timestamps for Annotator, Factory, Training Arena, and BERT Studio sessions.
+- Offers quick actions: resume exactly where you stopped (e.g. relaunch Training Arena at Step 11) or clone configuration into a brand-new session.
+- Stores configuration profiles (e.g. `~/.llmtool/profiles/baseline_sentiment.json`) so you can reload prompts, parameters, and notes without retyping them.
 
 **Hard-coded example**  
-Profile `baseline_sentiment` created after a Mode 1 run can be reapplied to `data/customer_reviews_march.csv` without re-entering prompts or model choices.
+Selecting `factory_session_20250304_111000` reopens the Annotator Factory at the dataset splitting step; choosing `baseline_sentiment` restores the saved configuration for reuse on `data/customer_reviews_march.csv`.
 
 ## Mode 7 - Documentation & Help (You Are Here)
 - Use this screen whenever you need a refresher on workflows, file locations, or troubleshooting steps.
 - The content updates as new capabilities ship. Bookmark notable sections for your team.
-
-## Mode 8 - Resume Center (Mission Control)
-**Purpose**: View and restart sessions across all modes.
-
-- Displays status (`RUNNING`, `COMPLETED`, `FAILED`), last executed step, key metrics, and timestamps for Annotator, Factory, Training Arena, and BERT Studio sessions.
-- Offers quick actions: resume exactly where you stopped (e.g. relaunch Training Arena at Step 11) or clone configuration into a brand-new session.
-
-**Hard-coded example**  
-Selecting `factory_session_20250304_111000` reopens the Annotator Factory at the dataset splitting step; picking `training_session_20250304_123000` shows the final benchmark dashboard without rerunning training.
 
 ## Where Everything Lands
 - `annotations_output/<timestamp_session>/`: annotated datasets, copied prompts, configuration snapshots, run logs.
@@ -9339,7 +9326,7 @@ Selecting `factory_session_20250304_111000` reopens the Annotator Factory at the
 - `~/.llmtool/profiles/`: reusable profiles plus `history.json` tracking past executions.
 
 ## Troubleshooting Checklist
-- **“No API key detected”** – open Profile Manager, enter the key under Provider Settings, or set environment variables before launching.
+- **“No API key detected”** – open the Resume Center, enter the key under Provider Settings, or set environment variables before launching.
 - **“Some rows remain unannotated”** – inspect retry counts in the annotation summary and read `logs/annotator/<session_id>/annotator.log` for the failing prompts.
 - **“Driver missing (pyreadr / psycopg2 / pymysql)”** – install only the required extra dependency, then rerun.
 - **“Out of memory”** – reduce batch sizes based on the recommendations in the resource banner; for very long texts, consider Longformer/BigBird models.
