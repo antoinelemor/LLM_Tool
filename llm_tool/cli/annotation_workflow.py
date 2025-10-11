@@ -48,6 +48,10 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
+try:
+    from rich import box
+except ImportError:  # pragma: no cover - optional styling
+    box = None
 
 from ..utils.language_detector import LanguageDetector
 from llm_tool.utils.data_detector import DataDetector
@@ -416,9 +420,37 @@ def _launch_model_annotation_stage(
             cli.console.print(Align.center(f"[bold {BANNERS['deploy_and_annotate']['color']}]{line}[/bold {BANNERS['deploy_and_annotate']['color']}]"))
         cli.console.print(Align.center(f"[{BANNERS['deploy_and_annotate']['color']}]{BANNERS['deploy_and_annotate']['tagline']}[/{BANNERS['deploy_and_annotate']['color']}]"))
         cli.console.print()
-        cli.console.print("[bold cyan]Deploy newly trained models for production-grade annotations.[/bold cyan]\n")
+
+        table_box = box.ROUNDED if box else None
+        model_table = Table(title="Models Trained In This Session", box=table_box, show_lines=False)
+        model_table.add_column("#", style="cyan", justify="center", width=4)
+        model_table.add_column("Model Identifier", style="green")
+        model_table.add_column("Location", style="magenta")
+
         for idx, (name, path) in enumerate(existing_models, 1):
-            cli.console.print(f"  {idx}. [cyan]{name}[/cyan] → {path}")
+            relative_display = path.as_posix()
+            if session_model_root and session_model_root.exists():
+                try:
+                    relative_display = path.relative_to(session_model_root).as_posix()
+                except Exception:
+                    relative_display = path.name
+            else:
+                relative_display = path.name
+            model_table.add_row(str(idx), name, relative_display)
+
+        cli.console.print(model_table)
+        cli.console.print()
+
+        proceed = Confirm.ask(
+            "[cyan]Would you like to launch the BERT Annotation Studio now to run these models on a dataset of your choice?[/cyan]",
+            default=True,
+        )
+        if not proceed:
+            cli.console.print("[green]Skipping Deploy & Annotate stage.[/green]\n")
+            return {
+                "status": "skipped",
+                "detail": "User chose not to launch annotation studio",
+            }
 
     session_base_dir: Optional[Path] = None
     if session_dirs:

@@ -2797,6 +2797,32 @@ class AdvancedCLI:
                         training_complete = True
                         stored_trained_model_paths[model_dir.name] = str(model_dir)
 
+            if not training_complete:
+                session_model_root = Path("models") / session_id if session_id else None
+                normal_training_root = None
+                if session_model_root and session_model_root.exists():
+                    normal_candidate = session_model_root / "normal_training"
+                    normal_training_root = normal_candidate if normal_candidate.exists() else session_model_root
+
+                discovered_models: Dict[str, Path] = {}
+                if normal_training_root and normal_training_root.exists():
+                    for config_path in normal_training_root.glob("**/config.json"):
+                        model_dir = config_path.parent
+                        try:
+                            relative_name = model_dir.relative_to(normal_training_root).as_posix()
+                        except ValueError:
+                            relative_name = model_dir.name
+                        discovered_models[relative_name] = model_dir
+
+                if discovered_models:
+                    for name, path in discovered_models.items():
+                        stored_trained_model_paths.setdefault(name, str(path))
+                    training_complete = True
+                    if self.console:
+                        self.console.print(
+                            f"[green]✓ Located {len(discovered_models)} trained model(s) in session directory[/green]"
+                        )
+
             if training_complete and stored_trained_model_paths:
                 training_workflow['trained_model_paths'] = {
                     str(k): str(v) for k, v in stored_trained_model_paths.items()

@@ -830,7 +830,8 @@ class BERTAnnotationStudio:
             return None
 
         ordered_models = list(models)
-        if len(ordered_models) > 1:
+        show_table = len(ordered_models) > 1 and not self._factory_launch_active
+        if show_table:
             summary = Table(title="Selected Models", box=box.ROUNDED, show_lines=False)
             summary.add_column("#", style="cyan", justify="center", width=4)
             summary.add_column("Model", style="green", overflow="fold")
@@ -873,9 +874,11 @@ class BERTAnnotationStudio:
 
             self._print_table(summary)
 
-            self.console.print("\n[bold cyan]Ordering Strategy:[/bold cyan]")
-            self.console.print("[dim][1] Keep current priority (same order as selection)[/dim]")
-            self.console.print("[dim][2] Sort alphabetically (A → Z by model name)[/dim]\n")
+        if len(ordered_models) > 1:
+            if self.console:
+                self.console.print("\n[bold cyan]Ordering Strategy:[/bold cyan]")
+                self.console.print("[dim][1] Keep current priority (same order as selection)[/dim]")
+                self.console.print("[dim][2] Sort alphabetically (A → Z by model name)[/dim]\n")
 
             order_choice = Prompt.ask(
                 "[cyan]Ordering mode[/cyan]",
@@ -1396,61 +1399,54 @@ class BERTAnnotationStudio:
 
         self._print_table(model_table)
 
-        auto_select = self._factory_launch_active
+        self.console.print("\n[bold magenta]Selection Options:[/bold magenta]")
+        self.console.print("[dim][1] Single model (pick one)[/dim]")
+        self.console.print("[dim][2] Multiple models (enter list: e.g., 1,3,5)[/dim]")
+        self.console.print("[dim][3] All available models[/dim]\n")
 
-        if auto_select:
-            selection = list(range(1, len(model_entries) + 1))
-            if self.console:
-                self.console.print("\n[dim]Annotator Factory: automatically queuing all newly trained models.[/dim]\n")
-        else:
-            self.console.print("\n[bold magenta]Selection Options:[/bold magenta]")
-            self.console.print("[dim][1] Single model (pick one)[/dim]")
-            self.console.print("[dim][2] Multiple models (enter list: e.g., 1,3,5)[/dim]")
-            self.console.print("[dim][3] All available models[/dim]\n")
+        selection_mode = Prompt.ask(
+            "[cyan]Choose a mode[/cyan]",
+            choices=["1", "2", "3"],
+            default="1"
+        )
 
-            selection_mode = Prompt.ask(
-                "[cyan]Choose a mode[/cyan]",
-                choices=["1", "2", "3"],
+        def parse_indices(raw: str) -> List[int]:
+            parts = [chunk.strip() for chunk in raw.replace(";", ",").split(",") if chunk.strip()]
+            indices: List[int] = []
+            for part in parts:
+                if not part.isdigit():
+                    raise ValueError
+                value = int(part)
+                if value < 1 or value > len(model_entries):
+                    raise ValueError
+                if value not in indices:
+                    indices.append(value)
+            if not indices:
+                raise ValueError
+            return indices
+
+        if selection_mode == "1":
+            choice = Prompt.ask(
+                "\n[cyan]Select model[/cyan]",
+                choices=[str(i) for i in range(1, len(model_entries) + 1)],
                 default="1"
             )
-
-            def parse_indices(raw: str) -> List[int]:
-                parts = [chunk.strip() for chunk in raw.replace(";", ",").split(",") if chunk.strip()]
-                indices: List[int] = []
-                for part in parts:
-                    if not part.isdigit():
-                        raise ValueError
-                    value = int(part)
-                    if value < 1 or value > len(model_entries):
-                        raise ValueError
-                    if value not in indices:
-                        indices.append(value)
-                if not indices:
-                    raise ValueError
-                return indices
-
-            if selection_mode == "1":
-                choice = Prompt.ask(
-                    "\n[cyan]Select model[/cyan]",
-                    choices=[str(i) for i in range(1, len(model_entries) + 1)],
+            selection = [int(choice)]
+        elif selection_mode == "2":
+            while True:
+                raw = Prompt.ask(
+                    "\n[cyan]Model indices (e.g.: 1,3,4)[/cyan]",
                     default="1"
                 )
-                selection = [int(choice)]
-            elif selection_mode == "2":
-                while True:
-                    raw = Prompt.ask(
-                        "\n[cyan]Model indices (e.g.: 1,3,4)[/cyan]",
-                        default="1"
-                    )
-                    try:
-                        selection = parse_indices(raw)
-                        break
-                    except ValueError:
-                        self.console.print("[red]Please enter valid indices separated by commas.[/red]")
-            else:
-                selection = list(range(1, len(model_entries) + 1))
+                try:
+                    selection = parse_indices(raw)
+                    break
+                except ValueError:
+                    self.console.print("[red]Please enter valid indices separated by commas.[/red]")
+        else:
+            selection = list(range(1, len(model_entries) + 1))
 
-        if (not auto_select) and len(selection) > 1:
+        if len(selection) > 1:
             if self.console:
                 self.console.print(
                     "\n[cyan]Execution order decides which model runs first during inference.[/cyan]"
