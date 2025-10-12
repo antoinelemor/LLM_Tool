@@ -764,15 +764,11 @@ class MultiLabelTrainer:
         Returns:
             Model name string
         """
-        if self.config.train_by_language and language:
-            # separate model per language: "sentiment_en", "sentiment_fr"
-            return f"{label_name}_{language}"
-        elif self.config.multilingual_model or not language:
-            # single multilingual model: "sentiment"
-            return label_name
-        else:
-            # default: just label name
-            return label_name
+        if language and isinstance(language, str):
+            normalized_lang = language.strip().upper()
+            if normalized_lang and normalized_lang != "MULTI":
+                return f"{label_name}_{normalized_lang}"
+        return label_name
 
     def _parse_label_name(self, label_name: str) -> tuple[str, str]:
         """
@@ -1442,8 +1438,44 @@ class MultiLabelTrainer:
         """
         trained_models = {}
 
+        total_groups = len(self.config.multiclass_groups or {})
+        if total_groups == 0:
+            self.logger.warning("No multi-class groups defined. Skipping training.")
+            return trained_models
+
+        if self.verbose and global_total_models is not None and global_total_models != total_groups:
+            self.logger.info(
+                f"[GLOBAL] Adjusting multi-class total models from {global_total_models} to actual count {total_groups}"
+            )
+
+        global_total_models = total_groups
+
+        expected_total_epochs = total_groups * self.config.n_epochs
+        if global_total_epochs is None or global_total_epochs != expected_total_epochs:
+            global_total_epochs = expected_total_epochs
+
+        if global_completed_epochs is None:
+            global_completed_epochs = 0
+        else:
+            global_completed_epochs = min(global_completed_epochs, global_total_epochs)
+
+        extra_reinforced_epochs = 0
+        if reinforced_learning:
+            extra_reinforced_epochs = (
+                reinforced_epochs
+                if reinforced_epochs is not None
+                else getattr(self.config, "n_epochs_reinforced", 0) or 0
+            )
+
+        expected_max_epochs = total_groups * (self.config.n_epochs + extra_reinforced_epochs)
+        if global_max_epochs is None or global_max_epochs < expected_max_epochs:
+            global_max_epochs = expected_max_epochs
+
+        base_model_index = (global_current_model - 1) if global_current_model and global_current_model > 0 else 0
+        completed_epochs_tracker = global_completed_epochs
+
         # Train one model per multi-class group
-        for group_name, group_labels in self.config.multiclass_groups.items():
+        for idx, (group_name, group_labels) in enumerate(self.config.multiclass_groups.items(), start=1):
             if self.verbose:
                 self.logger.info(f"\n🎯 Training multi-class model for: {group_name}")
                 self.logger.info(f"   Classes: {group_labels}")
@@ -1496,9 +1528,9 @@ class MultiLabelTrainer:
                 is_benchmark=is_benchmark,
                 model_name_for_logging=model_name_for_logging,
                 global_total_models=global_total_models,
-                global_current_model=global_current_model,
+                global_current_model=base_model_index + idx,
                 global_total_epochs=global_total_epochs,
-                global_completed_epochs=global_completed_epochs,
+                global_completed_epochs=completed_epochs_tracker,
                 global_start_time=global_start_time,
                 global_max_epochs=global_max_epochs,
                 reinforced_learning=reinforced_learning,
@@ -1510,6 +1542,10 @@ class MultiLabelTrainer:
             )
 
             trained_models[model_info.model_name] = model_info
+            completed_epochs_tracker = min(
+                completed_epochs_tracker + self.config.n_epochs,
+                global_total_epochs
+            )
 
         self.trained_models = trained_models
         self._save_training_summary()
@@ -1664,33 +1700,49 @@ class MultiLabelTrainer:
         # Initialize global progress tracking
         # Use provided parameters if available (benchmark mode), otherwise create new (standalone mode)
         import time
-        if global_total_models is None:
-            total_models = len(training_jobs)
-            global_total_models = total_models
-        else:
-            total_models = global_total_models
+        actual_total_models = len(training_jobs)
+
+        if actual_total_models == 0:
+            self.logger.warning("No training jobs were generated after preprocessing. Skipping training.")
+            return {}
+
+        if global_total_models is not None and global_total_models != actual_total_models:
+            if self.verbose:
+                self.logger.info(
+                    f"[GLOBAL] Adjusting total models from {global_total_models} to actual count {actual_total_models}"
+                )
+
+        total_models = actual_total_models
+        global_total_models = actual_total_models
 
         if global_start_time is None:
             global_start_time = time.time()
 
-        if global_total_epochs is None:
-            global_total_epochs = total_models * self.config.n_epochs
+        expected_total_epochs = total_models * self.config.n_epochs
+        if global_total_epochs is None or global_total_epochs != expected_total_epochs:
+            global_total_epochs = expected_total_epochs
 
         if global_completed_epochs is None:
             global_completed_epochs = 0
+        else:
+            global_completed_epochs = min(global_completed_epochs, global_total_epochs)
 
         if global_current_model is None:
             global_current_model = 1
 
         # Calculate global_max_epochs if not provided
         # This accounts for potential reinforced learning epochs
-        if global_max_epochs is None:
-            if reinforced_learning and reinforced_epochs:
-                # Maximum possible epochs if all models trigger reinforced learning
-                global_max_epochs = total_models * (self.config.n_epochs + reinforced_epochs)
-            else:
-                # No reinforced learning or no extra epochs specified
-                global_max_epochs = global_total_epochs
+        extra_reinforced_epochs = 0
+        if reinforced_learning:
+            extra_reinforced_epochs = (
+                reinforced_epochs
+                if reinforced_epochs is not None
+                else getattr(self.config, "n_epochs_reinforced", 0) or 0
+            )
+
+        expected_max_epochs = total_models * (self.config.n_epochs + extra_reinforced_epochs)
+        if global_max_epochs is None or global_max_epochs < expected_max_epochs:
+            global_max_epochs = expected_max_epochs
 
         # train models
         trained_models = {}

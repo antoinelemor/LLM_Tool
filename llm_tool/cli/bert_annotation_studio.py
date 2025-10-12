@@ -1285,7 +1285,7 @@ class BERTAnnotationStudio:
             return "—"
         lines: List[str] = []
         for label, score in scores[:limit]:
-            score_text = f"{score:.3f}" if isinstance(score, (int, float)) else "—"
+            score_text = f"{score:.2f}" if isinstance(score, (int, float)) else "—"
             lines.append(f"{label}: {score_text}")
         remaining = len(scores) - limit
         if remaining > 0:
@@ -1477,10 +1477,11 @@ class BERTAnnotationStudio:
         self.console.print("[dim][2] Multiple models (enter list: e.g., 1,3,5)[/dim]")
         self.console.print("[dim][3] All available models[/dim]\n")
 
+        default_mode = "3" if self._factory_launch_active else "1"
         selection_mode = Prompt.ask(
             "[cyan]Choose a mode[/cyan]",
             choices=["1", "2", "3"],
-            default="1"
+            default=default_mode
         )
 
         def parse_indices(raw: str) -> List[int]:
@@ -1497,6 +1498,9 @@ class BERTAnnotationStudio:
             if not indices:
                 raise ValueError
             return indices
+
+        if self._factory_launch_active and selection_mode == "3" and self.console:
+            self.console.print("[dim]Factory context → selecting all trained models by default.[/dim]")
 
         if selection_mode == "1":
             choice = Prompt.ask(
@@ -1620,7 +1624,36 @@ class BERTAnnotationStudio:
                     resolved_dir = model_dir.resolve()
                 except Exception:
                     resolved_dir = model_dir
-                if resolved_dir not in self._allowed_model_paths:
+
+                def _matches_allowed(candidate: Path) -> bool:
+                    for allowed_path in self._allowed_model_paths:  # pragma: no cover - simple loop
+                        try:
+                            allowed_resolved = allowed_path.resolve()
+                        except Exception:
+                            allowed_resolved = allowed_path
+                        if candidate == allowed_resolved:
+                            return True
+                        try:
+                            if candidate.is_relative_to(allowed_resolved):
+                                return True
+                        except AttributeError:
+                            try:
+                                candidate.relative_to(allowed_resolved)
+                                return True
+                            except Exception:
+                                pass
+                        try:
+                            if allowed_resolved.is_relative_to(candidate):
+                                return True
+                        except AttributeError:
+                            try:
+                                allowed_resolved.relative_to(candidate)
+                                return True
+                            except Exception:
+                                pass
+                    return False
+
+                if not _matches_allowed(resolved_dir):
                     continue
 
             has_weights = any(

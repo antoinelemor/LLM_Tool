@@ -252,11 +252,33 @@ class TrainingDisplay:
         # Global header
         table.add_row("🌍 GLOBAL PROGRESS", "")
 
+        # Display languages tracked for this session (if known)
+        language_display = None
+        if self.detected_languages:
+            # Preserve order but avoid duplicates
+            unique_langs = list(dict.fromkeys(lang.upper() for lang in self.detected_languages if isinstance(lang, str)))
+            if unique_langs:
+                language_display = ", ".join(unique_langs)
+        elif self.language:
+            language_display = "Multilingual" if self.language == "MULTI" else self.language
+
+        if language_display:
+            table.add_row("Languages:", language_display)
+
         # Models progress
         if self.global_current_model is not None and self.global_total_models is not None:
-            model_pct = (self.global_current_model / self.global_total_models) * 100 if self.global_total_models > 0 else 0
+            try:
+                current_models = max(int(self.global_current_model), 0)
+            except (TypeError, ValueError):
+                current_models = 0
+            try:
+                total_models = int(self.global_total_models)
+            except (TypeError, ValueError):
+                total_models = 0
+            total_models = max(total_models, current_models)
+            model_pct = (current_models / total_models) * 100 if total_models > 0 else 0
             model_bar = self._create_bar(model_pct, width=40)
-            table.add_row("Models:", f"{self.global_current_model}/{self.global_total_models} {model_bar}")
+            table.add_row("Models:", f"{current_models}/{total_models} {model_bar}")
 
         # Total epochs progress (with maximum indicator if reinforced learning is enabled)
         if self.global_total_epochs is not None and self.global_completed_epochs is not None:

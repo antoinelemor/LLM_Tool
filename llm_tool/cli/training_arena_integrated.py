@@ -11078,6 +11078,21 @@ def integrate_training_arena_in_annotator_factory(
 
     # df already loaded above for language detection
 
+    def _normalize_preview_value(raw_value: Any) -> Optional[str]:
+        """Normalize annotation values for display (remove stray commas/quotes)."""
+        if raw_value is None:
+            return None
+        value_str = str(raw_value).strip()
+        if not value_str:
+            return None
+        # Remove wrapping quotes
+        if (value_str.startswith("'") and value_str.endswith("'")) or (value_str.startswith("\"") and value_str.endswith("\"")):
+            value_str = value_str[1:-1].strip()
+        # Drop trailing commas introduced by CSV artifacts
+        while value_str.endswith(","):
+            value_str = value_str[:-1].rstrip()
+        return value_str if value_str else None
+
     all_keys_values = {}  # {key: set_of_unique_values}
     total_samples = 0
     malformed_count = 0
@@ -11109,10 +11124,13 @@ def integrate_training_arena_in_annotator_factory(
 
                 if isinstance(value, list):
                     for v in value:
-                        if v is not None and v != '':
-                            all_keys_values[key].add(str(v))
-                elif value is not None and value != '':
-                    all_keys_values[key].add(str(value))
+                        normalized = _normalize_preview_value(v)
+                        if normalized:
+                            all_keys_values[key].add(normalized)
+                else:
+                    normalized = _normalize_preview_value(value)
+                    if normalized:
+                        all_keys_values[key].add(normalized)
 
         except (json.JSONDecodeError, AttributeError, TypeError, ValueError, SyntaxError) as e:
             malformed_count += 1
@@ -11127,6 +11145,24 @@ def integrate_training_arena_in_annotator_factory(
         preview_table.add_column("Key", style="yellow bold", width=20)
         preview_table.add_column("Unique Values", style="white", width=15, justify="center")
         preview_table.add_column("Sample Values", style="green", width=60)
+
+        # Determine language summary for caption
+        language_display = None
+        if 'language' in df.columns:
+            language_values = {
+                str(lang).strip().upper()
+                for lang in df['language']
+                if pd.notna(lang) and str(lang).strip()
+            }
+            if language_values:
+                language_display = ", ".join(sorted(language_values))
+        if not language_display:
+            # Fallback to confirmed languages if available in scope
+            if 'confirmed_languages' in locals() and confirmed_languages:
+                language_display = ", ".join(sorted(lang.upper() for lang in confirmed_languages))
+
+        if language_display:
+            preview_table.caption = f"Languages: {language_display}"
 
         for key in sorted(all_keys_values.keys()):
             values_set = all_keys_values[key]

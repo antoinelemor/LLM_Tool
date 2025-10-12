@@ -27,6 +27,14 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
+def _first_not_none(*values: Optional[float]) -> Optional[float]:
+    """Return the first value that is not ``None`` (preserves zeros)."""
+    for candidate in values:
+        if candidate is not None:
+            return candidate
+    return None
+
+
 def _coerce_label(entry: Dict[str, Any], fallback_idx: int) -> str:
     """Extract a readable label name from ``entry``."""
     for key in ("label", "class", "name", "category", "id"):
@@ -63,9 +71,9 @@ def load_language_metrics(model_dir: Path) -> Dict[str, Any]:
     if isinstance(data, list) and data:
         latest = data[-1]
         averages = latest.get("averages", {}) or {}
-        macro = (
-            _safe_float(averages.get("macro_f1"))
-            or _safe_float(averages.get("f1_macro"))
+        macro = _first_not_none(
+            _safe_float(averages.get("macro_f1")),
+            _safe_float(averages.get("f1_macro")),
         )
         per_language: Dict[str, float] = {}
         metrics_by_language = latest.get("metrics", {}) or {}
@@ -73,9 +81,9 @@ def load_language_metrics(model_dir: Path) -> Dict[str, Any]:
             for lang_code, values in metrics_by_language.items():
                 if not isinstance(values, dict):
                     continue
-                score = (
-                    _safe_float(values.get("macro_f1"))
-                    or _safe_float(values.get("f1_macro"))
+                score = _first_not_none(
+                    _safe_float(values.get("macro_f1")),
+                    _safe_float(values.get("f1_macro")),
                 )
                 if score is not None:
                     per_language[_normalise_language_code(lang_code)] = score
@@ -132,10 +140,10 @@ def summarize_final_metrics(
             if not isinstance(raw_entry, dict):
                 continue
             label_name = _coerce_label(raw_entry, idx)
-            score = (
-                _safe_float(raw_entry.get("f1"))
-                or _safe_float(raw_entry.get("macro_f1"))
-                or _safe_float(raw_entry.get("f1_macro"))
+            score = _first_not_none(
+                _safe_float(raw_entry.get("f1")),
+                _safe_float(raw_entry.get("macro_f1")),
+                _safe_float(raw_entry.get("f1_macro")),
             )
             per_class.append((label_name, score))
 
@@ -145,10 +153,10 @@ def summarize_final_metrics(
         for lang_code, values in per_language_block.items():
             score = None
             if isinstance(values, dict):
-                score = (
-                    _safe_float(values.get("macro_f1"))
-                    or _safe_float(values.get("f1_macro"))
-                    or _safe_float(values.get("f1"))
+                score = _first_not_none(
+                    _safe_float(values.get("macro_f1")),
+                    _safe_float(values.get("f1_macro")),
+                    _safe_float(values.get("f1")),
                 )
             else:
                 score = _safe_float(values)
@@ -159,10 +167,10 @@ def summarize_final_metrics(
             if not isinstance(entry, dict):
                 continue
             lang_code = _normalise_language_code(entry.get("language") or entry.get("code"))
-            score = (
-                _safe_float(entry.get("macro_f1"))
-                or _safe_float(entry.get("f1_macro"))
-                or _safe_float(entry.get("f1"))
+            score = _first_not_none(
+                _safe_float(entry.get("macro_f1")),
+                _safe_float(entry.get("f1_macro")),
+                _safe_float(entry.get("f1")),
             )
             if score is not None:
                 per_language[lang_code] = score
