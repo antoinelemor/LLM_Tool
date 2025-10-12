@@ -1286,7 +1286,7 @@ def _training_studio_intelligent_dataset_selector(
 
         if lang_column and lang_column in df.columns:
             # Ensure we always have a fallback distribution based on the provided language column
-            from llm_tool.cli.advanced_cli import LanguageNormalizer
+            from llm_tool.utils.language_normalizer import LanguageNormalizer
 
             normalized_langs_from_column: List[str] = []
             column_lang_counts: Dict[str, int] = {}

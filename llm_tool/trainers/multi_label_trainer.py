@@ -71,6 +71,7 @@ from llm_tool.utils.training_paths import (
     get_training_metrics_dir,
     resolve_metrics_base_dir,
 )
+from llm_tool.utils.language_normalizer import LanguageNormalizer
 
 
 @dataclass
@@ -257,6 +258,7 @@ class MultiLabelTrainer:
         self.config = config or TrainingConfig()
         self.verbose = verbose
 
+        self.logger = logging.getLogger(__name__)
         if verbose:
             logging.basicConfig(level=logging.INFO)
             self.logger = logging.getLogger(__name__)
@@ -264,10 +266,39 @@ class MultiLabelTrainer:
         self.trained_models = {}
         self.model_selector = ModelSelector(verbose=False)
         self.ml_selector = MultilingualModelSelector(verbose=False)
+        try:
+            from rich.console import Console
+            self.console = Console()
+        except Exception:  # pragma: no cover - rich is optional
+            self.console = None
 
-        # Import Rich console for clean display transitions
-        from rich.console import Console
-        self.console = Console()
+
+    @staticmethod
+    def _normalize_language_code(lang: Optional[str]) -> str:
+        """Normalize language codes and provide a safe fallback."""
+        if lang is None:
+            return "MULTI"
+
+        normalized = LanguageNormalizer.normalize_language(lang)
+        if normalized:
+            return normalized.upper()
+
+        value = str(lang).strip()
+        if not value:
+            return "MULTI"
+
+        cleaned = value.replace("_", "-")
+        if "-" in cleaned:
+            cleaned = cleaned.split("-", 1)[0]
+
+        cleaned = cleaned.upper()
+        if cleaned in {"UNKNOWN", "UNSPECIFIED", "NA", "NONE", "NULL"}:
+            return "MULTI"
+
+        if len(cleaned) > 5:
+            cleaned = cleaned[:5]
+
+        return cleaned or "MULTI"
 
     def load_multi_label_data(self,
                               filepath: str,
@@ -916,7 +947,8 @@ class MultiLabelTrainer:
         label_key, label_value = self._parse_label_name(label_name)
 
         # Clear console for clean display transition between models
-        self.console.clear()
+        if self.console:
+            self.console.clear()
 
         if self.verbose:
             self.logger.info(f"Training model: {model_name}")
@@ -930,6 +962,14 @@ class MultiLabelTrainer:
             # Auto-select model class based on data characteristics
             model_class = self._select_model_class(train_samples)
             model = model_class()
+
+        if len(train_samples) == 0:
+            self.logger.warning(f"Skipping training for {model_name}: no training samples available.")
+            return None
+
+        if len(val_samples) == 0:
+            self.logger.warning(f"Skipping training for {model_name}: no validation samples available.")
+            return None
 
         # Set num_labels and class_names for both binary and multi-class classification
         if num_labels > 2:
@@ -971,6 +1011,18 @@ class MultiLabelTrainer:
             if len(train_samples) < 10:
                 self.logger.warning(f"⚠️  Very few samples ({len(train_samples)}) for {actual_model_name} "
                                    f"targeting {target_languages}. Training may be unstable.")
+
+            if len(train_samples) == 0:
+                self.logger.warning(
+                    f"Skipping training for {model_name}: no samples remain after filtering to {target_languages}."
+                )
+                return None
+
+            if len(val_samples) == 0:
+                self.logger.warning(
+                    f"Skipping training for {model_name}: no validation samples remain after filtering to {target_languages}."
+                )
+                return None
 
         # UNIFIED: Determine confirmed languages for this specific training job
         from .model_trainer import set_detected_languages_on_model
@@ -1349,11 +1401,12 @@ class MultiLabelTrainer:
                 lang = item.get('lang')
 
             if text and labels:
+                normalized_lang = self._normalize_language_code(lang)
                 samples.append(MultiLabelSample(
                     text=text,
                     labels=labels,
                     id=sample_id,
-                    lang=lang
+                    lang=normalized_lang
                 ))
         return samples
 
@@ -1553,18 +1606,27 @@ class MultiLabelTrainer:
                 # group by language
                 lang_groups = defaultdict(list)
                 for sample in datasets['train']:
-                    lang = sample.lang or 'unknown'
-                    lang_groups[lang].append(sample)
+                    normalized_lang = self._normalize_language_code(sample.lang)
+                    sample.lang = normalized_lang
+                    lang_groups[normalized_lang].append(sample)
 
-                # create job for each language
                 for lang, lang_samples in lang_groups.items():
-                    # get validation samples for this language
-                    lang_val = [s for s in datasets['val'] if (isinstance(s.lang, str) and s.lang == lang) or not s.lang]
+                    if lang == "MULTI":
+                        continue
+                    if not lang_samples:
+                        continue
+
+                    for val_sample in datasets['val']:
+                        val_sample.lang = self._normalize_language_code(val_sample.lang)
+                    val_samples = [s for s in datasets['val'] if s.lang == lang]
+
+                    if not val_samples and not lang_samples:
+                        continue
 
                     training_jobs.append({
                         'label_name': label_name,
                         'train_samples': lang_samples,
-                        'val_samples': lang_val,
+                        'val_samples': val_samples,
                         'language': lang,
                         'session_id': session_id,
                         'is_benchmark': is_benchmark,
@@ -1574,6 +1636,8 @@ class MultiLabelTrainer:
                 # single model for all languages
                 # Detect if multilingual (check unique languages in samples)
                 all_samples = datasets['train'] + datasets['val']
+                for sample in all_samples:
+                    sample.lang = self._normalize_language_code(sample.lang)
                 unique_langs = set(s.lang for s in all_samples if s.lang and isinstance(s.lang, str))
 
                 # If multiple languages detected, mark as MULTI, otherwise use the single language
@@ -1663,6 +1727,8 @@ class MultiLabelTrainer:
                 # collect results
                 for future in tqdm(futures, desc="Training models", leave=False, disable=True):
                     model_info = future.result()
+                    if model_info is None:
+                        continue
                     trained_models[model_info.model_name] = model_info
         else:
             # sequential training
@@ -1691,6 +1757,8 @@ class MultiLabelTrainer:
                     rl_class_weight_factor=rl_class_weight_factor,
                     progress_callback=progress_callback
                 )
+                if model_info is None:
+                    continue
                 trained_models[model_info.model_name] = model_info
                 # Update completed epochs after model training
                 global_completed_epochs += self.config.n_epochs

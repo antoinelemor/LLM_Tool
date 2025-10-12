@@ -49,6 +49,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from llm_tool.utils.language_normalizer import LanguageNormalizer
+
 from llm_tool.utils.annotation_to_training import AnnotationToTrainingConverter
 
 
@@ -456,6 +458,9 @@ class TrainingDatasetBuilder:
         # CRITICAL: Convert to Python list to avoid numpy type issues
         unique_categories = df[request.label_column].unique().tolist()
 
+        # Resolve language information once for the entire dataframe
+        language_series = self._resolve_language_series(df, request)
+
         # Prepare columns for binary files
         columns_to_include = [request.text_column]
         if request.lang_column and request.lang_column in df.columns:
@@ -472,6 +477,9 @@ class TrainingDatasetBuilder:
             if request.lang_column and request.lang_column in df.columns:
                 rename_map[request.lang_column] = "language"
             binary_df = binary_df.rename(columns=rename_map)
+
+            if language_series.notna().any():
+                binary_df["language"] = language_series
 
             # Save binary file
             category_slug = self._slugify(str(category))
@@ -492,8 +500,9 @@ class TrainingDatasetBuilder:
             }
             if request.id_column and request.id_column in df.columns:
                 record["id"] = str(row[request.id_column])
-            if request.lang_column and request.lang_column in df.columns:
-                record["lang"] = str(row[request.lang_column])
+            lang_value = language_series.loc[row.name] if row.name in language_series.index else None
+            if lang_value:
+                record["lang"] = lang_value
             multilabel_records.append(record)
 
         multilabel_path = dataset_dir / f"multilabel_one_vs_all_{timestamp}.jsonl"
@@ -537,11 +546,22 @@ class TrainingDatasetBuilder:
         positive_mapping: Dict[str, List[str]] = {}
         category_files: Dict[str, Path] = {}
         timestamp = _timestamp()
+        language_series = self._resolve_language_series(df, request)
 
         for category, sub_df in df.groupby(request.category_column):
             binary_df = sub_df[[request.text_column, request.value_column]].rename(
                 columns={request.text_column: "text", request.value_column: "label"}
             )
+            if not language_series.empty:
+                lang_slice = language_series.reindex(sub_df.index)
+            else:
+                lang_slice = pd.Series(index=sub_df.index, dtype="object")
+            if (
+                not lang_slice.empty
+                and (lang_slice.notna().any() or "language" in binary_df.columns)
+            ):
+                binary_df["language"] = lang_slice
+
             output_path = dataset_dir / f"category_{self._slugify(category)}_{timestamp}.csv"
             binary_df.to_csv(output_path, index=False)
             category_files[str(category)] = output_path
@@ -556,6 +576,7 @@ class TrainingDatasetBuilder:
             value_column=request.value_column,
             id_column=request.id_column,
             lang_column=request.lang_column,
+            language_series=language_series,
         )
 
         multilabel_path = dataset_dir / f"multilabel_from_long_{timestamp}.jsonl"
@@ -598,6 +619,9 @@ class TrainingDatasetBuilder:
             rename_mapping[request.lang_column] = "language"
 
         clean_df = df[columns_to_copy].rename(columns=rename_mapping)
+        language_series = self._resolve_language_series(df, request)
+        if not language_series.empty:
+            clean_df["language"] = language_series
 
         output_path = dataset_dir / f"single_label_{_timestamp()}.jsonl"
         clean_df.to_json(output_path, orient="records", lines=True, force_ascii=False)
@@ -629,6 +653,7 @@ class TrainingDatasetBuilder:
 
         category_values: Dict[str, List[Dict[str, Any]]] = {}
         multilabel_records: List[Dict[str, Any]] = []
+        text_language_cache: Dict[str, str] = {}
 
         for item in records:
             text = item.get(request.text_column)
@@ -658,6 +683,11 @@ class TrainingDatasetBuilder:
                 if key and item.get(key) is not None:
                     record_metadata[key] = item[key]
 
+            lang_value = self._resolve_language_from_mapping(item, request)
+            if lang_value:
+                record_metadata["lang"] = lang_value
+                text_language_cache[text] = lang_value
+
             multilabel_records.append(record_metadata)
 
             for label in active_labels:
@@ -684,10 +714,14 @@ class TrainingDatasetBuilder:
                 text = item.get(request.text_column)
                 if not text:
                     continue
-                binary_records.append({
+                record = {
                     "text": text,
                     "label": 1 if text in positive_texts else 0,
-                })
+                }
+                lang_value = text_language_cache.get(text)
+                if lang_value:
+                    record["language"] = lang_value
+                binary_records.append(record)
 
             output_path = dataset_dir / f"category_{self._slugify(category)}_{timestamp}.jsonl"
             with output_path.open("w", encoding="utf-8") as fh:
@@ -741,6 +775,91 @@ class TrainingDatasetBuilder:
         with Path(path).open("r", encoding="utf-8") as fh:
             return [json.loads(line) for line in fh if line.strip()]
 
+    # ------------------------------------------------------------------
+    # Language helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _normalize_language_value(value: Any) -> Optional[str]:
+        """Normalize raw language values to stable uppercase codes."""
+        if value is None:
+            return None
+
+        if isinstance(value, float) and pd.isna(value):
+            return None
+
+        value_str = str(value).strip()
+        if not value_str:
+            return None
+
+        lowered = value_str.lower()
+        if lowered in {"unknown", "unk", "n/a", "na", "none", "null"}:
+            return None
+
+        normalized = LanguageNormalizer.normalize_language(value_str)
+        if normalized:
+            return normalized.upper()
+
+        cleaned = value_str.replace("_", "-")
+        if "-" in cleaned:
+            head = cleaned.split("-", 1)[0].strip()
+            if head:
+                return head.upper()
+
+        if len(cleaned) <= 5:
+            return cleaned.upper()
+
+        return cleaned.upper()
+
+    def _resolve_language_from_mapping(
+        self,
+        mapping: Any,
+        request: "TrainingDataRequest",
+        extra_candidates: Optional[Iterable[str]] = None,
+    ) -> Optional[str]:
+        """Extract a normalized language code from a pandas Series or dict."""
+        candidates: List[Any] = []
+
+        def _get(key: str) -> Any:
+            if hasattr(mapping, "get"):
+                return mapping.get(key)
+            try:
+                return mapping[key]
+            except (KeyError, IndexError, TypeError):
+                return None
+
+        if request.lang_column:
+            candidates.append(_get(request.lang_column))
+
+        fallback_keys = [
+            "language",
+            "lang",
+            "detected_language",
+            "detected_lang",
+            "language_code",
+            "lang_code",
+        ]
+        if extra_candidates:
+            fallback_keys = list(dict.fromkeys(list(fallback_keys) + list(extra_candidates)))
+
+        for key in fallback_keys:
+            value = _get(key)
+            if value is not None:
+                candidates.append(value)
+
+        for candidate in candidates:
+            normalized = self._normalize_language_value(candidate)
+            if normalized:
+                return normalized
+
+        return None
+
+    def _resolve_language_series(self, df: pd.DataFrame, request: "TrainingDataRequest") -> pd.Series:
+        """Return a Series of normalized language codes aligned with df."""
+        if df.empty:
+            return pd.Series(dtype="object", index=df.index)
+
+        return df.apply(lambda row: self._resolve_language_from_mapping(row, request), axis=1)
+
     def _build_multilabel_records_from_long(
         self,
         df: pd.DataFrame,
@@ -750,6 +869,7 @@ class TrainingDatasetBuilder:
         value_column: str,
         id_column: Optional[str],
         lang_column: Optional[str],
+        language_series: Optional[pd.Series] = None,
     ) -> List[Dict[str, Any]]:
         records: Dict[Any, Dict[str, Any]] = {}
 
@@ -765,8 +885,14 @@ class TrainingDatasetBuilder:
                 "labels": [],
             })
 
-            if lang_column and pd.notna(row.get(lang_column)):
-                entry.setdefault("lang", row[lang_column])
+            lang_value = None
+            if language_series is not None and row.name in language_series.index:
+                lang_value = language_series.loc[row.name]
+            if not lang_value and lang_column and pd.notna(row.get(lang_column)):
+                lang_value = self._normalize_language_value(row[lang_column])
+
+            if lang_value:
+                entry.setdefault("lang", lang_value)
 
             if row[value_column] in (1, "1", True):
                 entry["labels"].append(str(row[category_column]))

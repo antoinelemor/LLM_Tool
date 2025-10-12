@@ -87,7 +87,7 @@ from sqlalchemy import create_engine, inspect, text
 
 # Package imports
 from llm_tool.trainers.parallel_inference import parallel_predict
-from llm_tool.cli.advanced_cli import LanguageNormalizer
+from llm_tool.utils.language_normalizer import LanguageNormalizer
 from llm_tool.utils.data_detector import DataDetector
 from llm_tool.utils.system_resources import detect_resources
 from llm_tool.utils.language_detector import LanguageDetector
