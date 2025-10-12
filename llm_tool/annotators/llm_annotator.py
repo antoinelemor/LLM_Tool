@@ -351,6 +351,27 @@ class LLMAnnotator:
         else:
             data_to_annotate = data.copy()
 
+        # Allow explicit skip lists (e.g. when continuing from checkpoints).
+        skip_ids = config.get('skip_annotation_ids') or []
+        if skip_ids and identifier_column in data_to_annotate.columns:
+            skip_ids_set = set(skip_ids)
+            data_before_skip = data_to_annotate.copy()
+            before_skip = len(data_before_skip)
+            data_to_annotate = data_before_skip[
+                ~data_before_skip[identifier_column].isin(skip_ids_set)
+            ].copy()
+            skipped = before_skip - len(data_to_annotate)
+            if skipped > 0:
+                filter_logger.log_dataframe_filtering(
+                    df_before=data_before_skip,
+                    df_after=data_to_annotate,
+                    reason="resume_skip_ids",
+                    location="llm_annotator._annotate_data.skip_ids",
+                    text_column=text_columns[0] if text_columns else None,
+                    log_filtered_samples=3
+                )
+                self.logger.info("Skipping %s row(s) already annotated (explicit list)", skipped)
+
         annotation_limit = config.get('annotation_sample_size') or config.get('annotation_limit')
         if annotation_limit and len(data_to_annotate) > annotation_limit:
             data_before_limit = data_to_annotate.copy()

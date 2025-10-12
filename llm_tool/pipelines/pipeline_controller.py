@@ -797,7 +797,7 @@ class PipelineController:
         default_output_name = f"{input_name}_{provider}_annotations_{timestamp}.{default_output_format}"
         default_output_path = annotations_dir / default_output_name
 
-        return {
+        annotation_config = {
             'mode': mode,
             'provider': provider,
             'model': config.get('annotation_model', 'llama3.2'),
@@ -823,6 +823,32 @@ class PipelineController:
             'output_format': config.get('output_format', default_output_format),
             'output_path': config.get('output_path', str(default_output_path))
         }
+
+        # Optional fields that should flow through when provided
+        optional_fields = {
+            'text_columns': config.get('text_columns'),
+            'identifier_column': config.get('identifier_column'),
+            'temperature': config.get('temperature'),
+            'top_p': config.get('top_p'),
+            'top_k': config.get('top_k'),
+            'resume_mode': config.get('resume_mode'),
+            'resume_from_file': config.get('resume_from_file'),
+            'skip_annotated': config.get('skip_annotated'),
+            'skip_annotation_ids': config.get('skip_annotation_ids'),
+            'save_incrementally': config.get('save_incrementally', True),
+        }
+
+        # Explicit resume flag combines multiple cues so the annotator can skip rows.
+        if any(config.get(flag) for flag in ('resume', 'resume_mode', 'skip_annotated')):
+            optional_fields['resume'] = True
+        elif config.get('resume') is not None:
+            optional_fields['resume'] = config.get('resume')
+
+        for key, value in optional_fields.items():
+            if value is not None:
+                annotation_config[key] = value
+
+        return annotation_config
 
     def _prepare_training_config(self, config: Dict[str, Any], input_data: str) -> Dict[str, Any]:
         """Prepare configuration for training phase"""

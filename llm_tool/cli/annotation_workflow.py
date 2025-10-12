@@ -3477,6 +3477,13 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     output_config = metadata.get('output', {})
     export_prefs = metadata.get('export_preferences', {})
 
+    identifier_column = (
+        proc_config.get('identifier_column')
+        or data_source.get('identifier_column')
+        or 'annotation_id'
+    )
+    data_source.setdefault('identifier_column', identifier_column)
+
     # Get export preferences
     export_to_doccano = export_prefs.get('export_to_doccano', False)
     export_to_labelstudio = export_prefs.get('export_to_labelstudio', False)
@@ -3525,6 +3532,45 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                     df_output = pd.read_excel(original_output)
                 elif data_format == 'parquet':
                     df_output = pd.read_parquet(original_output)
+
+                candidate_identifiers = [
+                    identifier_column,
+                    data_source.get('identifier_column'),
+                    proc_config.get('identifier_column'),
+                    'annotation_id',
+                    'llm_annotation_id',
+                    'llm_annotation_uuid',
+                ]
+                candidate_identifiers = [
+                    cand for cand in candidate_identifiers if isinstance(cand, str)
+                ]
+                resolved_identifier = next(
+                    (
+                        cand for cand in candidate_identifiers
+                        if cand in df_output.columns
+                    ),
+                    None
+                )
+                if resolved_identifier is None:
+                    resolved_identifier = next(
+                        (
+                            col for col in df_output.columns
+                            if isinstance(col, str) and col.endswith('annotation_id')
+                        ),
+                        None
+                    )
+                if resolved_identifier:
+                    if resolved_identifier != identifier_column:
+                        cli.console.print(
+                            f"[cyan]  Using identifier column: {resolved_identifier}[/cyan]"
+                        )
+                    identifier_column = resolved_identifier
+                    data_source['identifier_column'] = identifier_column
+                    proc_config['identifier_column'] = identifier_column
+                else:
+                    cli.console.print(
+                        "[yellow]⚠️  Could not determine identifier column from resume file.[/yellow]"
+                    )
 
                 # Count rows with valid annotations (non-empty, non-null strings)
                 if 'annotation' in df_output.columns:
@@ -3592,6 +3638,18 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                     metadata['resume_mode'] = True
                     metadata['resume_from_file'] = str(original_output)
                     metadata['already_annotated'] = int(annotated_count)
+
+                    # Use the previously annotated file as input so we continue seamlessly.
+                    data_path = original_output
+                    data_source['file_path'] = str(original_output)
+                    data_source['file_name'] = original_output.name
+                    resume_ext = original_output.suffix.lower().lstrip('.')
+                    if resume_ext:
+                        if resume_ext in {'xls', 'xlsx'}:
+                            data_format = 'excel'
+                        else:
+                            data_format = resume_ext
+                        data_source['data_format'] = data_format
 
             except Exception as e:
                 cli.console.print(f"\n[red]Error reading output file: {e}[/red]")
@@ -3662,7 +3720,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         'text_column': data_source.get('text_column', 'text'),
         'text_columns': [data_source.get('text_column', 'text')],
         'annotation_column': 'annotation',
-        'identifier_column': 'annotation_id',
+        'identifier_column': identifier_column,
         'run_annotation': True,
         'annotation_mode': annotation_mode,
         'annotation_provider': provider,
@@ -3694,6 +3752,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         pipeline_config['resume_mode'] = True
         pipeline_config['resume_from_file'] = metadata.get('resume_from_file')
         pipeline_config['skip_annotated'] = True
+        pipeline_config['resume'] = True
 
         # Load already annotated IDs to skip them
         try:
@@ -3708,13 +3767,22 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                     df_resume = pd.read_parquet(resume_file)
 
                 # Get IDs of rows that have valid annotations
-                if 'annotation' in df_resume.columns and 'annotation_id' in df_resume.columns:
+                id_column = (
+                    identifier_column if identifier_column in df_resume.columns else None
+                )
+                if not id_column:
+                    for candidate in ('annotation_id', 'llm_annotation_id', 'llm_annotation_uuid'):
+                        if candidate in df_resume.columns:
+                            id_column = candidate
+                            break
+
+                if 'annotation' in df_resume.columns and id_column:
                     annotated_mask = (
                         df_resume['annotation'].notna() &
                         (df_resume['annotation'].astype(str).str.strip() != '') &
                         (df_resume['annotation'].astype(str) != 'nan')
                     )
-                    already_annotated_ids = df_resume.loc[annotated_mask, 'annotation_id'].tolist()
+                    already_annotated_ids = df_resume.loc[annotated_mask, id_column].tolist()
                     pipeline_config['skip_annotation_ids'] = already_annotated_ids
 
                     cli.console.print(f"[cyan]  Will skip {len(already_annotated_ids)} already annotated row(s)[/cyan]")
