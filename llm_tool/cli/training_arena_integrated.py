@@ -8061,7 +8061,9 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 'global_total_epochs': global_total_epochs,
                 'global_max_epochs': global_max_epochs,
                 'global_completed_epochs': global_completed_epochs,
-                'global_start_time': global_start_time
+                'global_start_time': global_start_time,
+                'train_by_language': needs_language_training,
+                'confirmed_languages': list(languages) if languages else None,
             }
 
             if models_by_language:
@@ -8115,6 +8117,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     'multiclass_groups': None,  # Force one-vs-all
                     'reinforced_learning': enable_reinforced_learning,
                     'confirmed_languages': list(languages) if languages else None,
+                    'train_by_language': needs_language_training,
                     'session_id': session_id,
                     'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
                     # Global progress tracking
@@ -8240,7 +8243,9 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     'global_total_epochs': global_total_epochs,
                     'global_max_epochs': global_max_epochs,
                     'global_completed_epochs': global_completed_epochs,
-                    'global_start_time': global_start_time
+                    'global_start_time': global_start_time,
+                    'train_by_language': needs_language_training,
+                    'confirmed_languages': list(languages) if languages else None,
                 }
 
                 # Add models_by_language if user selected per-language models

@@ -41,6 +41,7 @@ Antoine Lemor
 from __future__ import annotations
 
 import copy
+import json
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -56,9 +57,120 @@ except ImportError:  # pragma: no cover - optional styling
 from ..utils.language_detector import LanguageDetector
 from llm_tool.utils.data_detector import DataDetector
 from llm_tool.utils.session_summary import SessionSummary, merge_summary, read_summary
+from llm_tool.utils.model_metrics import load_language_metrics, summarize_final_metrics
 
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S"
+
+
+def _read_training_metadata(model_dir: Path) -> Dict[str, Any]:
+    """Load ``training_metadata.json`` if available."""
+    metadata_path = model_dir / "training_metadata.json"
+    if not metadata_path.exists():
+        return {}
+    try:
+        with metadata_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return {}
+
+
+def _read_model_config(model_dir: Path) -> Dict[str, Any]:
+    """Load ``config.json`` from a model directory."""
+    config_path = model_dir / "config.json"
+    if not config_path.exists():
+        return {}
+    try:
+        with config_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return {}
+
+
+def _format_per_class_scores(
+    scores: List[Tuple[str, Optional[float]]],
+    label_names: Optional[List[str]] = None,
+    limit: int = 4,
+) -> str:
+    """Format per-class F1 scores with optional label remapping."""
+    if not scores:
+        return "—"
+    resolved_scores: List[Tuple[str, Optional[float]]] = []
+    for label, score in scores:
+        resolved_label = str(label)
+        idx: Optional[int] = None
+        if isinstance(label, int):
+            idx = label
+        elif isinstance(label, str):
+            token = label.strip().upper()
+            if token.startswith("LABEL_") and token[6:].isdigit():
+                idx = int(token[6:])
+            elif token.isdigit():
+                idx = int(token)
+        if idx is not None and label_names and 0 <= idx < len(label_names):
+            resolved_label = str(label_names[idx])
+        resolved_scores.append((resolved_label, score))
+
+    lines: List[str] = []
+    for resolved_label, score in resolved_scores[:limit]:
+        score_text = f"{score:.3f}" if isinstance(score, (int, float)) else "—"
+        lines.append(f"{resolved_label}: {score_text}")
+    remaining = len(resolved_scores) - limit
+    if remaining > 0:
+        lines.append(f"... +{remaining} more")
+    return "\n".join(lines)
+
+
+def _format_language_scores(
+    scores: Dict[str, Optional[float]],
+    limit: int = 4,
+) -> str:
+    """Format per-language F1 scores."""
+    if not scores:
+        return "—"
+    items = sorted(scores.items(), key=lambda item: item[0])
+    lines: List[str] = []
+    for lang, score in items[:limit]:
+        score_text = f"{score:.3f}" if isinstance(score, (int, float)) else "—"
+        lines.append(f"{str(lang).upper()}: {score_text}")
+    remaining = len(items) - limit
+    if remaining > 0:
+        lines.append(f"... +{remaining} more")
+    return "\n".join(lines)
+
+
+def _collect_confirmed_languages(
+    metadata: Dict[str, Any],
+    config: Dict[str, Any],
+    performance: Dict[str, Any],
+) -> List[str]:
+    """Aggregate confirmed languages across metadata, config, and metrics."""
+    candidates: List[str] = []
+    for source in (
+        metadata.get("confirmed_languages"),
+        config.get("confirmed_languages"),
+    ):
+        if isinstance(source, list):
+            candidates.extend(str(entry) for entry in source if entry is not None)
+    for key in ("language", "language_code"):
+        if metadata.get(key):
+            candidates.append(str(metadata[key]))
+        if config.get(key):
+            candidates.append(str(config[key]))
+    per_language = performance.get("per_language", {})
+    if isinstance(per_language, dict):
+        candidates.extend(per_language.keys())
+
+    normalized: List[str] = []
+    seen: Set[str] = set()
+    for candidate in candidates:
+        code = str(candidate).strip().upper()
+        if not code:
+            continue
+        if code not in seen:
+            seen.add(code)
+            normalized.append(code)
+    return normalized
 
 
 def _normalize_column_choice(
@@ -186,6 +298,24 @@ def _launch_model_annotation_stage(
     from llm_tool.cli.banners import BANNERS, STEP_NUMBERS, STEP_LABEL
     from llm_tool.cli.bert_annotation_studio import BERTAnnotationStudio
     from llm_tool.utils.annotation_session_manager import AnnotationStudioSessionManager
+
+    def _persist_factory_annotation_metadata(summary: Dict[str, Any]) -> Optional[Path]:
+        """Persist model-annotation metadata payload into the factory session structure."""
+        if not summary or not session_dirs:
+            return None
+        metadata_root = session_dirs.get("metadata")
+        if not metadata_root:
+            return None
+        target_dir = Path(metadata_root) / "model_annotation"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        metadata_path = target_dir / f"model_annotation_{timestamp}.json"
+        try:
+            with metadata_path.open("w", encoding="utf-8") as handle:
+                json.dump(summary, handle, indent=2, ensure_ascii=False)
+        except Exception:
+            return None
+        return metadata_path
 
     training_payload = (training_results or {}).get("training_result") or {}
 
@@ -425,7 +555,11 @@ def _launch_model_annotation_stage(
         model_table = Table(title="Models Trained In This Session", box=table_box, show_lines=False)
         model_table.add_column("#", style="cyan", justify="center", width=4)
         model_table.add_column("Model Identifier", style="green")
-        model_table.add_column("Location", style="magenta")
+        model_table.add_column("Langs", style="magenta", overflow="fold", width=12)
+        model_table.add_column("Macro F1", style="bright_white", justify="right", width=10)
+        model_table.add_column("Class F1", style="white", overflow="fold")
+        model_table.add_column("Lang F1", style="white", overflow="fold")
+        model_table.add_column("Location", style="dim")
 
         for idx, (name, path) in enumerate(existing_models, 1):
             relative_display = path.as_posix()
@@ -436,7 +570,44 @@ def _launch_model_annotation_stage(
                     relative_display = path.name
             else:
                 relative_display = path.name
-            model_table.add_row(str(idx), name, relative_display)
+
+            metadata = _read_training_metadata(path)
+            config = _read_model_config(path)
+            performance = summarize_final_metrics(metadata, load_language_metrics(path))
+
+            label_names: List[str] = []
+            metadata_labels = metadata.get("label_names")
+            if isinstance(metadata_labels, list):
+                label_names = [str(label) for label in metadata_labels]
+            else:
+                config_labels = config.get("id2label")
+                if isinstance(config_labels, list):
+                    label_names = [str(label) for label in config_labels]
+                elif isinstance(config_labels, dict):
+                    try:
+                        label_names = [
+                            str(name)
+                            for _, name in sorted(config_labels.items(), key=lambda item: int(item[0]))
+                        ]
+                    except Exception:
+                        label_names = [str(name) for name in config_labels.values()]
+
+            class_scores = performance.get("per_class", [])
+            languages_display = ", ".join(_collect_confirmed_languages(metadata, config, performance)) or "-"
+            macro_value = performance.get("macro_f1")
+            macro_text = f"{macro_value:.3f}" if isinstance(macro_value, (int, float)) else "—"
+            class_text = _format_per_class_scores(class_scores, label_names=label_names)
+            language_text = _format_language_scores(performance.get("per_language", {}))
+
+            model_table.add_row(
+                str(idx),
+                name,
+                languages_display,
+                macro_text,
+                class_text,
+                language_text,
+                relative_display,
+            )
 
         cli.console.print(model_table)
         cli.console.print()
@@ -466,15 +637,130 @@ def _launch_model_annotation_stage(
     session_base_dir.mkdir(parents=True, exist_ok=True)
 
     default_slug = AnnotationStudioSessionManager.slugify(f"{session_id}_bert") if session_id else "bert_annotation"
+    ordered_model_paths = [path for _, path in existing_models]
+
+    existing_data_source: Optional[Dict[str, Any]] = None
+    dataset_display: Optional[str] = None
+    if session_dirs:
+        metadata_root = session_dirs.get("metadata")
+        if metadata_root:
+            annotation_meta_dir = Path(metadata_root) / "model_annotation"
+            if annotation_meta_dir.exists():
+                metadata_files = sorted(annotation_meta_dir.glob("model_annotation_*.json"))
+                if metadata_files:
+                    try:
+                        with metadata_files[-1].open("r", encoding="utf-8") as handle:
+                            latest_summary = json.load(handle)
+                            existing_data_source = latest_summary.get("data_source")
+                    except Exception:
+                        existing_data_source = None
+
+    if dataset_path:
+        dataset_display = str(dataset_path)
+    elif existing_data_source:
+        dataset_display = (
+            existing_data_source.get("display_name")
+            or existing_data_source.get("path")
+            or existing_data_source.get("table")
+            or existing_data_source.get("connection_string")
+        )
+
+    force_dataset_selection_flag = False
+    forced_step_set: Set[str] = set()
+    launch_dataset_path = dataset_path
+    launch_text_column = text_column
+
+    reuse_dataset = True
+    if dataset_display:
+        use_different_dataset = (
+            Confirm.ask(
+                "[bold yellow]Use a different dataset than[/bold yellow] "
+                f"[cyan]{dataset_display}[/cyan] [bold yellow]for running the trained models?[/bold yellow]",
+                default=False,
+            )
+            if cli.console
+            else False
+        )
+        reuse_dataset = not use_different_dataset
+    elif existing_data_source:
+        use_different_dataset = (
+            Confirm.ask(
+                "[bold yellow]Use a different dataset than the one saved in this session for the trained models?[/bold yellow]",
+                default=False,
+            )
+            if cli.console
+            else False
+        )
+        reuse_dataset = not use_different_dataset
+    else:
+        reuse_dataset = False
+
+    if not reuse_dataset:
+        launch_dataset_path = None
+        launch_text_column = None
+        force_dataset_selection_flag = True
+        forced_step_set.update({
+            "select_dataset",
+            "map_columns",
+            "output_columns",
+            "language_detection",
+            "annotation_options",
+            "export_options",
+            "review_launch",
+        })
+    else:
+        if cli.console:
+            adjust_mapping = Confirm.ask(
+                "[cyan]Change the text/ID column mapping before running the models?[/cyan]",
+                default=False,
+            )
+        else:
+            adjust_mapping = False
+        if adjust_mapping:
+            launch_text_column = None
+            forced_step_set.update({
+                "map_columns",
+                "output_columns",
+                "language_detection",
+                "annotation_options",
+                "export_options",
+                "review_launch",
+            })
+        else:
+            if cli.console:
+                rename_outputs = Confirm.ask(
+                    "[cyan]Rename the annotation output columns before exporting?[/cyan]",
+                    default=False,
+                )
+            else:
+                rename_outputs = False
+            if rename_outputs:
+                forced_step_set.update({"output_columns", "review_launch"})
+
+        if cli.console:
+            adjust_exports = Confirm.ask(
+                "[cyan]Update export destinations or formats (e.g., SQL clone, CSV)?[/cyan]",
+                default=False,
+            )
+        else:
+            adjust_exports = False
+        if adjust_exports:
+            forced_step_set.update({"export_options", "review_launch"})
+
     factory_context = {
         "session_id": session_id,
         "training_results": training_results,
         "annotation_output": str(annotation_output) if annotation_output else None,
-        "text_column": text_column,
+        "text_column": launch_text_column,
         "prompt_configs": prompt_configs,
     }
+    if forced_step_set:
+        factory_context["forced_steps"] = sorted(forced_step_set)
+    if force_dataset_selection_flag:
+        factory_context["force_dataset_selection"] = True
 
-    ordered_model_paths = [path for _, path in existing_models]
+    factory_context["dataset_path"] = str(launch_dataset_path) if launch_dataset_path else None
+    factory_context["model_paths"] = [str(path) for path in ordered_model_paths]
 
     studio = BERTAnnotationStudio(
         console=cli.console,
@@ -484,21 +770,65 @@ def _launch_model_annotation_stage(
         allowed_model_paths=[path for _, path in existing_models],
         default_session_slug=default_slug,
         factory_session_id=session_id,
-        factory_context={
-            **factory_context,
-            "dataset_path": str(dataset_path) if dataset_path else None,
-            "model_paths": [str(path) for path in ordered_model_paths],
-        },
+        factory_context=factory_context,
     )
 
     try:
         result = studio.run_factory_pipeline(
             ordered_model_paths=ordered_model_paths,
-            dataset_path=dataset_path,
-            text_column=text_column,
+            dataset_path=launch_dataset_path,
+            text_column=launch_text_column,
+            force_dataset_selection=force_dataset_selection_flag,
+            forced_steps=sorted(forced_step_set),
         )
         if isinstance(result, dict):
+            session_summary = result.get("session_summary") or {}
+            metadata_path = _persist_factory_annotation_metadata(session_summary)
+
+            extra_payload: Dict[str, Any] = result.setdefault("extra", {})
+            extra_payload.setdefault(
+                "models_used",
+                [str(path) for _, path in existing_models],
+            )
+            extra_payload.setdefault("annotation_session_dir", str(session_base_dir))
+
+            if session_summary:
+                data_source = session_summary.get("data_source") or {}
+                if data_source:
+                    extra_payload["data_source"] = data_source
+
+                column_mapping = session_summary.get("column_mapping") or {}
+                if column_mapping:
+                    extra_payload["column_mapping"] = column_mapping
+                    extra_payload["text_column"] = column_mapping.get("text")
+                    extra_payload["id_column"] = column_mapping.get("id")
+
+                output_plan = session_summary.get("output_plan") or []
+                if output_plan:
+                    extra_payload["output_plan"] = output_plan
+                    annotation_columns: List[str] = []
+                    for entry in output_plan:
+                        columns = entry.get("columns", {})
+                        if isinstance(columns, dict):
+                            label_column = columns.get("label")
+                            if isinstance(label_column, str):
+                                annotation_columns.append(label_column)
+                    if annotation_columns:
+                        extra_payload["annotation_columns"] = annotation_columns
+
+                studio_session_id = session_summary.get("session_id")
+                if studio_session_id:
+                    extra_payload["studio_session_id"] = studio_session_id
+
+                studio_session_dir = session_summary.get("session_dir")
+                if studio_session_dir:
+                    extra_payload["studio_session_dir"] = studio_session_dir
+
+            if metadata_path:
+                extra_payload["metadata_file"] = str(metadata_path)
+
             return result
+
         return {
             "status": "completed",
             "detail": f"Model annotation executed with {len(existing_models)} model(s)",

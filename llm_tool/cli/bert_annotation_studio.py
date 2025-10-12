@@ -55,12 +55,15 @@ from __future__ import annotations
 import os
 import json
 import re
+import math
 from collections import Counter, defaultdict
 import textwrap
 import itertools
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Callable, Set, Iterable, Union, Mapping
 from datetime import datetime
+from statistics import NormalDist
 import time
 import shutil
 from contextlib import nullcontext
@@ -89,6 +92,7 @@ from llm_tool.utils.data_detector import DataDetector
 from llm_tool.utils.system_resources import detect_resources
 from llm_tool.utils.language_detector import LanguageDetector
 from llm_tool.utils.annotation_session_manager import AnnotationStudioSessionManager
+from llm_tool.utils.model_metrics import load_language_metrics, summarize_final_metrics
 from transformers import AutoTokenizer
 
 # Optional progress bar support
@@ -114,6 +118,27 @@ MODEL_LANGUAGE_MAP = {
     'swedish-bert': 'SV',
     'xlm-roberta': 'MULTI',
 }
+
+DEFAULT_CONFIDENCE_LEVEL = 0.95
+MIN_EFFECTIVE_SUPPORT = 5.0
+
+
+@lru_cache(maxsize=16)
+def _cached_z_value(confidence_level: float) -> float:
+    """Return the Z-score for a two-sided normal interval at ``confidence_level``."""
+    clamped = max(min(confidence_level, 0.999999), 1e-6)
+    quantile = 0.5 + clamped / 2.0
+    return float(NormalDist().inv_cdf(quantile))
+
+
+def _z_value_for_confidence(confidence_level: Optional[float]) -> float:
+    """Resolve a robust Z-score, defaulting to 95% when not provided."""
+    try:
+        level = float(confidence_level) if confidence_level is not None else DEFAULT_CONFIDENCE_LEVEL
+    except (TypeError, ValueError):
+        level = DEFAULT_CONFIDENCE_LEVEL
+    level = round(max(min(level, 0.999999), 1e-6), 6)
+    return _cached_z_value(level)
 
 
 class BERTAnnotationStudio:
@@ -144,6 +169,7 @@ class BERTAnnotationStudio:
         self._annotated_row_mask: Optional[pd.Series] = None
         self._factory_annotated_count: int = 0
         self._factory_notice_shown: Set[str] = set()
+        self._factory_forced_steps: Set[str] = set()
         allowed_set: Optional[Set[Path]] = None
         if allowed_model_paths:
             allowed_set = set()
@@ -177,6 +203,7 @@ class BERTAnnotationStudio:
         self._resume_mode: bool = False
         self._resume_from_step: int = 1
         self._step_cache: Dict[str, Any] = {}
+        self._confidence_stats_cache: Dict[str, Dict[str, Any]] = {}
 
     @staticmethod
     def _sanitize_for_metadata(payload: Any, depth: int = 0) -> Any:
@@ -357,6 +384,10 @@ class BERTAnnotationStudio:
         step_no: int,
         saved_payload: Optional[Dict[str, Any]],
     ) -> bool:
+        if step_key in self._factory_forced_steps:
+            self._factory_forced_steps.discard(step_key)
+            return False
+
         if not self._resume_mode or saved_payload is None:
             return False
 
@@ -1244,6 +1275,41 @@ class BERTAnnotationStudio:
             return "—"
         return "\n".join(f"{idx}: {label}" for idx, label in pairs)
 
+    @staticmethod
+    def _format_per_class_scores(
+        scores: List[Tuple[str, Optional[float]]],
+        limit: int = 4,
+    ) -> str:
+        """Return a concise multi-line view of per-class F1 scores."""
+        if not scores:
+            return "—"
+        lines: List[str] = []
+        for label, score in scores[:limit]:
+            score_text = f"{score:.3f}" if isinstance(score, (int, float)) else "—"
+            lines.append(f"{label}: {score_text}")
+        remaining = len(scores) - limit
+        if remaining > 0:
+            lines.append(f"... +{remaining} more")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_language_scores(
+        scores: Mapping[str, Optional[float]],
+        limit: int = 4,
+    ) -> str:
+        """Return a concise multi-line view of per-language F1 scores."""
+        if not scores:
+            return "—"
+        items = sorted(scores.items(), key=lambda item: item[0])
+        lines: List[str] = []
+        for lang, score in items[:limit]:
+            score_text = f"{score:.3f}" if isinstance(score, (int, float)) else "—"
+            lines.append(f"{lang}: {score_text}")
+        remaining = len(items) - limit
+        if remaining > 0:
+            lines.append(f"... +{remaining} more")
+        return "\n".join(lines)
+
     def _describe_child_scope(self, entry: Dict[str, Any], plan: List[Dict[str, Any]]) -> str:
         """Provide a human-readable summary of a pipeline entry's current scope."""
         scope = entry.get("scope", {})
@@ -1368,10 +1434,12 @@ class BERTAnnotationStudio:
         model_table.add_column("#", style="cyan", width=4, justify="center")
         model_table.add_column("Model", style="green", overflow="fold")
         model_table.add_column("Task", style="bright_white", overflow="ellipsis")
-        model_table.add_column("Lang", style="magenta", width=8, justify="center")
+        model_table.add_column("Langs", style="magenta", width=12, overflow="fold")
         model_table.add_column("Labels", style="cyan", width=6, justify="right")
         model_table.add_column("Categories", style="white", overflow="fold")
         model_table.add_column("Macro F1", style="bright_white", width=10, justify="right")
+        model_table.add_column("Class F1", style="white", overflow="fold")
+        model_table.add_column("Lang F1", style="white", overflow="fold")
         model_table.add_column("Updated", style="dim", width=19)
 
         for idx, model_info in enumerate(model_entries, 1):
@@ -1386,14 +1454,19 @@ class BERTAnnotationStudio:
             task_display = model_info.get("label_value") or "—"
             task_display = str(task_display)
             id2label_text = self._format_id2label_pairs(id2label_pairs)
+            languages_display = ", ".join(model_info.get("confirmed_languages") or []) or str(model_info['language'])
+            class_f1_text = self._format_per_class_scores(model_info.get("class_metrics", []))
+            language_f1_text = self._format_language_scores(model_info.get("metrics_per_language", {}))
             model_table.add_row(
                 str(idx),
                 model_display,
                 task_display,
-                model_info['language'],
+                languages_display,
                 str(label_total),
                 id2label_text,
                 macro_text,
+                class_f1_text,
+                language_f1_text,
                 model_info['updated_at'].strftime("%Y-%m-%d %H:%M"),
             )
 
@@ -1490,10 +1563,12 @@ class BERTAnnotationStudio:
         summary.add_column("#", style="cyan", width=4, justify="center")
         summary.add_column("Model", style="green", overflow="fold")
         summary.add_column("Task", style="bright_white", overflow="ellipsis")
-        summary.add_column("Lang", style="magenta", width=8, justify="center")
+        summary.add_column("Langs", style="magenta", width=12, overflow="fold")
         summary.add_column("Labels", style="cyan", width=6, justify="right")
         summary.add_column("Categories", style="white", overflow="fold")
         summary.add_column("Macro F1", style="bright_white", width=10, justify="right")
+        summary.add_column("Class F1", style="white", overflow="fold")
+        summary.add_column("Lang F1", style="white", overflow="fold")
 
         for idx, model in enumerate(chosen_models, 1):
             macro = model['metrics'].get('macro_f1')
@@ -1505,14 +1580,19 @@ class BERTAnnotationStudio:
             if base_display and base_display.lower() not in model_display.lower():
                 model_display = f"{model_display}\n[dim]{base_display}[/dim]"
             task_display = str(model.get("label_value") or "—")
+            languages_display = ", ".join(model.get("confirmed_languages") or []) or str(model['language'])
+            class_f1_text = self._format_per_class_scores(model.get("class_metrics", []))
+            language_f1_text = self._format_language_scores(model.get("metrics_per_language", {}))
             summary.add_row(
                 str(idx),
                 model_display,
                 task_display,
-                model['language'],
+                languages_display,
                 str(label_total),
                 self._format_id2label_pairs(id2label_pairs),
                 macro_text,
+                class_f1_text,
+                language_f1_text,
             )
         self._print_table(summary)
         if len(chosen_models) > 1:
@@ -1557,8 +1637,9 @@ class BERTAnnotationStudio:
                 self.logger.debug("Skipping model at %s (invalid config): %s", model_dir, exc)
                 continue
 
-            metrics = self._load_language_metrics(model_dir)
+            language_metrics = load_language_metrics(model_dir)
             training_metadata = self._load_training_metadata(model_dir)
+            performance = summarize_final_metrics(training_metadata, language_metrics)
             metadata_label_names_raw = training_metadata.get("label_names", [])
             metadata_label_names = (
                 [str(name) for name in metadata_label_names_raw]
@@ -1569,16 +1650,22 @@ class BERTAnnotationStudio:
             base_model = model_dir.name
             language = self._infer_language(model_dir, base_model, config)
             confirmed_langs_raw = config.get("confirmed_languages") or []
-            confirmed_languages = sorted(
-                {
-                    (LanguageNormalizer.normalize_language(lang) or str(lang).strip() or "UNKNOWN").upper()
-                    for lang in confirmed_langs_raw
-                    if lang is not None
-                }
-            )
-            if not confirmed_languages:
+            metadata_confirmed = training_metadata.get("confirmed_languages") or []
+            if isinstance(metadata_confirmed, list):
+                confirmed_langs_raw.extend(metadata_confirmed)
+            confirmed_set = {
+                (LanguageNormalizer.normalize_language(lang) or str(lang).strip() or "UNKNOWN").upper()
+                for lang in confirmed_langs_raw
+                if lang is not None and str(lang).strip()
+            }
+            for lang_code in performance.get("per_language", {}).keys():
+                normalized_lang = LanguageNormalizer.normalize_language(lang_code) or str(lang_code).strip()
+                if normalized_lang:
+                    confirmed_set.add(str(normalized_lang).upper())
+            if not confirmed_set:
                 fallback_lang = LanguageNormalizer.normalize_language(language) or language or "UNKNOWN"
-                confirmed_languages = [str(fallback_lang).upper()]
+                confirmed_set = {str(fallback_lang).upper()}
+            confirmed_languages = sorted(confirmed_set)
 
             id2label_pairs = self._extract_id2label_pairs(config)
             if not id2label_pairs and metadata_label_names:
@@ -1644,8 +1731,9 @@ class BERTAnnotationStudio:
                     "confirmed_languages": confirmed_languages,
                     "is_multilingual": language == "MULTI" or len(confirmed_languages) > 1,
                     "label_count": label_count if label_count else 0,
-                    "metrics": metrics,
-                    "metrics_per_language": metrics.get("per_language", {}) if isinstance(metrics, dict) else {},
+                    "metrics": performance,
+                    "class_metrics": performance.get("per_class", []),
+                    "metrics_per_language": performance.get("per_language", {}),
                     "updated_at": updated_at,
                     "column_prefix": self._sanitize_model_prefix(relative_name),
                     "label_value": label_value,
@@ -1656,41 +1744,6 @@ class BERTAnnotationStudio:
 
         entries.sort(key=lambda entry: entry["updated_at"], reverse=True)
         return entries
-
-    def _load_language_metrics(self, model_dir: Path) -> Dict[str, Any]:
-        """Load language metrics if available."""
-        metrics_path = model_dir / "language_performance.json"
-        if not metrics_path.exists():
-            return {}
-
-        try:
-            with open(metrics_path, "r", encoding="utf-8") as metrics_file:
-                data = json.load(metrics_file)
-        except Exception as exc:
-            self.logger.debug("Could not read metrics for %s: %s", model_dir, exc)
-            return {}
-
-        if isinstance(data, list) and data:
-            latest = data[-1]
-            averages = latest.get("averages", {})
-            macro = averages.get("macro_f1") or averages.get("f1_macro")
-            per_language: Dict[str, float] = {}
-            metrics_by_language = latest.get("metrics", {}) or {}
-            for lang_code, values in metrics_by_language.items():
-                if not isinstance(values, dict):
-                    continue
-                normalized = LanguageNormalizer.normalize_language(lang_code) or str(lang_code)
-                lang_key = normalized.upper()
-                score = values.get("macro_f1") or values.get("f1_macro")
-                if isinstance(score, (int, float)):
-                    per_language[lang_key] = float(score)
-            return {
-                "macro_f1": macro,
-                "per_language": per_language,
-                "raw": latest,
-            }
-
-        return {}
 
     def _load_training_metadata(self, model_dir: Path) -> Dict[str, Any]:
         """Load training metadata (task info, label names, etc.) if present."""
@@ -1706,6 +1759,145 @@ class BERTAnnotationStudio:
         except Exception as exc:
             self.logger.debug("Could not read training metadata for %s: %s", model_dir, exc)
         return {}
+
+    def _get_confidence_stats(self, model_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Retrieve cached confidence statistics (per-class validation support) for ``model_info``.
+
+        These counts allow downstream inference steps to derive Wilson score intervals that
+        reflect how frequently each class appeared during validation. When metadata is missing,
+        the fallback ensures intervals still expand beyond the raw probability.
+        """
+        cache_key = str(model_info.get("path") or model_info.get("relative_name") or id(model_info))
+        if cache_key in self._confidence_stats_cache:
+            return self._confidence_stats_cache[cache_key]
+
+        stats = {
+            "per_class_support": {},  # type: Dict[int, float]
+            "total_support": 0.0,
+        }
+
+        model_path = model_info.get("path")
+        metadata: Dict[str, Any] = {}
+        if isinstance(model_path, (str, Path)):
+            metadata = self._load_training_metadata(Path(model_path))
+        if not metadata and isinstance(model_info.get("training_metadata"), dict):
+            metadata = model_info["training_metadata"]
+
+        per_class_support: Dict[int, float] = {}
+        total_support = 0.0
+
+        final_metrics = metadata.get("final_metrics")
+        per_class_block = final_metrics.get("per_class") if isinstance(final_metrics, dict) else None
+        if isinstance(per_class_block, list):
+            label_lookup: Dict[str, int] = {}
+            for pair in model_info.get("id2label_pairs") or []:
+                try:
+                    idx, label_name = pair
+                    label_lookup[str(label_name).strip().lower()] = int(idx)
+                except Exception:
+                    continue
+
+            fallback_index = 0
+            for entry in per_class_block:
+                if not isinstance(entry, dict):
+                    fallback_index += 1
+                    continue
+                support = entry.get("support")
+                if support is None:
+                    fallback_index += 1
+                    continue
+                try:
+                    support_value = float(support)
+                except (TypeError, ValueError):
+                    fallback_index += 1
+                    continue
+                if not math.isfinite(support_value) or support_value < 0:
+                    fallback_index += 1
+                    continue
+
+                label_idx = None
+                for key in ("label", "class", "name", "id"):
+                    label_name = entry.get(key)
+                    if isinstance(label_name, str):
+                        normalized = label_name.strip().lower()
+                        if normalized in label_lookup:
+                            label_idx = label_lookup[normalized]
+                            break
+                if label_idx is None:
+                    label_idx = fallback_index
+
+                per_class_support[int(label_idx)] = per_class_support.get(int(label_idx), 0.0) + support_value
+                total_support += support_value
+                fallback_index += 1
+
+        stats["per_class_support"] = per_class_support
+        stats["total_support"] = total_support
+        self._confidence_stats_cache[cache_key] = stats
+        return stats
+
+    def _compute_confidence_bounds(
+        self,
+        probabilities: np.ndarray,
+        class_indices: np.ndarray,
+        scores: np.ndarray,
+        model_info: Dict[str, Any],
+        confidence_level: Optional[float],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Compute Wilson score confidence bounds for model predictions."""
+        if scores.size == 0:
+            return np.array([], dtype=float), np.array([], dtype=float)
+
+        z_value = _z_value_for_confidence(confidence_level)
+        stats = self._get_confidence_stats(model_info)
+
+        per_class_support: Dict[int, float] = stats.get("per_class_support", {})
+        total_support = float(stats.get("total_support", 0.0) or 0.0)
+        class_count = probabilities.shape[1] if probabilities.ndim == 2 else max(len(per_class_support), 1)
+        if class_count <= 0:
+            class_count = 1
+
+        if total_support > 0 and class_count > 0:
+            fallback_support = max(total_support / class_count, MIN_EFFECTIVE_SUPPORT)
+        else:
+            fallback_support = max(MIN_EFFECTIVE_SUPPORT, len(scores) * 0.1)
+
+        indices = class_indices.astype(int, copy=False)
+        lower_bounds = np.zeros_like(scores, dtype=float)
+        upper_bounds = np.ones_like(scores, dtype=float)
+
+        for cls in np.unique(indices):
+            mask = indices == cls
+            cls_scores = scores[mask]
+            if cls_scores.size == 0:
+                continue
+            n_effective = per_class_support.get(int(cls), fallback_support)
+            if not math.isfinite(n_effective) or n_effective <= 0:
+                n_effective = fallback_support
+            n_effective = max(float(n_effective), 1.0)
+            cls_lower, cls_upper = self._wilson_interval(cls_scores, n_effective, z_value)
+            lower_bounds[mask] = cls_lower
+            upper_bounds[mask] = cls_upper
+
+        return lower_bounds, upper_bounds
+
+    @staticmethod
+    def _wilson_interval(probabilities: np.ndarray, n_effective: float, z_value: float) -> Tuple[np.ndarray, np.ndarray]:
+        """Vectorised Wilson score interval for Bernoulli proportion estimates."""
+        if n_effective <= 0 or not math.isfinite(n_effective):
+            zeros = np.zeros_like(probabilities, dtype=float)
+            ones = np.ones_like(probabilities, dtype=float)
+            return zeros, ones
+
+        z_sq = z_value * z_value
+        denom = 1.0 + z_sq / n_effective
+        centre = probabilities + z_sq / (2.0 * n_effective)
+        margin = z_value * np.sqrt(
+            (probabilities * (1.0 - probabilities) / n_effective) + (z_sq / (4.0 * n_effective * n_effective))
+        )
+        lower = (centre - margin) / denom
+        upper = (centre + margin) / denom
+        return np.clip(lower, 0.0, 1.0), np.clip(upper, 0.0, 1.0)
 
     def _infer_language(self, model_dir: Path, base_model: str, config: Dict[str, Any]) -> str:
         """Infer language code from path hints and model metadata."""
@@ -2620,6 +2812,8 @@ class BERTAnnotationStudio:
         if not self._factory_launch_active:
             return None
         config = self._factory_launch_config or {}
+        if config.get("force_dataset_selection"):
+            return None
         dataset_path = config.get("dataset_path")
         if not dataset_path:
             return None
@@ -3166,16 +3360,66 @@ class BERTAnnotationStudio:
                 language_counts = selected['counts']
                 detection_source = "column"
 
-        analysis_results = self._analyze_languages(working_df, text_column)
-        if language_counts:
+        analysis_results: Dict[str, Any]
+        if detection_source == "column" and language_column and language_column in df.columns:
+            normalized_series = df[language_column].map(
+                lambda val: (LanguageNormalizer.normalize_language(val) or str(val).strip() or "UNKNOWN").upper()
+            )
+            if len(normalized_series) != len(df):
+                normalized_series = normalized_series.reindex(df.index).fillna("UNKNOWN")
+            self._language_assignments = normalized_series
+
+            column_counts = normalized_series.value_counts(dropna=False).to_dict()
             normalized_counts: Dict[str, int] = {}
-            for lang, count in language_counts.items():
-                norm = LanguageNormalizer.normalize_language(lang) or lang
-                normalized_counts[norm.lower()] = normalized_counts.get(norm.lower(), 0) + count
-            analysis_results['languages_detected'] = normalized_counts
+            for lang, count in column_counts.items():
+                norm = LanguageNormalizer.normalize_language(lang) or str(lang).strip() or "UNKNOWN"
+                normalized_counts[norm.lower()] = normalized_counts.get(norm.lower(), 0) + int(count)
             language_counts = normalized_counts
+
+            analysis_results = {
+                'languages_detected': normalized_counts,
+                'text_length_stats': {
+                    'avg_length': 0,
+                    'max_length': 0,
+                    'min_length': 0,
+                    'median_length': 0,
+                },
+                'long_document_percentage': 0,
+                'user_prefers_long_models': False,
+            }
+            if text_column in df.columns:
+                texts = df[text_column].fillna("").astype(str)
+                text_lengths = texts.str.len()
+                if not text_lengths.empty:
+                    import statistics  # pylint: disable=import-outside-toplevel
+
+                    avg_length = float(text_lengths.mean())
+                    max_length = int(text_lengths.max())
+                    min_length = int(text_lengths.min())
+                    median_length = statistics.median(text_lengths.tolist())
+                    long_docs = int((text_lengths > 2048).sum())
+                    total = len(text_lengths)
+                    long_pct = (long_docs / total) * 100 if total else 0
+
+                    analysis_results['text_length_stats'] = {
+                        'avg_length': avg_length,
+                        'max_length': max_length,
+                        'min_length': min_length,
+                        'median_length': median_length,
+                    }
+                    analysis_results['long_document_percentage'] = long_pct
+                    analysis_results['user_prefers_long_models'] = long_pct > 20
         else:
-            language_counts = analysis_results.get('languages_detected', {})
+            analysis_results = self._analyze_languages(working_df, text_column)
+            if language_counts:
+                normalized_counts = {}
+                for lang, count in language_counts.items():
+                    norm = LanguageNormalizer.normalize_language(lang) or lang
+                    normalized_counts[norm.lower()] = normalized_counts.get(norm.lower(), 0) + count
+                analysis_results['languages_detected'] = normalized_counts
+                language_counts = normalized_counts
+            else:
+                language_counts = analysis_results.get('languages_detected', {})
 
         if not language_counts:
             language_counts = {'en': 1}
@@ -3239,7 +3483,7 @@ class BERTAnnotationStudio:
             self.console.print("[dim]Each model will only annotate rows in its supported language(s).[/dim]\n")
 
             for lang in languages_detected_sorted:
-                lang_count = language_counts.get(lang.lower(), 0)
+                lang_count = language_counts.get(lang, 0)
                 models_for_lang = language_to_models.get(lang, [])
                 if models_for_lang:
                     formatted_models: List[str] = []
@@ -3516,6 +3760,7 @@ class BERTAnnotationStudio:
         annotation_config.setdefault('disable_tqdm', False)
         annotation_config['show_progress'] = True
         annotation_config['eligible_rows'] = total_rows
+        annotation_config.setdefault('confidence_level', DEFAULT_CONFIDENCE_LEVEL)
         return annotation_config
 
     def _configure_export_options(self) -> Dict[str, Any]:
@@ -3735,10 +3980,20 @@ class BERTAnnotationStudio:
                         working_df.loc[eligible_index, columns["label_id"]] = max_indices.astype(int)
                     if columns.get("probability"):
                         working_df.loc[eligible_index, columns["probability"]] = max_scores
-                    if columns.get("ci_lower"):
-                        working_df.loc[eligible_index, columns["ci_lower"]] = np.nan
-                    if columns.get("ci_upper"):
-                        working_df.loc[eligible_index, columns["ci_upper"]] = np.nan
+                    ci_lower_values: Optional[np.ndarray] = None
+                    ci_upper_values: Optional[np.ndarray] = None
+                    if columns.get("ci_lower") or columns.get("ci_upper"):
+                        ci_lower_values, ci_upper_values = self._compute_confidence_bounds(
+                            probs,
+                            max_indices,
+                            max_scores,
+                            info,
+                            annotation_config.get("confidence_level", DEFAULT_CONFIDENCE_LEVEL),
+                        )
+                    if columns.get("ci_lower") and ci_lower_values is not None:
+                        working_df.loc[eligible_index, columns["ci_lower"]] = ci_lower_values
+                    if columns.get("ci_upper") and ci_upper_values is not None:
+                        working_df.loc[eligible_index, columns["ci_upper"]] = ci_upper_values
                     if columns.get("language"):
                         working_df.loc[eligible_index, columns["language"]] = info.get("language", "")
                     if columns.get("annotated"):
@@ -3847,8 +4102,69 @@ class BERTAnnotationStudio:
         ordered_model_paths: Optional[Iterable[Union[str, Path]]] = None,
         dataset_path: Optional[Union[str, Path]] = None,
         text_column: Optional[str] = None,
+        force_dataset_selection: bool = False,
+        forced_steps: Optional[Iterable[str]] = None,
     ) -> Dict[str, Any]:
         """Launch the interactive studio while constraining selectable models for Annotator Factory."""
+
+        def _collect_factory_summary() -> Dict[str, Any]:
+            snapshot: Dict[str, Any] = {}
+            manager = getattr(self, "session_manager", None)
+            session_id = getattr(manager, "session_id", None)
+            if not manager or not session_id:
+                return snapshot
+
+            snapshot["session_id"] = session_id
+
+            session_dir = getattr(manager, "session_dir", None)
+            if session_dir:
+                try:
+                    snapshot["session_dir"] = str(Path(session_dir))
+                except Exception:
+                    snapshot["session_dir"] = str(session_dir)
+
+            try:
+                metadata_payload = getattr(manager, "metadata", {})
+            except Exception:
+                metadata_payload = {}
+            snapshot["metadata"] = self._sanitize_for_metadata(metadata_payload)
+
+            steps_to_capture = [
+                "select_models",
+                "configure_pipeline",
+                "select_dataset",
+                "map_columns",
+                "output_columns",
+                "language_detection",
+                "annotation_options",
+                "export_options",
+                "review_launch",
+            ]
+            captured_steps: Dict[str, Any] = {}
+            for key in steps_to_capture:
+                try:
+                    payload = manager.get_step_data(key)
+                except Exception:
+                    payload = None
+                if payload:
+                    captured_steps[key] = self._sanitize_for_metadata(payload)
+            if captured_steps:
+                snapshot["steps"] = captured_steps
+
+            data_source = captured_steps.get("select_dataset", {}).get("data_source") if captured_steps else None
+            if data_source:
+                snapshot["data_source"] = data_source
+
+            column_mapping = captured_steps.get("map_columns", {}).get("column_mapping") if captured_steps else None
+            if column_mapping:
+                snapshot["column_mapping"] = column_mapping
+
+            output_plan = captured_steps.get("output_columns", {}).get("plan") if captured_steps else None
+            if output_plan:
+                snapshot["output_plan"] = output_plan
+
+            return snapshot
+
         resolved_paths: List[Path] = []
         allowed: Optional[Set[Path]] = None
         if ordered_model_paths:
@@ -3866,22 +4182,27 @@ class BERTAnnotationStudio:
             "dataset_path": Path(dataset_path).expanduser() if dataset_path else None,
             "text_column": text_column,
             "model_paths": resolved_paths,
+            "force_dataset_selection": force_dataset_selection,
         }
         self._factory_launch_active = True
+        self._factory_forced_steps = set(forced_steps or [])
 
         if self.console:
             self.console.print(
                 "[cyan]Launching BERT Annotation Studio to complete the Deploy & Annotate stage.[/cyan]"
             )
-
+        session_snapshot: Dict[str, Any] = {}
         try:
             self.run()
         finally:
+            session_snapshot = _collect_factory_summary()
             self._allowed_model_paths = None
             self._factory_launch_active = False
             self._factory_launch_config = None
+            self._factory_forced_steps = set()
 
         return {
             "status": "completed",
             "detail": "Interactive annotation studio launched",
+            "session_summary": session_snapshot,
         }

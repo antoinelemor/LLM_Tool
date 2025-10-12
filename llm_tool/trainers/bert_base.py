@@ -3068,10 +3068,13 @@ class BertBase(BertABC):
 
                         # Write epoch metrics to CSV
                         current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        resolved_label_key = label_key or category_name or ""
+                        resolved_label_value = label_value or label_key or category_name or ""
+
                         reinforced_row = [
                             self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
-                            label_key if label_key else category if category else "",
-                            label_value if label_value else category if category else "",
+                            resolved_label_key,
+                            resolved_label_value,
                             language if language else "MULTI",
                             current_timestamp,
                             epoch + 1,

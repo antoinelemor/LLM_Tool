@@ -931,17 +931,6 @@ class MultiLabelTrainer:
             model_class = self._select_model_class(train_samples)
             model = model_class()
 
-        # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
-        from .model_trainer import set_detected_languages_on_model
-        confirmed_langs = self.confirmed_languages if hasattr(self, 'confirmed_languages') else None
-        detected_languages = set_detected_languages_on_model(
-            model=model,
-            train_samples=train_samples,
-            val_samples=val_samples,
-            confirmed_languages=confirmed_langs,
-            logger=self.logger
-        )
-
         # Set num_labels and class_names for both binary and multi-class classification
         if num_labels > 2:
             model.num_labels = num_labels
@@ -982,6 +971,52 @@ class MultiLabelTrainer:
             if len(train_samples) < 10:
                 self.logger.warning(f"⚠️  Very few samples ({len(train_samples)}) for {actual_model_name} "
                                    f"targeting {target_languages}. Training may be unstable.")
+
+        # UNIFIED: Determine confirmed languages for this specific training job
+        from .model_trainer import set_detected_languages_on_model
+
+        combined_samples = []
+        combined_samples.extend(train_samples)
+        combined_samples.extend(val_samples)
+
+        sample_languages = sorted({
+            s.lang.strip().upper()
+            for s in combined_samples
+            if hasattr(s, 'lang') and isinstance(s.lang, str) and s.lang and s.lang.strip()
+        })
+
+        language_normalized = None
+        if isinstance(language, str) and language.strip():
+            language_normalized = language.strip().upper()
+
+        if language_normalized and language_normalized != "MULTI":
+            confirmed_langs = [language_normalized]
+        elif sample_languages:
+            confirmed_langs = sample_languages
+        elif hasattr(self, 'confirmed_languages'):
+            confirmed_langs = [
+                lang.strip().upper()
+                for lang in getattr(self, 'confirmed_languages', [])
+                if isinstance(lang, str) and lang.strip()
+            ] or None
+        else:
+            confirmed_langs = None
+
+        detected_languages = set_detected_languages_on_model(
+            model=model,
+            train_samples=train_samples,
+            val_samples=val_samples,
+            confirmed_languages=confirmed_langs,
+            logger=self.logger
+        )
+
+        # Persist confirmed languages directly on the model for downstream metadata
+        if confirmed_langs:
+            model.confirmed_languages = confirmed_langs
+        elif detected_languages:
+            model.confirmed_languages = detected_languages
+        elif hasattr(model, 'confirmed_languages'):
+            delattr(model, 'confirmed_languages')
 
         # Use encode_with_metadata if available for full metadata tracking
         use_enhanced = hasattr(model, 'encode_with_metadata')
