@@ -3889,6 +3889,44 @@ class AdvancedCLI:
             requires_api_key=False
         )
 
+    def _prompt_openai_batch_mode(
+        self,
+        provider: str,
+        context: str,
+        annotation_settings: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Ask whether to enable OpenAI Batch mode for the current workflow."""
+        if provider != 'openai':
+            if annotation_settings is not None:
+                annotation_settings.pop('openai_batch_mode', None)
+            return False
+
+        if annotation_settings and 'openai_batch_mode' in annotation_settings:
+            return bool(annotation_settings['openai_batch_mode'])
+
+        if HAS_RICH and self.console:
+            self.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
+            self.console.print(
+                "[dim]Batch mode submits all requests at once and lets OpenAI process them asynchronously. "
+                "It is ideal for large datasets, reduces rate-limit backoffs, and returns the annotations after the batch job completes.[/dim]"
+            )
+
+        question = f"[bold yellow]Use the OpenAI Batch API for {context}?[/bold yellow]"
+        use_batch = Confirm.ask(question, default=False)
+
+        if HAS_RICH and self.console:
+            if use_batch:
+                self.console.print(
+                    f"[green]✓ Batch mode enabled. The workflow will prepare the batch job and wait for OpenAI to finish processing {context}.[/green]"
+                )
+            else:
+                self.console.print(f"[dim]Continuing with synchronous API calls for {context}.[/dim]")
+
+        if annotation_settings is not None:
+            annotation_settings['openai_batch_mode'] = use_batch
+
+        return use_batch
+
     def _auto_select_dataset(self) -> Optional[DatasetInfo]:
         """Intelligently select the most likely dataset"""
         if not self.detected_datasets:
@@ -4665,24 +4703,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         label_strategy = config.get('label_strategy')
         training_annotation_keys = config.get('training_annotation_keys')
 
-        if model_info.provider == 'openai':
-            if 'openai_batch_mode' not in annotation_settings:
-                if HAS_RICH and self.console:
-                    self.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
-                    self.console.print(
-                        "[dim]Batch mode submits every request at once and lets OpenAI process them asynchronously. "
-                        "It is ideal for large datasets and reduces rate-limit friction, but you must wait for the batch to finish before results are available.[/dim]"
-                    )
-                openai_batch_mode = Confirm.ask(
-                    "[bold yellow]Use the OpenAI Batch API for this annotation run?[/bold yellow]",
-                    default=False
-                )
-                annotation_settings['openai_batch_mode'] = openai_batch_mode
-            else:
-                openai_batch_mode = bool(annotation_settings.get('openai_batch_mode'))
-        else:
-            openai_batch_mode = False
-            annotation_settings.pop('openai_batch_mode', None)
+        openai_batch_mode = self._prompt_openai_batch_mode(
+            model_info.provider,
+            "this quick start annotation run",
+            annotation_settings,
+        )
 
         data_format = Path(dataset_path).suffix.lower().lstrip('.') if dataset_path else 'csv'
         if data_format == '':
@@ -4973,8 +4998,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         for p in prompts_payload
                     ],
                     'processing_configuration': {
-                        'parallel_workers': pipeline_config.get('num_processes', 1),
-                        'batch_size': pipeline_config.get('batch_size', 16),
+                        'parallel_workers': None if openai_batch_mode else pipeline_config.get('num_processes', 1),
+                        'batch_size': None if openai_batch_mode else pipeline_config.get('batch_size', 16),
+                        'incremental_save': False if openai_batch_mode else save_incrementally,
                         'openai_batch_mode': openai_batch_mode
                     },
                     'training_configuration': {
@@ -8599,6 +8625,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             input("\nPress Enter to continue...")
             return
 
+        openai_batch_mode = self._prompt_openai_batch_mode(
+            llm_config.provider,
+            "this SQL annotator run",
+        )
+
         # ========================================
         # STEP 7/9: Prompt Configuration
         # ========================================
@@ -8804,6 +8835,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         summary.add_row("LLM Provider", llm_config.provider if llm_config else 'N/A')
         summary.add_row("LLM Model", llm_config.name if llm_config else 'N/A')
+        if llm_config and llm_config.provider == 'openai':
+            summary.add_row("OpenAI Batch Mode", "Enabled" if openai_batch_mode else "Disabled")
         summary.add_row("Prompts", f"{len(prompt_configs)} configured")
 
         # Add all model parameters
@@ -8814,9 +8847,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             summary.add_row("Top K", str(top_k))
 
         # Add processing parameters
-        summary.add_row("Parallel Workers", str(num_processes))
-        summary.add_row("Batch Size", str(batch_size))
-        summary.add_row("Incremental Save", "Yes" if save_incrementally else "No")
+        if llm_config and llm_config.provider == 'openai' and openai_batch_mode:
+            summary.add_row("Parallel Workers", "N/A (managed by OpenAI Batch)")
+            summary.add_row("Batch Size", "N/A (managed by OpenAI Batch)")
+            summary.add_row("Incremental Save", "N/A (handled after batch completion)")
+        else:
+            summary.add_row("Parallel Workers", str(num_processes))
+            summary.add_row("Batch Size", str(batch_size))
+            summary.add_row("Incremental Save", "Yes" if save_incrementally else "No")
         summary.add_row("Max Retries", str(max_retries))
 
         # Add export options if configured
@@ -8901,6 +8939,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print(f"[red]API key required for {llm_config.provider}[/red]")
                     return
 
+            if llm_config.provider == 'openai' and openai_batch_mode:
+                annotation_mode = 'openai_batch'
+            elif llm_config.provider in ['openai', 'anthropic', 'google']:
+                annotation_mode = 'api'
+            else:
+                annotation_mode = 'local'
+
             # Build pipeline config (SAME as Smart Annotate)
             pipeline_config = {
                 'mode': 'file',
@@ -8912,10 +8957,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'annotation_column': 'annotation',
                 'identifier_column': id_column if id_column else 'llm_annotation_id',
                 'run_annotation': True,
-                'annotation_mode': 'local' if llm_config.provider == 'ollama' else 'api',
+                'annotation_mode': annotation_mode,
                 'annotation_provider': llm_config.provider,
                 'annotation_model': llm_config.name,
                 'api_key': api_key,
+                'openai_batch_mode': openai_batch_mode,
                 'prompts': prompts_payload,
                 'annotation_sample_size': annotation_limit,
                 'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',

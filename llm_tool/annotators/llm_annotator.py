@@ -842,6 +842,8 @@ class LLMAnnotator:
     ) -> pd.DataFrame:
         """Execute annotation using the OpenAI Batch API."""
         start_time = time.perf_counter()
+        global status_counts
+        status_counts = {"success": 0, "error": 0, "cleaning_failed": 0, "decode_error": 0}
 
         if not HAS_OPENAI:
             raise ImportError("OpenAI SDK is required for batch mode. Install the 'openai' package.")
@@ -919,12 +921,52 @@ class LLMAnnotator:
             text_payload = compose_text(row)
 
             for prompt_idx, prompt_cfg in enumerate(prompts, 1):
-                prompt_info = prompt_cfg.get('prompt', {})
-                prompt_template = prompt_info.get('content', '')
-                expected_keys = prompt_info.get('keys', [])
+                prompt_payload = prompt_cfg.get('prompt')
+                expected_keys = prompt_cfg.get('expected_keys', [])
                 prefix = prompt_cfg.get('prefix', '')
+                prompt_name = prompt_cfg.get('name')
 
-                full_prompt = f"{prompt_template}\n\nText to analyze:\n{text_payload}"
+                prompt_template = ""
+                if isinstance(prompt_payload, dict):
+                    prompt_template = (
+                        prompt_payload.get('content')
+                        or prompt_payload.get('template')
+                        or prompt_payload.get('prompt')
+                        or ''
+                    )
+                    if not expected_keys:
+                        keys_candidate = prompt_payload.get('keys')
+                        if isinstance(keys_candidate, list):
+                            expected_keys = keys_candidate
+                    if not prompt_name:
+                        prompt_name = prompt_payload.get('name')
+                elif prompt_payload is not None:
+                    prompt_template = str(prompt_payload)
+
+                prompt_template = (prompt_template or '').strip()
+                if not prompt_template:
+                    self.logger.warning(
+                        "[BATCH] Prompt %s is empty; skipping row %s.",
+                        prompt_idx,
+                        identifier_key
+                    )
+                    continue
+
+                if not isinstance(expected_keys, list):
+                    if expected_keys is None:
+                        expected_keys = []
+                    elif isinstance(expected_keys, (tuple, set)):
+                        expected_keys = list(expected_keys)
+                    else:
+                        expected_keys = [expected_keys]
+
+                prompt_display_name = prompt_name or f"prompt_{prompt_idx}"
+
+                if text_payload:
+                    full_prompt = f"{prompt_template}\n\nText to analyze:\n{text_payload}"
+                else:
+                    full_prompt = prompt_template
+
                 sanitized_identifier = identifier_key.replace("\n", " ").replace("\r", " ")
                 custom_id = f"{sanitized_identifier}|p{prompt_idx}|{row_index}"
 
@@ -942,7 +984,7 @@ class LLMAnnotator:
                     "prefix": prefix,
                     "expected_keys": expected_keys,
                     "row_index": row_index,
-                    "prompt_name": prompt_info.get('name', f"prompt_{prompt_idx}")
+                    "prompt_name": prompt_display_name
                 }
                 per_row_custom_ids[identifier_key].append(custom_id)
 
@@ -1000,7 +1042,6 @@ class LLMAnnotator:
         self.logger.info("[BATCH] Output saved to %s", output_file_path)
 
         row_results: Dict[str, Dict[str, Any]] = {}
-        status_counts = {"success": 0, "error": 0, "cleaning_failed": 0, "decode_error": 0}
 
         with output_file_path.open('r', encoding='utf-8') as handle:
             for line in handle:

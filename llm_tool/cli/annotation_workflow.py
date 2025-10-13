@@ -173,6 +173,30 @@ def _collect_confirmed_languages(
     return normalized
 
 
+def _prompt_openai_batch_mode(cli: Any, provider: str, context: str) -> bool:
+    """Ask the user whether to run the current annotation in OpenAI Batch mode."""
+    if provider != 'openai':
+        return False
+
+    cli.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
+    cli.console.print(
+        "[dim]Batch mode submits all requests at once and lets OpenAI process them asynchronously. "
+        "It is ideal for large datasets, reduces rate-limit backoffs, and delivers the annotations once the job completes.[/dim]"
+    )
+
+    question = f"[bold yellow]Do you want to use the OpenAI Batch API for {context}?[/bold yellow]"
+    use_batch = Confirm.ask(question, default=False)
+
+    if use_batch:
+        cli.console.print(
+            f"[green]✓ Batch mode enabled. The workflow will prepare the batch job and wait for OpenAI to finish processing {context}.[/green]"
+        )
+    else:
+        cli.console.print(f"[dim]Continuing with synchronous API calls for {context}.[/dim]")
+
+    return use_batch
+
+
 def _normalize_column_choice(
     user_input: Optional[str],
     all_columns: List[str],
@@ -1209,41 +1233,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     if selected_llm.requires_api_key:
         api_key = cli._get_or_prompt_api_key(provider, model_name)
 
-    openai_batch_mode = False
-    if provider == 'openai':
-        cli.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
-        cli.console.print(
-            "[dim]Batch mode submits all requests at once and lets OpenAI process them asynchronously. "
-            "It helps with large datasets, avoids rate-limit pauses, and returns the results after the batch completes.[/dim]"
-        )
-        openai_batch_mode = Confirm.ask(
-            "[bold yellow]Do you want to use the OpenAI Batch API for these factory annotations?[/bold yellow]",
-            default=False
-        )
-        if openai_batch_mode:
-            cli.console.print(
-                "[green]✓ Batch mode enabled. The workflow will prepare the batch job and wait for OpenAI to finish processing.[/green]"
-            )
-        else:
-            cli.console.print("[dim]Continuing with synchronous API calls for this run.[/dim]")
-
-    openai_batch_mode = False
-    if provider == 'openai':
-        cli.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
-        cli.console.print(
-            "[dim]Batch mode submits all requests at once and lets OpenAI process them asynchronously. "
-            "It is ideal for large datasets, reduces rate-limit friction, and returns the annotations after the batch completes.[/dim]"
-        )
-        openai_batch_mode = Confirm.ask(
-            "[bold yellow]Do you want to use the OpenAI Batch API for these annotations?[/bold yellow]",
-            default=False
-        )
-        if openai_batch_mode:
-            cli.console.print(
-                "[green]✓ Batch mode enabled. The workflow will prepare the batch job and wait for OpenAI to finish processing.[/green]"
-            )
-        else:
-            cli.console.print("[dim]Continuing with standard synchronous API calls.[/dim]")
+    openai_batch_mode = _prompt_openai_batch_mode(cli, provider, "this annotation run")
 
     # Step 4: Prompt Configuration
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -1504,51 +1494,57 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # ============================================================
     # PARALLEL PROCESSING
     # ============================================================
-    cli.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
-    cli.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
-
-    cli.console.print("[yellow]Parallel Workers:[/yellow]")
-    cli.console.print("  Number of simultaneous annotation processes")
-    cli.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
-    cli.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
-    cli.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
-    cli.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
-    cli.console.print("           [dim]Recommended for: Local models (Ollama), first time users, debugging[/dim]")
-    cli.console.print("  • [cyan]2-4 workers[/cyan] - Moderate parallelism")
-    cli.console.print("           [dim]Recommended for: API models (OpenAI, Claude) - avoid rate limits[/dim]")
-    cli.console.print("  • [cyan]4-8 workers[/cyan] - High parallelism")
-    cli.console.print("           [dim]Recommended for: API models only - requires high rate limits[/dim]")
-
-    num_processes = cli._int_prompt_with_validation("Parallel workers", 1, 1, 16)
-
-    # ============================================================
-    # INCREMENTAL SAVE
-    # ============================================================
-    cli.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
-    cli.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
-
-    cli.console.print("[yellow]Enable incremental save?[/yellow]")
-    cli.console.print("  • [green]Yes[/green] - Save progress regularly during annotation (recommended)")
-    cli.console.print("           [dim]Protects against crashes, allows resuming, safer for long runs[/dim]")
-    cli.console.print("  • [red]No[/red]  - Save only at the end")
-    cli.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
-
-    save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
-
-    # Only ask for batch size if incremental save is enabled
-    if save_incrementally:
-        cli.console.print("\n[yellow]Batch Size:[/yellow]")
-        cli.console.print("  Number of rows processed between each save")
-        cli.console.print("  • [cyan]Smaller (1-10)[/cyan]   - Very frequent saves, maximum safety")
-        cli.console.print("           [dim]Use for: Unstable systems, expensive APIs, testing[/dim]")
-        cli.console.print("  • [cyan]Medium (10-50)[/cyan]   - Balanced safety and performance")
-        cli.console.print("           [dim]Use for: Most production cases[/dim]")
-        cli.console.print("  • [cyan]Larger (50-200)[/cyan]  - Less frequent saves, better performance")
-        cli.console.print("           [dim]Use for: Stable systems, large datasets, local models[/dim]")
-
-        batch_size = cli._int_prompt_with_validation("Batch size", 1, 1, 1000)
+    if openai_batch_mode:
+        cli.console.print("\n[bold cyan]⚙️  Processing[/bold cyan]")
+        cli.console.print(
+            "[dim]OpenAI Batch mode manages concurrency, retries, and persistence. "
+            "Local parallelism and incremental save settings are skipped.[/dim]\n"
+        )
+        num_processes = 1
+        save_incrementally = False
+        batch_size = 1
     else:
-        batch_size = None  # Not used when incremental save is disabled
+        cli.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
+        cli.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
+
+        cli.console.print("[yellow]Parallel Workers:[/yellow]")
+        cli.console.print("  Number of simultaneous annotation processes")
+        cli.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
+        cli.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
+        cli.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
+        cli.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
+        cli.console.print("           [dim]Recommended for: Local models (Ollama), first time users, debugging[/dim]")
+        cli.console.print("  • [cyan]2-4 workers[/cyan] - Moderate parallelism")
+        cli.console.print("           [dim]Recommended for: API models (OpenAI, Claude) - avoid rate limits[/dim]")
+        cli.console.print("  • [cyan]4-8 workers[/cyan] - High parallelism")
+        cli.console.print("           [dim]Recommended for: API models only - requires high rate limits[/dim]")
+
+        num_processes = cli._int_prompt_with_validation("Parallel workers", 1, 1, 16)
+
+        cli.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
+        cli.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
+
+        cli.console.print("[yellow]Enable incremental save?[/yellow]")
+        cli.console.print("  • [green]Yes[/green] - Save progress regularly during annotation (recommended)")
+        cli.console.print("           [dim]Protects against crashes, allows resuming, safer for long runs[/dim]")
+        cli.console.print("  • [red]No[/red]  - Save only at the end")
+        cli.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
+
+        save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
+
+        if save_incrementally:
+            cli.console.print("\n[yellow]Batch Size:[/yellow]")
+            cli.console.print("  Number of rows processed between each save")
+            cli.console.print("  • [cyan]Smaller (1-10)[/cyan]   - Very frequent saves, maximum safety")
+            cli.console.print("           [dim]Use for: Unstable systems, expensive APIs, testing[/dim]")
+            cli.console.print("  • [cyan]Medium (10-50)[/cyan]   - Balanced safety and performance")
+            cli.console.print("           [dim]Use for: Most production cases[/dim]")
+            cli.console.print("  • [cyan]Larger (50-200)[/cyan]  - Less frequent saves, better performance")
+            cli.console.print("           [dim]Use for: Stable systems, large datasets, local models[/dim]")
+
+            batch_size = cli._int_prompt_with_validation("Batch size", 1, 1, 1000)
+        else:
+            batch_size = None  # Not used when incremental save is disabled
 
     # ============================================================
     # MODEL PARAMETERS
@@ -1669,10 +1665,20 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         summary_table.add_row("", f"  Prompt {i}", f"{pc['prompt']['name']}{prefix_info}")
 
     # Processing section
-    summary_table.add_row("⚙️  Processing", "Annotation Mode", annotation_mode_display)
-    summary_table.add_row("", "Parallel Workers", str(num_processes))
-    summary_table.add_row("", "Batch Size", str(batch_size))
-    summary_table.add_row("", "Incremental Save", "Yes" if save_incrementally else "No")
+    if openai_batch_mode:
+        summary_table.add_row(
+            "⚙️  Processing",
+            "Annotation Mode",
+            "OpenAI Batch (OpenAI-managed async job)"
+        )
+        summary_table.add_row("", "Parallel Workers", "N/A (managed by OpenAI Batch)")
+        summary_table.add_row("", "Batch Size", "N/A (managed by OpenAI Batch)")
+        summary_table.add_row("", "Incremental Save", "N/A (handled after batch completion)")
+    else:
+        summary_table.add_row("⚙️  Processing", "Annotation Mode", annotation_mode_display)
+        summary_table.add_row("", "Parallel Workers", str(num_processes))
+        summary_table.add_row("", "Batch Size", str(batch_size))
+        summary_table.add_row("", "Incremental Save", "Yes" if save_incrementally else "No")
 
     cli.console.print("\n")
     cli.console.print(summary_table)
@@ -1966,13 +1972,14 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 for pc in prompt_configs
             ],
             'processing_configuration': {
-            'parallel_workers': num_processes,
-            'batch_size': batch_size,
-            'incremental_save': save_incrementally,
-            'identifier_column': auto_identifier_column,
-            'auto_identifier_column': auto_identifier_column,
-            'identifier_source': identifier_source,
-        },
+                'parallel_workers': None if openai_batch_mode else num_processes,
+                'batch_size': None if openai_batch_mode else batch_size,
+                'incremental_save': False if openai_batch_mode else save_incrementally,
+                'openai_batch_mode': openai_batch_mode,
+                'identifier_column': auto_identifier_column,
+                'auto_identifier_column': auto_identifier_column,
+                'identifier_source': identifier_source,
+            },
             'output': {
                 'output_path': str(default_output_path),
                 'output_format': data_format
@@ -2585,6 +2592,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     if selected_llm.requires_api_key:
         api_key = cli._get_or_prompt_api_key(provider, model_name)
 
+    openai_batch_mode = _prompt_openai_batch_mode(cli, provider, "the factory annotation stage")
+
     # Step 1.4: Prompt Configuration
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     cli.console.print("[bold cyan]  STEP 1.4:[/bold cyan] [bold white]Prompt Configuration[/bold white]")
@@ -2838,51 +2847,61 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # ============================================================
     # PARALLEL PROCESSING
     # ============================================================
-    cli.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
-    cli.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
-
-    cli.console.print("[yellow]Parallel Workers:[/yellow]")
-    cli.console.print("  Number of simultaneous annotation processes")
-    cli.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
-    cli.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
-    cli.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
-    cli.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
-    cli.console.print("           [dim]Recommended for: Local models (Ollama), first time users, debugging[/dim]")
-    cli.console.print("  • [cyan]2-4 workers[/cyan] - Moderate parallelism")
-    cli.console.print("           [dim]Recommended for: API models (OpenAI, Claude) - avoid rate limits[/dim]")
-    cli.console.print("  • [cyan]4-8 workers[/cyan] - High parallelism")
-    cli.console.print("           [dim]Recommended for: API models only - requires high rate limits[/dim]")
-
-    num_processes = cli._int_prompt_with_validation("Parallel workers", 1, 1, 16)
-
-    # ============================================================
-    # INCREMENTAL SAVE
-    # ============================================================
-    cli.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
-    cli.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
-
-    cli.console.print("[yellow]Enable incremental save?[/yellow]")
-    cli.console.print("  • [green]Yes[/green] - Save progress regularly during annotation (recommended)")
-    cli.console.print("           [dim]Protects against crashes, allows resuming, safer for long runs[/dim]")
-    cli.console.print("  • [red]No[/red]  - Save only at the end")
-    cli.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
-
-    save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
-
-    # Only ask for batch size if incremental save is enabled
-    if save_incrementally:
-        cli.console.print("\n[yellow]Batch Size:[/yellow]")
-        cli.console.print("  Number of rows processed between each save")
-        cli.console.print("  • [cyan]Smaller (1-10)[/cyan]   - Very frequent saves, maximum safety")
-        cli.console.print("           [dim]Use for: Unstable systems, expensive APIs, testing[/dim]")
-        cli.console.print("  • [cyan]Medium (10-50)[/cyan]   - Balanced safety and performance")
-        cli.console.print("           [dim]Use for: Most production cases[/dim]")
-        cli.console.print("  • [cyan]Larger (50-200)[/cyan]  - Less frequent saves, better performance")
-        cli.console.print("           [dim]Use for: Stable systems, large datasets, local models[/dim]")
-
-        batch_size = cli._int_prompt_with_validation("Batch size", 1, 1, 1000)
+    if openai_batch_mode:
+        cli.console.print("\n[bold cyan]⚙️  Processing[/bold cyan]")
+        cli.console.print(
+            "[dim]OpenAI Batch mode manages concurrency, retries, and persistence. "
+            "Local parallelism and incremental save settings are skipped.[/dim]\n"
+        )
+        num_processes = 1
+        save_incrementally = False
+        batch_size = 1
     else:
-        batch_size = None  # Not used when incremental save is disabled
+        cli.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
+        cli.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
+
+        cli.console.print("[yellow]Parallel Workers:[/yellow]")
+        cli.console.print("  Number of simultaneous annotation processes")
+        cli.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
+        cli.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
+        cli.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
+        cli.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
+        cli.console.print("           [dim]Recommended for: Local models (Ollama), first time users, debugging[/dim]")
+        cli.console.print("  • [cyan]2-4 workers[/cyan] - Moderate parallelism")
+        cli.console.print("           [dim]Recommended for: API models (OpenAI, Claude) - avoid rate limits[/dim]")
+        cli.console.print("  • [cyan]4-8 workers[/cyan] - High parallelism")
+        cli.console.print("           [dim]Recommended for: API models only - requires high rate limits[/dim]")
+
+        num_processes = cli._int_prompt_with_validation("Parallel workers", 1, 1, 16)
+
+        # ============================================================
+        # INCREMENTAL SAVE
+        # ============================================================
+        cli.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
+        cli.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
+
+        cli.console.print("[yellow]Enable incremental save?[/yellow]")
+        cli.console.print("  • [green]Yes[/green] - Save progress regularly during annotation (recommended)")
+        cli.console.print("           [dim]Protects against crashes, allows resuming, safer for long runs[/dim]")
+        cli.console.print("  • [red]No[/red]  - Save only at the end")
+        cli.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
+
+        save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
+
+        # Only ask for batch size if incremental save is enabled
+        if save_incrementally:
+            cli.console.print("\n[yellow]Batch Size:[/yellow]")
+            cli.console.print("  Number of rows processed between each save")
+            cli.console.print("  • [cyan]Smaller (1-10)[/cyan]   - Very frequent saves, maximum safety")
+            cli.console.print("           [dim]Use for: Unstable systems, expensive APIs, testing[/dim]")
+            cli.console.print("  • [cyan]Medium (10-50)[/cyan]   - Balanced safety and performance")
+            cli.console.print("           [dim]Use for: Most production cases[/dim]")
+            cli.console.print("  • [cyan]Larger (50-200)[/cyan]  - Less frequent saves, better performance")
+            cli.console.print("           [dim]Use for: Stable systems, large datasets, local models[/dim]")
+
+            batch_size = cli._int_prompt_with_validation("Batch size", 1, 1, 1000)
+        else:
+            batch_size = None  # Not used when incremental save is disabled
 
     # ============================================================
     # MODEL PARAMETERS
@@ -2993,10 +3012,20 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         summary_table.add_row("", f"  Prompt {i}", f"{pc['prompt']['name']}{prefix_info}")
 
     # Processing section
-    summary_table.add_row("⚙️  Processing", "Annotation Mode", annotation_mode_display)
-    summary_table.add_row("", "Parallel Workers", str(num_processes))
-    summary_table.add_row("", "Batch Size", str(batch_size))
-    summary_table.add_row("", "Incremental Save", "Yes" if save_incrementally else "No")
+    if openai_batch_mode:
+        summary_table.add_row(
+            "⚙️  Processing",
+            "Annotation Mode",
+            "OpenAI Batch (OpenAI-managed async job)"
+        )
+        summary_table.add_row("", "Parallel Workers", "N/A (managed by OpenAI Batch)")
+        summary_table.add_row("", "Batch Size", "N/A (managed by OpenAI Batch)")
+        summary_table.add_row("", "Incremental Save", "N/A (handled after batch completion)")
+    else:
+        summary_table.add_row("⚙️  Processing", "Annotation Mode", annotation_mode_display)
+        summary_table.add_row("", "Parallel Workers", str(num_processes))
+        summary_table.add_row("", "Batch Size", str(batch_size))
+        summary_table.add_row("", "Incremental Save", "Yes" if save_incrementally else "No")
 
     cli.console.print("\n")
     cli.console.print(summary_table)
@@ -3169,6 +3198,13 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         annotation_mode = 'openai_batch'
     else:
         annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
+
+    if annotation_mode == 'openai_batch':
+        annotation_mode_display = "OpenAI Batch"
+    elif annotation_mode == 'api':
+        annotation_mode_display = "API"
+    else:
+        annotation_mode_display = "Local"
 
     # Build pipeline config
     pipeline_config = {
