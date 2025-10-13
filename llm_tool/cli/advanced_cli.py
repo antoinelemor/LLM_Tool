@@ -4665,6 +4665,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         label_strategy = config.get('label_strategy')
         training_annotation_keys = config.get('training_annotation_keys')
 
+        if model_info.provider == 'openai':
+            if 'openai_batch_mode' not in annotation_settings:
+                if HAS_RICH and self.console:
+                    self.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
+                    self.console.print(
+                        "[dim]Batch mode submits every request at once and lets OpenAI process them asynchronously. "
+                        "It is ideal for large datasets and reduces rate-limit friction, but you must wait for the batch to finish before results are available.[/dim]"
+                    )
+                openai_batch_mode = Confirm.ask(
+                    "[bold yellow]Use the OpenAI Batch API for this annotation run?[/bold yellow]",
+                    default=False
+                )
+                annotation_settings['openai_batch_mode'] = openai_batch_mode
+            else:
+                openai_batch_mode = bool(annotation_settings.get('openai_batch_mode'))
+        else:
+            openai_batch_mode = False
+            annotation_settings.pop('openai_batch_mode', None)
+
         data_format = Path(dataset_path).suffix.lower().lstrip('.') if dataset_path else 'csv'
         if data_format == '':
             data_format = 'csv'
@@ -4721,7 +4740,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         default_output_path = annotations_dir / f"{Path(dataset_path).stem}_{safe_model_name}_annotations_{timestamp}.csv"
 
-        annotation_mode = 'api' if model_info.provider in {'openai', 'anthropic', 'google', 'custom'} else 'local'
+        if model_info.provider == 'openai' and openai_batch_mode:
+            annotation_mode = 'openai_batch'
+        else:
+            annotation_mode = 'api' if model_info.provider in {'openai', 'anthropic', 'google', 'custom'} else 'local'
 
         pipeline_config = {
             'mode': 'file',
@@ -4738,6 +4760,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'annotation_provider': model_info.provider,
             'annotation_model': model_info.name,
             'api_key': api_key,
+            'openai_batch_mode': openai_batch_mode,
             'prompts': prompts_payload,
             'annotation_sample_size': annotation_settings.get('annotation_sample_size'),
             'annotation_sampling_strategy': annotation_settings.get('annotation_sampling_strategy', 'head'),
@@ -4935,6 +4958,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'provider': model_info.provider,
                         'model_name': model_info.name,
                         'annotation_mode': annotation_mode,
+                        'openai_batch_mode': openai_batch_mode,
                         'temperature': annotation_settings.get('temperature'),
                         'max_tokens': annotation_settings.get('max_tokens'),
                         'top_p': annotation_settings.get('top_p'),
@@ -4950,7 +4974,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     ],
                     'processing_configuration': {
                         'parallel_workers': pipeline_config.get('num_processes', 1),
-                        'batch_size': pipeline_config.get('batch_size', 16)
+                        'batch_size': pipeline_config.get('batch_size', 16),
+                        'openai_batch_mode': openai_batch_mode
                     },
                     'training_configuration': {
                         'run_training': run_training,

@@ -61,7 +61,7 @@ import concurrent.futures
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Tuple
 from datetime import datetime
-from collections import deque
+from collections import deque, defaultdict
 
 import pandas as pd
 import numpy as np
@@ -99,6 +99,15 @@ try:
 except ImportError:
     HAS_LOCAL_MODELS = False
     logging.warning("Local model support not available")
+
+# OpenAI SDK for batch operations
+try:
+    from openai import OpenAI
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
+    OpenAI = None
+    logging.warning("OpenAI SDK not installed. Batch API support disabled.")
 
 # Rich library for enhanced CLI
 try:
@@ -423,6 +432,17 @@ class LLMAnnotator:
                 col = f"{annotation_column}_{suffix}"
                 if col not in data.columns:
                     data[col] = pd.NA
+
+        # Special handling for OpenAI batch mode
+        if config.get('annotation_mode') == 'openai_batch':
+            return self._execute_openai_batch_annotation(
+                full_data=data,
+                data_subset=data_to_annotate,
+                prompts=prompts,
+                text_columns=text_columns,
+                identifier_column=identifier_column,
+                config=config
+            )
 
         # Warm up model if using local
         if self.local_client and config.get('warmup', True):
@@ -808,6 +828,345 @@ class LLMAnnotator:
             except:
                 pass
             self.progress_callback(total_tasks, total_tasks, f"Completed annotation of {total_tasks} items")
+
+        return full_data
+
+    def _execute_openai_batch_annotation(
+        self,
+        full_data: pd.DataFrame,
+        data_subset: pd.DataFrame,
+        prompts: List[Dict],
+        text_columns: List[str],
+        identifier_column: str,
+        config: Dict[str, Any]
+    ) -> pd.DataFrame:
+        """Execute annotation using the OpenAI Batch API."""
+        start_time = time.perf_counter()
+
+        if not HAS_OPENAI:
+            raise ImportError("OpenAI SDK is required for batch mode. Install the 'openai' package.")
+
+        api_key = config.get('api_key')
+        if not api_key:
+            raise ValueError("OpenAI API key is required for batch mode.")
+
+        model_name = config.get('model') or config.get('annotation_model')
+        if not model_name:
+            raise ValueError("Annotation model must be specified for OpenAI batch mode.")
+
+        total_rows = len(data_subset)
+        prompt_count = len(prompts)
+        if total_rows == 0 or prompt_count == 0:
+            self.logger.info("[BATCH] No rows or prompts supplied; skipping batch annotation.")
+            return full_data
+
+        annotation_column = config.get('annotation_column', 'annotation')
+        output_path = config.get('output_path')
+        output_format = config.get('output_format', config.get('data_source', 'csv'))
+        save_incrementally = config.get('save_incrementally', True)
+        log_enabled = config.get('enable_logging', False)
+        log_path = config.get('log_path')
+
+        batch_dir = self.settings.paths.logs_dir / "openai_batches"
+        batch_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        input_file_path = batch_dir / f"openai_batch_input_{timestamp}.jsonl"
+        output_file_path = batch_dir / f"openai_batch_output_{timestamp}.jsonl"
+
+        total_requests = total_rows * prompt_count
+        self.logger.info("[BATCH] Preparing %s requests for OpenAI batch job...", total_requests)
+
+        request_entries: List[Dict[str, Any]] = []
+        request_metadata: Dict[str, Dict[str, Any]] = {}
+        per_row_custom_ids: Dict[str, List[str]] = defaultdict(list)
+
+        def compose_text(row: pd.Series) -> str:
+            segments: List[str] = []
+            for column in text_columns:
+                value = row.get(column)
+                if pd.notna(value):
+                    segments.append(str(value))
+            return "\n\n".join(segments).strip()
+
+        model_lower = str(model_name).lower()
+
+        def build_request_body(prompt_text: str) -> Dict[str, Any]:
+            body: Dict[str, Any] = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt_text}],
+            }
+            is_o_series = (
+                model_lower == 'o1'
+                or model_lower.startswith('o1-')
+                or model_lower.startswith('o3-')
+                or model_lower.startswith('o4-')
+            )
+            is_2025_model = any(token in model_lower for token in ['2025', 'gpt-5', 'gpt5'])
+            max_tokens = config.get('max_tokens', 1000)
+            if is_o_series or is_2025_model:
+                body["max_completion_tokens"] = max_tokens
+                body["temperature"] = 1.0
+                body["top_p"] = 1.0
+            else:
+                body["max_tokens"] = max_tokens
+                body["temperature"] = config.get('temperature', 0.7)
+                body["top_p"] = config.get('top_p', 1.0)
+            return body
+
+        for row_index, row in data_subset.iterrows():
+            identifier_value = row[identifier_column]
+            identifier_key = str(identifier_value)
+            text_payload = compose_text(row)
+
+            for prompt_idx, prompt_cfg in enumerate(prompts, 1):
+                prompt_info = prompt_cfg.get('prompt', {})
+                prompt_template = prompt_info.get('content', '')
+                expected_keys = prompt_info.get('keys', [])
+                prefix = prompt_cfg.get('prefix', '')
+
+                full_prompt = f"{prompt_template}\n\nText to analyze:\n{text_payload}"
+                sanitized_identifier = identifier_key.replace("\n", " ").replace("\r", " ")
+                custom_id = f"{sanitized_identifier}|p{prompt_idx}|{row_index}"
+
+                request_entries.append({
+                    "custom_id": custom_id,
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": build_request_body(full_prompt),
+                })
+
+                request_metadata[custom_id] = {
+                    "identifier": identifier_value,
+                    "identifier_key": identifier_key,
+                    "prompt_index": prompt_idx,
+                    "prefix": prefix,
+                    "expected_keys": expected_keys,
+                    "row_index": row_index,
+                    "prompt_name": prompt_info.get('name', f"prompt_{prompt_idx}")
+                }
+                per_row_custom_ids[identifier_key].append(custom_id)
+
+        with input_file_path.open('w', encoding='utf-8') as handle:
+            for entry in request_entries:
+                json.dump(entry, handle, ensure_ascii=False)
+                handle.write('\n')
+
+        client = OpenAI(api_key=api_key)
+        with input_file_path.open('rb') as handle:
+            uploaded_file = client.files.create(file=handle, purpose='batch')
+
+        completion_window = config.get('openai_batch_completion_window', '24h')
+        batch_job = client.batches.create(
+            input_file_id=uploaded_file.id,
+            endpoint="/v1/chat/completions",
+            completion_window=completion_window
+        )
+        self.logger.info("[BATCH] Submitted job %s (status: %s).", batch_job.id, batch_job.status)
+
+        poll_interval = max(2, int(config.get('openai_batch_poll_interval', 5)))
+        ongoing_statuses = {'validating', 'queued', 'in_progress', 'processing', 'finalizing'}
+        while batch_job.status in ongoing_statuses:
+            request_counts = getattr(batch_job, 'request_counts', {}) or {}
+            completed = request_counts.get('completed') or request_counts.get('succeeded') or 0
+            total = request_counts.get('total', total_requests)
+            status_message = f"OpenAI batch status: {batch_job.status} ({completed}/{total} requests completed)"
+            if self.progress_callback:
+                self.progress_callback(min(completed, total_requests), total_requests, status_message)
+            self.logger.debug("[BATCH] %s", status_message)
+            time.sleep(poll_interval)
+            batch_job = client.batches.retrieve(batch_job.id)
+
+        if self.progress_callback:
+            self.progress_callback(total_requests, total_requests, f"OpenAI batch status: {batch_job.status}")
+
+        if batch_job.status != 'completed':
+            error_message = f"OpenAI batch job {batch_job.id} finished with status '{batch_job.status}'"
+            self.logger.error("[BATCH] %s", error_message)
+            if getattr(batch_job, 'error_file_id', None):
+                error_response = client.files.content(batch_job.error_file_id)
+                error_path = batch_dir / f"openai_batch_errors_{timestamp}.jsonl"
+                if hasattr(error_response, 'content'):
+                    error_path.write_bytes(error_response.content)
+                else:
+                    error_path.write_bytes(error_response.read())
+                self.logger.error("[BATCH] Error details saved to %s", error_path)
+            raise RuntimeError(error_message)
+
+        output_response = client.files.content(batch_job.output_file_id)
+        if hasattr(output_response, 'content'):
+            output_file_path.write_bytes(output_response.content)
+        else:
+            output_file_path.write_bytes(output_response.read())
+        self.logger.info("[BATCH] Output saved to %s", output_file_path)
+
+        row_results: Dict[str, Dict[str, Any]] = {}
+        status_counts = {"success": 0, "error": 0, "cleaning_failed": 0, "decode_error": 0}
+
+        with output_file_path.open('r', encoding='utf-8') as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    self.logger.error("[BATCH] Unable to parse output line: %s", line)
+                    continue
+
+                custom_id = payload.get('custom_id')
+                meta = request_metadata.get(custom_id)
+                if not meta:
+                    self.logger.warning("[BATCH] Received result for unknown request %s", custom_id)
+                    continue
+
+                identifier_key = meta['identifier_key']
+                prompt_idx = meta['prompt_index']
+                prompt_key = str(prompt_idx)
+                expected_keys = meta['expected_keys']
+                prefix = meta['prefix']
+
+                row_state = row_results.setdefault(identifier_key, {
+                    'identifier': meta['identifier'],
+                    'row_index': meta['row_index'],
+                    'raw': {},
+                    'cleaned': {},
+                    'status': {},
+                    'merged': {},
+                    'errors': []
+                })
+
+                error_info = payload.get('error')
+                if error_info:
+                    error_text = error_info.get('message') or str(error_info)
+                    row_state['raw'][prompt_key] = None
+                    row_state['cleaned'][prompt_key] = None
+                    row_state['status'][prompt_key] = 'error'
+                    row_state['errors'].append(error_text)
+                    status_counts['error'] += 1
+                    continue
+
+                response_body = (payload.get('response') or {}).get('body', {})
+                choices = response_body.get('choices', [])
+                message_content = None
+                if choices:
+                    message_content = choices[0].get('message', {}).get('content')
+                if isinstance(message_content, list):
+                    fragments: List[str] = []
+                    for part in message_content:
+                        if isinstance(part, dict) and part.get('type') == 'text':
+                            fragments.append(part.get('text', ''))
+                        elif isinstance(part, str):
+                            fragments.append(part)
+                    message_content = "".join(fragments)
+                raw_text = message_content.strip() if isinstance(message_content, str) else None
+                row_state['raw'][prompt_key] = raw_text
+
+                cleaned_json = None
+                if raw_text:
+                    try:
+                        cleaned_json = clean_json_output(raw_text, expected_keys)
+                    except Exception as exc:
+                        self.logger.error("[BATCH] Cleaning failed for %s: %s", custom_id, exc)
+                        cleaned_json = None
+
+                if not cleaned_json:
+                    row_state['cleaned'][prompt_key] = None
+                    row_state['status'][prompt_key] = 'parse_error'
+                    row_state['errors'].append("Unable to parse model response.")
+                    status_counts['cleaning_failed'] += 1
+                    continue
+
+                row_state['cleaned'][prompt_key] = cleaned_json
+                row_state['status'][prompt_key] = 'success'
+                try:
+                    parsed = json.loads(cleaned_json)
+                    if prefix:
+                        parsed = {f"{prefix}_{k}": v for k, v in parsed.items()}
+                    row_state['merged'].update(parsed)
+                    self.last_annotation = parsed
+                    status_counts['success'] += 1
+                except Exception as exc:
+                    row_state['status'][prompt_key] = 'decode_error'
+                    row_state['errors'].append(f"Decode error: {exc}")
+                    status_counts['decode_error'] += 1
+
+        batch_elapsed = time.perf_counter() - start_time
+        per_row_time = batch_elapsed / max(total_rows, 1)
+
+        completed_rows = 0
+        for identifier_key, custom_ids in per_row_custom_ids.items():
+            meta = request_metadata[custom_ids[0]]
+            identifier_value = meta['identifier']
+            row_state = row_results.get(identifier_key)
+            if not row_state:
+                row_state = {
+                    'identifier': identifier_value,
+                    'row_index': meta['row_index'],
+                    'raw': {},
+                    'cleaned': {},
+                    'status': {},
+                    'merged': {},
+                    'errors': ["No response returned by OpenAI."]
+                }
+
+            for custom_id in custom_ids:
+                prompt_key = str(request_metadata[custom_id]['prompt_index'])
+                if prompt_key not in row_state['status']:
+                    row_state['raw'][prompt_key] = None
+                    row_state['cleaned'][prompt_key] = None
+                    row_state['status'][prompt_key] = 'missing'
+                    row_state['errors'].append("No response returned by OpenAI.")
+
+            final_payload = row_state['merged']
+            final_json = json.dumps(final_payload, ensure_ascii=False) if final_payload else None
+            raw_json = json.dumps(row_state['raw'], ensure_ascii=False)
+            cleaned_json = json.dumps(row_state['cleaned'], ensure_ascii=False)
+            status_json = json.dumps(row_state['status'], ensure_ascii=False)
+
+            mask = full_data[identifier_column] == identifier_value
+            if mask.any():
+                full_data.loc[mask, annotation_column] = final_json
+                full_data.loc[mask, f"{annotation_column}_inference_time"] = per_row_time
+                full_data.loc[mask, f"{annotation_column}_raw_per_prompt"] = raw_json
+                full_data.loc[mask, f"{annotation_column}_cleaned_per_prompt"] = cleaned_json
+                full_data.loc[mask, f"{annotation_column}_status_per_prompt"] = status_json
+
+            if final_json:
+                try:
+                    self.last_annotation = json.loads(final_json)
+                except Exception:
+                    pass
+
+            if log_enabled and log_path:
+                self._write_log_entry(
+                    log_path,
+                    {
+                        'id': identifier_value,
+                        'final_json': final_json,
+                        'inference_time': per_row_time,
+                        'status': status_json
+                    }
+                )
+
+            completed_rows += 1
+            if self.progress_callback:
+                self.progress_callback(
+                    completed_rows,
+                    total_rows,
+                    f"Annotated {completed_rows}/{total_rows} items via OpenAI batch"
+                )
+
+        if save_incrementally and output_path:
+            self.logger.info("[BATCH] Batch mode overrides incremental saves; writing final dataset once.")
+        if output_path:
+            self._save_data(full_data, output_path, output_format)
+
+        self.logger.info(
+            "[BATCH] Completed OpenAI batch annotation in %.2fs (rows=%s, prompts=%s)",
+            batch_elapsed,
+            total_rows,
+            prompt_count
+        )
 
         return full_data
 

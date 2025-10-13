@@ -803,6 +803,7 @@ class PipelineController:
             'provider': provider,
             'model': config.get('annotation_model', 'llama3.2'),
             'api_key': config.get('api_key'),
+            'openai_batch_mode': config.get('openai_batch_mode', mode == 'openai_batch'),
             'data_source': input_format,
             'data_format': config.get('data_format', input_format),
             'file_path': config.get('file_path'),
@@ -827,6 +828,7 @@ class PipelineController:
 
         # Optional fields that should flow through when provided
         optional_fields = {
+            'annotation_mode': config.get('annotation_mode'),
             'text_columns': config.get('text_columns'),
             'identifier_column': config.get('identifier_column'),
             'temperature': config.get('temperature'),

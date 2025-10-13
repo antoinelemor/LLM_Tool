@@ -1209,6 +1209,42 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     if selected_llm.requires_api_key:
         api_key = cli._get_or_prompt_api_key(provider, model_name)
 
+    openai_batch_mode = False
+    if provider == 'openai':
+        cli.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
+        cli.console.print(
+            "[dim]Batch mode submits all requests at once and lets OpenAI process them asynchronously. "
+            "It helps with large datasets, avoids rate-limit pauses, and returns the results after the batch completes.[/dim]"
+        )
+        openai_batch_mode = Confirm.ask(
+            "[bold yellow]Do you want to use the OpenAI Batch API for these factory annotations?[/bold yellow]",
+            default=False
+        )
+        if openai_batch_mode:
+            cli.console.print(
+                "[green]✓ Batch mode enabled. The workflow will prepare the batch job and wait for OpenAI to finish processing.[/green]"
+            )
+        else:
+            cli.console.print("[dim]Continuing with synchronous API calls for this run.[/dim]")
+
+    openai_batch_mode = False
+    if provider == 'openai':
+        cli.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
+        cli.console.print(
+            "[dim]Batch mode submits all requests at once and lets OpenAI process them asynchronously. "
+            "It is ideal for large datasets, reduces rate-limit friction, and returns the annotations after the batch completes.[/dim]"
+        )
+        openai_batch_mode = Confirm.ask(
+            "[bold yellow]Do you want to use the OpenAI Batch API for these annotations?[/bold yellow]",
+            default=False
+        )
+        if openai_batch_mode:
+            cli.console.print(
+                "[green]✓ Batch mode enabled. The workflow will prepare the batch job and wait for OpenAI to finish processing.[/green]"
+            )
+        else:
+            cli.console.print("[dim]Continuing with standard synchronous API calls.[/dim]")
+
     # Step 4: Prompt Configuration
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     cli.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Prompt Configuration[/bold white]")
@@ -1633,7 +1669,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         summary_table.add_row("", f"  Prompt {i}", f"{pc['prompt']['name']}{prefix_info}")
 
     # Processing section
-    summary_table.add_row("⚙️  Processing", "Parallel Workers", str(num_processes))
+    summary_table.add_row("⚙️  Processing", "Annotation Mode", annotation_mode_display)
+    summary_table.add_row("", "Parallel Workers", str(num_processes))
     summary_table.add_row("", "Batch Size", str(batch_size))
     summary_table.add_row("", "Incremental Save", "Yes" if save_incrementally else "No")
 
@@ -1805,7 +1842,17 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         })
 
     # Determine annotation mode
-    annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
+    if provider == 'openai' and openai_batch_mode:
+        annotation_mode = 'openai_batch'
+    else:
+        annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
+
+    if annotation_mode == 'openai_batch':
+        annotation_mode_display = "OpenAI Batch"
+    elif annotation_mode == 'api':
+        annotation_mode_display = "API"
+    else:
+        annotation_mode_display = "Local"
 
     # Build pipeline config
     pipeline_config = {
@@ -1822,6 +1869,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'annotation_provider': provider,
         'annotation_model': model_name,
         'api_key': api_key if api_key else None,
+        'openai_batch_mode': openai_batch_mode,
         'prompts': prompts_payload,
         'annotation_sample_size': annotation_limit,
         'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
@@ -1901,6 +1949,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 'provider': provider,
                 'model_name': model_name,
                 'annotation_mode': annotation_mode,
+                'openai_batch_mode': openai_batch_mode,
                 'temperature': temperature,
                 'max_tokens': max_tokens,
                 'top_p': top_p,
@@ -2944,7 +2993,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         summary_table.add_row("", f"  Prompt {i}", f"{pc['prompt']['name']}{prefix_info}")
 
     # Processing section
-    summary_table.add_row("⚙️  Processing", "Parallel Workers", str(num_processes))
+    summary_table.add_row("⚙️  Processing", "Annotation Mode", annotation_mode_display)
+    summary_table.add_row("", "Parallel Workers", str(num_processes))
     summary_table.add_row("", "Batch Size", str(batch_size))
     summary_table.add_row("", "Incremental Save", "Yes" if save_incrementally else "No")
 
@@ -3115,7 +3165,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         })
 
     # Determine annotation mode
-    annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
+    if provider == 'openai' and openai_batch_mode:
+        annotation_mode = 'openai_batch'
+    else:
+        annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
 
     # Build pipeline config
     pipeline_config = {
@@ -3132,6 +3185,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'annotation_provider': provider,
         'annotation_model': model_name,
         'api_key': api_key if api_key else None,
+        'openai_batch_mode': openai_batch_mode,
         'prompts': prompts_payload,
         'annotation_sample_size': annotation_limit,
         'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
@@ -3209,6 +3263,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 'provider': provider,
                 'model_name': model_name,
                 'annotation_mode': annotation_mode,
+                'openai_batch_mode': openai_batch_mode,
                 'temperature': temperature,
                 'max_tokens': max_tokens,
                 'top_p': top_p,
@@ -3879,6 +3934,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     provider = model_config.get('provider', 'ollama')
     model_name = model_config.get('model_name', 'llama2')
     annotation_mode = model_config.get('annotation_mode', 'local')
+    openai_batch_mode = model_config.get('openai_batch_mode', annotation_mode == 'openai_batch')
     temperature = model_config.get('temperature', 0.7)
     max_tokens = model_config.get('max_tokens', 1000)
     top_p = model_config.get('top_p', 1.0)
@@ -3920,6 +3976,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         'annotation_provider': provider,
         'annotation_model': model_name,
         'api_key': api_key,
+        'openai_batch_mode': openai_batch_mode,
         'prompts': prompts_payload,
         'annotation_sample_size': annotation_limit,
         'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
