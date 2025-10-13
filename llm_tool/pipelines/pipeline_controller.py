@@ -387,6 +387,7 @@ class PipelineController:
 
             # Run annotation synchronously with progress updates
             self.logger.info("[TRACE] Calling annotator.annotate()...")
+            self.logger.info(f"[TRACE] Annotation identifier column: {annotation_config.get('identifier_column')}")
             results = annotator.annotate(annotation_config)
             self.logger.info("[TRACE] Annotation completed!")
 

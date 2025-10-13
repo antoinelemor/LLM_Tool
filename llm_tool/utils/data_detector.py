@@ -742,7 +742,7 @@ class DataDetector:
             return None
 
         from rich import box
-        from rich.prompt import Prompt
+        from rich.prompt import Prompt, Confirm
         from rich.table import Table
 
         candidates = DataDetector.detect_id_column_candidates(df, text_column)
@@ -758,7 +758,45 @@ class DataDetector:
 
         if not candidates:
             console.print("[yellow]ℹ️  No unique ID columns detected[/yellow]")
-            console.print("[dim]  → An 'llm_annotation_id' column will be created automatically[/dim]")
+            console.print("[dim]  → An 'llm_annotation_id' column can be created automatically[/dim]")
+
+            df_columns = list(df.columns) if hasattr(df, "columns") else []
+            if df_columns:
+                preview_cols = ", ".join(map(str, df_columns[:10]))
+                if len(df_columns) > 10:
+                    preview_cols += ", ..."
+                console.print(f"[dim]Available columns: {preview_cols}[/dim]")
+
+                if Confirm.ask(
+                    "[bold yellow]Would you like to select an ID column yourself?[/bold yellow]",
+                    default=False,
+                ):
+                    console.print(
+                        "[dim]Enter the column name (or press Enter to auto-generate IDs)[/dim]"
+                    )
+                    while True:
+                        manual_choice = Prompt.ask(
+                            "[bold yellow]ID column (leave blank to auto-generate)[/bold yellow]",
+                            default="",
+                        ).strip()
+
+                        if not manual_choice:
+                            console.print(
+                                "[dim]✓ An 'llm_annotation_id' will be generated automatically[/dim]"
+                            )
+                            return None
+
+                        if manual_choice in df_columns:
+                            console.print(f"[green]✓ ID column: '{manual_choice}'[/green]")
+                            return manual_choice
+
+                        console.print(
+                            f"[red]✗ Column '{manual_choice}' not found. Try again or press Enter to auto-generate.[/red]"
+                        )
+
+            console.print(
+                "[dim]Proceeding without an existing ID column; auto-generated IDs will be used.[/dim]"
+            )
             return None
 
         id_table = Table(title="Candidate ID Columns", box=box.ROUNDED)

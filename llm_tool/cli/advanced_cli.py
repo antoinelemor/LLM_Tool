@@ -2540,6 +2540,18 @@ class AdvancedCLI:
         proc_config = metadata.get('processing_configuration', {})
         output_config = metadata.get('output', {})
         export_prefs = metadata.get('export_preferences', {})
+
+        identifier_column = (
+            proc_config.get('identifier_column')
+            or data_source.get('identifier_column')
+        )
+        if not identifier_column or identifier_column == 'annotation_id':
+            identifier_column = 'llm_annotation_id'
+        pipeline_identifier_column = (
+            None if identifier_column == 'llm_annotation_id' else identifier_column
+        )
+        data_source.setdefault('identifier_column', identifier_column)
+        proc_config.setdefault('identifier_column', identifier_column)
         training_workflow = metadata.get('training_workflow', {})
 
         # Create session ID and directories
@@ -2803,7 +2815,7 @@ class AdvancedCLI:
                 'text_column': text_column,
                 'text_columns': [text_column],
                 'annotation_column': 'annotation',
-                'identifier_column': 'annotation_id',
+                'identifier_column': pipeline_identifier_column,
                 'run_annotation': True,
                 'annotation_mode': model_config.get('annotation_mode', 'local'),
                 'annotation_provider': provider,
@@ -5766,7 +5778,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.logger.error(f"Failed to analyze columns: {e}")
             return {'all_columns': [], 'text_candidates': [], 'df': None}
 
-    def _create_annotation_id(self, df: pd.DataFrame, id_column: str = "annotation_id") -> pd.DataFrame:
+    def _create_annotation_id(self, df: pd.DataFrame, id_column: str = "llm_annotation_id") -> pd.DataFrame:
         """
         Create or verify annotation ID column for tracking.
 
@@ -8824,7 +8836,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'text_column': text_column,
                 'text_columns': [text_column],
                 'annotation_column': 'annotation',
-                'identifier_column': id_column if id_column else 'annotation_id',
+                'identifier_column': id_column if id_column else 'llm_annotation_id',
                 'run_annotation': True,
                 'annotation_mode': 'local' if llm_config.provider == 'ollama' else 'api',
                 'annotation_provider': llm_config.provider,

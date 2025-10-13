@@ -1148,10 +1148,18 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         text_column=text_column,
         step_label="Step 2b/7: Identifier Column Selection"
     )
+    identifier_source = "user" if identifier_column else "auto"
+    auto_identifier_column = identifier_column or "llm_annotation_id"
+    pipeline_identifier_column = identifier_column if identifier_column else None
+    identifier_column = pipeline_identifier_column
     tracker.mark_step(
         2,
-        detail=f"text={text_column}, id={identifier_column or 'auto'}",
-        extra={"text_column": text_column, "identifier_column": identifier_column},
+        detail=f"text={text_column}, id={auto_identifier_column if identifier_source == 'auto' else identifier_column}",
+        extra={
+            "text_column": text_column,
+            "identifier_column": auto_identifier_column,
+            "identifier_source": identifier_source,
+        },
     )
 
     # Step 3: Model Selection
@@ -1570,6 +1578,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     summary_table.add_row("📁 Data", "Dataset", str(data_path.name))
     summary_table.add_row("", "Format", data_format.upper())
     summary_table.add_row("", "Text Column", text_column)
+    summary_table.add_row(
+        "",
+        "Identifier Column",
+        f"{auto_identifier_column} (auto-generated)" if identifier_source == "auto" else auto_identifier_column
+    )
     if total_rows:
         summary_table.add_row("", "Total Rows", f"{total_rows:,}")
     if annotation_limit:
@@ -1830,12 +1843,14 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             'data_source': {
                 'file_path': str(data_path),
                 'file_name': data_path.name,
-                'data_format': data_format,
-                'text_column': text_column,
-                'total_rows': annotation_limit if annotation_limit else 'all',
-                'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
-                'sample_seed': 42 if sample_strategy == 'random' else None
-            },
+            'data_format': data_format,
+            'text_column': text_column,
+            'total_rows': annotation_limit if annotation_limit else 'all',
+            'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
+            'sample_seed': 42 if sample_strategy == 'random' else None,
+            'identifier_column': auto_identifier_column,
+            'identifier_source': identifier_source,
+        },
             'model_configuration': {
                 'provider': provider,
                 'model_name': model_name,
@@ -1856,11 +1871,13 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 for pc in prompt_configs
             ],
             'processing_configuration': {
-                'parallel_workers': num_processes,
-                'batch_size': batch_size,
-                'incremental_save': save_incrementally,
-                'identifier_column': 'annotation_id'
-            },
+            'parallel_workers': num_processes,
+            'batch_size': batch_size,
+            'incremental_save': save_incrementally,
+            'identifier_column': auto_identifier_column,
+            'auto_identifier_column': auto_identifier_column,
+            'identifier_source': identifier_source,
+        },
             'output': {
                 'output_path': str(default_output_path),
                 'output_format': data_format
@@ -2450,6 +2467,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         text_column=text_column,
         step_label="Step 1.2b/4: Identifier Column Selection"
     )
+    identifier_source = "user" if identifier_column else "auto"
+    auto_identifier_column = identifier_column or "llm_annotation_id"
+    pipeline_identifier_column = identifier_column if identifier_column else None
+    identifier_column = pipeline_identifier_column
 
     # Store column info for later use
     column_info['df'] = df_sample
@@ -3142,7 +3163,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 'parallel_workers': num_processes,
                 'batch_size': batch_size,
                 'incremental_save': save_incrementally,
-                'identifier_column': 'annotation_id'
+                'identifier_column': auto_identifier_column
             },
             'output': {
                 'output_path': str(default_output_path),
@@ -3480,9 +3501,18 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     identifier_column = (
         proc_config.get('identifier_column')
         or data_source.get('identifier_column')
-        or 'annotation_id'
     )
+    if not identifier_column:
+        identifier_column = 'llm_annotation_id'
+    elif identifier_column == 'annotation_id':
+        identifier_column = 'llm_annotation_id'
+
+    pipeline_identifier_column = (
+        None if identifier_column == 'llm_annotation_id' else identifier_column
+    )
+    default_identifier = identifier_column
     data_source.setdefault('identifier_column', identifier_column)
+    proc_config.setdefault('identifier_column', identifier_column)
 
     # Get export preferences
     export_to_doccano = export_prefs.get('export_to_doccano', False)
@@ -3533,6 +3563,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                 elif data_format == 'parquet':
                     df_output = pd.read_parquet(original_output)
 
+                resolved_identifier = None
                 candidate_identifiers = [
                     identifier_column,
                     data_source.get('identifier_column'),
@@ -3559,15 +3590,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                         ),
                         None
                     )
-                if resolved_identifier:
-                    if resolved_identifier != identifier_column:
-                        cli.console.print(
-                            f"[cyan]  Using identifier column: {resolved_identifier}[/cyan]"
-                        )
-                    identifier_column = resolved_identifier
-                    data_source['identifier_column'] = identifier_column
-                    proc_config['identifier_column'] = identifier_column
-                else:
+                if not resolved_identifier:
                     cli.console.print(
                         "[yellow]⚠️  Could not determine identifier column from resume file.[/yellow]"
                     )
@@ -3586,70 +3609,88 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
 
                 cli.console.print(f"[cyan]  Rows already annotated: {annotated_count:,}[/cyan]")
 
+                continue_resume = True
+                if annotated_count > 0:
+                    continue_resume = Confirm.ask(
+                        "\n[bold yellow]Resume with the remaining rows?[/bold yellow]",
+                        default=True
+                    )
+                    if not continue_resume:
+                        cli.console.print("[yellow]Switching to relaunch mode (fresh annotation)[/yellow]")
+                        action_mode = 'relaunch'
+
                 # Get total available rows from source file
-                if data_path.exists():
-                    if data_format == 'csv':
-                        total_available = len(pd.read_csv(data_path))
-                    elif data_format in ['excel', 'xlsx']:
-                        total_available = len(pd.read_excel(data_path))
-                    elif data_format == 'parquet':
-                        total_available = len(pd.read_parquet(data_path))
+                if action_mode == 'resume':
+                    chosen_identifier = resolved_identifier or default_identifier
+                    identifier_column = chosen_identifier
+                    data_source['identifier_column'] = identifier_column
+                    proc_config['identifier_column'] = identifier_column
+                    cli.console.print(f"[dim]Identifier column resolved: {identifier_column}[/dim]")
+
+                    if data_path.exists():
+                        if data_format == 'csv':
+                            total_available = len(pd.read_csv(data_path))
+                        elif data_format in ['excel', 'xlsx']:
+                            total_available = len(pd.read_excel(data_path))
+                        elif data_format == 'parquet':
+                            total_available = len(pd.read_parquet(data_path))
+                        else:
+                            total_available = len(df_output)
                     else:
                         total_available = len(df_output)
-                else:
-                    total_available = len(df_output)
 
-                # Calculate remaining based on original target
-                original_target = data_source.get('total_rows', 'all')
+                    # Calculate remaining based on original target
+                    original_target = data_source.get('total_rows', 'all')
 
-                if original_target == 'all':
-                    total_target = total_available
-                else:
-                    total_target = original_target
+                    if original_target == 'all':
+                        total_target = total_available
+                    else:
+                        total_target = original_target
 
-                remaining_from_target = total_target - annotated_count
-                remaining_from_source = total_available - annotated_count
+                    remaining_from_target = total_target - annotated_count
+                    remaining_from_source = total_available - annotated_count
 
-                cli.console.print(f"[cyan]  Original target: {total_target:,} rows[/cyan]")
-                cli.console.print(f"[cyan]  Remaining from target: {remaining_from_target:,}[/cyan]")
-                cli.console.print(f"[cyan]  Total available in source: {total_available:,} rows[/cyan]")
-                cli.console.print(f"[cyan]  Maximum you can annotate: {remaining_from_source:,}[/cyan]\n")
+                    cli.console.print(f"[cyan]  Original target: {total_target:,} rows[/cyan]")
+                    cli.console.print(f"[cyan]  Remaining from target: {remaining_from_target:,}[/cyan]")
+                    cli.console.print(f"[cyan]  Total available in source: {total_available:,} rows[/cyan]")
+                    cli.console.print(f"[cyan]  Maximum you can annotate: {remaining_from_source:,}[/cyan]\n")
 
-                if remaining_from_source <= 0:
-                    cli.console.print("\n[yellow]All available rows are already annotated![/yellow]")
-                    continue_anyway = Confirm.ask("Continue with relaunch mode?", default=False)
-                    if not continue_anyway:
-                        return False
-                    action_mode = 'relaunch'
-                else:
-                    cli.console.print("[yellow]You can annotate:[/yellow]")
-                    cli.console.print(f"  • Up to [cyan]{remaining_from_target:,}[/cyan] more rows to complete original target")
-                    cli.console.print(f"  • Or up to [cyan]{remaining_from_source:,}[/cyan] total to use all available data\n")
+                    if remaining_from_source <= 0:
+                        cli.console.print("\n[yellow]All available rows are already annotated![/yellow]")
+                        continue_anyway = Confirm.ask("Continue with relaunch mode?", default=False)
+                        if not continue_anyway:
+                            return False
+                        action_mode = 'relaunch'
+                    else:
+                        if continue_resume:
+                            cli.console.print("[yellow]You can annotate:[/yellow]")
+                            cli.console.print(f"  • Up to [cyan]{remaining_from_target:,}[/cyan] more rows to complete original target")
+                            cli.console.print(f"  • Or up to [cyan]{remaining_from_source:,}[/cyan] total to use all available data\n")
 
-                    resume_count = cli._int_prompt_with_validation(
-                        f"How many more rows to annotate? (max: {remaining_from_source:,})",
-                        min(100, remaining_from_target) if remaining_from_target > 0 else 100,
-                        1,
-                        remaining_from_source
-                    )
+                            resume_count = cli._int_prompt_with_validation(
+                                f"How many more rows to annotate? (max: {remaining_from_source:,})",
+                                min(100, remaining_from_target) if remaining_from_target > 0 else 100,
+                                1,
+                                remaining_from_source
+                            )
 
-                    # Update metadata for resume
-                    metadata['data_source']['total_rows'] = resume_count
-                    metadata['resume_mode'] = True
-                    metadata['resume_from_file'] = str(original_output)
-                    metadata['already_annotated'] = int(annotated_count)
+                            # Update metadata for resume
+                            metadata['data_source']['total_rows'] = resume_count
+                            metadata['resume_mode'] = True
+                            metadata['resume_from_file'] = str(original_output)
+                            metadata['already_annotated'] = int(annotated_count)
 
-                    # Use the previously annotated file as input so we continue seamlessly.
-                    data_path = original_output
-                    data_source['file_path'] = str(original_output)
-                    data_source['file_name'] = original_output.name
-                    resume_ext = original_output.suffix.lower().lstrip('.')
-                    if resume_ext:
-                        if resume_ext in {'xls', 'xlsx'}:
-                            data_format = 'excel'
-                        else:
-                            data_format = resume_ext
-                        data_source['data_format'] = data_format
+                            # Use the previously annotated file as input so we continue seamlessly.
+                            data_path = original_output
+                            data_source['file_path'] = str(original_output)
+                            data_source['file_name'] = original_output.name
+                            resume_ext = original_output.suffix.lower().lstrip('.')
+                            if resume_ext:
+                                if resume_ext in {'xls', 'xlsx'}:
+                                    data_format = 'excel'
+                                else:
+                                    data_format = resume_ext
+                                data_source['data_format'] = data_format
 
             except Exception as e:
                 cli.console.print(f"\n[red]Error reading output file: {e}[/red]")
@@ -3668,6 +3709,9 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     else:
         output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
         default_output_path = annotations_dir / output_filename
+        identifier_column = default_identifier
+        data_source['identifier_column'] = identifier_column
+        proc_config['identifier_column'] = identifier_column
 
     cli.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
     cli.console.print(f"   {default_output_path}")
@@ -3720,7 +3764,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         'text_column': data_source.get('text_column', 'text'),
         'text_columns': [data_source.get('text_column', 'text')],
         'annotation_column': 'annotation',
-        'identifier_column': identifier_column,
+        'identifier_column': pipeline_identifier_column,
         'run_annotation': True,
         'annotation_mode': annotation_mode,
         'annotation_provider': provider,
@@ -3845,6 +3889,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     # Execute pipeline
     try:
         cli.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
+        cli.console.print(f"[dim]Identifier column in use: {identifier_column}[/dim]")
 
         from ..pipelines.pipeline_controller import PipelineController
 

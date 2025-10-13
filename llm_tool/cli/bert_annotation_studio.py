@@ -2495,7 +2495,7 @@ class BERTAnnotationStudio:
                     self.console.print("[red]❌ Combination is not unique. Try another combination.[/red]")
                     df.drop(columns=[new_col], inplace=True)
             elif choice == "3":
-                base_name = "annotation_id"
+                base_name = "llm_annotation_id"
                 new_col = base_name
                 counter = 1
                 while new_col in df.columns:
