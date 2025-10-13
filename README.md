@@ -120,7 +120,7 @@ As a social science researcher, you might have:
 
 1. **Install prerequisites** – Python 3.11+, Git, and (optionally) [Ollama](https://ollama.ai) for fully local LLMs. On macOS: `brew install python@3.11` then `brew install --cask ollama`.
 2. **Clone the repository**  
-   `git clone https://github.com/antoine-lemor/LLM_Tool.git && cd LLM_Tool`
+   `git clone https://github.com/antoinelemor/LLM_Tool.git && cd LLM_Tool`
 3. **Run the installer** – `chmod +x install.sh && ./install.sh --all` (creates `.venv`, installs extras, runs verification).
 4. **Activate the virtualenv** – `source .venv/bin/activate` (Windows: `.venv\Scripts\activate`).
 5. **Launch the CLI** – `llm-tool` shows the Rich main menu.
@@ -1754,8 +1754,8 @@ If you use LLM Tool in your research, please cite:
 
 ```bibtex
 @software{lemor2025llmtool,
-  author = {Lemor, Antoine},
-  title = {LLM Tool: State-of-the-Art LLM-Powered Annotation and BERT Training Pipeline},
+  author = {Lemor, Antoine and Dinan, Shannon and Gilbert, Jérémy},
+  title = {LLM Tool: A Hybrid Pipeline for Automated Large-Scale Text Annotation Using Local Language Models and BERT Classifiers},
   year = {2025},
   version = {1.0.0},
   url = {https://github.com/YOUR-USERNAME/LLM_Tool}
@@ -1763,10 +1763,10 @@ If you use LLM Tool in your research, please cite:
 ```
 
 **In-text citation (APA):**
-> Lemor, A. (2025). LLM Tool: State-of-the-Art LLM-Powered Annotation and BERT Training Pipeline (Version 1.0.0) [Computer software]. https://github.com/YOUR-USERNAME/LLM_Tool
+> Lemor, A., Dinan, S., & Gilbert, J. (2025). LLM Tool: A Hybrid Pipeline for Automated Large-Scale Text Annotation Using Local Language Models and BERT Classifiers (Version 1.0.0) [Computer software]. https://github.com/YOUR-USERNAME/LLM_Tool
 
 **Methodology description for papers:**
-> "Text classification was performed using LLM Tool (Lemor, 2025), an open-source pipeline for LLM-assisted annotation and BERT model training. Documents were initially annotated using [GPT-4/Claude/Ollama Llama 3.2] with a custom annotation schema. A subset of [N] documents was manually validated, achieving Cohen's Kappa of [X.XX]. The final classifier was trained using [model name] transformer architecture, achieving F1-score of [X.XX] on held-out test data."
+> "Text classification was performed using LLM Tool (Lemor et al., 2025), an open-source hybrid pipeline for LLM-assisted annotation and BERT model training. Documents were initially annotated using local LLMs (e.g., Ollama Llama 3.2) or cloud models (GPT‑4/Claude) following a custom annotation schema. A stratified subset of N documents was manually validated (Cohen's Kappa = X.XX). The final classifier was trained using the [model name] transformer architecture and achieved an F1 score of X.XX on held-out test data."
 
 ---
 
