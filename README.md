@@ -384,16 +384,16 @@ llm-tool
 
 You should see the main menu:
 ```
-                               ╭─────────────────────────── Main Menu ───────────────────────────╮
-                               │ 1  🎨 The Annotator - LLM Tool annotates, you decide             │
-                               │ 2  🏭 The Annotator Factory - Clone The Annotator into ML Models │
-                               │ 3  🎮 Training Arena - Train Your Own Models                     │
-                               │ 4  🤖 BERT Annotation Studio - Annotate with Trained Models      │
-                               │ 5  🔍 Validation Lab - Quality Assurance Tools                   │
-                               │ 6  📂 Resume Center - Manage Sessions & Configurations           │
-                               │ 7  📚 Documentation & Help                                       │
-                               │ 0  ❌ Exit                                                       │
-                               ╰──────────────────────────────────────────────────────────────────╯
+     ╭─────────────────────────── Main Menu ───────────────────────────╮
+     │ 1  🎨 The Annotator - LLM Tool annotates, you decide             │
+     │ 2  🏭 The Annotator Factory - Clone The Annotator into ML Models │
+     │ 3  🎮 Training Arena - Train Your Own Models                     │
+     │ 4  🤖 BERT Annotation Studio - Annotate with Trained Models      │
+     │ 5  🔍 Validation Lab - Quality Assurance Tools                   │
+     │ 6  📂 Resume Center - Manage Sessions & Configurations           │
+     │ 7  📚 Documentation & Help                                       │
+     │ 0  ❌ Exit                                                       │
+     ╰──────────────────────────────────────────────────────────────────╯
 
 Select option [0/1/2/3/4/5/6/7] (1):
 ```
@@ -547,16 +547,16 @@ llm-tool
 
 You'll see the main menu:
 ```
-                               ╭─────────────────────────── Main Menu ───────────────────────────╮
-                               │ 1  🎨 The Annotator - LLM Tool annotates, you decide             │
-                               │ 2  🏭 The Annotator Factory - Clone The Annotator into ML Models │
-                               │ 3  🎮 Training Arena - Train Your Own Models                     │
-                               │ 4  🤖 BERT Annotation Studio - Annotate with Trained Models      │
-                               │ 5  🔍 Validation Lab - Quality Assurance Tools                   │
-                               │ 6  📂 Resume Center - Manage Sessions & Configurations           │
-                               │ 7  📚 Documentation & Help                                       │
-                               │ 0  ❌ Exit                                                       │
-                               ╰──────────────────────────────────────────────────────────────────╯
+╭─────────────────────────── Main Menu ───────────────────────────╮
+│ 1  🎨 The Annotator - LLM Tool annotates, you decide             │
+│ 2  🏭 The Annotator Factory - Clone The Annotator into ML Models │
+│ 3  🎮 Training Arena - Train Your Own Models                     │
+│ 4  🤖 BERT Annotation Studio - Annotate with Trained Models      │
+│ 5  🔍 Validation Lab - Quality Assurance Tools                   │
+│ 6  📂 Resume Center - Manage Sessions & Configurations           │
+│ 7  📚 Documentation & Help                                       │
+│ 0  ❌ Exit                        │
+╰──────────────────────────────────────────────────────────────────╯
 ```
 
 ### 3. Quick Annotation Example (Using Ollama - 100% Local)
