@@ -1849,17 +1849,17 @@ Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **LLM Tool changes this.** It combines the power of large language models (GPT, Claude, local Ollama) with the precision of fine-tuned BERT models, giving researchers:
 
-✅ **Speed**: Annotate 1,000 documents in minutes, not weeks
-✅ **Cost**: Use free local models (Ollama) or affordable cloud APIs
-✅ **Quality**: Validate with inter-annotator agreement metrics
-✅ **Ownership**: Train models you control and can deploy anywhere
-✅ **Flexibility**: Support for any language, any classification scheme
-✅ **Transparency**: Full control over methodology, reproducible workflows
+- ✅ **Speed**: Annotate 1,000 documents in minutes, not weeks
+- ✅ **Cost**: Use free local models (Ollama) or affordable cloud APIs
+- ✅ **Quality**: Validate with inter-annotator agreement metrics
+- ✅ **Ownership**: Train models you control and can deploy anywhere
+- ✅ **Flexibility**: Support for any language, any classification scheme
+- ✅ **Transparency**: Full control over methodology, reproducible workflows
 
 **Built for social scientists, by social scientists.** LLM Tool was designed from the ground up for researchers who need rigorous, reproducible, and publication-ready text classification — without requiring a PhD in computer science.
 
 ---
 
-**Made with ❤️ for researchers by [Antoine Lemor](https://github.com/YOUR-USERNAME)**
+**Made with passion for researchers**
 
-*Transform your text data into production-ready ML models in 45 minutes, not 45 days.*
+*Transform easily your text data into production-ready ML models*
