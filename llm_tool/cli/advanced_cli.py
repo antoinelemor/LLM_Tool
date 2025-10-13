@@ -1832,6 +1832,12 @@ class AdvancedCLI:
                 print(f"No direct handler for mode: {mode}")
 
 
+    def _get_api_key(self, provider: str, model_name: Optional[str] = None) -> Optional[str]:
+        """
+        Backwards-compatible helper used throughout the CLI to obtain provider API keys.
+        """
+        return self._get_or_prompt_api_key(provider, model_name=model_name)
+
     def _get_or_prompt_api_key(self, provider: str, model_name: Optional[str] = None) -> Optional[str]:
         """
         Get API key from secure storage or prompt user.
@@ -6976,7 +6982,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
     def _export_to_doccano_jsonl(self, output_file: str, text_column: str,
                                   prompt_configs: list, data_path: Path, timestamp: str,
                                   sample_size=None, session_dirs=None,
-                                  provider_folder: str = "model_provider"):
+                                  provider_folder: str = "model_provider",
+                                  model_folder: str = "model_name"):
         """Export annotations to Doccano JSONL format
 
         Parameters
@@ -7069,18 +7076,30 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Prepare JSONL output - Use organized structure if session_dirs provided
             safe_provider_folder = (provider_folder or "model_provider").replace("/", "_")
+            safe_model_folder = (model_folder or "model_name").replace("/", "_")
+
+            if data_path:
+                dataset_path_obj = data_path if isinstance(data_path, Path) else Path(data_path)
+                dataset_name = dataset_path_obj.stem
+            else:
+                dataset_name = "dataset"
 
             if session_dirs:
                 # Create dataset-specific subdirectory for exports
-                dataset_name = data_path.stem
-                doccano_dir = session_dirs['doccano'] / dataset_name / safe_provider_folder
+                doccano_dir = session_dirs['doccano'] / safe_provider_folder / safe_model_folder / dataset_name
                 doccano_dir.mkdir(parents=True, exist_ok=True)
             else:
                 # Fallback to old structure for backward compatibility
-                doccano_dir = self.settings.paths.data_dir / 'doccano_exports' / data_path.stem / safe_provider_folder
+                doccano_dir = (
+                    self.settings.paths.data_dir
+                    / 'doccano_exports'
+                    / safe_provider_folder
+                    / safe_model_folder
+                    / data_path.stem
+                )
                 doccano_dir.mkdir(parents=True, exist_ok=True)
 
-            jsonl_filename = f"{data_path.stem}_doccano_{timestamp}.jsonl"
+            jsonl_filename = f"{dataset_name}_doccano_{timestamp}.jsonl"
             jsonl_path = doccano_dir / jsonl_filename
 
             # Get all label keys from prompts
@@ -7167,7 +7186,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
     def _export_to_labelstudio_jsonl(self, output_file: str, text_column: str,
                                       prompt_configs: list, data_path: Path, timestamp: str,
                                       sample_size=None, prediction_mode='with', session_dirs=None,
-                                      provider_folder: str = "model_provider"):
+                                      provider_folder: str = "model_provider",
+                                      model_folder: str = "model_name"):
         """Export annotations to Label Studio JSONL format
 
         Parameters
@@ -7265,18 +7285,30 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Prepare JSONL output - Use organized structure if session_dirs provided
             safe_provider_folder = (provider_folder or "model_provider").replace("/", "_")
+            safe_model_folder = (model_folder or "model_name").replace("/", "_")
+
+            if data_path:
+                dataset_path_obj = data_path if isinstance(data_path, Path) else Path(data_path)
+                dataset_name = dataset_path_obj.stem
+            else:
+                dataset_name = "dataset"
 
             if session_dirs:
                 # Create dataset-specific subdirectory for exports
-                dataset_name = data_path.stem
-                labelstudio_dir = session_dirs['labelstudio'] / dataset_name / safe_provider_folder
+                labelstudio_dir = session_dirs['labelstudio'] / safe_provider_folder / safe_model_folder / dataset_name
                 labelstudio_dir.mkdir(parents=True, exist_ok=True)
             else:
                 # Fallback to old structure for backward compatibility
-                labelstudio_dir = self.settings.paths.data_dir / 'labelstudio_exports' / data_path.stem / safe_provider_folder
+                labelstudio_dir = (
+                    self.settings.paths.data_dir
+                    / 'labelstudio_exports'
+                    / safe_provider_folder
+                    / safe_model_folder
+                    / data_path.stem
+                )
                 labelstudio_dir.mkdir(parents=True, exist_ok=True)
 
-            jsonl_filename = f"{data_path.stem}_labelstudio_{timestamp}.jsonl"
+            jsonl_filename = f"{dataset_name}_labelstudio_{timestamp}.jsonl"
             jsonl_path = labelstudio_dir / jsonl_filename
 
             # Get all label keys from prompts

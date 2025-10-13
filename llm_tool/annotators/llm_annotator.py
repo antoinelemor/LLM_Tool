@@ -659,6 +659,15 @@ class LLMAnnotator:
                             if status:
                                 full_data.loc[mask, f"{annotation_column}_status_per_prompt"] = status
 
+                            payload_dict = None
+                            if final_json:
+                                try:
+                                    payload_dict = json.loads(final_json) if isinstance(final_json, str) else final_json
+                                except Exception:
+                                    payload_dict = None
+                            if payload_dict:
+                                self._store_annotation_payload(full_data, mask, payload_dict, annotation_column)
+
                         # Track status
                         if final_json:
                             status_counts['success'] += 1
@@ -785,6 +794,15 @@ class LLMAnnotator:
                     full_data.loc[mask, f"{annotation_column}_cleaned_per_prompt"] = cleaned_json
                 if status:
                     full_data.loc[mask, f"{annotation_column}_status_per_prompt"] = status
+
+                payload_dict = None
+                if final_json:
+                    try:
+                        payload_dict = json.loads(final_json) if isinstance(final_json, str) else final_json
+                    except Exception:
+                        payload_dict = None
+                if payload_dict:
+                    self._store_annotation_payload(full_data, mask, payload_dict, annotation_column)
 
             if final_json:
                 status_counts['success'] += 1
@@ -1298,6 +1316,8 @@ class LLMAnnotator:
                 full_data.loc[mask, f"{annotation_column}_cleaned_per_prompt"] = cleaned_json
                 full_data.loc[mask, f"{annotation_column}_status_per_prompt"] = status_json
                 full_data.loc[mask, f"{annotation_column}_usage_per_prompt"] = usage_json
+                if final_payload:
+                    self._store_annotation_payload(full_data, mask, final_payload, annotation_column)
 
                 if usage_totals['prompt_tokens']:
                     full_data.loc[mask, f"{annotation_column}_prompt_tokens"] = usage_totals['prompt_tokens']
@@ -1440,6 +1460,32 @@ class LLMAnnotator:
         config['annotated_subset_path'] = str(subset_path)
         self.logger.info(f"Saved annotated-only subset to {subset_path}")
         return subset_path
+
+    def _store_annotation_payload(
+        self,
+        dataframe: pd.DataFrame,
+        mask: pd.Series,
+        payload: Optional[Dict[str, Any]],
+        annotation_column: str
+    ):
+        """Persist individual annotation keys into dedicated columns."""
+        if not payload or not isinstance(payload, dict):
+            return
+
+        for key, value in payload.items():
+            column_name = f"{annotation_column}_{key}"
+            if isinstance(value, (dict, list)):
+                serialized = json.dumps(value, ensure_ascii=False)
+                dataframe.loc[mask, column_name] = serialized
+                canonical_value = serialized
+            else:
+                dataframe.loc[mask, column_name] = value
+                canonical_value = value
+
+            # Also expose convenience column that mirrors the raw key
+            if key not in dataframe.columns:
+                dataframe[key] = pd.NA
+            dataframe.loc[mask, key] = canonical_value
 
     def _append_to_csv(self, data: pd.DataFrame, identifier, identifier_column: str,
                       annotation_column: str, path: str):

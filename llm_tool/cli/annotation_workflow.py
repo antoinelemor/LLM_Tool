@@ -1849,24 +1849,28 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     else:
         annotation_mode_display = "Local"
 
-    # Create dataset/provider specific directories
-    dataset_name = data_path.stem
-    dataset_subdir = session_dirs['annotated_data'] / dataset_name
-    dataset_subdir.mkdir(parents=True, exist_ok=True)
-
     provider_folder = (provider or "model_provider").replace("/", "_")
-    provider_subdir = dataset_subdir / provider_folder
+    model_folder = safe_model_name
+
+    provider_subdir = session_dirs['annotated_data'] / provider_folder
     provider_subdir.mkdir(parents=True, exist_ok=True)
 
+    model_subdir = provider_subdir / model_folder
+    model_subdir.mkdir(parents=True, exist_ok=True)
+
+    dataset_name = data_path.stem
+    dataset_subdir = model_subdir / dataset_name
+    dataset_subdir.mkdir(parents=True, exist_ok=True)
+
     if annotation_mode == 'openai_batch':
-        batch_logs_root = provider_subdir / "openai_batch_jobs"
+        batch_logs_root = model_subdir / "openai_batch_jobs"
         batch_logs_root.mkdir(parents=True, exist_ok=True)
         batch_dir = batch_logs_root / timestamp
         batch_dir.mkdir(parents=True, exist_ok=True)
 
         # Optional legacy pointer for backwards compatibility
-        legacy_root = Path(session_dirs.get('openai_batches', provider_subdir))
-        legacy_target = legacy_root / dataset_name / provider_folder
+        legacy_root = Path(session_dirs.get('openai_batches', session_dirs['annotated_data']))
+        legacy_target = legacy_root / provider_folder / model_folder / dataset_name
         legacy_target.mkdir(parents=True, exist_ok=True)
         pointer_file = legacy_target / f"{timestamp}_LOCATION.txt"
         if not pointer_file.exists():
@@ -1934,8 +1938,9 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'lang_column': lang_column,  # From Step 4b: Language column for training metadata
         'create_annotated_subset': True,
         'session_dirs': {key: str(value) for key, value in session_dirs.items()},
-        'dataset_subdir': str(dataset_subdir),
         'provider_subdir': str(provider_subdir),
+        'model_subdir': str(model_subdir),
+        'dataset_subdir': str(dataset_subdir),
         'openai_batch_dir': str(batch_dir),
     }
 
@@ -1983,6 +1988,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 'file_name': data_path.name,
                 'data_format': data_format,
                 'text_column': text_column,
+                'dataset_name': dataset_name,
                 'total_rows': annotation_limit if annotation_limit else 'all',
                 'requested_rows': requested_rows,
                 'available_rows': available_rows,
@@ -1990,6 +1996,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 'sample_seed': 42 if sample_strategy == 'random' else None,
                 'identifier_column': auto_identifier_column,
                 'identifier_source': identifier_source,
+                'provider_folder': provider_folder,
+                'model_folder': model_folder,
             },
             'annotation_progress': {
                 'requested': requested_rows,
@@ -2025,6 +2033,9 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 'identifier_column': auto_identifier_column,
                 'auto_identifier_column': auto_identifier_column,
                 'identifier_source': identifier_source,
+                'provider_folder': provider_folder,
+                'model_folder': model_folder,
+                'dataset_name': dataset_name,
             },
             'output': {
                 'output_path': str(default_output_path),
@@ -2048,7 +2059,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
         # Save metadata JSON (PRE-ANNOTATION SAVE POINT 1)
         # Use dataset-specific subdirectory for metadata too
-        metadata_subdir = session_dirs['metadata'] / dataset_name / provider_folder
+        metadata_subdir = session_dirs['metadata'] / provider_folder / model_folder / dataset_name
         metadata_subdir.mkdir(parents=True, exist_ok=True)
 
         metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
@@ -2287,7 +2298,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 timestamp=timestamp,
                 sample_size=export_sample_size,
                 session_dirs=session_dirs,
-                provider_folder=provider_folder
+                provider_folder=provider_folder,
+                model_folder=model_folder
             )
 
         # Export to Label Studio if requested
@@ -2316,7 +2328,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                     sample_size=export_sample_size,
                     prediction_mode=prediction_mode,
                     session_dirs=session_dirs,
-                    provider_folder=provider_folder
+                    provider_folder=provider_folder,
+                    model_folder=model_folder
                 )
 
         tracker.mark_step(
@@ -3260,23 +3273,27 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     else:
         annotation_mode_display = "Local"
 
-    # Create dataset/provider subdirectories
-    dataset_name = data_path.stem
-    dataset_subdir = session_dirs['annotated_data'] / dataset_name
-    dataset_subdir.mkdir(parents=True, exist_ok=True)
-
     provider_folder = (provider or "model_provider").replace("/", "_")
-    provider_subdir = dataset_subdir / provider_folder
+    model_folder = safe_model_name
+
+    provider_subdir = session_dirs['annotated_data'] / provider_folder
     provider_subdir.mkdir(parents=True, exist_ok=True)
 
+    model_subdir = provider_subdir / model_folder
+    model_subdir.mkdir(parents=True, exist_ok=True)
+
+    dataset_name = data_path.stem
+    dataset_subdir = model_subdir / dataset_name
+    dataset_subdir.mkdir(parents=True, exist_ok=True)
+
     if annotation_mode == 'openai_batch':
-        batch_logs_root = provider_subdir / "openai_batch_jobs"
+        batch_logs_root = model_subdir / "openai_batch_jobs"
         batch_logs_root.mkdir(parents=True, exist_ok=True)
         batch_dir = batch_logs_root / timestamp
         batch_dir.mkdir(parents=True, exist_ok=True)
 
-        legacy_root = Path(session_dirs.get('openai_batches', provider_subdir))
-        legacy_target = legacy_root / dataset_name / provider_folder
+        legacy_root = Path(session_dirs.get('openai_batches', session_dirs['annotated_data']))
+        legacy_target = legacy_root / provider_folder / model_folder / dataset_name
         legacy_target.mkdir(parents=True, exist_ok=True)
         pointer_file = legacy_target / f"{timestamp}_LOCATION.txt"
         if not pointer_file.exists():
@@ -3288,10 +3305,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             except Exception:
                 pass
     else:
-        batch_dir = provider_subdir
+        batch_dir = dataset_subdir
 
     output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
-    default_output_path = provider_subdir / output_filename
+    default_output_path = dataset_subdir / output_filename
 
     cli.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
     cli.console.print(f"   {default_output_path}")
@@ -3347,8 +3364,12 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
     pipeline_config.update({
         'session_dirs': {key: str(value) for key, value in session_dirs.items()},
-        'dataset_subdir': str(dataset_subdir),
+        'provider_folder': provider_folder,
+        'model_folder': model_folder,
+        'dataset_name': dataset_name,
         'provider_subdir': str(provider_subdir),
+        'model_subdir': str(model_subdir),
+        'dataset_subdir': str(dataset_subdir),
         'openai_batch_dir': str(batch_dir),
     })
 
@@ -3396,6 +3417,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 'file_name': data_path.name,
                 'data_format': data_format,
                 'text_column': text_column,
+                'dataset_name': dataset_name,
                 'total_rows': annotation_limit if annotation_limit else 'all',
                 'requested_rows': requested_rows,
                 'available_rows': available_rows,
@@ -3433,7 +3455,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 'incremental_save': False if annotation_mode == 'openai_batch' else save_incrementally,
                 'openai_batch_mode': openai_batch_mode,
                 'openai_batch_dir': str(batch_dir) if annotation_mode == 'openai_batch' else None,
-                'identifier_column': auto_identifier_column
+                'identifier_column': auto_identifier_column,
+                'provider_folder': provider_folder,
+                'model_folder': model_folder,
+                'dataset_name': dataset_name
             },
             'output': {
                 'output_path': str(default_output_path),
@@ -3457,7 +3482,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
         # Save metadata JSON (PRE-ANNOTATION SAVE POINT 1)
         # Use dataset-specific subdirectory for metadata too
-        metadata_subdir = session_dirs['metadata'] / dataset_name / provider_folder
+        metadata_subdir = session_dirs['metadata'] / provider_folder / model_folder / dataset_name
         metadata_subdir.mkdir(parents=True, exist_ok=True)
 
         metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
@@ -3731,7 +3756,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 timestamp=timestamp,
                 sample_size=export_sample_size,
                 session_dirs=session_dirs,
-                provider_folder=provider_folder
+                provider_folder=provider_folder,
+                model_folder=model_folder
             )
 
         # Export to Label Studio if requested
@@ -3760,7 +3786,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                     sample_size=export_sample_size,
                     prediction_mode=prediction_mode,
                     session_dirs=session_dirs,
-                    provider_folder=provider_folder
+                    provider_folder=provider_folder,
+                    model_folder=model_folder
                 )
 
         tracker.mark_step(
