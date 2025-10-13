@@ -244,6 +244,9 @@ MODEL_DESCRIPTIONS = {
 
     # OpenAI models
     'gpt-5': 'OpenAI GPT-5 - Latest flagship model (2025)',
+    'gpt-5-2025-08-07': 'OpenAI GPT-5 (2025-08-07) - Flagship general-purpose model with enhanced reasoning and 200K context',
+    'gpt-5-mini-2025-08-07': 'OpenAI GPT-5 Mini (2025-08-07) - Balanced GPT-5 variant, optimized for cost and quick iteration',
+    'gpt-5-nano-2025-08-07': 'OpenAI GPT-5 Nano (2025-08-07) - Ultra-fast GPT-5 tier for large batch workloads',
     'gpt-4o': 'OpenAI GPT-4o - Multimodal (text/image), matches GPT-4 Turbo performance',
     'gpt-4-turbo': 'OpenAI GPT-4 Turbo - Large multimodal model, optimized for chat/completions',
     'gpt-4': 'OpenAI GPT-4 - Advanced reasoning, multimodal capabilities',
@@ -385,10 +388,36 @@ class LLMDetector:
         """List available OpenAI models"""
         models = [
             # ✅ Tested models (fully supported in pipeline)
-            ModelInfo("gpt-5-nano-2025-08-07", "openai", context_length=200000, requires_api_key=True,
-                     cost_per_1k_tokens=0.001, supports_json=True, supports_streaming=True, max_tokens=4000),
-            ModelInfo("gpt-5-mini-2025-08-07", "openai", context_length=200000, requires_api_key=True,
-                     cost_per_1k_tokens=0.001, supports_json=True, supports_streaming=True, max_tokens=4000),
+            ModelInfo(
+                "gpt-5-2025-08-07",
+                "openai",
+                context_length=200000,
+                requires_api_key=True,
+                cost_per_1k_tokens=0.004,
+                supports_json=True,
+                supports_streaming=True,
+                max_tokens=8000,
+            ),
+            ModelInfo(
+                "gpt-5-mini-2025-08-07",
+                "openai",
+                context_length=200000,
+                requires_api_key=True,
+                cost_per_1k_tokens=0.001,
+                supports_json=True,
+                supports_streaming=True,
+                max_tokens=4000,
+            ),
+            ModelInfo(
+                "gpt-5-nano-2025-08-07",
+                "openai",
+                context_length=200000,
+                requires_api_key=True,
+                cost_per_1k_tokens=0.001,
+                supports_json=True,
+                supports_streaming=True,
+                max_tokens=4000,
+            ),
         ]
         return models
 
@@ -3825,7 +3854,7 @@ class AdvancedCLI:
 
             # Check if user selected custom OpenAI option
             if openai_llms and choice == custom_openai_option_idx:
-                self.console.print("\n[dim]Examples: gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-2025-01-01, o1, o1-mini, o3-mini, gpt-5[/dim]")
+                self.console.print("\n[dim]Examples: gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-2025-01-01, o1, o1-mini, o3-mini, gpt-5-2025-08-07[/dim]")
                 custom_model = Prompt.ask("Enter OpenAI model name")
 
                 # Create a ModelInfo for the custom model with estimated parameters
@@ -3907,8 +3936,18 @@ class AdvancedCLI:
         if HAS_RICH and self.console:
             self.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
             self.console.print(
-                "[dim]Batch mode submits all requests at once and lets OpenAI process them asynchronously. "
-                "It is ideal for large datasets, reduces rate-limit backoffs, and returns the annotations after the batch job completes.[/dim]"
+                "[dim]Batch mode uploads every prompt/input as a JSONL job that OpenAI processes asynchronously. "
+                "It shines on large datasets because OpenAI handles queuing, retries, and durable storage on their side.[/dim]"
+            )
+            self.console.print(
+                "[dim]Why use it? Avoid local rate-limit backoffs, survive transient network issues, and annotate hundreds of thousands of rows without babysitting the run.[/dim]"
+            )
+            self.console.print(
+                "[dim]Trade-offs: expect longer wall-clock time (minutes to hours) before results arrive, you only receive output when the batch finishes, "
+                "and progress is tracked by polling the job status. Plan for overnight runs when possible.[/dim]"
+            )
+            self.console.print(
+                "[dim]Outputs land in OpenAI's dashboard and in logs/openai_batches/ so you can audit every request/response pair once the job completes.[/dim]"
             )
 
         question = f"[bold yellow]Use the OpenAI Batch API for {context}?[/bold yellow]"
@@ -4239,6 +4278,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             type_info = "🔀 MoE (Mixture)"
                         elif "3.2" in model_name.lower() or "3.3" in model_name.lower():
                             type_info = "⚡ Fast (Llama 3)"
+                        elif "gpt-5-2025" in model_name.lower():
+                            type_info = "🏆 Flagship"
                         elif "gpt-5-nano" in model_name.lower():
                             type_info = "⚡ Ultra Fast"
                         elif "gpt-5-mini" in model_name.lower():

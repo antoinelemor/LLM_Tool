@@ -180,8 +180,16 @@ def _prompt_openai_batch_mode(cli: Any, provider: str, context: str) -> bool:
 
     cli.console.print("\n[bold cyan]OpenAI Batch Mode[/bold cyan]")
     cli.console.print(
-        "[dim]Batch mode submits all requests at once and lets OpenAI process them asynchronously. "
-        "It is ideal for large datasets, reduces rate-limit backoffs, and delivers the annotations once the job completes.[/dim]"
+        "[dim]Batch mode uploads every prompt/text pair as a single JSONL job that OpenAI executes asynchronously. "
+        "It is ideal when you have hundreds or thousands of rows because OpenAI manages queuing, retries, and durable storage.[/dim]"
+    )
+    cli.console.print(
+        "[dim]Why enable it? You avoid local rate-limit backoffs, the run can be left unattended, and the raw request/response files are archived in your OpenAI dashboard "
+        "and under logs/openai_batches/ for auditing.[/dim]"
+    )
+    cli.console.print(
+        "[dim]What to expect: turnaround time is longer (minutes to hours depending on queue size), you only receive results once the batch finishes, "
+        "and progress updates rely on periodic polling. Plan accordingly if you need rapid iteration.[/dim]"
     )
 
     question = f"[bold yellow]Do you want to use the OpenAI Batch API for {context}?[/bold yellow]"
