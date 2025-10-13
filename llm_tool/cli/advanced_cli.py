@@ -3768,7 +3768,7 @@ class AdvancedCLI:
                 self.console.print("\n[bold cyan]🖥️  Local Models (Ollama):[/bold cyan]\n")
 
                 local_table = Table(border_style="cyan", show_header=True)
-                local_table.add_column("#", style="bold yellow", width=4)
+                local_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
                 local_table.add_column("Model Name", style="white", width=25)
                 local_table.add_column("Size", style="green", width=8)
                 local_table.add_column("Description", style="dim", width=70)
@@ -3791,7 +3791,7 @@ class AdvancedCLI:
                 self.console.print("\n[bold cyan]☁️  OpenAI Models:[/bold cyan]\n")
 
                 openai_table = Table(border_style="blue", show_header=True)
-                openai_table.add_column("#", style="bold yellow", width=4)
+                openai_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
                 openai_table.add_column("Model Name", style="white", width=30)
                 openai_table.add_column("Cost", style="magenta", width=12)
                 openai_table.add_column("Description", style="dim", width=65)
@@ -3825,7 +3825,7 @@ class AdvancedCLI:
                 self.console.print("\n[bold cyan]🤖 Anthropic Models:[/bold cyan]\n")
 
                 anthropic_table = Table(border_style="magenta", show_header=True)
-                anthropic_table.add_column("#", style="bold yellow", width=4)
+                anthropic_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
                 anthropic_table.add_column("Model Name", style="white", width=30)
                 anthropic_table.add_column("Cost", style="cyan", width=12)
                 anthropic_table.add_column("Description", style="dim", width=65)
@@ -4256,7 +4256,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         title="[bold]LLM Model Selection[/bold]",
                         title_style="cyan"
                     )
-                    table.add_column("#", justify="right", style="cyan bold", width=4)
+                    table.add_column("#", justify="right", style="cyan bold", width=5, no_wrap=True)
                     table.add_column("Model", style="white bold", width=35)
                     table.add_column("Provider", style="yellow", width=15)
                     table.add_column("Type / Size", style="green", width=20)
@@ -6975,7 +6975,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def _export_to_doccano_jsonl(self, output_file: str, text_column: str,
                                   prompt_configs: list, data_path: Path, timestamp: str,
-                                  sample_size=None, session_dirs=None):
+                                  sample_size=None, session_dirs=None,
+                                  provider_folder: str = "model_provider"):
         """Export annotations to Doccano JSONL format
 
         Parameters
@@ -7067,14 +7068,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows[/cyan]")
 
             # Prepare JSONL output - Use organized structure if session_dirs provided
+            safe_provider_folder = (provider_folder or "model_provider").replace("/", "_")
+
             if session_dirs:
                 # Create dataset-specific subdirectory for exports
                 dataset_name = data_path.stem
-                doccano_dir = session_dirs['doccano'] / dataset_name
+                doccano_dir = session_dirs['doccano'] / dataset_name / safe_provider_folder
                 doccano_dir.mkdir(parents=True, exist_ok=True)
             else:
                 # Fallback to old structure for backward compatibility
-                doccano_dir = self.settings.paths.data_dir / 'doccano_exports'
+                doccano_dir = self.settings.paths.data_dir / 'doccano_exports' / data_path.stem / safe_provider_folder
                 doccano_dir.mkdir(parents=True, exist_ok=True)
 
             jsonl_filename = f"{data_path.stem}_doccano_{timestamp}.jsonl"
@@ -7163,7 +7166,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def _export_to_labelstudio_jsonl(self, output_file: str, text_column: str,
                                       prompt_configs: list, data_path: Path, timestamp: str,
-                                      sample_size=None, prediction_mode='with', session_dirs=None):
+                                      sample_size=None, prediction_mode='with', session_dirs=None,
+                                      provider_folder: str = "model_provider"):
         """Export annotations to Label Studio JSONL format
 
         Parameters
@@ -7260,14 +7264,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print(f"[cyan]  Exporting all {total_annotated:,} rows[/cyan]")
 
             # Prepare JSONL output - Use organized structure if session_dirs provided
+            safe_provider_folder = (provider_folder or "model_provider").replace("/", "_")
+
             if session_dirs:
                 # Create dataset-specific subdirectory for exports
                 dataset_name = data_path.stem
-                labelstudio_dir = session_dirs['labelstudio'] / dataset_name
+                labelstudio_dir = session_dirs['labelstudio'] / dataset_name / safe_provider_folder
                 labelstudio_dir.mkdir(parents=True, exist_ok=True)
             else:
                 # Fallback to old structure for backward compatibility
-                labelstudio_dir = self.settings.paths.data_dir / 'labelstudio_exports'
+                labelstudio_dir = self.settings.paths.data_dir / 'labelstudio_exports' / data_path.stem / safe_provider_folder
                 labelstudio_dir.mkdir(parents=True, exist_ok=True)
 
             jsonl_filename = f"{data_path.stem}_labelstudio_{timestamp}.jsonl"

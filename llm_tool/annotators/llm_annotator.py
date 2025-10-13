@@ -59,7 +59,7 @@ import math
 import random
 import concurrent.futures
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple
+from typing import Dict, Any, List, Optional, Union, Tuple, Iterable
 from datetime import datetime
 from collections import deque, defaultdict
 
@@ -426,6 +426,20 @@ class LLMAnnotator:
             data[annotation_column] = pd.NA
         if f"{annotation_column}_inference_time" not in data.columns:
             data[f"{annotation_column}_inference_time"] = pd.NA
+
+        usage_related_columns = [
+            f"{annotation_column}_prompt_tokens",
+            f"{annotation_column}_completion_tokens",
+            f"{annotation_column}_total_tokens",
+            f"{annotation_column}_cached_prompt_tokens",
+            f"{annotation_column}_reasoning_tokens",
+            f"{annotation_column}_usage_per_prompt",
+            f"{annotation_column}_response_id",
+            f"{annotation_column}_response_created_at",
+        ]
+        for col in usage_related_columns:
+            if col not in data.columns:
+                data[col] = pd.NA
 
         if multiple_prompts:
             for suffix in PROMPT_SUFFIXES:
@@ -869,11 +883,20 @@ class LLMAnnotator:
         log_enabled = config.get('enable_logging', False)
         log_path = config.get('log_path')
 
-        batch_dir = self.settings.paths.logs_dir / "openai_batches"
-        batch_dir.mkdir(parents=True, exist_ok=True)
+        batch_base = config.get('openai_batch_dir')
+        if batch_base:
+            batch_dir = Path(batch_base)
+        else:
+            batch_dir = self.settings.paths.logs_dir / "openai_batches"
+
+        input_dir = batch_dir / "inputs"
+        output_dir = batch_dir / "outputs"
+        for directory in (batch_dir, input_dir, output_dir):
+            directory.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        input_file_path = batch_dir / f"openai_batch_input_{timestamp}.jsonl"
-        output_file_path = batch_dir / f"openai_batch_output_{timestamp}.jsonl"
+        input_file_path = input_dir / f"openai_batch_input_{timestamp}.jsonl"
+        output_file_path = output_dir / f"openai_batch_output_{timestamp}.jsonl"
+        metadata_file_path = batch_dir / f"openai_batch_metadata_{timestamp}.json"
 
         total_requests = total_rows * prompt_count
         self.logger.info("[BATCH] Preparing %s requests for OpenAI batch job...", total_requests)
@@ -881,6 +904,31 @@ class LLMAnnotator:
         request_entries: List[Dict[str, Any]] = []
         request_metadata: Dict[str, Dict[str, Any]] = {}
         per_row_custom_ids: Dict[str, List[str]] = defaultdict(list)
+
+        usage_keys = (
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+        )
+
+        def aggregate_usage(usage_values: Iterable[Dict[str, Any]]) -> Dict[str, float]:
+            totals = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cached_prompt_tokens": 0,
+                "reasoning_tokens": 0,
+            }
+            for usage in usage_values:
+                if not usage:
+                    continue
+                for key in usage_keys:
+                    totals[key] += usage.get(key) or 0
+                prompt_details = usage.get("prompt_tokens_details") or {}
+                totals["cached_prompt_tokens"] += prompt_details.get("cached_tokens") or 0
+                completion_details = usage.get("completion_tokens_details") or {}
+                totals["reasoning_tokens"] += completion_details.get("reasoning_tokens") or 0
+            return totals
 
         def compose_text(row: pd.Series) -> str:
             segments: List[str] = []
@@ -1052,6 +1100,11 @@ class LLMAnnotator:
                 self.logger.error("[BATCH] Error details saved to %s", error_path)
             raise RuntimeError(error_message)
 
+        job_created_at = getattr(batch_job, 'created_at', None) or getattr(batch_job, 'created', None)
+        job_started_at = getattr(batch_job, 'started_at', None)
+        job_completed_at = getattr(batch_job, 'completed_at', None) or getattr(batch_job, 'finished_at', None)
+        final_request_counts = _as_request_counts(getattr(batch_job, 'request_counts', None))
+
         output_response = client.files.content(batch_job.output_file_id)
         if hasattr(output_response, 'content'):
             output_file_path.write_bytes(output_response.content)
@@ -1091,7 +1144,9 @@ class LLMAnnotator:
                     'cleaned': {},
                     'status': {},
                     'merged': {},
-                    'errors': []
+                    'errors': [],
+                    'usage': {},
+                    'response_info': {}
                 })
 
                 error_info = payload.get('error')
@@ -1109,6 +1164,13 @@ class LLMAnnotator:
                 message_content = None
                 if choices:
                     message_content = choices[0].get('message', {}).get('content')
+                usage_payload = response_body.get('usage') or {}
+                row_state['usage'][prompt_key] = usage_payload
+                row_state['response_info'][prompt_key] = {
+                    'id': response_body.get('id'),
+                    'created': response_body.get('created'),
+                    'request_id': (payload.get('response') or {}).get('request_id'),
+                }
                 if isinstance(message_content, list):
                     fragments: List[str] = []
                     for part in message_content:
@@ -1150,7 +1212,47 @@ class LLMAnnotator:
                     status_counts['decode_error'] += 1
 
         batch_elapsed = time.perf_counter() - start_time
-        per_row_time = batch_elapsed / max(total_rows, 1)
+        job_elapsed_seconds = None
+        if isinstance(job_started_at, (int, float)) and isinstance(job_completed_at, (int, float)):
+            job_elapsed_seconds = job_completed_at - job_started_at
+        elif isinstance(job_created_at, (int, float)) and isinstance(job_completed_at, (int, float)):
+            job_elapsed_seconds = job_completed_at - job_created_at
+
+        if isinstance(job_elapsed_seconds, (int, float)) and job_elapsed_seconds >= 0:
+            per_row_time = job_elapsed_seconds / max(total_rows, 1)
+        else:
+            job_elapsed_seconds = None
+            per_row_time = batch_elapsed / max(total_rows, 1)
+
+        job_metadata = {
+            'job_id': getattr(batch_job, 'id', None),
+            'status': getattr(batch_job, 'status', None),
+            'created_at': job_created_at,
+            'started_at': job_started_at,
+            'completed_at': job_completed_at,
+            'request_counts': final_request_counts,
+            'total_requests': total_requests,
+            'prompt_count': prompt_count,
+            'dataset_rows': total_rows,
+            'batch_elapsed_seconds': batch_elapsed,
+            'job_elapsed_seconds': job_elapsed_seconds,
+            'input_file': str(input_file_path),
+            'output_file': str(output_file_path),
+            'model': model_name,
+            'provider': config.get('provider') or config.get('annotation_provider'),
+        }
+        try:
+            metadata_file_path.write_text(json.dumps(job_metadata, ensure_ascii=False, indent=2))
+        except Exception as exc:
+            self.logger.warning("[BATCH] Unable to write batch metadata: %s", exc)
+
+        config['openai_batch_metadata_path'] = str(metadata_file_path)
+        config['openai_batch_input_path'] = str(input_file_path)
+        config['openai_batch_output_path'] = str(output_file_path)
+        config['openai_batch_job_id'] = job_metadata.get('job_id')
+        config['openai_batch_status'] = job_metadata.get('status')
+        config['openai_batch_job_elapsed_seconds'] = job_elapsed_seconds
+        config['openai_batch_total_requests'] = total_requests
 
         completed_rows = 0
         for identifier_key, custom_ids in per_row_custom_ids.items():
@@ -1165,7 +1267,9 @@ class LLMAnnotator:
                     'cleaned': {},
                     'status': {},
                     'merged': {},
-                    'errors': ["No response returned by OpenAI."]
+                    'errors': ["No response returned by OpenAI."],
+                    'usage': {},
+                    'response_info': {}
                 }
 
             for custom_id in custom_ids:
@@ -1175,12 +1279,16 @@ class LLMAnnotator:
                     row_state['cleaned'][prompt_key] = None
                     row_state['status'][prompt_key] = 'missing'
                     row_state['errors'].append("No response returned by OpenAI.")
+                    row_state['usage'][prompt_key] = {}
+                    row_state['response_info'][prompt_key] = {}
 
             final_payload = row_state['merged']
             final_json = json.dumps(final_payload, ensure_ascii=False) if final_payload else None
             raw_json = json.dumps(row_state['raw'], ensure_ascii=False)
             cleaned_json = json.dumps(row_state['cleaned'], ensure_ascii=False)
             status_json = json.dumps(row_state['status'], ensure_ascii=False)
+            usage_json = json.dumps(row_state['usage'], ensure_ascii=False)
+            usage_totals = aggregate_usage(row_state.get('usage', {}).values())
 
             mask = full_data[identifier_column] == identifier_value
             if mask.any():
@@ -1189,6 +1297,33 @@ class LLMAnnotator:
                 full_data.loc[mask, f"{annotation_column}_raw_per_prompt"] = raw_json
                 full_data.loc[mask, f"{annotation_column}_cleaned_per_prompt"] = cleaned_json
                 full_data.loc[mask, f"{annotation_column}_status_per_prompt"] = status_json
+                full_data.loc[mask, f"{annotation_column}_usage_per_prompt"] = usage_json
+
+                if usage_totals['prompt_tokens']:
+                    full_data.loc[mask, f"{annotation_column}_prompt_tokens"] = usage_totals['prompt_tokens']
+                if usage_totals['completion_tokens']:
+                    full_data.loc[mask, f"{annotation_column}_completion_tokens"] = usage_totals['completion_tokens']
+                if usage_totals['total_tokens']:
+                    full_data.loc[mask, f"{annotation_column}_total_tokens"] = usage_totals['total_tokens']
+                if usage_totals['cached_prompt_tokens']:
+                    full_data.loc[mask, f"{annotation_column}_cached_prompt_tokens"] = usage_totals['cached_prompt_tokens']
+                if usage_totals['reasoning_tokens']:
+                    full_data.loc[mask, f"{annotation_column}_reasoning_tokens"] = usage_totals['reasoning_tokens']
+
+                sample_response = next(
+                    (info for info in row_state.get('response_info', {}).values() if info),
+                    {}
+                )
+                response_id = sample_response.get('id')
+                if response_id:
+                    full_data.loc[mask, f"{annotation_column}_response_id"] = response_id
+                response_created = sample_response.get('created')
+                if response_created:
+                    try:
+                        created_iso = datetime.fromtimestamp(response_created).isoformat()
+                    except Exception:
+                        created_iso = str(response_created)
+                    full_data.loc[mask, f"{annotation_column}_response_created_at"] = created_iso
 
             if final_json:
                 try:
@@ -1203,7 +1338,9 @@ class LLMAnnotator:
                         'id': identifier_value,
                         'final_json': final_json,
                         'inference_time': per_row_time,
-                        'status': status_json
+                        'status': status_json,
+                        'usage_summary': usage_totals,
+                        'usage_per_prompt': row_state.get('usage', {})
                     }
                 )
 
@@ -1236,27 +1373,73 @@ class LLMAnnotator:
             format = config.get('output_format') or 'csv'
             self._save_data(data, output_path, format)
             self.logger.info(f"Results saved to {output_path}")
+            subset_path = self._save_annotated_subset(data, config)
+            if subset_path:
+                self.logger.info(f"Annotated subset saved to {subset_path}")
 
     def _save_data(self, data: pd.DataFrame, path: str, format: str):
         """Save data to file"""
-        if format == 'csv':
-            data.to_csv(path, index=False)
-        elif format == 'excel':
-            data.to_excel(path, index=False)
-        elif format == 'parquet':
-            data.to_parquet(path, index=False)
-        elif format == 'json':
-            data.to_json(path, orient='records', lines=False, force_ascii=False, indent=2)
-        elif format == 'jsonl':
-            data.to_json(path, orient='records', lines=True, force_ascii=False)
-        elif format in ['rdata', 'rds']:
+        path_obj = Path(path)
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+        fmt = (format or 'csv').lower()
+        if fmt == 'csv':
+            data.to_csv(path_obj, index=False)
+        elif fmt == 'excel':
+            data.to_excel(path_obj, index=False)
+        elif fmt == 'parquet':
+            data.to_parquet(path_obj, index=False)
+        elif fmt == 'json':
+            data.to_json(path_obj, orient='records', lines=False, force_ascii=False, indent=2)
+        elif fmt == 'jsonl':
+            data.to_json(path_obj, orient='records', lines=True, force_ascii=False)
+        elif fmt in ['rdata', 'rds']:
             if HAS_PYREADR:
-                if format == 'rdata':
-                    pyreadr.write_rdata({'data': data}, path)
+                if fmt == 'rdata':
+                    pyreadr.write_rdata({'data': data}, str(path_obj))
                 else:
-                    pyreadr.write_rds(data, path)
+                    pyreadr.write_rds(data, str(path_obj))
             else:
                 raise ImportError("pyreadr required for RData/RDS files")
+        else:
+            raise ValueError(f"Unsupported output format: {format}")
+
+    def _save_annotated_subset(self, data: pd.DataFrame, config: Dict[str, Any]) -> Optional[Path]:
+        """Persist a lightweight file containing only annotated rows."""
+        if not config.get('create_annotated_subset', True):
+            return None
+
+        annotation_column = config.get('annotation_column', 'annotation')
+        if annotation_column not in data.columns:
+            return None
+
+        mask = (
+            data[annotation_column].notna()
+            & data[annotation_column].astype(str).str.strip().ne('')
+            & data[annotation_column].astype(str).str.lower().ne('nan')
+        )
+        subset = data.loc[mask].copy()
+        if subset.empty:
+            return None
+
+        # Drop verbose per-prompt columns from the compact export
+        for suffix in PROMPT_SUFFIXES:
+            col_name = f"{annotation_column}_{suffix}"
+            if col_name in subset.columns:
+                subset.drop(columns=[col_name], inplace=True)
+
+        output_path = config.get('output_path')
+        output_format = config.get('output_format', 'csv')
+        if not output_path:
+            return None
+
+        output_path_obj = Path(output_path)
+        subset_path = output_path_obj.with_name(f"{output_path_obj.stem}_annotated_only{output_path_obj.suffix}")
+
+        self._save_data(subset, subset_path, output_format)
+        config['annotated_subset_path'] = str(subset_path)
+        self.logger.info(f"Saved annotated-only subset to {subset_path}")
+        return subset_path
 
     def _append_to_csv(self, data: pd.DataFrame, identifier, identifier_column: str,
                       annotation_column: str, path: str):
@@ -1291,20 +1474,100 @@ class LLMAnnotator:
         if annotation_column in data.columns:
             annotated_rows = data[annotation_column].dropna().shape[0]
 
-        return {
+        usage_columns = {
+            'prompt_tokens': f"{annotation_column}_prompt_tokens",
+            'completion_tokens': f"{annotation_column}_completion_tokens",
+            'total_tokens': f"{annotation_column}_total_tokens",
+            'cached_prompt_tokens': f"{annotation_column}_cached_prompt_tokens",
+            'reasoning_tokens': f"{annotation_column}_reasoning_tokens",
+        }
+        usage_summary: Dict[str, float] = {}
+        for key, column in usage_columns.items():
+            if column in data.columns:
+                try:
+                    usage_summary[key] = float(pd.to_numeric(data[column], errors='coerce').fillna(0).sum())
+                except Exception:
+                    usage_summary[key] = 0.0
+
+        summary: Dict[str, Any] = {
             'total_processed': total,
             'successful': success,
             'errors': errors,
             'success_rate': (success / total * 100) if total > 0 else 0,
             'annotated_rows': int(annotated_rows),
+            'total_annotated': int(annotated_rows),
+            'success_count': success,
+            'error_count': errors,
             'annotation_column': annotation_column,
             'output_file': config.get('output_path'),
             'output_format': config.get('output_format', 'csv'),
             'model': config.get('model'),
             'provider': config.get('provider'),
             'annotation_sample_size': config.get('annotation_sample_size') or config.get('annotation_limit'),
+            'usage_summary': usage_summary,
+            'status_breakdown': dict(status_counts),
             'timestamp': datetime.now().isoformat()
         }
+
+        inference_column = f"{annotation_column}_inference_time"
+        if inference_column in data.columns:
+            try:
+                inference_series = pd.to_numeric(data[inference_column], errors='coerce').dropna()
+            except Exception:
+                inference_series = pd.Series(dtype=float)
+            if not inference_series.empty:
+                summary['inference_time_column'] = inference_column
+                summary['mean_inference_time'] = float(inference_series.mean())
+                summary['median_inference_time'] = float(inference_series.median())
+                summary['total_inference_time'] = float(inference_series.sum())
+
+        subset_path = config.get('annotated_subset_path')
+        if subset_path:
+            summary['annotated_subset_path'] = subset_path
+
+        batch_keys = (
+            'openai_batch_dir',
+            'openai_batch_metadata_path',
+            'openai_batch_input_path',
+            'openai_batch_output_path',
+            'openai_batch_job_id',
+            'openai_batch_status',
+            'openai_batch_job_elapsed_seconds',
+            'openai_batch_total_requests',
+        )
+        for key in batch_keys:
+            value = config.get(key)
+            if value is not None:
+                summary[key] = value
+
+        preview_samples: List[Dict[str, Any]] = []
+        identifier_column = config.get('identifier_column')
+        if identifier_column and identifier_column in data.columns and annotation_column in data.columns:
+            annotated_df = data[
+                data[annotation_column].notna()
+                & data[annotation_column].astype(str).str.strip().ne('')
+                & data[annotation_column].astype(str).str.lower().ne('nan')
+            ]
+            if not annotated_df.empty:
+                preview_cols = [identifier_column, annotation_column]
+                if inference_column in annotated_df.columns:
+                    preview_cols.append(inference_column)
+
+                for _, row in annotated_df[preview_cols].head(3).iterrows():
+                    preview_entry: Dict[str, Any] = {}
+                    for col in preview_cols:
+                        value = row[col]
+                        if isinstance(value, pd.Timestamp):
+                            preview_entry[col] = value.isoformat()
+                        elif pd.isna(value):
+                            preview_entry[col] = None
+                        else:
+                            preview_entry[col] = value
+                    preview_samples.append(preview_entry)
+
+        summary['preview_samples'] = preview_samples
+
+        return summary
 
     async def annotate_async(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
