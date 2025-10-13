@@ -1808,7 +1808,7 @@ LLM Tool builds on the work of many amazing open-source projects:
 - **Ollama** — Making local LLM inference accessible and easy
 - **PyTorch** — Deep learning framework powering model training
 - **Rich** — Beautiful terminal UI rendering
-- **OpenAI, Anthropic, Google** — LLM APIs for zero-shot annotation
+- **OpenAI for now, Anthropic, Google soon** — LLM APIs for zero-shot annotation
 - **The open-source ML community** — For pre-trained models and research
 
 Special thanks to all contributors and early adopters who provided feedback.
