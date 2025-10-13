@@ -216,6 +216,7 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
 - Automatic language detection (96%+ accuracy with lingua)
 - Smart class balancing and stratified splitting
 - PostgreSQL, CSV, Excel, Parquet, JSON/JSONL, RData/RDS support
+- Guided Deploy & Annotate stage hands trained checkpoints to BERT Annotation Studio with session metadata stored under `logs/annotator_factory/<session>/model_annotation/`
 
 ### 🎮 **Training Arena** - Model Training & Benchmarking
 - Train 70+ pre-trained models: BERT, RoBERTa, DeBERTa, ELECTRA, ALBERT, XLM-RoBERTa, CamemBERT, etc.
@@ -850,9 +851,9 @@ Select export [1/2/3/4/5] (5): 5
 
 ### Mode 2: The Annotator Factory
 
-**🏭 Complete Pipeline: LLM Annotation → Trained Model (One Click)**
+**🏭 Complete Pipeline: LLM Annotation → Training → Deployment**
 
-**What it does**: Combines The Annotator + Training Arena into one seamless workflow. You provide raw data, it outputs a trained model ready to use.
+**What it does**: Combines The Annotator, Training Arena, and BERT Annotation Studio into one seamless workflow. You provide raw data, it fabricates training corpora, benchmarks multiple checkpoints, and can immediately deploy the winner on any dataset.
 
 **Perfect for**:
 - You need a custom classifier but don't have labeled data
@@ -860,7 +861,7 @@ Select export [1/2/3/4/5] (5): 5
 - You're okay with AI-generated training data (with validation)
 
 **Real-World Example**:
-> You have 10,000 news articles. You want a model that classifies them by topic (politics/sports/tech/health). The Factory uses GPT-4 to annotate 1,000 articles, splits them into train/val/test, trains 3 different BERT models, benchmarks them, and gives you the best one — all automatically.
+> You have 10,000 news articles. You want a model that classifies them by topic (politics/sports/tech/health). The Factory uses GPT-4 to annotate 1,000 articles, splits them into train/val/test, trains 3 different BERT models, benchmarks them, and then launches BERT Annotation Studio so you can label the remaining 9,000 rows in one pass.
 
 #### What You'll See (Abbreviated Flow)
 
@@ -874,6 +875,7 @@ This mode runs the complete pipeline:
   Step 4: Model training
   Step 5: Benchmarking
   Step 6: Export best model
+  Step 7: Deploy & annotate with BERT Studio
 
 Estimated total time: 45-90 minutes
 
@@ -932,15 +934,34 @@ Model 3/3: deberta-v3-base
   - Metrics: benchmark_results.json
   - Training log: training.log
 
-Next steps:
-  1. Use this model in Mode 4 (BERT Annotation Studio)
-  2. Or load programmatically: ModelTrainer.load('models/news_classifier_deberta')
+📦 DEPLOY & ANNOTATE (STEP 3/3)
+
+Models trained in this session:
+╭──────┬──────────────────────────────┬───────┬─────────╮
+│  #   │ Model Identifier             │ Langs │ Macro F1│
+├──────┼──────────────────────────────┼───────┼─────────┤
+│  1   │ deberta-v3-base/best         │ EN    │ 0.862   │
+│  2   │ roberta-base/best            │ EN    │ 0.846   │
+╰──────┴──────────────────────────────┴───────┴─────────╯
+
+Launch BERT Annotation Studio now? [y/n] (y): y
+
+🎛 BERT Annotation Studio
+  Dataset: data/news_articles.csv
+  Text column: article_body
+  Models: ['deberta-v3-base/best']
+  Outputs: CSV + JSONL
+
+🚀 Running inference...
+✓ Predictions saved to logs/annotator_factory/factory_session_20250312/model_annotation/scored/news_articles_predictions.csv
+✓ Deployment metadata archived at logs/annotator_factory/factory_session_20250312/metadata/model_annotation/model_annotation_20250312_153045.json
 ```
 
 **What Makes This Special:**
 - **Zero Manual Steps**: Fully automated from raw data to model
 - **Multiple Model Comparison**: Always trains 2-3 models to find the best
 - **Quality Checks**: Validates training data quality before training
+- **Hands-Free Deployment**: Reuses the winning checkpoints inside BERT Annotation Studio, including dataset reuse, forced column mapping, and session metadata for resume
 - **Reproducible**: Saves all configurations for replication
 
 ---
@@ -1322,7 +1343,7 @@ Need a structured checklist for each mode? The **Mode Playbook** in `docs/modes_
 | Mode | What it delivers | Deep dive |
 |------|------------------|-----------|
 | Mode 1 – The Annotator | Zero-shot LLM annotation with JSON repair, sampling, and exports. | [docs/modes_reference.md#mode-1--the-annotator](docs/modes_reference.md#mode-1--the-annotator) |
-| Mode 2 – Annotator Factory | End-to-end pipeline tying annotation, cleaning, splitting, and training launches. | [docs/modes_reference.md#mode-2--the-annotator-factory](docs/modes_reference.md#mode-2--the-annotator-factory) |
+| Mode 2 – Annotator Factory | End-to-end pipeline tying annotation, cleaning, splitting, training, and deployment via BERT Studio. | [docs/modes_reference.md#mode-2--the-annotator-factory](docs/modes_reference.md#mode-2--the-annotator-factory) |
 | Mode 3 – Training Arena | Multilingual benchmarks across 50+ transformer architectures. | [docs/modes_reference.md#mode-3--training-arena](docs/modes_reference.md#mode-3--training-arena) |
 | Mode 4 – BERT Annotation Studio | Production inference with checkpoint orchestration and rich monitoring. | [docs/modes_reference.md#mode-4--bert-annotation-studio](docs/modes_reference.md#mode-4--bert-annotation-studio) |
 | Mode 5 – Validation Lab | QA lab for sampling, agreement metrics, and reviewer packs. | [docs/modes_reference.md#mode-5--validation-lab](docs/modes_reference.md#mode-5--validation-lab) |
@@ -1432,7 +1453,8 @@ LLM_Tool/
 │       └── training_logs/         # Trainer transcripts and charts
 ├── logs/
 │   ├── annotator/                 # Mode 1 session logs
-│   ├── annotator_factory/         # Mode 2 pipeline logs
+│   ├── annotator_factory/         # Mode 2 pipeline logs (annotation → training → deployment)
+│   │   └── <session>/model_annotation/   # BERT Studio runs launched from the factory
 │   ├── training_arena/            # Mode 3 resumes + diagnostics
 │   ├── annotation_studio/         # Mode 4 session caches
 │   └── application/               # Global logs (llmtool_<timestamp>.log)
