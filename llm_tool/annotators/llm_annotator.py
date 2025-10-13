@@ -1007,8 +1007,26 @@ class LLMAnnotator:
 
         poll_interval = max(2, int(config.get('openai_batch_poll_interval', 5)))
         ongoing_statuses = {'validating', 'queued', 'in_progress', 'processing', 'finalizing'}
+
+        def _as_request_counts(mapping: Any) -> Dict[str, int]:
+            if mapping is None:
+                return {}
+            if isinstance(mapping, dict):
+                return mapping
+            if hasattr(mapping, "model_dump"):
+                try:
+                    return mapping.model_dump()
+                except Exception:
+                    pass
+            extracted: Dict[str, int] = {}
+            for attr in ("completed", "succeeded", "failed", "expired", "processing", "total"):
+                if hasattr(mapping, attr):
+                    value = getattr(mapping, attr)
+                    if isinstance(value, int):
+                        extracted[attr] = value
+            return extracted
         while batch_job.status in ongoing_statuses:
-            request_counts = getattr(batch_job, 'request_counts', {}) or {}
+            request_counts = _as_request_counts(getattr(batch_job, 'request_counts', None))
             completed = request_counts.get('completed') or request_counts.get('succeeded') or 0
             total = request_counts.get('total', total_requests)
             status_message = f"OpenAI batch status: {batch_job.status} ({completed}/{total} requests completed)"
