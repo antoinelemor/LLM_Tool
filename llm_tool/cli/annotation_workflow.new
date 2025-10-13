@@ -199,33 +199,6 @@ def _normalize_column_choice(
     if lowered in lower_map:
         return lower_map[lowered]
 
-    return None
-
-
-def _coerce_to_int(value: Any) -> Optional[int]:
-    """Convert common numeric token formats to int, ignoring 'all' tokens."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str):
-        token = value.strip()
-        if not token:
-            return None
-        if token.lower() == "all":
-            return None
-        token = token.replace(",", "").strip()
-        if token.startswith("+"):
-            token = token[1:]
-        if token.isdigit():
-            try:
-                return int(token)
-            except ValueError:
-                return None
-    return None
-
     if choice.isdigit():
         idx = int(choice)
         one_based_idx = idx - 1
@@ -1861,18 +1834,6 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         import json
 
         # Build comprehensive metadata
-        available_rows = total_rows if total_rows is not None else None
-        if annotation_limit:
-            requested_rows = annotation_limit
-        elif available_rows is not None:
-            requested_rows = available_rows
-        else:
-            requested_rows = 'all'
-        initial_remaining = (
-            requested_rows
-            if isinstance(requested_rows, int)
-            else (available_rows if available_rows is not None else 'all')
-        )
         metadata = {
             'annotation_session': {
                 'timestamp': timestamp,
@@ -1882,21 +1843,14 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             'data_source': {
                 'file_path': str(data_path),
                 'file_name': data_path.name,
-                'data_format': data_format,
-                'text_column': text_column,
-                'total_rows': annotation_limit if annotation_limit else 'all',
-                'requested_rows': requested_rows,
-                'available_rows': available_rows,
-                'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
-                'sample_seed': 42 if sample_strategy == 'random' else None,
-                'identifier_column': auto_identifier_column,
-                'identifier_source': identifier_source,
-            },
-            'annotation_progress': {
-                'requested': requested_rows,
-                'completed': 0,
-                'remaining': initial_remaining,
-            },
+            'data_format': data_format,
+            'text_column': text_column,
+            'total_rows': annotation_limit if annotation_limit else 'all',
+            'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
+            'sample_seed': 42 if sample_strategy == 'random' else None,
+            'identifier_column': auto_identifier_column,
+            'identifier_source': identifier_source,
+        },
             'model_configuration': {
                 'provider': provider,
                 'model_name': model_name,
@@ -2371,7 +2325,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         annotations_dir = cli.settings.paths.data_dir / 'annotations'
         annotations_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        data_path = annotations_dir / f"quickstart_sql_{selected_table}_{timestamp}.csv"
+        data_path = annotations_dir / f"sql_{selected_table}_{timestamp}.csv"
         df.to_csv(data_path, index=False)
         data_format = 'csv'
 
@@ -3171,18 +3125,6 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         import json
 
         # Build comprehensive metadata
-        available_rows = total_rows if total_rows is not None else None
-        if annotation_limit:
-            requested_rows = annotation_limit
-        elif available_rows is not None:
-            requested_rows = available_rows
-        else:
-            requested_rows = 'all'
-        initial_remaining = (
-            requested_rows
-            if isinstance(requested_rows, int)
-            else (available_rows if available_rows is not None else 'all')
-        )
         metadata = {
             'annotation_session': {
                 'timestamp': timestamp,
@@ -3195,15 +3137,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 'data_format': data_format,
                 'text_column': text_column,
                 'total_rows': annotation_limit if annotation_limit else 'all',
-                'requested_rows': requested_rows,
-                'available_rows': available_rows,
                 'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
                 'sample_seed': 42 if sample_strategy == 'random' else None
-            },
-            'annotation_progress': {
-                'requested': requested_rows,
-                'completed': 0,
-                'remaining': initial_remaining,
             },
             'model_configuration': {
                 'provider': provider,
@@ -3672,7 +3607,17 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                 else:
                     annotated_count = 0
 
-                cli.console.print(f"[cyan]  Rows already annotated: {annotated_count:,}[/cyan]\n")
+                cli.console.print(f"[cyan]  Rows already annotated: {annotated_count:,}[/cyan]")
+
+                continue_resume = True
+                if annotated_count > 0:
+                    continue_resume = Confirm.ask(
+                        "\n[bold yellow]Resume with the remaining rows?[/bold yellow]",
+                        default=True
+                    )
+                    if not continue_resume:
+                        cli.console.print("[yellow]Switching to relaunch mode (fresh annotation)[/yellow]")
+                        action_mode = 'relaunch'
 
                 # Get total available rows from source file
                 if action_mode == 'resume':
@@ -3689,88 +3634,26 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                             total_available = len(pd.read_excel(data_path))
                         elif data_format == 'parquet':
                             total_available = len(pd.read_parquet(data_path))
+                        else:
+                            total_available = len(df_output)
                     else:
                         total_available = len(df_output)
-                else:
-                    total_available = len(df_output)
 
-                    # Track progress metadata
-                    data_source['available_rows'] = total_available
-                    progress = metadata.setdefault('annotation_progress', {})
-                    requested_candidates = [
-                        progress.get('requested'),
-                        data_source.get('requested_rows'),
-                        data_source.get('total_rows'),
-                    ]
-                    requested_total: Optional[int] = None
-                    requested_was_all = False
-                    for candidate in requested_candidates:
-                        if candidate is None:
-                            continue
-                        if isinstance(candidate, str) and candidate.strip().lower() == 'all':
-                            requested_was_all = True
-                            continue
-                        coerced = _coerce_to_int(candidate)
-                        if coerced is not None:
-                            requested_total = coerced
-                            break
-                    if requested_total is None:
-                        if requested_was_all and total_available:
-                            requested_total = total_available
-                        elif total_available:
-                            requested_total = total_available
-                    if requested_total is not None and requested_total < annotated_count:
-                        requested_total = annotated_count
+                    # Calculate remaining based on original target
+                    original_target = data_source.get('total_rows', 'all')
 
-                    remaining_from_target = (
-                        max(requested_total - annotated_count, 0)
-                        if requested_total is not None else None
-                    )
-                    remaining_from_source = max(total_available - annotated_count, 0)
-
-                    progress['requested'] = (
-                        requested_total if requested_total is not None else 'all'
-                    )
-                    progress['completed'] = annotated_count
-                    progress['last_completed'] = annotated_count
-                    progress['available'] = total_available
-                    progress['remaining'] = (
-                        remaining_from_target
-                        if remaining_from_target is not None
-                        else remaining_from_source
-                    )
-                    data_source['requested_rows'] = progress['requested']
-                    pipeline_config['annotation_requested_total'] = (
-                        requested_total if requested_total is not None else 'all'
-                    )
-                    pipeline_config['annotation_total_available'] = total_available
-                    pipeline_config['annotation_completed_rows'] = annotated_count
-
-                    display_total = requested_total if requested_total is not None else total_available
-                    display_total_text = (
-                        f"{display_total:,}" if display_total is not None else "?"
-                    )
-                    target_completed = (
-                        remaining_from_target is not None and remaining_from_target <= 0
-                    )
-                    if target_completed:
-                        remaining_display = remaining_from_source
+                    if original_target == 'all':
+                        total_target = total_available
                     else:
-                        remaining_display = (
-                            remaining_from_target
-                            if remaining_from_target is not None
-                            else remaining_from_source
-                        )
+                        total_target = original_target
 
-                    cli.console.print(
-                        f"[cyan]  Progress: {annotated_count:,} / {display_total_text} annotated[/cyan]"
-                    )
-                    cli.console.print(
-                        f"[cyan]  Remaining in request: {remaining_display:,}[/cyan]"
-                    )
-                    cli.console.print(
-                        f"[cyan]  Total available in source: {total_available:,}[/cyan]\n"
-                    )
+                    remaining_from_target = total_target - annotated_count
+                    remaining_from_source = total_available - annotated_count
+
+                    cli.console.print(f"[cyan]  Original target: {total_target:,} rows[/cyan]")
+                    cli.console.print(f"[cyan]  Remaining from target: {remaining_from_target:,}[/cyan]")
+                    cli.console.print(f"[cyan]  Total available in source: {total_available:,} rows[/cyan]")
+                    cli.console.print(f"[cyan]  Maximum you can annotate: {remaining_from_source:,}[/cyan]\n")
 
                     if remaining_from_source <= 0:
                         cli.console.print("\n[yellow]All available rows are already annotated![/yellow]")
@@ -3779,56 +3662,23 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                             return False
                         action_mode = 'relaunch'
                     else:
-                        next_annotation = annotated_count + 1
-                        if target_completed and remaining_from_source > 0:
-                            prompt_text = (
-                                f"You already reached the requested {display_total_text} rows. "
-                                f"Annotate the remaining {remaining_from_source:,} row(s) from the source?"
+                        if continue_resume:
+                            cli.console.print("[yellow]You can annotate:[/yellow]")
+                            cli.console.print(f"  • Up to [cyan]{remaining_from_target:,}[/cyan] more rows to complete original target")
+                            cli.console.print(f"  • Or up to [cyan]{remaining_from_source:,}[/cyan] total to use all available data\n")
+
+                            resume_count = cli._int_prompt_with_validation(
+                                f"How many more rows to annotate? (max: {remaining_from_source:,})",
+                                min(100, remaining_from_target) if remaining_from_target > 0 else 100,
+                                1,
+                                remaining_from_source
                             )
-                        else:
-                            prompt_text = (
-                                f"Resume from annotation {next_annotation:,} / {display_total_text}? "
-                                f"(remaining {remaining_display:,})"
-                            )
-                        continue_resume = Confirm.ask(
-                            f"\n[bold yellow]{prompt_text}[/bold yellow]",
-                            default=True,
-                        )
-                        if not continue_resume:
-                            cli.console.print("[yellow]Switching to relaunch mode (fresh annotation)[/yellow]")
-                            action_mode = 'relaunch'
-                        else:
-                            resume_count = (
-                                remaining_from_source if target_completed else remaining_display
-                            )
-                            if target_completed:
-                                allow_adjust = remaining_from_source > 0
-                            else:
-                                allow_adjust = remaining_from_source > resume_count
-                            if allow_adjust:
-                                adjust_target = Confirm.ask(
-                                    "[cyan]Adjust how many rows to annotate in this resume run?[/cyan]",
-                                    default=False,
-                                )
-                                if adjust_target:
-                                    safe_default = resume_count if resume_count > 0 else 1
-                                    resume_count = cli._int_prompt_with_validation(
-                                        f"How many rows to annotate now? (max: {remaining_from_source:,})",
-                                        min(100, safe_default),
-                                        1,
-                                        remaining_from_source,
-                                    )
 
                             # Update metadata for resume
                             metadata['data_source']['total_rows'] = resume_count
                             metadata['resume_mode'] = True
                             metadata['resume_from_file'] = str(original_output)
                             metadata['already_annotated'] = int(annotated_count)
-                            progress['resume_next'] = resume_count
-                            if isinstance(progress.get('remaining'), int):
-                                progress['remaining_after_resume'] = max(
-                                    progress['remaining'] - resume_count, 0
-                                )
 
                             # Use the previously annotated file as input so we continue seamlessly.
                             data_path = original_output

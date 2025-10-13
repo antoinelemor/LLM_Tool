@@ -2823,6 +2823,10 @@ class AdvancedCLI:
                 'api_key': api_key,
                 'prompts': prompts_payload,
                 'annotation_sample_size': data_source.get('total_rows'),
+                'annotation_requested_total': data_source.get(
+                    'requested_rows',
+                    data_source.get('total_rows')
+                ),
                 'annotation_sampling_strategy': data_source.get('sampling_strategy', 'head'),
                 'max_tokens': model_config.get('max_tokens', 1000),
                 'temperature': model_config.get('temperature', 0.7),
@@ -4918,8 +4922,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         'identifier_column': identifier_column,
                         'detected_language': detected_language,
                         'total_rows': annotation_settings.get('annotation_sample_size') if annotation_settings.get('annotation_sample_size') else 'all',
+                        'requested_rows': annotation_settings.get('annotation_sample_size') if annotation_settings.get('annotation_sample_size') else 'all',
                         'sampling_strategy': annotation_settings.get('annotation_sampling_strategy', 'head'),
                         'sample_seed': annotation_settings.get('annotation_sample_seed', 42)
+                    },
+                    'annotation_progress': {
+                        'requested': annotation_settings.get('annotation_sample_size') if annotation_settings.get('annotation_sample_size') else 'all',
+                        'completed': 0,
+                        'remaining': annotation_settings.get('annotation_sample_size') if annotation_settings.get('annotation_sample_size') else 'all'
                     },
                     'model_configuration': {
                         'provider': model_info.provider,
@@ -6034,10 +6044,39 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Data Source
         data_source = metadata.get('data_source', {})
+        progress = metadata.get('annotation_progress', {})
+        requested_rows = data_source.get('requested_rows', data_source.get('total_rows'))
+        current_target = data_source.get('total_rows')
+        def _format_count(value):
+            if isinstance(value, int):
+                return f"{value:,}"
+            return str(value) if value is not None else "N/A"
+
         params_table.add_row("📁 Data", f"File: {data_source.get('file_name', 'N/A')}")
         params_table.add_row("", f"Format: {data_source.get('data_format', 'N/A')}")
         params_table.add_row("", f"Text Column: {data_source.get('text_column', 'N/A')}")
-        params_table.add_row("", f"Rows: {data_source.get('total_rows', 'N/A')}")
+        if (
+            isinstance(requested_rows, int)
+            and isinstance(current_target, int)
+            and requested_rows != current_target
+        ):
+            rows_detail = (
+                f"{_format_count(requested_rows)} requested · "
+                f"{_format_count(current_target)} in this run"
+            )
+        else:
+            rows_detail = _format_count(requested_rows)
+        params_table.add_row("", f"Rows: {rows_detail}")
+        if progress:
+            requested_progress = progress.get('requested', requested_rows)
+            completed_progress = progress.get('completed', 0)
+            remaining_progress = progress.get('remaining')
+            progress_text = (
+                f"{_format_count(completed_progress)} / {_format_count(requested_progress)}"
+            )
+            if isinstance(remaining_progress, int):
+                progress_text += f" (remaining {_format_count(remaining_progress)})"
+            params_table.add_row("", f"Progress: {progress_text}")
         params_table.add_row("", f"Sampling: {data_source.get('sampling_strategy', 'N/A')}")
 
         # Model Configuration
@@ -6484,7 +6523,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             elif choice == "5":
                 # Modify sampling
                 data_source = modified.setdefault('data_source', {})
-                current_rows = data_source.get('total_rows', 'all')
+                progress_state = modified.setdefault('annotation_progress', {})
+                current_rows = data_source.get('requested_rows', data_source.get('total_rows', 'all'))
 
                 self.console.print(f"\n[yellow]Current: {current_rows} rows[/yellow]")
 
@@ -6493,12 +6533,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 if Confirm.ask("Change number of rows to annotate?", default=False):
                     annotate_all = Confirm.ask("Annotate all rows?", default=True)
                     if annotate_all:
-                        if data_source.get('total_rows') != 'all' or data_source.get('sampling_strategy') != 'none':
+                        if (
+                            data_source.get('requested_rows') != 'all'
+                            or data_source.get('sampling_strategy') != 'none'
+                        ):
                             data_source['total_rows'] = 'all'
+                            data_source['requested_rows'] = 'all'
                             data_source['sampling_strategy'] = 'none'
+                            progress_state['requested'] = 'all'
+                            progress_state['remaining'] = 'all'
                             changed_this_round = True
                     else:
-                        current_total_rows = data_source.get('total_rows', 100)
+                        current_total_rows = data_source.get('requested_rows', 100)
                         if not isinstance(current_total_rows, int):
                             current_total_rows = 100
                         num_rows = self._int_prompt_with_validation(
@@ -6515,8 +6561,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             choices=["head", "random"],
                             default=current_strategy
                         )
-                        if num_rows != data_source.get('total_rows'):
+                        if num_rows != data_source.get('requested_rows'):
                             data_source['total_rows'] = num_rows
+                            data_source['requested_rows'] = num_rows
+                            progress_state['requested'] = num_rows
+                            progress_state['remaining'] = num_rows
                             changed_this_round = True
                         if strategy != data_source.get('sampling_strategy'):
                             data_source['sampling_strategy'] = strategy
