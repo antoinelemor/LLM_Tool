@@ -1709,11 +1709,13 @@ class LLMAnnotator:
     def _save_results(self, data: pd.DataFrame, config: Dict[str, Any]):
         """Save annotation results"""
         output_path = config.get('output_path')
+        subset_path = None
         if output_path:
             format = config.get('output_format') or 'csv'
             self._save_data(data, output_path, format)
             self.logger.info(f"Results saved to {output_path}")
-            subset_path = self._save_annotated_subset(data, config)
+            if config.get('create_annotated_subset'):
+                subset_path = self._save_annotated_subset(data, config)
 
         doccano_path = None
         if config.get('export_to_doccano'):
@@ -1834,6 +1836,52 @@ class LLMAnnotator:
         self.logger.info(f"Saved annotated-only subset to {subset_path}")
         return subset_path
 
+    def _export_to_doccano(
+        self,
+        annotated_df: pd.DataFrame,
+        annotation_column: str,
+        text_column: Optional[str],
+        config: Dict[str, Any]
+    ) -> Optional[Path]:
+        """Compatibility wrapper that preserves legacy method name."""
+        if annotated_df is None or annotated_df.empty:
+            self.logger.debug("[DOCCANO] Skipping export; no annotated rows available.")
+            return None
+
+        if annotation_column not in annotated_df.columns:
+            self.logger.warning(
+                "[DOCCANO] Unable to export; annotation column '%s' not found.",
+                annotation_column
+            )
+            return None
+
+        candidate_columns: List[Optional[str]] = []
+        if text_column:
+            candidate_columns.append(text_column)
+        cfg_primary = config.get('text_column')
+        if cfg_primary:
+            candidate_columns.append(cfg_primary)
+        candidate_columns.extend(config.get('text_columns') or [])
+        candidate_columns.append('text')
+
+        resolved_text_column = next(
+            (col for col in candidate_columns if col and col in annotated_df.columns),
+            None
+        )
+        if not resolved_text_column:
+            self.logger.warning(
+                "[DOCCANO] Unable to export; none of the candidate text columns %s exist.",
+                candidate_columns
+            )
+            return None
+
+        return self._export_doccano_jsonl(
+            annotated_df=annotated_df,
+            annotation_column=annotation_column,
+            text_column=resolved_text_column,
+            config=config
+        )
+
     def _export_doccano_jsonl(
         self,
         *,
@@ -1848,7 +1896,36 @@ class LLMAnnotator:
 
         session_dirs = config.get('session_dirs') or {}
         default_dir = self.settings.paths.logs_dir / "doccano_exports"
-        doccano_base = Path(session_dirs.get('doccano', default_dir))
+
+        doccano_base: Optional[Path] = None
+        if isinstance(session_dirs, dict):
+            doccano_dir_hint = session_dirs.get('doccano')
+            if doccano_dir_hint:
+                doccano_base = Path(doccano_dir_hint)
+
+        if doccano_base is None:
+            output_path = config.get('output_path')
+            if output_path:
+                try:
+                    output_path_obj = Path(output_path)
+                    session_root = None
+                    for parent in output_path_obj.parents:
+                        parent_name = parent.name
+                        if parent_name.startswith('factory_session_') and parent.parent.name == 'annotator_factory':
+                            session_root = parent
+                            break
+                        if parent_name.startswith('session_') and parent.parent.name == 'annotator':
+                            session_root = parent
+                            break
+                    if session_root:
+                        doccano_base = session_root / 'validation_exports' / 'doccano'
+                except Exception:
+                    doccano_base = None
+
+        if doccano_base is None:
+            doccano_base = default_dir
+
+        doccano_base = Path(doccano_base)
 
         provider_folder = (
             config.get('provider_folder')

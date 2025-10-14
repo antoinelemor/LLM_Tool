@@ -2934,7 +2934,7 @@ class AdvancedCLI:
                 'run_validation': False,
                 'run_training': False,
                 'lang_column': text_column,
-                'create_annotated_subset': True,
+                'create_annotated_subset': proc_config.get('create_annotated_subset', False),
                 'session_dirs': {key: str(value) for key, value in session_dirs.items()},
                 'provider_subdir': str(provider_subdir),
                 'model_subdir': str(model_subdir),
