@@ -1637,6 +1637,17 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     cli.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     cli.console.print("[dim]Review your configuration and start the annotation process.[/dim]")
 
+    # Determine annotation mode once for display and downstream logic
+    if provider == 'openai' and openai_batch_mode:
+        annotation_mode = 'openai_batch'
+        annotation_mode_display = "OpenAI Batch"
+    elif provider in {'openai', 'anthropic', 'google'}:
+        annotation_mode = 'api'
+        annotation_mode_display = "API"
+    else:
+        annotation_mode = 'local'
+        annotation_mode_display = "Local"
+
     # Display comprehensive summary
     summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
     summary_table.add_column("Category", style="bold cyan", width=20)
@@ -1868,24 +1879,25 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         batch_dir = batch_logs_root / timestamp
         batch_dir.mkdir(parents=True, exist_ok=True)
 
-        # Optional legacy pointer for backwards compatibility
-        legacy_root = Path(session_dirs.get('openai_batches', session_dirs['annotated_data']))
-        legacy_target = legacy_root / provider_folder / model_folder / dataset_name
-        legacy_target.mkdir(parents=True, exist_ok=True)
-        pointer_file = legacy_target / f"{timestamp}_LOCATION.txt"
+        archive_root = Path(session_dirs.get('openai_batches', session_dirs['annotated_data']))
+        archive_dir = archive_root / provider_folder / model_folder / dataset_name / timestamp
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        pointer_file = archive_dir / "LOCATION.txt"
         if not pointer_file.exists():
             try:
                 pointer_file.write_text(
-                    f"OpenAI batch artifacts moved to: {batch_dir}\n",
+                    f"Dataset-local batch artifacts stored at: {batch_dir}\n",
                     encoding="utf-8"
                 )
             except Exception:
                 pass
     else:
-        batch_dir = provider_subdir
+        batch_dir = dataset_subdir
+        archive_dir = None
 
     output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
-    default_output_path = provider_subdir / output_filename
+    default_output_path = dataset_subdir / output_filename
 
     cli.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
     cli.console.print(f"   {default_output_path}")
@@ -1916,6 +1928,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'annotation_model': model_name,
         'api_key': api_key if api_key else None,
         'openai_batch_mode': openai_batch_mode,
+        'openai_batch_mode': openai_batch_mode,
         'prompts': prompts_payload,
         'annotation_sample_size': annotation_limit,
         'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
@@ -1942,6 +1955,10 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'model_subdir': str(model_subdir),
         'dataset_subdir': str(dataset_subdir),
         'openai_batch_dir': str(batch_dir),
+        'openai_batch_archive_dir': str(archive_dir) if archive_dir else None,
+        'provider_folder': provider_folder,
+        'model_folder': model_folder,
+        'dataset_name': dataset_name,
     }
 
     if annotation_mode == 'openai_batch':
@@ -2030,6 +2047,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 'incremental_save': False if annotation_mode == 'openai_batch' else save_incrementally,
                 'openai_batch_mode': openai_batch_mode,
                 'openai_batch_dir': str(batch_dir) if annotation_mode == 'openai_batch' else None,
+                'openai_batch_archive_dir': str(archive_dir) if archive_dir else None,
+                'openai_batch_archive_dir': str(archive_dir) if archive_dir else None,
                 'identifier_column': auto_identifier_column,
                 'auto_identifier_column': auto_identifier_column,
                 'identifier_source': identifier_source,
@@ -3066,6 +3085,17 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     cli.console.print("[bold cyan]  STEP 1.6:[/bold cyan] [bold white]Review & Execute[/bold white]")
     cli.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     cli.console.print("[dim]Review your configuration and start the annotation process.[/dim]")
+
+    # Determine annotation mode once for display and downstream logic
+    if provider == 'openai' and openai_batch_mode:
+        annotation_mode = 'openai_batch'
+        annotation_mode_display = "OpenAI Batch"
+    elif provider in {'openai', 'anthropic', 'google'}:
+        annotation_mode = 'api'
+        annotation_mode_display = "API"
+    else:
+        annotation_mode = 'local'
+        annotation_mode_display = "Local"
 
     # Display comprehensive summary
     summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)

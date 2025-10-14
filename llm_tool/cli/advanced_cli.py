@@ -2806,23 +2806,61 @@ class AdvancedCLI:
         # ============================================================
         # PHASE 1: ANNOTATION (if needed)
         # ============================================================
+        provider = model_config.get('provider', 'ollama')
+        safe_model_name = model_config.get('model_name', 'unknown').replace(':', '_').replace('/', '_')
+        openai_batch_mode = bool(model_config.get('openai_batch_mode', proc_config.get('openai_batch_mode', False)))
+        if provider == 'openai' and openai_batch_mode:
+            annotation_mode = 'openai_batch'
+        else:
+            annotation_mode = model_config.get('annotation_mode')
+            if not annotation_mode:
+                annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
+
+        provider_folder = (provider or "model_provider").replace("/", "_")
+        model_folder = safe_model_name
+
         if run_annotation:
             self.console.print("\n[bold cyan]📝 Phase 1: LLM Annotation[/bold cyan]\n")
 
             # CRITICAL: Use organized structure logs/annotator_factory/{session_id}/annotated_data/{dataset_name}/
-            safe_model_name = model_config.get('model_name', 'unknown').replace(':', '_').replace('/', '_')
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-            # Create dataset-specific subdirectory
+            provider_subdir = session_dirs['annotated_data'] / provider_folder
+            provider_subdir.mkdir(parents=True, exist_ok=True)
+
+            model_subdir = provider_subdir / model_folder
+            model_subdir.mkdir(parents=True, exist_ok=True)
+
             dataset_name = data_path.stem
-            dataset_subdir = session_dirs['annotated_data'] / dataset_name
+            dataset_subdir = model_subdir / dataset_name
             dataset_subdir.mkdir(parents=True, exist_ok=True)
 
-            output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
+            if annotation_mode == 'openai_batch':
+                batch_logs_root = model_subdir / "openai_batch_jobs"
+                batch_logs_root.mkdir(parents=True, exist_ok=True)
+                batch_dir = batch_logs_root / timestamp
+                batch_dir.mkdir(parents=True, exist_ok=True)
+
+                archive_root = Path(session_dirs.get('openai_batches', session_dirs['annotated_data']))
+                archive_dir = archive_root / provider_folder / model_folder / dataset_name / timestamp
+                archive_dir.mkdir(parents=True, exist_ok=True)
+
+                pointer_file = archive_dir / "LOCATION.txt"
+                if not pointer_file.exists():
+                    try:
+                        pointer_file.write_text(
+                            f"Dataset-local batch artifacts stored at: {batch_dir}\n",
+                            encoding="utf-8"
+                        )
+                    except Exception:
+                        pass
+            else:
+                batch_dir = dataset_subdir
+                archive_dir = None
+
+            output_filename = f"{dataset_name}_{safe_model_name}_annotations_{timestamp}.{data_format}"
             output_path = dataset_subdir / output_filename
 
-            # Build pipeline config (same as Mode 1)
-            provider = model_config.get('provider', 'ollama')
             model_name = model_config.get('model_name', 'llama2')
 
             # Get API key if needed
@@ -2842,6 +2880,21 @@ class AdvancedCLI:
                     'prefix': p.get('prefix', '')
                 })
 
+            annotation_sample_size = data_source.get('total_rows')
+            sampling_strategy = data_source.get('sampling_strategy', 'head')
+            sample_seed = data_source.get('sample_seed', 42)
+            batch_size = proc_config.get('batch_size', 1) or 1
+            max_workers = proc_config.get('parallel_workers', 1) or 1
+            save_incrementally = proc_config.get('incremental_save', True)
+
+            if annotation_mode == 'openai_batch':
+                max_workers = 1
+                batch_size = None
+                save_incrementally = False
+
+            num_processes_val = max_workers if max_workers else 1
+            use_parallel = num_processes_val > 1
+
             pipeline_config = {
                 'mode': 'file',
                 'data_source': data_format,
@@ -2852,27 +2905,44 @@ class AdvancedCLI:
                 'annotation_column': 'annotation',
                 'identifier_column': pipeline_identifier_column,
                 'run_annotation': True,
-                'annotation_mode': model_config.get('annotation_mode', 'local'),
+                'annotation_mode': annotation_mode,
                 'annotation_provider': provider,
                 'annotation_model': model_name,
                 'api_key': api_key,
+                'openai_batch_mode': openai_batch_mode,
                 'prompts': prompts_payload,
-                'annotation_sample_size': data_source.get('total_rows'),
+                'annotation_sample_size': annotation_sample_size,
                 'annotation_requested_total': data_source.get(
                     'requested_rows',
                     data_source.get('total_rows')
                 ),
-                'annotation_sampling_strategy': data_source.get('sampling_strategy', 'head'),
+                'annotation_sampling_strategy': sampling_strategy,
+                'annotation_sample_seed': sample_seed,
                 'max_tokens': model_config.get('max_tokens', 1000),
                 'temperature': model_config.get('temperature', 0.7),
                 'top_p': model_config.get('top_p', 1.0),
-                'max_workers': proc_config.get('parallel_workers', 1),
+                'max_workers': max_workers,
+                'num_processes': num_processes_val,
+                'use_parallel': use_parallel,
                 'output_format': data_format,
                 'output_path': str(output_path),
-                'save_incrementally': True,
-                'batch_size': proc_config.get('batch_size', 1),
+                'save_incrementally': save_incrementally,
+                'batch_size': batch_size,
                 'run_validation': False,
                 'run_training': False,
+                'lang_column': text_column,
+                'create_annotated_subset': True,
+                'session_dirs': {key: str(value) for key, value in session_dirs.items()},
+                'provider_subdir': str(provider_subdir),
+                'model_subdir': str(model_subdir),
+                'dataset_subdir': str(dataset_subdir),
+                'openai_batch_dir': str(batch_dir) if annotation_mode == 'openai_batch' else None,
+                'openai_batch_archive_dir': str(archive_dir) if archive_dir else None,
+                'openai_batch_poll_interval': proc_config.get('openai_batch_poll_interval'),
+                'openai_batch_completion_window': proc_config.get('openai_batch_completion_window'),
+                'provider_folder': provider_folder,
+                'model_folder': model_folder,
+                'dataset_name': dataset_name,
             }
 
             # Execute annotation
@@ -2911,6 +2981,7 @@ class AdvancedCLI:
         else:
             # Use existing annotation file
             output_file = str(original_output)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             self.console.print(f"\n[yellow]⏭️  Skipping annotation (already complete)[/yellow]")
             self.console.print(f"[cyan]Using existing file: {output_file}[/cyan]\n")
 

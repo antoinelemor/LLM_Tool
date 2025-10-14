@@ -840,6 +840,7 @@ class PipelineController:
             'skip_annotation_ids': config.get('skip_annotation_ids'),
             'save_incrementally': config.get('save_incrementally', True),
             'openai_batch_dir': config.get('openai_batch_dir'),
+            'openai_batch_archive_dir': config.get('openai_batch_archive_dir'),
             'openai_batch_poll_interval': config.get('openai_batch_poll_interval'),
             'openai_batch_completion_window': config.get('openai_batch_completion_window'),
             'create_annotated_subset': config.get('create_annotated_subset'),

@@ -53,6 +53,7 @@ Antoine Lemor
 import os
 import sys
 import json
+import shutil
 import logging
 import time
 import math
@@ -427,26 +428,6 @@ class LLMAnnotator:
         if f"{annotation_column}_inference_time" not in data.columns:
             data[f"{annotation_column}_inference_time"] = pd.NA
 
-        usage_related_columns = [
-            f"{annotation_column}_prompt_tokens",
-            f"{annotation_column}_completion_tokens",
-            f"{annotation_column}_total_tokens",
-            f"{annotation_column}_cached_prompt_tokens",
-            f"{annotation_column}_reasoning_tokens",
-            f"{annotation_column}_usage_per_prompt",
-            f"{annotation_column}_response_id",
-            f"{annotation_column}_response_created_at",
-        ]
-        for col in usage_related_columns:
-            if col not in data.columns:
-                data[col] = pd.NA
-
-        if multiple_prompts:
-            for suffix in PROMPT_SUFFIXES:
-                col = f"{annotation_column}_{suffix}"
-                if col not in data.columns:
-                    data[col] = pd.NA
-
         # Special handling for OpenAI batch mode
         if config.get('annotation_mode') == 'openai_batch':
             return self._execute_openai_batch_annotation(
@@ -641,8 +622,6 @@ class LLMAnnotator:
                         identifier = result['identifier']
                         final_json = result['final_json']
                         inference_time = result['inference_time']
-                        raw_json = result.get('raw_json')
-                        cleaned_json = result.get('cleaned_json')
                         status = result.get('status', 'unknown')
 
                         # Update dataframe
@@ -650,23 +629,6 @@ class LLMAnnotator:
                         if mask.any():
                             full_data.loc[mask, annotation_column] = final_json
                             full_data.loc[mask, f"{annotation_column}_inference_time"] = inference_time
-
-                            # Update per-prompt columns if multiple prompts
-                            if raw_json:
-                                full_data.loc[mask, f"{annotation_column}_raw_per_prompt"] = raw_json
-                            if cleaned_json:
-                                full_data.loc[mask, f"{annotation_column}_cleaned_per_prompt"] = cleaned_json
-                            if status:
-                                full_data.loc[mask, f"{annotation_column}_status_per_prompt"] = status
-
-                            payload_dict = None
-                            if final_json:
-                                try:
-                                    payload_dict = json.loads(final_json) if isinstance(final_json, str) else final_json
-                                except Exception:
-                                    payload_dict = None
-                            if payload_dict:
-                                self._store_annotation_payload(full_data, mask, payload_dict, annotation_column)
 
                         # Track status
                         if final_json:
@@ -787,22 +749,6 @@ class LLMAnnotator:
             if mask.any():
                 full_data.loc[mask, annotation_column] = final_json
                 full_data.loc[mask, f"{annotation_column}_inference_time"] = inference_time
-
-                if raw_json:
-                    full_data.loc[mask, f"{annotation_column}_raw_per_prompt"] = raw_json
-                if cleaned_json:
-                    full_data.loc[mask, f"{annotation_column}_cleaned_per_prompt"] = cleaned_json
-                if status:
-                    full_data.loc[mask, f"{annotation_column}_status_per_prompt"] = status
-
-                payload_dict = None
-                if final_json:
-                    try:
-                        payload_dict = json.loads(final_json) if isinstance(final_json, str) else final_json
-                    except Exception:
-                        payload_dict = None
-                if payload_dict:
-                    self._store_annotation_payload(full_data, mask, payload_dict, annotation_column)
 
             if final_json:
                 status_counts['success'] += 1
@@ -1272,6 +1218,17 @@ class LLMAnnotator:
         config['openai_batch_job_elapsed_seconds'] = job_elapsed_seconds
         config['openai_batch_total_requests'] = total_requests
 
+        archive_dir = config.get('openai_batch_archive_dir')
+        if archive_dir:
+            try:
+                archive_path = Path(archive_dir)
+                archive_path.mkdir(parents=True, exist_ok=True)
+                for src_path in (input_file_path, output_file_path, metadata_file_path):
+                    if src_path.exists():
+                        shutil.copy2(src_path, archive_path / src_path.name)
+            except Exception as exc:
+                self.logger.warning("[BATCH] Unable to archive batch artifacts to %s: %s", archive_dir, exc)
+
         completed_rows = 0
         for identifier_key, custom_ids in per_row_custom_ids.items():
             meta = request_metadata[custom_ids[0]]
@@ -1302,48 +1259,12 @@ class LLMAnnotator:
 
             final_payload = row_state['merged']
             final_json = json.dumps(final_payload, ensure_ascii=False) if final_payload else None
-            raw_json = json.dumps(row_state['raw'], ensure_ascii=False)
-            cleaned_json = json.dumps(row_state['cleaned'], ensure_ascii=False)
-            status_json = json.dumps(row_state['status'], ensure_ascii=False)
-            usage_json = json.dumps(row_state['usage'], ensure_ascii=False)
             usage_totals = aggregate_usage(row_state.get('usage', {}).values())
 
             mask = full_data[identifier_column] == identifier_value
             if mask.any():
                 full_data.loc[mask, annotation_column] = final_json
                 full_data.loc[mask, f"{annotation_column}_inference_time"] = per_row_time
-                full_data.loc[mask, f"{annotation_column}_raw_per_prompt"] = raw_json
-                full_data.loc[mask, f"{annotation_column}_cleaned_per_prompt"] = cleaned_json
-                full_data.loc[mask, f"{annotation_column}_status_per_prompt"] = status_json
-                full_data.loc[mask, f"{annotation_column}_usage_per_prompt"] = usage_json
-                if final_payload:
-                    self._store_annotation_payload(full_data, mask, final_payload, annotation_column)
-
-                if usage_totals['prompt_tokens']:
-                    full_data.loc[mask, f"{annotation_column}_prompt_tokens"] = usage_totals['prompt_tokens']
-                if usage_totals['completion_tokens']:
-                    full_data.loc[mask, f"{annotation_column}_completion_tokens"] = usage_totals['completion_tokens']
-                if usage_totals['total_tokens']:
-                    full_data.loc[mask, f"{annotation_column}_total_tokens"] = usage_totals['total_tokens']
-                if usage_totals['cached_prompt_tokens']:
-                    full_data.loc[mask, f"{annotation_column}_cached_prompt_tokens"] = usage_totals['cached_prompt_tokens']
-                if usage_totals['reasoning_tokens']:
-                    full_data.loc[mask, f"{annotation_column}_reasoning_tokens"] = usage_totals['reasoning_tokens']
-
-                sample_response = next(
-                    (info for info in row_state.get('response_info', {}).values() if info),
-                    {}
-                )
-                response_id = sample_response.get('id')
-                if response_id:
-                    full_data.loc[mask, f"{annotation_column}_response_id"] = response_id
-                response_created = sample_response.get('created')
-                if response_created:
-                    try:
-                        created_iso = datetime.fromtimestamp(response_created).isoformat()
-                    except Exception:
-                        created_iso = str(response_created)
-                    full_data.loc[mask, f"{annotation_column}_response_created_at"] = created_iso
 
             if final_json:
                 try:
@@ -1358,9 +1279,7 @@ class LLMAnnotator:
                         'id': identifier_value,
                         'final_json': final_json,
                         'inference_time': per_row_time,
-                        'status': status_json,
                         'usage_summary': usage_totals,
-                        'usage_per_prompt': row_state.get('usage', {})
                     }
                 )
 
@@ -1468,24 +1387,8 @@ class LLMAnnotator:
         payload: Optional[Dict[str, Any]],
         annotation_column: str
     ):
-        """Persist individual annotation keys into dedicated columns."""
-        if not payload or not isinstance(payload, dict):
-            return
-
-        for key, value in payload.items():
-            column_name = f"{annotation_column}_{key}"
-            if isinstance(value, (dict, list)):
-                serialized = json.dumps(value, ensure_ascii=False)
-                dataframe.loc[mask, column_name] = serialized
-                canonical_value = serialized
-            else:
-                dataframe.loc[mask, column_name] = value
-                canonical_value = value
-
-            # Also expose convenience column that mirrors the raw key
-            if key not in dataframe.columns:
-                dataframe[key] = pd.NA
-            dataframe.loc[mask, key] = canonical_value
+        """No-op placeholder retained for compatibility with legacy workflows."""
+        return
 
     def _append_to_csv(self, data: pd.DataFrame, identifier, identifier_column: str,
                       annotation_column: str, path: str):
