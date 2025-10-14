@@ -392,6 +392,13 @@ def estimate_annotation_cost(
         "batch_completion_cost_per_1k": pricing.batch_completion_cost_per_1k,
     }
 
+    base_pricing = {
+        "prompt_cost_per_1k": pricing.prompt_cost_per_1k,
+        "completion_cost_per_1k": pricing.completion_cost_per_1k,
+        "currency": pricing.currency,
+        "last_updated": pricing.last_updated,
+    }
+
     prompt_component_entries = [entry for entry in component_token_stats if entry["type"] == "prompt"]
     prompt_sub_components = [
         {
@@ -454,6 +461,7 @@ def estimate_annotation_cost(
         "token_stats": token_stats_summary,
         "input_breakdown": input_breakdown,
         "pricing_extras": pricing_extras,
+        "base_pricing": base_pricing,
         "component_token_stats": component_token_stats,
         "component_token_contributions": component_token_contributions,
     }
@@ -514,19 +522,36 @@ def format_cost_estimate_lines(cost_estimate: CostEstimate, *, rich_markup: bool
         )
     )
 
-    per_million_input = pricing.prompt_cost_per_1k * 1000
-    per_million_completion = pricing.completion_cost_per_1k * 1000
+    base_pricing = cost_estimate.assumptions.get("base_pricing") or {}
+    prompt_cost_per_1k = base_pricing.get("prompt_cost_per_1k")
+    completion_cost_per_1k = base_pricing.get("completion_cost_per_1k")
+    effective_currency = base_pricing.get("currency", cost_estimate.pricing_currency)
+
+    per_million_input = (
+        (prompt_cost_per_1k or 0.0) * 1000 if prompt_cost_per_1k is not None else None
+    )
+    per_million_completion = (
+        (completion_cost_per_1k or 0.0) * 1000 if completion_cost_per_1k is not None else None
+    )
     per_million_cached = (
-        pricing.cached_prompt_cost_per_1k * 1000 if pricing.cached_prompt_cost_per_1k else None
+        pricing_extras.get("cached_prompt_cost_per_1k") * 1000
+        if pricing_extras.get("cached_prompt_cost_per_1k") is not None
+        else None
     )
     per_million_batch_in = (
-        pricing.batch_prompt_cost_per_1k * 1000 if pricing.batch_prompt_cost_per_1k else None
+        pricing_extras.get("batch_prompt_cost_per_1k") * 1000
+        if pricing_extras.get("batch_prompt_cost_per_1k") is not None
+        else None
     )
     per_million_batch_cached = (
-        pricing.batch_cached_prompt_cost_per_1k * 1000 if pricing.batch_cached_prompt_cost_per_1k else None
+        pricing_extras.get("batch_cached_prompt_cost_per_1k") * 1000
+        if pricing_extras.get("batch_cached_prompt_cost_per_1k") is not None
+        else None
     )
     per_million_batch_out = (
-        pricing.batch_completion_cost_per_1k * 1000 if pricing.batch_completion_cost_per_1k else None
+        pricing_extras.get("batch_completion_cost_per_1k") * 1000
+        if pricing_extras.get("batch_completion_cost_per_1k") is not None
+        else None
     )
 
     if rich_markup:
@@ -571,46 +596,29 @@ def format_cost_estimate_lines(cost_estimate: CostEstimate, *, rich_markup: bool
         if token_stats.get("requires_long_context"):
             token_stats_line += " [long context recommended]" if rich_markup else " [long context recommended]"
 
-    pricing_extras_lines: List[str] = []
-    if has_cached_pricing or has_batch_pricing:
-        cached_cost = pricing_extras.get("cached_prompt_cost_per_1k")
-        if cached_cost:
-            cached_per_million = cached_cost * 1000
-            pricing_extras_lines.append(
-                f"- Cached input: ${cached_per_million:.3f}/1M tokens"
-            )
-        if has_batch_pricing:
-            batch_in = pricing_extras.get("batch_prompt_cost_per_1k")
-            batch_cached = pricing_extras.get("batch_cached_prompt_cost_per_1k")
-            batch_out = pricing_extras.get("batch_completion_cost_per_1k")
-            details = []
-            if batch_in:
-                details.append(f"in ${batch_in * 1000:.3f}")
-            if batch_cached:
-                details.append(f"cached ${batch_cached * 1000:.4f}")
-            if batch_out:
-                details.append(f"out ${batch_out * 1000:.3f}")
-            if details:
-                pricing_extras_lines.append(
-                    "- Batch pricing ($/1M tokens): " + ", ".join(details)
-                )
+    lines = [header]
 
-    lines = [
-        header,
-        f"- Pricing reference: input ${per_million_input:.3f}/1M, output ${per_million_completion:.3f}/1M",
+    if per_million_input is not None or per_million_completion is not None:
+        input_label = f"${per_million_input:.3f}/1M" if per_million_input is not None else "N/A"
+        output_label = f"${per_million_completion:.3f}/1M" if per_million_completion is not None else "N/A"
+        lines.append(
+            f"- Pricing reference ({effective_currency}): input {input_label}, output {output_label}"
+        )
+
+    lines.extend([
         f"- Requests: {cost_estimate.request_count:,} ({cost_estimate.prompt_count} prompt(s) × {cost_estimate.texts_count:,} text(s))",
         f"- Input tokens: {cost_estimate.input_tokens:,} (~${cost_estimate.input_cost:.4f})",
         breakdown_line,
         per_request_line,
         f"- Output tokens (est.): {cost_estimate.output_tokens_estimated:,} (~${cost_estimate.output_cost:.4f})",
         total_line,
-    ]
+    ])
 
     if token_stats_line:
         lines.append(token_stats_line)
 
     if per_million_cached is not None:
-        lines.append(f"- Cached input pricing: ${per_million_cached:.3f}/1M tokens")
+        lines.append(f"- Cached input pricing ({effective_currency}): ${per_million_cached:.3f}/1M tokens")
     if any(value is not None for value in (per_million_batch_in, per_million_batch_cached, per_million_batch_out)):
         batch_details = [
             f"in ${per_million_batch_in:.3f}/1M" if per_million_batch_in is not None else "",
@@ -619,10 +627,7 @@ def format_cost_estimate_lines(cost_estimate: CostEstimate, *, rich_markup: bool
         ]
         batch_details = [part for part in batch_details if part]
         if batch_details:
-            lines.append("- Batch pricing: " + ", ".join(batch_details))
-
-    if pricing_extras_lines:
-        lines.extend(pricing_extras_lines)
+            lines.append(f"- Batch pricing ({effective_currency}): " + ", ".join(batch_details))
 
     component_contributions = cost_estimate.assumptions.get("component_token_contributions") or []
     if component_contributions:
