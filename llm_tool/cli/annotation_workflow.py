@@ -45,7 +45,7 @@ import json
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
@@ -61,6 +61,7 @@ from llm_tool.utils.model_metrics import load_language_metrics, summarize_final_
 
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S"
+TOOL_VERSION = "LLMTool v1.0"
 
 
 def _read_training_metadata(model_dir: Path) -> Dict[str, Any]:
@@ -171,6 +172,75 @@ def _collect_confirmed_languages(
             seen.add(code)
             normalized.append(code)
     return normalized
+
+
+def _compose_metadata_payload(
+    *,
+    session_id: str,
+    timestamp: str,
+    workflow: str,
+    status: str,
+    data_source: Dict[str, Any],
+    model_configuration: Dict[str, Any],
+    prompts: List[Dict[str, Any]],
+    processing_configuration: Dict[str, Any],
+    output_config: Dict[str, Any],
+    export_preferences: Dict[str, Any],
+    training_workflow: Optional[Dict[str, Any]] = None,
+    progress: Optional[Dict[str, Any]] = None,
+    tool_version: str = TOOL_VERSION,
+) -> Dict[str, Any]:
+    """Build a metadata payload shared by annotator workflows."""
+    payload: Dict[str, Any] = {
+        "annotation_session": {
+            "session_id": session_id,
+            "timestamp": timestamp,
+            "workflow": workflow,
+            "tool_version": tool_version,
+            "status": status,
+        },
+        "data_source": data_source,
+        "model_configuration": model_configuration,
+        "prompts": prompts,
+        "processing_configuration": processing_configuration,
+        "output": output_config,
+        "export_preferences": export_preferences,
+        "training_workflow": training_workflow
+        or {
+            "enabled": False,
+            "training_params_file": None,
+            "note": "Training parameters will be saved separately after annotation completes",
+        },
+    }
+    if progress:
+        payload["annotation_progress"] = progress
+    return payload
+
+
+def _persist_metadata_snapshot(metadata_path: Path, metadata: Dict[str, Any]) -> None:
+    """Write metadata snapshot to disk (overwrite-safe)."""
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    with metadata_path.open("w", encoding="utf-8") as handle:
+        json.dump(metadata, handle, indent=2, ensure_ascii=False)
+
+
+def _persist_metadata_bundle(
+    metadata_paths: Union[Path, Iterable[Path]],
+    metadata: Dict[str, Any],
+) -> None:
+    """Write metadata snapshot to one or multiple paths."""
+    if isinstance(metadata_paths, Path):
+        targets: List[Path] = [metadata_paths]
+    else:
+        targets = [Path(path) for path in metadata_paths if path]
+
+    seen: Set[Path] = set()
+    for target in targets:
+        resolved = target.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        _persist_metadata_snapshot(resolved, metadata)
 
 
 def _prompt_openai_batch_mode(cli: Any, provider: str, context: str) -> bool:
@@ -1055,6 +1125,26 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     )
     tracker.update_status("active")
 
+    metadata_root = session_dirs.get("metadata", session_dirs["base"] / "metadata")
+    metadata_targets: List[Path] = []
+    fallback_metadata_path = metadata_root / "session_state.json"
+    metadata_targets.append(fallback_metadata_path)
+    session_started_at = datetime.now().strftime('%Y%m%d_%H%M%S')
+    placeholder_metadata = _compose_metadata_payload(
+        session_id=session_id,
+        timestamp=session_started_at,
+        workflow="The Annotator - Smart Annotate",
+        status="draft",
+        data_source={},
+        model_configuration={},
+        prompts=[],
+        processing_configuration={},
+        output_config={},
+        export_preferences={},
+        progress={"requested": None, "completed": 0, "remaining": None},
+    )
+    _persist_metadata_bundle(metadata_targets, placeholder_metadata)
+
     cli.console.print("\n[bold cyan]🎯 Smart Annotate - Guided Wizard[/bold cyan]\n")
 
     # Step 1: Data Selection
@@ -1111,6 +1201,73 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         data_format = 'excel'
 
     cli.console.print(f"[green]✓ Selected: {data_path.name} ({data_format})[/green]")
+
+    dataset_name = data_path.stem
+    annotations_dir = cli.settings.paths.data_dir / 'annotations'
+    annotations_dir.mkdir(parents=True, exist_ok=True)
+
+    run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    metadata_data_source: Dict[str, Any] = {
+        'file_path': str(data_path),
+        'file_name': data_path.name,
+        'data_format': data_format,
+        'dataset_name': dataset_name,
+        'text_column': None,
+        'identifier_column': None,
+        'identifier_source': None,
+        'total_rows': 'all',
+        'requested_rows': 'all',
+        'available_rows': None,
+        'sampling_strategy': 'none',
+        'sample_seed': None,
+    }
+    metadata_model_config: Dict[str, Any] = {}
+    metadata_prompts_payload: List[Dict[str, Any]] = []
+    metadata_processing_config: Dict[str, Any] = {
+        'parallel_workers': None,
+        'batch_size': None,
+        'incremental_save': None,
+        'openai_batch_mode': False,
+        'openai_batch_dir': None,
+        'openai_batch_archive_dir': None,
+        'identifier_column': None,
+        'auto_identifier_column': None,
+        'identifier_source': None,
+        'provider_folder': None,
+        'model_folder': None,
+        'dataset_name': dataset_name,
+    }
+    metadata_output_config: Dict[str, Any] = {}
+    metadata_export_preferences: Dict[str, Any] = {
+        'export_to_doccano': False,
+        'export_to_labelstudio': False,
+        'export_sample_size': 'all',
+        'prediction_mode': 'with',
+        'labelstudio_direct_export': False,
+        'labelstudio_api_url': None,
+        'labelstudio_api_key': None,
+    }
+    metadata_progress: Dict[str, Any] = {
+        'requested': 'all',
+        'completed': 0,
+        'remaining': 'all',
+    }
+    metadata_path: Optional[Path] = None
+    early_dataset_snapshot = _compose_metadata_payload(
+        session_id=session_id,
+        timestamp=run_timestamp,
+        workflow="The Annotator - Smart Annotate",
+        status="draft",
+        data_source=metadata_data_source,
+        model_configuration=metadata_model_config,
+        prompts=metadata_prompts_payload,
+        processing_configuration=metadata_processing_config,
+        output_config=metadata_output_config,
+        export_preferences=metadata_export_preferences,
+        progress=metadata_progress,
+    )
+    _persist_metadata_bundle(metadata_targets, early_dataset_snapshot)
     tracker.mark_step(
         1,
         detail=f"{data_path.name} ({data_format})",
@@ -1222,6 +1379,12 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             "identifier_source": identifier_source,
         },
     )
+    metadata_data_source['text_column'] = text_column
+    metadata_data_source['identifier_column'] = auto_identifier_column
+    metadata_data_source['identifier_source'] = identifier_source
+    metadata_processing_config['identifier_column'] = auto_identifier_column
+    metadata_processing_config['auto_identifier_column'] = auto_identifier_column
+    metadata_processing_config['identifier_source'] = identifier_source
 
     # Step 3: Model Selection
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -1237,6 +1400,46 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         detail=f"{provider}:{model_name}",
         extra={"provider": provider, "model": model_name},
     )
+    safe_model_name = model_name.replace(":", "_").replace("/", "_")
+    provider_folder = provider.replace("/", "_")
+    model_folder = safe_model_name
+    metadata_data_source['provider_folder'] = provider_folder
+    metadata_data_source['model_folder'] = model_folder
+    metadata_processing_config['provider_folder'] = provider_folder
+    metadata_processing_config['model_folder'] = model_folder
+
+    metadata_subdir = session_dirs['metadata'] / provider_folder / model_folder / dataset_name
+    metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{run_timestamp}.json"
+    metadata_path = metadata_subdir / metadata_filename
+    if metadata_path not in metadata_targets:
+        metadata_targets.append(metadata_path)
+
+    default_output_path = annotations_dir / f"{data_path.stem}_{safe_model_name}_annotations_{run_timestamp}.{data_format}"
+    metadata_output_config = {
+        'output_path': str(default_output_path),
+        'output_format': data_format,
+    }
+
+    metadata_model_config.update({
+        'provider': provider,
+        'model_name': model_name,
+    })
+
+    # Persist early snapshot to allow relaunch before annotation starts.
+    early_metadata = _compose_metadata_payload(
+        session_id=session_id,
+        timestamp=run_timestamp,
+        workflow="The Annotator - Smart Annotate",
+        status="draft",
+        data_source=metadata_data_source,
+        model_configuration=metadata_model_config,
+        prompts=metadata_prompts_payload,
+        processing_configuration=metadata_processing_config,
+        output_config=metadata_output_config,
+        export_preferences=metadata_export_preferences,
+        progress=metadata_progress,
+    )
+    _persist_metadata_bundle(metadata_targets, early_metadata)
 
     # Get API key if needed
     api_key = None
@@ -1410,6 +1613,31 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         detail=f"{len(prompt_configs)} prompt(s)",
         extra={"prompt_count": len(prompt_configs)},
     )
+    metadata_prompts_payload = [
+        {
+            'name': pc['prompt']['name'],
+            'file_path': str(pc['prompt'].get('path')) if pc['prompt'].get('path') else None,
+            'expected_keys': pc['prompt']['keys'],
+            'prefix': pc['prefix'],
+            'prompt_content': pc['prompt']['content'],
+        }
+        for pc in prompt_configs
+    ]
+
+    snapshot_after_prompts = _compose_metadata_payload(
+        session_id=session_id,
+        timestamp=run_timestamp,
+        workflow="The Annotator - Smart Annotate",
+        status="draft",
+        data_source=metadata_data_source,
+        model_configuration=metadata_model_config,
+        prompts=metadata_prompts_payload,
+        processing_configuration=metadata_processing_config,
+        output_config=metadata_output_config,
+        export_preferences=metadata_export_preferences,
+        progress=metadata_progress,
+    )
+    _persist_metadata_bundle(metadata_targets, snapshot_after_prompts)
 
     # Step 1.5: Advanced Options
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -1556,6 +1784,20 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         else:
             batch_size = None  # Not used when incremental save is disabled
 
+    processing_section = factory_metadata_state.setdefault('processing_configuration', {})
+    processing_section.update({
+        'parallel_workers': None if openai_batch_mode else num_processes,
+        'batch_size': None if openai_batch_mode else batch_size,
+        'incremental_save': None if openai_batch_mode else save_incrementally,
+        'openai_batch_mode': openai_batch_mode,
+    })
+    factory_metadata_state.setdefault('annotation_progress', {}).update({
+        'requested': factory_metadata_state.get('annotation_progress', {}).get('requested', 'all'),
+        'completed': 0,
+        'remaining': 'all',
+    })
+    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
+
     # ============================================================
     # MODEL PARAMETERS
     # ============================================================
@@ -1626,10 +1868,26 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             cli.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
             top_k = cli._int_prompt_with_validation("Top K", 40, 1, 100)
 
+    model_config_section = factory_metadata_state.setdefault('model_configuration', {})
+    model_config_section.update({
+        'annotation_mode': 'openai_batch' if (provider == 'openai' and openai_batch_mode) else (
+            'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
+        ),
+        'temperature': temperature,
+        'max_tokens': max_tokens,
+        'top_p': top_p,
+        'top_k': top_k if provider in ['ollama', 'google'] else None,
+    })
+    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
+
     tracker.mark_step(
         5,
         detail="Advanced options configured",
     )
+    metadata_processing_config['parallel_workers'] = None if openai_batch_mode else num_processes
+    metadata_processing_config['batch_size'] = None if openai_batch_mode else batch_size
+    metadata_processing_config['incremental_save'] = None if openai_batch_mode else save_incrementally
+    metadata_processing_config['openai_batch_mode'] = openai_batch_mode
 
     # Step 1.6: Execute
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -1647,6 +1905,15 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     else:
         annotation_mode = 'local'
         annotation_mode_display = "Local"
+
+    metadata_model_config.update({
+        'annotation_mode': annotation_mode,
+        'openai_batch_mode': openai_batch_mode,
+        'temperature': temperature,
+        'max_tokens': max_tokens,
+        'top_p': top_p,
+        'top_k': top_k if provider in ['ollama', 'google'] else None,
+    })
 
     # Display comprehensive summary
     summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
@@ -1725,6 +1992,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
     # Metadata is ALWAYS saved automatically for reproducibility
     save_metadata = True
+    metadata_state: Optional[Dict[str, Any]] = None
+    metadata_path: Optional[Path] = None
 
     # ============================================================
     # VALIDATION TOOL EXPORT OPTION
@@ -1746,6 +2015,10 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     export_to_doccano = False
     export_to_labelstudio = False
     export_sample_size = None
+    labelstudio_direct_export = False
+    labelstudio_api_url = None
+    labelstudio_api_key = None
+    prediction_mode = "with"
 
     # Step 1: Ask if user wants to export
     export_confirm = Confirm.ask(
@@ -1837,6 +2110,31 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 999999
             )
 
+    metadata_export_preferences.update({
+        'export_to_doccano': export_to_doccano,
+        'export_to_labelstudio': export_to_labelstudio,
+        'export_sample_size': export_sample_size if export_sample_size is not None else 'all',
+        'prediction_mode': prediction_mode if export_confirm else metadata_export_preferences.get('prediction_mode', 'with'),
+        'labelstudio_direct_export': labelstudio_direct_export if export_to_labelstudio else False,
+        'labelstudio_api_url': labelstudio_api_url if export_to_labelstudio else None,
+        'labelstudio_api_key': labelstudio_api_key if export_to_labelstudio else None,
+    })
+
+    snapshot_after_exports = _compose_metadata_payload(
+        session_id=session_id,
+        timestamp=run_timestamp,
+        workflow="The Annotator - Smart Annotate",
+        status="draft",
+        data_source=metadata_data_source,
+        model_configuration=metadata_model_config,
+        prompts=metadata_prompts_payload,
+        processing_configuration=metadata_processing_config,
+        output_config=metadata_output_config,
+        export_preferences=metadata_export_preferences,
+        progress=metadata_progress,
+    )
+    _persist_metadata_bundle(metadata_targets, snapshot_after_exports)
+
     # ============================================================
     # EXECUTE ANNOTATION
     # ============================================================
@@ -1902,6 +2200,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     cli.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
     cli.console.print(f"   {default_output_path}")
     cli.console.print()
+    factory_metadata_state.setdefault('output', {}).update({
+        'output_path': str(default_output_path),
+        'output_format': data_format,
+    })
+    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
 
     # Prepare prompts payload for pipeline
     prompts_payload = []
@@ -1979,9 +2282,6 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # SAVE REPRODUCIBILITY METADATA
     # ============================================================
     if save_metadata:
-        import json
-
-        # Build comprehensive metadata
         available_rows = total_rows if total_rows is not None else None
         if annotation_limit:
             requested_rows = annotation_limit
@@ -1989,103 +2289,53 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             requested_rows = available_rows
         else:
             requested_rows = 'all'
-        initial_remaining = (
-            requested_rows
-            if isinstance(requested_rows, int)
-            else (available_rows if available_rows is not None else 'all')
+        if isinstance(requested_rows, int):
+            initial_remaining = requested_rows
+        elif isinstance(available_rows, int):
+            initial_remaining = available_rows
+        else:
+            initial_remaining = 'all'
+
+        metadata_data_source.update({
+            'total_rows': annotation_limit if annotation_limit else 'all',
+            'requested_rows': requested_rows,
+            'available_rows': available_rows,
+            'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
+            'sample_seed': 42 if sample_strategy == 'random' else None,
+        })
+        metadata_processing_config.update({
+            'annotation_sample_size': annotation_limit,
+            'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
+        })
+        metadata_progress.update({
+            'requested': requested_rows,
+            'completed': 0,
+            'remaining': initial_remaining,
+        })
+        if annotation_mode == 'openai_batch':
+            metadata_processing_config['openai_batch_dir'] = str(batch_dir)
+            metadata_processing_config['openai_batch_archive_dir'] = str(archive_dir) if archive_dir else None
+        else:
+            metadata_processing_config['openai_batch_dir'] = None
+            metadata_processing_config['openai_batch_archive_dir'] = None
+
+        metadata_output_config['output_path'] = str(default_output_path)
+        metadata_output_config['output_format'] = data_format
+
+        ready_metadata = _compose_metadata_payload(
+            session_id=session_id,
+            timestamp=run_timestamp,
+            workflow="The Annotator - Smart Annotate",
+            status="ready",
+            data_source=metadata_data_source,
+            model_configuration=metadata_model_config,
+            prompts=metadata_prompts_payload,
+            processing_configuration=metadata_processing_config,
+            output_config=metadata_output_config,
+            export_preferences=metadata_export_preferences,
+            progress=metadata_progress,
         )
-        metadata = {
-            'annotation_session': {
-                'timestamp': timestamp,
-                'tool_version': 'LLMTool v1.0',
-                'workflow': 'The Annotator - Smart Annotate'
-            },
-            'data_source': {
-                'file_path': str(data_path),
-                'file_name': data_path.name,
-                'data_format': data_format,
-                'text_column': text_column,
-                'dataset_name': dataset_name,
-                'total_rows': annotation_limit if annotation_limit else 'all',
-                'requested_rows': requested_rows,
-                'available_rows': available_rows,
-                'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
-                'sample_seed': 42 if sample_strategy == 'random' else None,
-                'identifier_column': auto_identifier_column,
-                'identifier_source': identifier_source,
-                'provider_folder': provider_folder,
-                'model_folder': model_folder,
-            },
-            'annotation_progress': {
-                'requested': requested_rows,
-                'completed': 0,
-                'remaining': initial_remaining,
-            },
-            'model_configuration': {
-                'provider': provider,
-                'model_name': model_name,
-                'annotation_mode': annotation_mode,
-                'openai_batch_mode': openai_batch_mode,
-                'temperature': temperature,
-                'max_tokens': max_tokens,
-                'top_p': top_p,
-                'top_k': top_k if provider in ['ollama', 'google'] else None
-            },
-            'prompts': [
-                {
-                    'name': pc['prompt']['name'],
-                    'file_path': str(pc['prompt']['path']) if 'path' in pc['prompt'] else None,
-                    'expected_keys': pc['prompt']['keys'],
-                    'prefix': pc['prefix'],
-                    'prompt_content': pc['prompt']['content']
-                }
-                for pc in prompt_configs
-            ],
-            'processing_configuration': {
-                'parallel_workers': None if annotation_mode == 'openai_batch' else num_processes,
-                'batch_size': None if annotation_mode == 'openai_batch' else batch_size,
-                'incremental_save': False if annotation_mode == 'openai_batch' else save_incrementally,
-                'openai_batch_mode': openai_batch_mode,
-                'openai_batch_dir': str(batch_dir) if annotation_mode == 'openai_batch' else None,
-                'openai_batch_archive_dir': str(archive_dir) if archive_dir else None,
-                'openai_batch_archive_dir': str(archive_dir) if archive_dir else None,
-                'identifier_column': auto_identifier_column,
-                'auto_identifier_column': auto_identifier_column,
-                'identifier_source': identifier_source,
-                'provider_folder': provider_folder,
-                'model_folder': model_folder,
-                'dataset_name': dataset_name,
-            },
-            'output': {
-                'output_path': str(default_output_path),
-                'output_format': data_format
-            },
-            'export_preferences': {
-                'export_to_doccano': export_to_doccano,
-                'export_to_labelstudio': export_to_labelstudio,
-                'export_sample_size': export_sample_size,
-                'prediction_mode': prediction_mode if (export_to_doccano or export_to_labelstudio) else 'with',
-                'labelstudio_direct_export': labelstudio_direct_export if export_to_labelstudio else False,
-                'labelstudio_api_url': labelstudio_api_url if export_to_labelstudio else None,
-                'labelstudio_api_key': labelstudio_api_key if export_to_labelstudio else None
-            },
-            'training_workflow': {
-                'enabled': False,  # Will be updated after training workflow
-                'training_params_file': None,  # Will be added after training
-                'note': 'Training parameters will be saved separately after annotation completes'
-            }
-        }
-
-        # Save metadata JSON (PRE-ANNOTATION SAVE POINT 1)
-        # Use dataset-specific subdirectory for metadata too
-        metadata_subdir = session_dirs['metadata'] / provider_folder / model_folder / dataset_name
-        metadata_subdir.mkdir(parents=True, exist_ok=True)
-
-        metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
-        metadata_path = metadata_subdir / metadata_filename
-
-        with open(metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        _persist_metadata_bundle(metadata_targets, ready_metadata)
 
         cli.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
         cli.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
@@ -2104,6 +2354,21 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # Execute pipeline with Rich progress
     try:
         cli.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
+
+        running_metadata = _compose_metadata_payload(
+            session_id=session_id,
+            timestamp=run_timestamp,
+            workflow="The Annotator - Smart Annotate",
+            status="running",
+            data_source=metadata_data_source,
+            model_configuration=metadata_model_config,
+            prompts=metadata_prompts_payload,
+            processing_configuration=metadata_processing_config,
+            output_config=metadata_output_config,
+            export_preferences=metadata_export_preferences,
+            progress=metadata_progress,
+        )
+        _persist_metadata_bundle(metadata_targets, running_metadata)
 
         # Create pipeline controller with session_id for organized logging
         from ..pipelines.pipeline_controller import PipelineController
@@ -2132,6 +2397,27 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             # Check for errors
             if state.errors:
                 error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
+                failure_metadata = _compose_metadata_payload(
+                    session_id=session_id,
+                    timestamp=run_timestamp,
+                    workflow="The Annotator - Smart Annotate",
+                    status="failed",
+                    data_source=metadata_data_source,
+                    model_configuration=metadata_model_config,
+                    prompts=metadata_prompts_payload,
+                    processing_configuration=metadata_processing_config,
+                    output_config=metadata_output_config,
+                    export_preferences=metadata_export_preferences,
+                    progress=metadata_progress,
+                )
+                _persist_metadata_bundle(metadata_targets, failure_metadata)
+                tracker.mark_step(
+                    6,
+                    status="failed",
+                    detail=f"Annotation error: {error_msg}",
+                    overall_status="failed",
+                    extra={"error": error_msg},
+                )
                 cli.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
                 cli.console.print("[dim]Press Enter to return to menu...[/dim]")
                 input()
@@ -2140,6 +2426,20 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         # Get results
         annotation_results = state.annotation_results or {}
         output_file = annotation_results.get('output_file', str(default_output_path))
+        if metadata_state:
+            metadata_state = copy.deepcopy(metadata_state)
+            metadata_state.setdefault('annotation_session', {})['status'] = 'completed'
+            metadata_state.setdefault('output', {})['output_path'] = str(output_file)
+            total_annotated = annotation_results.get('total_annotated')
+            progress_section = metadata_state.setdefault('annotation_progress', {})
+            if isinstance(total_annotated, int):
+                progress_section['completed'] = total_annotated
+                requested_value = progress_section.get('requested')
+                if isinstance(requested_value, int):
+                    progress_section['remaining'] = max(requested_value - total_annotated, 0)
+                else:
+                    progress_section['remaining'] = 0
+            _persist_metadata_bundle(metadata_targets, metadata_state)
 
         # Display success message
         cli.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
@@ -2162,6 +2462,34 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 cli.console.print(f"   Avg inference time: {mean_time:.2f}s")
 
         subset_path = annotation_results.get('annotated_subset_path')
+
+        if isinstance(total_annotated, int):
+            metadata_progress['completed'] = total_annotated
+            requested_value = metadata_progress.get('requested')
+            if isinstance(requested_value, int):
+                metadata_progress['remaining'] = max(requested_value - total_annotated, 0)
+            elif isinstance(metadata_data_source.get('available_rows'), int):
+                metadata_progress['remaining'] = max(metadata_data_source['available_rows'] - total_annotated, 0)
+            else:
+                metadata_progress['remaining'] = 0
+        else:
+            metadata_progress['completed'] = metadata_progress.get('completed', 0)
+        metadata_output_config['output_path'] = str(output_file)
+
+        completed_metadata = _compose_metadata_payload(
+            session_id=session_id,
+            timestamp=run_timestamp,
+            workflow="The Annotator - Smart Annotate",
+            status="completed",
+            data_source=metadata_data_source,
+            model_configuration=metadata_model_config,
+            prompts=metadata_prompts_payload,
+            processing_configuration=metadata_processing_config,
+            output_config=metadata_output_config,
+            export_preferences=metadata_export_preferences,
+            progress=metadata_progress,
+        )
+        _persist_metadata_bundle(metadata_targets, completed_metadata)
         if subset_path:
             cli.console.print(f"   Annotated subset: {subset_path}")
 
@@ -2400,6 +2728,27 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         session_name=session_id,
     )
     tracker.update_status("active")
+
+    metadata_root = session_dirs.get("metadata", session_dirs["base"] / "metadata")
+    factory_metadata_targets: List[Path] = []
+    factory_fallback_metadata = metadata_root / "session_state.json"
+    factory_metadata_targets.append(factory_fallback_metadata)
+    factory_session_started_at = datetime.now().strftime('%Y%m%d_%H%M%S')
+    factory_placeholder_metadata = _compose_metadata_payload(
+        session_id=session_id,
+        timestamp=factory_session_started_at,
+        workflow="Annotator Factory - Full Pipeline",
+        status="draft",
+        data_source={},
+        model_configuration={},
+        prompts=[],
+        processing_configuration={},
+        output_config={},
+        export_preferences={},
+        progress={"requested": None, "completed": 0, "remaining": None},
+    )
+    _persist_metadata_bundle(factory_metadata_targets, factory_placeholder_metadata)
+    factory_metadata_state = factory_placeholder_metadata
 
     # Display Annotator Factory STEP 1 banner
     from llm_tool.cli.banners import BANNERS, STEP_NUMBERS, STEP_LABEL
@@ -2684,6 +3033,39 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # Store column info for later use
     column_info['df'] = df_sample
 
+    factory_metadata_state = _compose_metadata_payload(
+        session_id=session_id,
+        timestamp=factory_session_started_at,
+        workflow="Annotator Factory - Full Pipeline",
+        status="draft",
+        data_source={
+            'file_path': str(data_path),
+            'file_name': data_path.name,
+            'data_format': data_format,
+            'dataset_name': data_path.stem,
+            'text_column': text_column,
+            'identifier_column': auto_identifier_column,
+            'identifier_source': identifier_source,
+            'total_rows': 'all',
+            'requested_rows': 'all',
+            'available_rows': None,
+            'sampling_strategy': 'none',
+            'sample_seed': None,
+        },
+        model_configuration={},
+        prompts=[],
+        processing_configuration={
+            'provider_folder': None,
+            'model_folder': None,
+            'dataset_name': data_path.stem,
+            'identifier_column': auto_identifier_column,
+        },
+        output_config={},
+        export_preferences={},
+        progress={'requested': 'all', 'completed': 0, 'remaining': 'all'},
+    )
+    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
+
     # Step 1.3: Model Selection
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     cli.console.print("[bold cyan]  STEP 1.3:[/bold cyan] [bold white]Model Selection[/bold white]")
@@ -2700,6 +3082,19 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         api_key = cli._get_or_prompt_api_key(provider, model_name)
 
     openai_batch_mode = _prompt_openai_batch_mode(cli, provider, "the factory annotation stage")
+    model_config_section = factory_metadata_state.setdefault('model_configuration', {})
+    model_config_section.update({
+        'provider': provider,
+        'model_name': model_name,
+        'openai_batch_mode': openai_batch_mode,
+    })
+    processing_section = factory_metadata_state.setdefault('processing_configuration', {})
+    processing_section.update({
+        'provider_folder': provider.replace("/", "_"),
+        'model_folder': model_name.replace(":", "_").replace("/", "_"),
+        'dataset_name': data_path.stem,
+    })
+    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
 
     # Step 1.4: Prompt Configuration
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -2860,6 +3255,19 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     else:
         # Single prompt - no prefix needed
         prompt_configs = [{'prompt': selected_prompts[0], 'prefix': ''}]
+
+    prompts_payload_for_metadata: List[Dict[str, Any]] = []
+    for entry in prompt_configs:
+        prompt_entry = entry['prompt']
+        prompts_payload_for_metadata.append({
+            'name': prompt_entry.get('name'),
+            'file_path': str(prompt_entry.get('path')) if prompt_entry.get('path') else None,
+            'expected_keys': prompt_entry.get('keys', []),
+            'prefix': entry.get('prefix'),
+            'prompt_content': prompt_entry.get('content'),
+        })
+    factory_metadata_state['prompts'] = prompts_payload_for_metadata
+    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
 
     # Step 1.5: Advanced Options
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -3284,6 +3692,16 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # ============================================================
     # EXECUTE ANNOTATION
     # ============================================================
+    factory_metadata_state['export_preferences'] = {
+        'export_to_doccano': export_to_doccano,
+        'export_to_labelstudio': export_to_labelstudio,
+        'export_sample_size': export_sample_size,
+        'prediction_mode': prediction_mode if export_confirm else 'with',
+        'labelstudio_direct_export': labelstudio_direct_export if export_confirm and export_to_labelstudio else False,
+        'labelstudio_api_url': labelstudio_api_url if export_confirm and export_to_labelstudio else None,
+        'labelstudio_api_key': labelstudio_api_key if export_confirm and export_to_labelstudio else None,
+    }
+    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
 
     # CRITICAL: Use new organized structure with dataset-specific subfolder
     # Structure: logs/annotator/{session_id}/annotated_data/{dataset_name}/
@@ -3421,9 +3839,6 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # SAVE REPRODUCIBILITY METADATA
     # ============================================================
     if save_metadata:
-        import json
-
-        # Build comprehensive metadata
         available_rows = total_rows if total_rows is not None else None
         if annotation_limit:
             requested_rows = annotation_limit
@@ -3431,95 +3846,85 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             requested_rows = available_rows
         else:
             requested_rows = 'all'
-        initial_remaining = (
-            requested_rows
-            if isinstance(requested_rows, int)
-            else (available_rows if available_rows is not None else 'all')
-        )
-        metadata = {
-            'annotation_session': {
-                'timestamp': timestamp,
-                'tool_version': 'LLMTool v1.0',
-                'workflow': 'The Annotator - Smart Annotate'
-            },
-            'data_source': {
-                'file_path': str(data_path),
-                'file_name': data_path.name,
-                'data_format': data_format,
-                'text_column': text_column,
-                'dataset_name': dataset_name,
-                'total_rows': annotation_limit if annotation_limit else 'all',
-                'requested_rows': requested_rows,
-                'available_rows': available_rows,
-                'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
-                'sample_seed': 42 if sample_strategy == 'random' else None
-            },
-            'annotation_progress': {
-                'requested': requested_rows,
-                'completed': 0,
-                'remaining': initial_remaining,
-            },
-            'model_configuration': {
-                'provider': provider,
-                'model_name': model_name,
-                'annotation_mode': annotation_mode,
-                'openai_batch_mode': openai_batch_mode,
-                'temperature': temperature,
-                'max_tokens': max_tokens,
-                'top_p': top_p,
-                'top_k': top_k if provider in ['ollama', 'google'] else None
-            },
-            'prompts': [
-                {
-                    'name': pc['prompt']['name'],
-                    'file_path': str(pc['prompt']['path']) if 'path' in pc['prompt'] else None,
-                    'expected_keys': pc['prompt']['keys'],
-                    'prefix': pc['prefix'],
-                    'prompt_content': pc['prompt']['content']
-                }
-                for pc in prompt_configs
-            ],
-            'processing_configuration': {
-                'parallel_workers': None if annotation_mode == 'openai_batch' else num_processes,
-                'batch_size': None if annotation_mode == 'openai_batch' else batch_size,
-                'incremental_save': False if annotation_mode == 'openai_batch' else save_incrementally,
-                'openai_batch_mode': openai_batch_mode,
-                'openai_batch_dir': str(batch_dir) if annotation_mode == 'openai_batch' else None,
-                'identifier_column': auto_identifier_column,
-                'provider_folder': provider_folder,
-                'model_folder': model_folder,
-                'dataset_name': dataset_name
-            },
-            'output': {
-                'output_path': str(default_output_path),
-                'output_format': data_format
-            },
-            'export_preferences': {
-                'export_to_doccano': export_to_doccano,
-                'export_to_labelstudio': export_to_labelstudio,
-                'export_sample_size': export_sample_size,
-                'prediction_mode': prediction_mode if (export_to_doccano or export_to_labelstudio) else 'with',
-                'labelstudio_direct_export': labelstudio_direct_export if export_to_labelstudio else False,
-                'labelstudio_api_url': labelstudio_api_url if export_to_labelstudio else None,
-                'labelstudio_api_key': labelstudio_api_key if export_to_labelstudio else None
-            },
-            'training_workflow': {
-                'enabled': False,  # Will be updated after training workflow
-                'training_params_file': None,  # Will be added after training
-                'note': 'Training parameters will be saved separately after annotation completes'
-            }
-        }
+        if isinstance(requested_rows, int):
+            initial_remaining = requested_rows
+        elif isinstance(available_rows, int):
+            initial_remaining = available_rows
+        else:
+            initial_remaining = 'all'
 
-        # Save metadata JSON (PRE-ANNOTATION SAVE POINT 1)
-        # Use dataset-specific subdirectory for metadata too
         metadata_subdir = session_dirs['metadata'] / provider_folder / model_folder / dataset_name
         metadata_subdir.mkdir(parents=True, exist_ok=True)
 
         metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
         metadata_path = metadata_subdir / metadata_filename
+        if metadata_path not in factory_metadata_targets:
+            factory_metadata_targets.append(metadata_path)
 
-        with open(metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        session_section = factory_metadata_state.setdefault('annotation_session', {})
+        session_section.update({
+            'timestamp': timestamp,
+            'tool_version': 'LLMTool v1.0',
+            'workflow': 'Annotator Factory - Full Pipeline',
+            'status': 'ready',
+        })
+        data_section = factory_metadata_state.setdefault('data_source', {})
+        data_section.update({
+            'file_path': str(data_path),
+            'file_name': data_path.name,
+            'data_format': data_format,
+            'text_column': text_column,
+            'dataset_name': dataset_name,
+            'total_rows': annotation_limit if annotation_limit else 'all',
+            'requested_rows': requested_rows,
+            'available_rows': available_rows,
+            'sampling_strategy': sample_strategy if annotation_limit else 'none (all rows)',
+            'sample_seed': 42 if sample_strategy == 'random' else None,
+            'provider_folder': provider_folder,
+            'model_folder': model_folder,
+        })
+        progress_section = factory_metadata_state.setdefault('annotation_progress', {})
+        progress_section.update({
+            'requested': requested_rows,
+            'completed': 0,
+            'remaining': initial_remaining,
+        })
+        model_config_section = factory_metadata_state.setdefault('model_configuration', {})
+        model_config_section.update({
+            'provider': provider,
+            'model_name': model_name,
+            'annotation_mode': annotation_mode,
+            'openai_batch_mode': openai_batch_mode,
+            'temperature': temperature,
+            'max_tokens': max_tokens,
+            'top_p': top_p,
+            'top_k': top_k if provider in ['ollama', 'google'] else None,
+        })
+        processing_section = factory_metadata_state.setdefault('processing_configuration', {})
+        processing_section.update({
+            'parallel_workers': None if annotation_mode == 'openai_batch' else num_processes,
+            'batch_size': None if annotation_mode == 'openai_batch' else batch_size,
+            'incremental_save': False if annotation_mode == 'openai_batch' else save_incrementally,
+            'openai_batch_mode': openai_batch_mode,
+            'openai_batch_dir': str(batch_dir) if annotation_mode == 'openai_batch' else None,
+            'identifier_column': auto_identifier_column,
+            'provider_folder': provider_folder,
+            'model_folder': model_folder,
+            'dataset_name': dataset_name,
+        })
+        factory_metadata_state.setdefault('output', {}).update({
+            'output_path': str(default_output_path),
+            'output_format': data_format,
+        })
+        training_section = factory_metadata_state.setdefault('training_workflow', {})
+        training_section.update({
+            'enabled': False,
+            'training_params_file': None,
+            'note': 'Training parameters will be saved separately after annotation completes',
+        })
+
+        _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
+        metadata_state = factory_metadata_state
 
         cli.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
         cli.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
@@ -3528,6 +3933,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # Execute pipeline with Rich progress
     try:
         cli.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
+        if metadata_state:
+            metadata_state = copy.deepcopy(metadata_state)
+            metadata_state.setdefault('annotation_session', {})['status'] = 'running'
+            _persist_metadata_bundle(factory_metadata_targets, metadata_state)
 
         # Create pipeline controller with session_id for organized logging
         from ..pipelines.pipeline_controller import PipelineController
@@ -3556,6 +3965,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             # Check for errors
             if state.errors:
                 error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
+                if metadata_state:
+                    failure_metadata = copy.deepcopy(metadata_state)
+                    failure_metadata.setdefault('annotation_session', {})['status'] = 'failed'
+                    _persist_metadata_bundle(factory_metadata_targets, failure_metadata)
                 cli.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
                 cli.console.print("[dim]Press Enter to return to menu...[/dim]")
                 input()
@@ -3564,6 +3977,25 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         # Get results
         annotation_results = state.annotation_results or {}
         output_file = annotation_results.get('output_file', str(default_output_path))
+        if metadata_state:
+            metadata_state = copy.deepcopy(metadata_state)
+            session_section = metadata_state.setdefault('annotation_session', {})
+            session_section['status'] = 'completed'
+            session_section.setdefault('completed_at', datetime.now().strftime(ISO_FORMAT))
+            metadata_state.setdefault('output', {})['output_path'] = str(output_file)
+            total_annotated = annotation_results.get('total_annotated')
+            progress_section = metadata_state.setdefault('annotation_progress', {})
+            if isinstance(total_annotated, int):
+                progress_section['completed'] = total_annotated
+                requested_value = progress_section.get('requested')
+                if isinstance(requested_value, int):
+                    progress_section['remaining'] = max(requested_value - total_annotated, 0)
+                elif isinstance(metadata_state.get('data_source', {}).get('available_rows'), int):
+                    total_available = metadata_state['data_source']['available_rows']
+                    progress_section['remaining'] = max(total_available - total_annotated, 0)
+                else:
+                    progress_section['remaining'] = 0
+            _persist_metadata_bundle(factory_metadata_targets, metadata_state)
 
         # Display success message
         cli.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
@@ -3853,6 +4285,9 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     proc_config = metadata.get('processing_configuration', {})
     output_config = metadata.get('output', {})
     export_prefs = metadata.get('export_preferences', {})
+    session_status = metadata.get('annotation_session', {}).get('status')
+    if action_mode == 'resume' and session_status in {'draft', 'ready', 'pending'}:
+        action_mode = 'relaunch'
 
     identifier_column = (
         proc_config.get('identifier_column')

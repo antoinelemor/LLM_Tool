@@ -1553,6 +1553,9 @@ class AdvancedCLI:
             candidates.extend(
                 path for path in metadata_dir.rglob("*_metadata_*.json") if path.is_file()
             )
+            fallback_state = metadata_dir / "session_state.json"
+            if fallback_state.exists() and fallback_state.is_file():
+                candidates.append(fallback_state)
 
         # New training metadata layout (v2.0+)
         training_metadata_dir = session_dir / "training_session_metadata"
@@ -8088,7 +8091,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             configure_params = Confirm.ask("\nConfigure model parameters?", default=False)
 
         # Default values
-        temperature = 0.7
+        temperature = 1.0 if not supports_params else 0.7
         max_tokens = 1000
         top_p = 1.0
         top_k = 40

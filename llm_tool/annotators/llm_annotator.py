@@ -60,7 +60,7 @@ import math
 import random
 import concurrent.futures
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple, Iterable
+from typing import Dict, Any, List, Optional, Union, Tuple, Iterable, Set
 from datetime import datetime
 from collections import deque, defaultdict
 
@@ -103,11 +103,12 @@ except ImportError:
 
 # OpenAI SDK for batch operations
 try:
-    from openai import OpenAI
+    from openai import OpenAI, NotFoundError
     HAS_OPENAI = True
 except ImportError:
     HAS_OPENAI = False
     OpenAI = None
+    NotFoundError = Exception
     logging.warning("OpenAI SDK not installed. Batch API support disabled.")
 
 # Rich library for enhanced CLI
@@ -337,6 +338,7 @@ class LLMAnnotator:
             # Create unique identifier
             identifier_column = self._create_unique_id(data)
 
+        config.setdefault('export_to_doccano', True)
         annotation_column = config.get('annotation_column', 'annotation')
         resume = config.get('resume', False)
 
@@ -868,6 +870,22 @@ class LLMAnnotator:
         request_entries: List[Dict[str, Any]] = []
         request_metadata: Dict[str, Dict[str, Any]] = {}
         per_row_custom_ids: Dict[str, List[str]] = defaultdict(list)
+        prompts_by_index: Dict[int, Dict[str, Any]] = {
+            idx + 1: prompt_cfg for idx, prompt_cfg in enumerate(prompts)
+        }
+        prefixed_expected_keys: Dict[int, List[str]] = {}
+        all_expected_keys: Set[str] = set()
+        for prompt_idx, prompt_cfg in prompts_by_index.items():
+            expected_keys = prompt_cfg.get('expected_keys') or []
+            prefix = prompt_cfg.get('prefix', '') or ''
+            normalized_keys: List[str] = []
+            for key in expected_keys:
+                if not key:
+                    continue
+                normalized_keys.append(f"{prefix}_{key}" if prefix else key)
+            prefixed_expected_keys[prompt_idx] = normalized_keys
+            all_expected_keys.update(normalized_keys)
+        row_lookup: Dict[str, Dict[str, Any]] = {}
 
         usage_keys = (
             "prompt_tokens",
@@ -916,16 +934,152 @@ class LLMAnnotator:
                 or model_lower.startswith('o4-')
             )
             is_2025_model = any(token in model_lower for token in ['2025', 'gpt-5', 'gpt5'])
-            max_tokens = config.get('max_tokens', 1000)
+            default_max_tokens = 2000 if (is_o_series or is_2025_model) else 1000
+            max_tokens = config.get('max_tokens', default_max_tokens)
             if is_o_series or is_2025_model:
                 body["max_completion_tokens"] = max_tokens
                 body["temperature"] = 1.0
                 body["top_p"] = 1.0
+                if config.get('temperature') not in (None, 1, 1.0):
+                    self.logger.debug(
+                        "[BATCH] Overriding temperature to 1.0 for model %s (batch API restriction).",
+                        model_name
+                    )
             else:
                 body["max_tokens"] = max_tokens
                 body["temperature"] = config.get('temperature', 0.7)
                 body["top_p"] = config.get('top_p', 1.0)
             return body
+
+        def retry_failed_prompts(
+            identifier_key: str,
+            missing_indices: List[int],
+            row_state: Optional[Dict[str, Any]]
+        ) -> None:
+            """Sequentially retry prompts that failed in the batch job."""
+            if not missing_indices:
+                return
+
+            row_dict = row_lookup.get(identifier_key)
+            if not row_dict:
+                self.logger.warning("[BATCH] Unable to retry %s – original row data missing.", identifier_key)
+                return
+
+            local_row_state = row_state
+            if local_row_state is None:
+                local_row_state = {
+                    'identifier': row_dict.get(identifier_column),
+                    'row_index': None,
+                    'raw': {},
+                    'cleaned': {},
+                    'status': {},
+                    'merged': {},
+                    'errors': [],
+                    'usage': {},
+                    'response_info': {}
+                }
+                row_results[identifier_key] = local_row_state
+
+            retry_max_tokens = config.get(
+                'openai_batch_retry_max_tokens',
+                max(config.get('max_tokens', 1000) * 2, 2048)
+            )
+            retry_model_config = {
+                'provider': config.get('annotation_provider') or config.get('provider', 'openai'),
+                'model_name': model_name,
+                'api_key': api_key,
+                'temperature': config.get('temperature', 0.7),
+                'top_p': config.get('top_p', 1.0),
+                'max_tokens': retry_max_tokens
+            }
+
+            row_series = pd.Series(row_dict)
+            text_payload = compose_text(row_series)
+
+            for prompt_index in missing_indices:
+                prompt_cfg = prompts_by_index.get(prompt_index)
+                if not prompt_cfg:
+                    continue
+
+                prompt_template = (prompt_cfg.get('prompt') or '').strip()
+                if not prompt_template:
+                    self.logger.warning("[BATCH] Retry skipped – prompt template missing for index %s.", prompt_index)
+                    continue
+
+                expected_keys = prompt_cfg.get('expected_keys', []) or []
+                prefix = prompt_cfg.get('prefix', '') or ''
+                schema = None
+                if expected_keys and not config.get('disable_schema', False):
+                    try:
+                        schema = build_dynamic_schema(expected_keys)
+                    except Exception as exc:
+                        self.logger.debug("[BATCH] Schema build failed for retry prompt %s: %s", prompt_index, exc)
+
+                local_retry_config = dict(retry_model_config)
+                previous_info = local_row_state['response_info'].get(prompt_key) or {}
+                if previous_info.get('finish_reason') == 'length':
+                    length_retry_cap = config.get(
+                        'openai_batch_length_retry_tokens',
+                        max(retry_max_tokens * 2, 4096)
+                    )
+                    local_retry_config['max_tokens'] = max(
+                        local_retry_config.get('max_tokens', retry_max_tokens),
+                        length_retry_cap
+                    )
+                try:
+                    cleaned_json = self.analyze_text_with_model(
+                        text=text_payload,
+                        prompt=prompt_template,
+                        model_config=local_retry_config,
+                        schema=schema
+                    )
+                except Exception as exc:
+                    self.logger.warning("[BATCH] Retry failed for %s prompt %s: %s", identifier_key, prompt_index, exc)
+                    local_row_state['status'][str(prompt_index)] = 'retry_failed'
+                    local_row_state['errors'].append(f"Sequential retry failed for prompt {prompt_index}: {exc}")
+                    continue
+
+                prompt_key = str(prompt_index)
+                previous_status = local_row_state['status'].get(prompt_key)
+
+                if cleaned_json:
+                    local_row_state['raw'][prompt_key] = cleaned_json
+                    local_row_state['cleaned'][prompt_key] = cleaned_json
+                    local_row_state['status'][prompt_key] = 'success'
+                    try:
+                        parsed = json.loads(cleaned_json)
+                        if prefix:
+                            parsed = {f"{prefix}_{k}": v for k, v in parsed.items()}
+                        local_row_state.setdefault('merged', {}).update(parsed)
+                        self.last_annotation = parsed
+                    except Exception as exc:
+                        local_row_state['status'][prompt_key] = 'decode_error'
+                        local_row_state['errors'].append(f"Decode error after retry (prompt {prompt_index}): {exc}")
+                        status_counts['decode_error'] += 1
+                        continue
+
+                    if previous_status == 'parse_error':
+                        status_counts['cleaning_failed'] = max(0, status_counts['cleaning_failed'] - 1)
+                    elif previous_status == 'decode_error':
+                        status_counts['decode_error'] = max(0, status_counts['decode_error'] - 1)
+                    elif previous_status == 'error':
+                        status_counts['error'] = max(0, status_counts['error'] - 1)
+
+                    status_counts['success'] += 1
+                    local_row_state['usage'][prompt_key] = {'fallback': True}
+                    info = local_row_state['response_info'].setdefault(prompt_key, {})
+                    max_used_tokens = local_retry_config.get('max_tokens')
+                    info['fallback'] = True
+                    info['max_tokens'] = max_used_tokens
+                    info['fallback_max_tokens'] = max_used_tokens
+                    if local_row_state['errors']:
+                        local_row_state['errors'] = [
+                            err for err in local_row_state['errors']
+                            if f"prompt {prompt_index}" not in err and "Unable to parse model response" not in err
+                        ]
+                else:
+                    local_row_state['status'][prompt_key] = 'retry_failed'
+                    local_row_state['errors'].append(f"Sequential retry returned empty response for prompt {prompt_index}")
 
         for row_index, row in data_subset.iterrows():
             identifier_value = row[identifier_column]
@@ -1069,7 +1223,163 @@ class LLMAnnotator:
         job_completed_at = getattr(batch_job, 'completed_at', None) or getattr(batch_job, 'finished_at', None)
         final_request_counts = _as_request_counts(getattr(batch_job, 'request_counts', None))
 
-        output_response = client.files.content(batch_job.output_file_id)
+        def _extract_from_collection(value: Any) -> Optional[str]:
+            if not value:
+                return None
+            if isinstance(value, str):
+                return value
+            if isinstance(value, dict):
+                for key in ('id', 'file_id', 'output_file_id'):
+                    candidate = value.get(key)
+                    if candidate:
+                        return candidate
+                for key in ('output_files', 'files', 'data', 'items'):
+                    if key in value:
+                        nested = value.get(key)
+                        result = _extract_from_collection(nested)
+                        if result:
+                            return result
+                return None
+            if isinstance(value, (list, tuple, set)):
+                for item in value:
+                    result = _extract_from_collection(item)
+                    if result:
+                        return result
+            return None
+
+        def _extract_output_file_id(job: Any) -> Optional[str]:
+            if job is None:
+                return None
+            if hasattr(job, 'output_file_id') and getattr(job, 'output_file_id'):
+                return getattr(job, 'output_file_id')
+            if hasattr(job, 'output_file') and getattr(job, 'output_file'):
+                candidate = getattr(job, 'output_file')
+                if isinstance(candidate, str):
+                    return candidate
+                if isinstance(candidate, dict):
+                    return candidate.get('id') or candidate.get('file_id')
+
+            candidates_attrs = ('output_file_ids', 'output_files', 'outputs')
+            for attr in candidates_attrs:
+                value = getattr(job, attr, None)
+                result = _extract_from_collection(value)
+                if result:
+                    return result
+
+            if hasattr(job, 'model_dump'):
+                try:
+                    dumped = job.model_dump()
+                    direct = dumped.get('output_file_id') or dumped.get('output_file')
+                    if direct:
+                        return direct
+                    return _extract_from_collection(dumped)
+                except Exception:
+                    pass
+            if isinstance(job, dict):
+                direct = (
+                    job.get('output_file_id')
+                    or job.get('output_file')
+                    or job.get('file')
+                )
+                if direct:
+                    return direct
+                return _extract_from_collection(job)
+            return None
+
+        output_file_id = _extract_output_file_id(batch_job)
+        file_manifest: List[Dict[str, Any]] = []
+        if not output_file_id:
+            check_attempts = int(config.get('openai_batch_output_poll_attempts', 10))
+            wait_seconds = float(config.get('openai_batch_output_poll_interval', 3))
+            for attempt in range(check_attempts):
+                time.sleep(wait_seconds)
+                refreshed = client.batches.retrieve(batch_job.id)
+                output_file_id = _extract_output_file_id(refreshed)
+                if output_file_id:
+                    batch_job = refreshed
+                    break
+                self.logger.debug(
+                    "[BATCH] Poll attempt %s/%s still missing output file for job %s (status=%s).",
+                    attempt + 1,
+                    check_attempts,
+                    batch_job.id,
+                    getattr(refreshed, 'status', None)
+                )
+            if not output_file_id:
+                files_response = None
+                try:
+                    files_response = client.files.list(limit=100)
+                except Exception as exc:
+                    self.logger.warning("[BATCH] Unable to list files for batch %s: %s", batch_job.id, exc)
+                if files_response and getattr(files_response, 'data', None):
+                    for file_obj in files_response.data:
+                        file_manifest.append({
+                            'id': getattr(file_obj, 'id', None),
+                            'filename': getattr(file_obj, 'filename', None),
+                            'purpose': getattr(file_obj, 'purpose', None),
+                            'bytes': getattr(file_obj, 'bytes', None),
+                            'created_at': getattr(file_obj, 'created_at', None),
+                            'metadata': getattr(file_obj, 'metadata', None),
+                        })
+                    for file_obj in files_response.data:
+                        meta = getattr(file_obj, 'metadata', {}) or {}
+                        if isinstance(meta, dict) and meta.get('batch_id') == batch_job.id:
+                            output_file_id = getattr(file_obj, 'id', None)
+                            if output_file_id:
+                                self.logger.info(
+                                    "[BATCH] Recovered output file %s for job %s via files.list.",
+                                    output_file_id,
+                                    batch_job.id
+                                )
+                                break
+                if not output_file_id:
+                    dumped = None
+                    try:
+                        dumped = batch_job.model_dump() if hasattr(batch_job, 'model_dump') else batch_job
+                    except Exception:
+                        dumped = str(batch_job)
+                    try:
+                        refreshed_dump = refreshed.model_dump() if hasattr(refreshed, 'model_dump') else refreshed
+                    except Exception:
+                        refreshed_dump = str(refreshed)
+                    self.logger.error("[BATCH] Final job state: %s", dumped)
+                    self.logger.error("[BATCH] Last refreshed job state: %s", refreshed_dump)
+                    if file_manifest:
+                        self.logger.error("[BATCH] File manifest (limit 100): %s", file_manifest)
+                    raise RuntimeError(
+                        "OpenAI batch completed but no output_file_id was returned. "
+                        f"Check OpenAI dashboard for job {getattr(batch_job, 'id', '<unknown>')}."
+                    )
+
+        known_prefixes = ("file_", "batch_", "upload_")
+        if not any(str(output_file_id).startswith(prefix) for prefix in known_prefixes):
+            output_file_id = str(output_file_id).split("/")[-1]
+
+        try:
+            output_response = client.files.content(output_file_id)
+        except NotFoundError as exc:
+            if not file_manifest:
+                try:
+                    files_response = client.files.list(limit=100)
+                    if files_response and getattr(files_response, 'data', None):
+                        for file_obj in files_response.data:
+                            file_manifest.append({
+                                'id': getattr(file_obj, 'id', None),
+                                'filename': getattr(file_obj, 'filename', None),
+                                'purpose': getattr(file_obj, 'purpose', None),
+                                'bytes': getattr(file_obj, 'bytes', None),
+                                'created_at': getattr(file_obj, 'created_at', None),
+                                'metadata': getattr(file_obj, 'metadata', None),
+                            })
+                except Exception:
+                    pass
+            if file_manifest:
+                self.logger.error("[BATCH] File manifest for job %s: %s", batch_job.id, file_manifest)
+            raise RuntimeError(
+                f"OpenAI returned 404 for output file {output_file_id}. "
+                f"Verify batch {getattr(batch_job, 'id', '<unknown>')} in the OpenAI dashboard."
+            ) from exc
+
         if hasattr(output_response, 'content'):
             output_file_path.write_bytes(output_response.content)
         else:
@@ -1123,17 +1433,24 @@ class LLMAnnotator:
                     status_counts['error'] += 1
                     continue
 
-                response_body = (payload.get('response') or {}).get('body', {})
+                response_wrapper = payload.get('response') or {}
+                response_body = response_wrapper.get('body', {})
                 choices = response_body.get('choices', [])
                 message_content = None
+                finish_reason = None
                 if choices:
-                    message_content = choices[0].get('message', {}).get('content')
+                    choice_payload = choices[0] or {}
+                    finish_reason = choice_payload.get('finish_reason')
+                    message_payload = choice_payload.get('message') or {}
+                    message_content = message_payload.get('content')
                 usage_payload = response_body.get('usage') or {}
                 row_state['usage'][prompt_key] = usage_payload
                 row_state['response_info'][prompt_key] = {
                     'id': response_body.get('id'),
                     'created': response_body.get('created'),
-                    'request_id': (payload.get('response') or {}).get('request_id'),
+                    'request_id': response_wrapper.get('request_id'),
+                    'status_code': response_wrapper.get('status_code'),
+                    'finish_reason': finish_reason,
                 }
                 if isinstance(message_content, list):
                     fragments: List[str] = []
@@ -1147,12 +1464,21 @@ class LLMAnnotator:
                 row_state['raw'][prompt_key] = raw_text
 
                 cleaned_json = None
-                if raw_text:
-                    try:
-                        cleaned_json = clean_json_output(raw_text, expected_keys)
-                    except Exception as exc:
-                        self.logger.error("[BATCH] Cleaning failed for %s: %s", custom_id, exc)
-                        cleaned_json = None
+                if not raw_text:
+                    status_label = 'length_truncated' if finish_reason == 'length' else 'empty_response'
+                    row_state['cleaned'][prompt_key] = None
+                    row_state['status'][prompt_key] = status_label
+                    row_state['errors'].append(
+                        f"Model returned empty content (finish_reason={finish_reason or 'unknown'})."
+                    )
+                    status_counts['cleaning_failed'] += 1
+                    continue
+
+                try:
+                    cleaned_json = clean_json_output(raw_text, expected_keys)
+                except Exception as exc:
+                    self.logger.error("[BATCH] Cleaning failed for %s: %s", custom_id, exc)
+                    cleaned_json = None
 
                 if not cleaned_json:
                     row_state['cleaned'][prompt_key] = None
@@ -1229,6 +1555,73 @@ class LLMAnnotator:
             except Exception as exc:
                 self.logger.warning("[BATCH] Unable to archive batch artifacts to %s: %s", archive_dir, exc)
 
+        # Sequential fallback for prompts that did not return usable results
+        fallback_candidates: List[Tuple[str, List[int]]] = []
+        for identifier_key, custom_ids in per_row_custom_ids.items():
+            missing_indices: List[int] = []
+            row_state = row_results.get(identifier_key)
+            if not row_state:
+                for custom_id in custom_ids:
+                    meta = request_metadata.get(custom_id)
+                    if meta:
+                        missing_indices.append(int(meta['prompt_index']))
+            else:
+                for custom_id in custom_ids:
+                    meta = request_metadata.get(custom_id)
+                    if not meta:
+                        continue
+                    prompt_index = int(meta['prompt_index'])
+                    status = row_state['status'].get(str(prompt_index))
+                    if status != 'success':
+                        missing_indices.append(prompt_index)
+            if missing_indices:
+                fallback_candidates.append((identifier_key, missing_indices))
+
+        if fallback_candidates:
+            self.logger.info(
+                "[BATCH] Retrying %s row(s) sequentially due to incomplete batch responses.",
+                len(fallback_candidates)
+            )
+            for identifier_key, missing_indices in fallback_candidates:
+                retry_failed_prompts(
+                    identifier_key=identifier_key,
+                    missing_indices=missing_indices,
+                    row_state=row_results.get(identifier_key)
+                )
+
+        cleanup_enabled = config.get('openai_batch_cleanup_missing', True)
+        if cleanup_enabled:
+            residual_candidates: List[Tuple[str, List[int]]] = []
+            for identifier_key, row_state in row_results.items():
+                if not row_state:
+                    continue
+                missing_indices: List[int] = []
+                for prompt_idx, expected_keys in prefixed_expected_keys.items():
+                    if not expected_keys:
+                        continue
+                    status = row_state['status'].get(str(prompt_idx))
+                    merged_payload = row_state.get('merged', {})
+                    needs_retry = any(
+                        merged_payload.get(key) in (None, '', []) for key in expected_keys
+                    )
+                    if status == 'success' and not needs_retry:
+                        continue
+                    if needs_retry:
+                        missing_indices.append(prompt_idx)
+                if missing_indices:
+                    residual_candidates.append((identifier_key, missing_indices))
+            if residual_candidates:
+                self.logger.info(
+                    "[BATCH] Performing cleanup retries for %s row(s) with missing prompt keys.",
+                    len(residual_candidates)
+                )
+                for identifier_key, missing_indices in residual_candidates:
+                    retry_failed_prompts(
+                        identifier_key=identifier_key,
+                        missing_indices=missing_indices,
+                        row_state=row_results.get(identifier_key)
+                    )
+
         completed_rows = 0
         for identifier_key, custom_ids in per_row_custom_ids.items():
             meta = request_metadata[custom_ids[0]]
@@ -1257,7 +1650,15 @@ class LLMAnnotator:
                     row_state['usage'][prompt_key] = {}
                     row_state['response_info'][prompt_key] = {}
 
-            final_payload = row_state['merged']
+            merged_payload = row_state.get('merged', {})
+            final_payload: Dict[str, Any] = {}
+            if all_expected_keys:
+                for key in all_expected_keys:
+                    final_payload[key] = merged_payload.get(key)
+            for key, value in merged_payload.items():
+                if key not in final_payload:
+                    final_payload[key] = value
+            row_state['merged'] = final_payload
             final_json = json.dumps(final_payload, ensure_ascii=False) if final_payload else None
             usage_totals = aggregate_usage(row_state.get('usage', {}).values())
 
@@ -1313,8 +1714,61 @@ class LLMAnnotator:
             self._save_data(data, output_path, format)
             self.logger.info(f"Results saved to {output_path}")
             subset_path = self._save_annotated_subset(data, config)
+
+        doccano_path = None
+        if config.get('export_to_doccano'):
+            annotation_col = config.get('annotation_column', 'annotation')
+            text_cols = config.get('text_columns') or []
+            text_col = config.get('text_column')
+            if not text_col and text_cols:
+                text_col = text_cols[0]
+            annotated_only = data
+            if annotation_col in data.columns:
+                annotated_only = data[data[annotation_col].notna()]
+            try:
+                doccano_path = self._export_to_doccano(
+                    annotated_df=annotated_only,
+                    annotation_column=annotation_col,
+                    text_column=text_col or annotation_col,
+                    config=config
+                )
+            except Exception as exc:
+                self.logger.warning("[DOCCANO] Export failed: %s", exc)
+            else:
+                if doccano_path:
+                    config['doccano_export_path'] = str(doccano_path)
             if subset_path:
                 self.logger.info(f"Annotated subset saved to {subset_path}")
+
+            export_prefs = config.get('export_preferences', {})
+            export_doccano = config.get('export_to_doccano') or export_prefs.get('export_to_doccano')
+            if export_doccano:
+                annotation_column = config.get('annotation_column', 'annotation')
+                text_column = config.get('text_column')
+                if not text_column:
+                    text_cols = config.get('text_columns') or []
+                    if text_cols:
+                        text_column = text_cols[0]
+                if annotation_column in data.columns and text_column in data.columns:
+                    mask = (
+                        data[annotation_column].notna()
+                        & data[annotation_column].astype(str).str.strip().ne('')
+                        & data[annotation_column].astype(str).str.lower().ne('nan')
+                    )
+                    annotated_df = data.loc[mask].copy()
+                    if not annotated_df.empty:
+                        try:
+                            doccano_path = self._export_doccano_jsonl(
+                                annotated_df=annotated_df,
+                                annotation_column=annotation_column,
+                                text_column=text_column,
+                                config=config
+                            )
+                            if doccano_path:
+                                self.logger.info(f"Doccano export saved to {doccano_path}")
+                                config['doccano_export_path'] = str(doccano_path)
+                        except Exception as exc:
+                            self.logger.warning(f"Doccano export failed: {exc}")
 
     def _save_data(self, data: pd.DataFrame, path: str, format: str):
         """Save data to file"""
@@ -1379,6 +1833,132 @@ class LLMAnnotator:
         config['annotated_subset_path'] = str(subset_path)
         self.logger.info(f"Saved annotated-only subset to {subset_path}")
         return subset_path
+
+    def _export_doccano_jsonl(
+        self,
+        *,
+        annotated_df: pd.DataFrame,
+        annotation_column: str,
+        text_column: str,
+        config: Dict[str, Any]
+    ) -> Optional[Path]:
+        """Export annotated samples to a Doccano-compatible JSONL file."""
+        if annotated_df.empty:
+            return None
+
+        session_dirs = config.get('session_dirs') or {}
+        default_dir = self.settings.paths.logs_dir / "doccano_exports"
+        doccano_base = Path(session_dirs.get('doccano', default_dir))
+
+        provider_folder = (
+            config.get('provider_folder')
+            or config.get('annotation_provider')
+            or config.get('provider')
+            or 'provider'
+        )
+
+        model_reference = (
+            config.get('model_folder')
+            or config.get('annotation_model')
+            or config.get('model')
+        )
+        if isinstance(model_reference, dict):
+            model_reference = (
+                model_reference.get('model_name')
+                or model_reference.get('name')
+            )
+        model_folder = str(model_reference or 'model').replace('/', '_')
+
+        dataset_name = config.get('dataset_name') or Path(config.get('file_path', 'dataset')).stem
+
+        doccano_dir = doccano_base / provider_folder / model_folder / dataset_name
+        doccano_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        doccano_path = doccano_dir / f"{dataset_name}_doccano_{timestamp}.jsonl"
+
+        label_keys: Set[str] = set()
+        for prompt_cfg in config.get('prompts', []):
+            expected_keys = prompt_cfg.get('expected_keys') or []
+            prefix = prompt_cfg.get('prefix', '') or ''
+            for key in expected_keys:
+                label_keys.add(f"{prefix}_{key}" if prefix else key)
+
+        total_written = 0
+        with doccano_path.open('w', encoding='utf-8') as handle:
+            for _, row in annotated_df.iterrows():
+                annotation_str = row.get(annotation_column)
+                if not annotation_str or not str(annotation_str).strip():
+                    continue
+
+                try:
+                    annotation_data = json.loads(annotation_str)
+                except Exception:
+                    self.logger.debug("[DOCCANO] Skipping row with invalid annotation JSON.")
+                    continue
+
+                entry_labels: List[str] = []
+                if label_keys:
+                    for key in label_keys:
+                        if key not in annotation_data:
+                            continue
+                        value = annotation_data.get(key)
+                        if isinstance(value, list):
+                            entry_labels.extend(str(v) for v in value if str(v).strip())
+                        elif value is not None and str(value).strip():
+                            entry_labels.append(str(value))
+                else:
+                    for value in annotation_data.values():
+                        if isinstance(value, list):
+                            entry_labels.extend(str(v) for v in value if str(v).strip())
+                        elif value is not None and str(value).strip():
+                            entry_labels.append(str(value))
+
+                meta: Dict[str, Any] = {}
+                for column in annotated_df.columns:
+                    if column in (text_column, annotation_column):
+                        continue
+                    meta[column] = self._serialize_meta_value(row[column])
+                meta['annotation_json'] = annotation_data
+                cleaned_meta = {k: v for k, v in meta.items() if v not in (None, '')}
+
+                entry: Dict[str, Any] = {'text': str(row[text_column])}
+                if entry_labels:
+                    entry['labels'] = entry_labels
+                if cleaned_meta:
+                    entry['meta'] = cleaned_meta
+
+                handle.write(json.dumps(entry, ensure_ascii=False) + '\n')
+                total_written += 1
+
+        if total_written == 0:
+            try:
+                doccano_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            self.logger.warning("[DOCCANO] Export produced zero entries; no file generated.")
+            return None
+
+        return doccano_path
+
+    @staticmethod
+    def _serialize_meta_value(value: Any) -> Optional[Any]:
+        """Ensure metadata values are JSON-serializable."""
+        try:
+            if pd.isna(value):
+                return None
+        except Exception:
+            pass
+
+        if isinstance(value, (np.integer, int)):
+            return int(value)
+        if isinstance(value, (np.floating, float)):
+            return float(value)
+        if isinstance(value, (datetime, pd.Timestamp)):
+            return str(value)
+        if isinstance(value, (str, bool, list, dict)):
+            return value
+        return str(value)
 
     def _store_annotation_payload(
         self,
@@ -1502,7 +2082,16 @@ class LLMAnnotator:
                 if inference_column in annotated_df.columns:
                     preview_cols.append(inference_column)
 
-                for _, row in annotated_df[preview_cols].head(3).iterrows():
+                sample_size = int(config.get('preview_sample_size', 1))
+                sample_size = max(1, sample_size)
+                actual_size = min(sample_size, len(annotated_df))
+                sampled = annotated_df[preview_cols].sample(
+                    n=actual_size,
+                    random_state=random.randint(0, 10**6)
+                )
+                max_chars = int(config.get('preview_max_chars', 320))
+
+                for _, row in sampled.iterrows():
                     preview_entry: Dict[str, Any] = {}
                     for col in preview_cols:
                         value = row[col]
@@ -1512,6 +2101,33 @@ class LLMAnnotator:
                             preview_entry[col] = None
                         else:
                             preview_entry[col] = value
+
+                    annotation_payload = preview_entry.get(annotation_column)
+                    preview_text = None
+                    if isinstance(annotation_payload, str):
+                        try:
+                            annotation_json = json.loads(annotation_payload)
+                        except Exception:
+                            annotation_json = None
+                        if isinstance(annotation_json, dict):
+                            fragments: List[str] = []
+                            for key in sorted(annotation_json.keys()):
+                                value = annotation_json[key]
+                                if value in (None, '', [], {}):
+                                    continue
+                                if isinstance(value, list):
+                                    value_repr = ", ".join(str(item) for item in value if str(item).strip())
+                                elif isinstance(value, dict):
+                                    value_repr = json.dumps(value, ensure_ascii=False)
+                                else:
+                                    value_repr = str(value)
+                                if value_repr:
+                                    fragments.append(f"{key}: {value_repr}")
+                            preview_text = " | ".join(fragments) if fragments else annotation_payload
+                        else:
+                            preview_text = annotation_payload
+                    if preview_text:
+                        preview_entry['annotation_preview'] = preview_text[:max_chars]
                     preview_samples.append(preview_entry)
 
         summary['preview_samples'] = preview_samples
