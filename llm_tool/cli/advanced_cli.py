@@ -243,15 +243,17 @@ MODEL_DESCRIPTIONS = {
     'gpt4all': 'GPT4All - Ecosystem of open-source chatbots',
 
     # OpenAI models
+    'gpt-4o': 'OpenAI GPT-4o - Multimodal (text/image), matches GPT-4 Turbo performance',
+    'gpt-4o-mini': 'OpenAI GPT-4o Mini - Lightweight GPT-4o variant for low-cost high-volume annotation',
+    'gpt-4-turbo': 'OpenAI GPT-4 Turbo - Large multimodal model, optimized for chat/completions',
+    'gpt-4': 'OpenAI GPT-4 - Advanced reasoning, multimodal capabilities',
+    'gpt-3.5-turbo': 'OpenAI GPT-3.5 Turbo - Fast, cost-effective for most tasks',
     'gpt-5': 'OpenAI GPT-5 - Latest flagship model (2025)',
     'gpt-5-2025-08-07': 'OpenAI GPT-5 (2025-08-07) - Flagship general-purpose model with enhanced reasoning and 200K context',
     'gpt-5-mini-2025-08-07': 'OpenAI GPT-5 Mini (2025-08-07) - Balanced GPT-5 variant, optimized for cost and quick iteration',
     'gpt-5-nano-2025-08-07': 'OpenAI GPT-5 Nano (2025-08-07) - Ultra-fast GPT-5 tier for large batch workloads',
-    'gpt-4o': 'OpenAI GPT-4o - Multimodal (text/image), matches GPT-4 Turbo performance',
-    'gpt-4-turbo': 'OpenAI GPT-4 Turbo - Large multimodal model, optimized for chat/completions',
-    'gpt-4': 'OpenAI GPT-4 - Advanced reasoning, multimodal capabilities',
-    'gpt-3.5-turbo': 'OpenAI GPT-3.5 Turbo - Fast, cost-effective for most tasks',
     'o1': 'OpenAI o1 - Reasoning model for science/coding/math',
+    'o1-mini': 'OpenAI o1 Mini - Cost-effective reasoning model (o1 family) for structured tasks',
     'o3': 'OpenAI o3 - Latest reasoning model with enhanced performance',
     'o4': 'OpenAI o4 - Advanced reasoning model (2025)',
 
@@ -280,7 +282,12 @@ class ModelInfo:
     supports_json: bool = True
     supports_streaming: bool = True
     max_tokens: Optional[int] = None
-    cost_per_1k_tokens: Optional[float] = None
+    prompt_cost_per_1k: Optional[float] = None
+    completion_cost_per_1k: Optional[float] = None
+    cached_prompt_cost_per_1k: Optional[float] = None
+    batch_prompt_cost_per_1k: Optional[float] = None
+    batch_cached_prompt_cost_per_1k: Optional[float] = None
+    batch_completion_cost_per_1k: Optional[float] = None
 
 
 @dataclass
@@ -387,13 +394,17 @@ class LLMDetector:
     def detect_openai_models() -> List[ModelInfo]:
         """List available OpenAI models"""
         models = [
-            # ✅ Tested models (fully supported in pipeline)
             ModelInfo(
                 "gpt-5-2025-08-07",
                 "openai",
                 context_length=200000,
                 requires_api_key=True,
-                cost_per_1k_tokens=0.004,
+                prompt_cost_per_1k=0.00125,
+                completion_cost_per_1k=0.01,
+                cached_prompt_cost_per_1k=0.000125,
+                batch_prompt_cost_per_1k=0.000625,
+                batch_cached_prompt_cost_per_1k=0.0000625,
+                batch_completion_cost_per_1k=0.005,
                 supports_json=True,
                 supports_streaming=True,
                 max_tokens=8000,
@@ -403,7 +414,12 @@ class LLMDetector:
                 "openai",
                 context_length=200000,
                 requires_api_key=True,
-                cost_per_1k_tokens=0.001,
+                prompt_cost_per_1k=0.00025,
+                completion_cost_per_1k=0.002,
+                cached_prompt_cost_per_1k=0.000025,
+                batch_prompt_cost_per_1k=0.000125,
+                batch_cached_prompt_cost_per_1k=0.0000125,
+                batch_completion_cost_per_1k=0.001,
                 supports_json=True,
                 supports_streaming=True,
                 max_tokens=4000,
@@ -413,7 +429,12 @@ class LLMDetector:
                 "openai",
                 context_length=200000,
                 requires_api_key=True,
-                cost_per_1k_tokens=0.001,
+                prompt_cost_per_1k=0.00005,
+                completion_cost_per_1k=0.0004,
+                cached_prompt_cost_per_1k=0.000005,
+                batch_prompt_cost_per_1k=0.000025,
+                batch_cached_prompt_cost_per_1k=0.0000025,
+                batch_completion_cost_per_1k=0.0002,
                 supports_json=True,
                 supports_streaming=True,
                 max_tokens=4000,
@@ -3871,19 +3892,98 @@ class AdvancedCLI:
                 self.console.print("\n[bold cyan]☁️  OpenAI Models:[/bold cyan]\n")
 
                 openai_table = Table(border_style="blue", show_header=True)
-                openai_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
-                openai_table.add_column("Model Name", style="white", width=30)
-                openai_table.add_column("Cost", style="magenta", width=12)
-                openai_table.add_column("Description", style="dim", width=65)
+                openai_table.add_column("#", style="bold yellow", width=3, justify="right")
+                openai_table.add_column(
+                    "Model Name",
+                    style="white",
+                    min_width=20,
+                    max_width=34,
+                    overflow="fold",
+                )
+                openai_table.add_column(
+                    "In\n($/1M)",
+                    style="magenta",
+                    justify="right",
+                    overflow="fold",
+                    min_width=8,
+                    max_width=10,
+                )
+                openai_table.add_column(
+                    "Out\n($/1M)",
+                    style="magenta",
+                    justify="right",
+                    overflow="fold",
+                    min_width=9,
+                    max_width=11,
+                )
+                openai_table.add_column(
+                    "Cache\n($/1M)",
+                    style="magenta",
+                    justify="right",
+                    overflow="fold",
+                    min_width=9,
+                    max_width=12,
+                )
+                openai_table.add_column(
+                    "Batch In\n($/1M)",
+                    style="cyan",
+                    justify="right",
+                    overflow="fold",
+                    min_width=9,
+                    max_width=12,
+                )
+                openai_table.add_column(
+                    "Batch Cache\n($/1M)",
+                    style="cyan",
+                    justify="right",
+                    overflow="fold",
+                    min_width=10,
+                    max_width=14,
+                )
+                openai_table.add_column(
+                    "Batch Out\n($/1M)",
+                    style="cyan",
+                    justify="right",
+                    overflow="fold",
+                    min_width=9,
+                    max_width=12,
+                )
+                openai_table.add_column(
+                    "Description",
+                    style="dim",
+                    overflow="fold",
+                    min_width=30,
+                    max_width=70,
+                )
+
+                def format_price_per_million(cost_per_1k: Optional[float]) -> Optional[str]:
+                    if cost_per_1k is None:
+                        return None
+                    per_million = cost_per_1k * 1000
+                    formatted = f"{per_million:.4f}".rstrip("0").rstrip(".")
+                    return f"${formatted}"
+
+                def display_or_dash(value: Optional[str]) -> str:
+                    return value if value is not None else "-"
 
                 for llm in openai_llms:
                     idx = len(all_llms) + 1
-                    cost = f"${llm.cost_per_1k_tokens}/1K" if llm.cost_per_1k_tokens else "N/A"
+                    input_cost = format_price_per_million(llm.prompt_cost_per_1k)
+                    output_cost = format_price_per_million(llm.completion_cost_per_1k)
+                    cached_cost = format_price_per_million(llm.cached_prompt_cost_per_1k)
+                    batch_in = format_price_per_million(llm.batch_prompt_cost_per_1k)
+                    batch_cached = format_price_per_million(llm.batch_cached_prompt_cost_per_1k)
+                    batch_out = format_price_per_million(llm.batch_completion_cost_per_1k)
                     description = self._get_model_description(llm.name)
                     openai_table.add_row(
                         str(idx),
                         llm.name,
-                        cost,
+                        display_or_dash(input_cost),
+                        display_or_dash(output_cost),
+                        display_or_dash(cached_cost),
+                        display_or_dash(batch_in),
+                        display_or_dash(batch_cached),
+                        display_or_dash(batch_out),
                         description
                     )
                     all_llms.append(llm)
@@ -3893,6 +3993,11 @@ class AdvancedCLI:
                 openai_table.add_row(
                     str(idx),
                     "[bold]Custom model[/bold]",
+                    "-",
+                    "-",
+                    "-",
+                    "-",
+                    "-",
                     "-",
                     "[dim]Enter OpenAI model name manually[/dim]"
                 )
@@ -3907,12 +4012,17 @@ class AdvancedCLI:
                 anthropic_table = Table(border_style="magenta", show_header=True)
                 anthropic_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
                 anthropic_table.add_column("Model Name", style="white", width=30)
-                anthropic_table.add_column("Cost", style="cyan", width=12)
+                anthropic_table.add_column("Cost (in/out)", style="cyan", width=18)
                 anthropic_table.add_column("Description", style="dim", width=65)
 
                 for llm in anthropic_llms[:3]:  # Show top 3
                     idx = len(all_llms) + 1
-                    cost = f"${llm.cost_per_1k_tokens}/1K" if llm.cost_per_1k_tokens else "N/A"
+                    if llm.prompt_cost_per_1k and llm.completion_cost_per_1k:
+                        cost = f"${llm.prompt_cost_per_1k:.4f}/${llm.completion_cost_per_1k:.4f}"
+                    elif llm.prompt_cost_per_1k:
+                        cost = f"${llm.prompt_cost_per_1k:.4f}/—"
+                    else:
+                        cost = "N/A"
                     description = self._get_model_description(llm.name)
                     anthropic_table.add_row(
                         str(idx),
@@ -3934,7 +4044,7 @@ class AdvancedCLI:
 
             # Check if user selected custom OpenAI option
             if openai_llms and choice == custom_openai_option_idx:
-                self.console.print("\n[dim]Examples: gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-2025-01-01, o1, o1-mini, o3-mini, gpt-5-2025-08-07[/dim]")
+                self.console.print("\n[dim]Examples: gpt-3.5-turbo, gpt-5-2025-08-07, gpt-5-mini-2025-08-07, gpt-5-nano-2025-08-07, o1, o1-mini, o3-mini[/dim]")
                 custom_model = Prompt.ask("Enter OpenAI model name")
 
                 # Create a ModelInfo for the custom model with estimated parameters
@@ -4358,12 +4468,20 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             type_info = "🔀 MoE (Mixture)"
                         elif "3.2" in model_name.lower() or "3.3" in model_name.lower():
                             type_info = "⚡ Fast (Llama 3)"
-                        elif "gpt-5-2025" in model_name.lower():
-                            type_info = "🏆 Flagship"
                         elif "gpt-5-nano" in model_name.lower():
-                            type_info = "⚡ Ultra Fast"
+                            type_info = "⚡ Ultra Fast GPT-5 Nano"
                         elif "gpt-5-mini" in model_name.lower():
-                            type_info = "🎯 Balanced"
+                            type_info = "🎯 Balanced GPT-5 Mini"
+                        elif "gpt-4o-mini" in model_name.lower():
+                            type_info = "⚡ Efficient GPT-4o Mini"
+                        elif "gpt-4o" in model_name.lower():
+                            type_info = "🏆 Flagship GPT-4o"
+                        elif "gpt-5-2025" in model_name.lower() or "gpt-5" in model_name.lower():
+                            type_info = "🏆 Flagship GPT-5"
+                        elif model_name.lower().startswith("o1"):
+                            type_info = "🔍 Reasoning (o1)"
+                        elif model_name.lower().startswith("o3"):
+                            type_info = "🔍 Reasoning (o3)"
                         elif "deepseek-r1" in model_name.lower():
                             type_info = "🧠 Reasoning"
                         elif "nemotron" in model_name.lower():
@@ -8077,11 +8195,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Check if model supports parameter tuning
         model_name_lower = model_name.lower() if model_name else ""
         is_o_series = any(x in model_name_lower for x in ['o1', 'o3', 'o4'])
-        supports_params = not is_o_series
+        is_gpt5_series = (llm_config and llm_config.provider == 'openai' and model_name_lower.startswith('gpt-5'))
+        is_locked_openai = False
+
+        supports_params = not (is_o_series or is_locked_openai or is_gpt5_series)
 
         if not supports_params:
-            self.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
-            self.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
+            if is_o_series:
+                self.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
+                self.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
+            elif is_gpt5_series:
+                self.console.print(f"[yellow]⚠️  Model '{model_name}' uses locked sampling parameters[/yellow]")
+                self.console.print("[dim]   Temperature and top_p are fixed to 1.0; only Max Tokens can be adjusted.[/dim]")
+            else:
+                self.console.print(f"[yellow]⚠️  Model '{model_name}' does not allow temperature/top_p overrides[/yellow]")
+                self.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
             configure_params = False
         else:
             self.console.print("[yellow]Configure model parameters?[/yellow]")
@@ -8141,7 +8269,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         config['temperature'] = temperature
         config['max_tokens'] = max_tokens
         config['top_p'] = top_p
-        config['top_k'] = top_k
+        config['top_k'] = top_k if provider and provider in ['ollama', 'google'] else None
+
+        if is_gpt5_series:
+            self.console.print("\n[cyan]📏 Max Tokens (GPT-5 Series):[/cyan]")
+            self.console.print("  Maximum response length; sampling parameters stay locked at 1.0.")
+            self.console.print("  [dim]Note: higher values increase API usage.[/dim]")
+            config['max_tokens'] = self._int_prompt_with_validation("Max tokens", config['max_tokens'], 50, 8000)
+            config['temperature'] = 1.0
+            config['top_p'] = 1.0
+            config['top_k'] = None
 
         # ============================================================
         # REPRODUCIBILITY METADATA

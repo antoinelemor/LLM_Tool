@@ -333,10 +333,11 @@ class LLMAnnotator:
             # Auto-detect text columns
             text_columns = self._detect_text_columns(data)
 
-        identifier_column = config.get('identifier_column')
-        if not identifier_column:
-            # Create unique identifier
-            identifier_column = self._create_unique_id(data)
+        identifier_column = self._resolve_identifier_column(
+            data,
+            config.get('identifier_column')
+        )
+        config['identifier_column'] = identifier_column
 
         config.setdefault('export_to_doccano', True)
         annotation_column = config.get('annotation_column', 'annotation')
@@ -495,6 +496,72 @@ class LLMAnnotator:
             data[id_column] = range(1, len(data) + 1)
             self.logger.info(f"Created unique identifier column: {id_column}")
         return id_column
+
+    def _resolve_identifier_column(
+        self,
+        data: pd.DataFrame,
+        identifier_column: Optional[str]
+    ) -> str:
+        """
+        Ensure a usable identifier column exists on the dataframe.
+
+        Handles user-selected composite identifiers of the form "col_a+col_b"
+        by creating a new column that joins the component values.
+        """
+        if not identifier_column:
+            return self._create_unique_id(data)
+
+        if identifier_column in data.columns:
+            return identifier_column
+
+        if '+' in identifier_column:
+            component_cols = [col.strip() for col in identifier_column.split('+') if col.strip()]
+            if len(component_cols) <= 1:
+                self.logger.warning(
+                    "Composite identifier '%s' does not reference multiple columns; "
+                    "falling back to auto-generated IDs.",
+                    identifier_column,
+                )
+                return self._create_unique_id(data)
+
+            missing = [col for col in component_cols if col not in data.columns]
+            if missing:
+                self.logger.warning(
+                    "Composite identifier columns missing in data: %s; "
+                    "falling back to auto-generated IDs.",
+                    ', '.join(missing),
+                )
+                return self._create_unique_id(data)
+
+            # Build a stable combined identifier using a separator that will not
+            # collide with numeric inputs.
+            separator = '|'
+            placeholder = '__MISSING__'
+            combined = data[component_cols[0]].astype(str).where(
+                data[component_cols[0]].notna(),
+                placeholder,
+            )
+            for col in component_cols[1:]:
+                part = data[col].astype(str).where(
+                    data[col].notna(),
+                    placeholder,
+                )
+                combined = combined + separator + part
+
+            data[identifier_column] = combined
+            self.logger.info(
+                "Created composite identifier column '%s' from [%s]",
+                identifier_column,
+                ', '.join(component_cols),
+            )
+            return identifier_column
+
+        self.logger.warning(
+            "Identifier column '%s' not found in data; "
+            "falling back to auto-generated IDs.",
+            identifier_column,
+        )
+        return self._create_unique_id(data)
 
     def _warmup_model(self):
         """Warm up local model with test call"""
@@ -1662,10 +1729,24 @@ class LLMAnnotator:
             final_json = json.dumps(final_payload, ensure_ascii=False) if final_payload else None
             usage_totals = aggregate_usage(row_state.get('usage', {}).values())
 
-            mask = full_data[identifier_column] == identifier_value
-            if mask.any():
-                full_data.loc[mask, annotation_column] = final_json
-                full_data.loc[mask, f"{annotation_column}_inference_time"] = per_row_time
+            row_index = row_state.get('row_index')
+            applied = False
+            if row_index is not None and row_index in full_data.index:
+                full_data.loc[row_index, annotation_column] = final_json
+                full_data.loc[row_index, f"{annotation_column}_inference_time"] = per_row_time
+                applied = True
+            else:
+                mask = full_data[identifier_column] == identifier_value
+                if mask.any():
+                    full_data.loc[mask, annotation_column] = final_json
+                    full_data.loc[mask, f"{annotation_column}_inference_time"] = per_row_time
+                    applied = True
+            if not applied:
+                self.logger.warning(
+                    "[BATCH] Unable to apply annotation for identifier '%s' (row_index=%s)",
+                    identifier_value,
+                    row_index,
+                )
 
             if final_json:
                 try:
@@ -1963,7 +2044,7 @@ class LLMAnnotator:
 
         total_written = 0
         with doccano_path.open('w', encoding='utf-8') as handle:
-            for _, row in annotated_df.iterrows():
+            for counter, (row_index, row) in enumerate(annotated_df.iterrows(), start=1):
                 annotation_str = row.get(annotation_column)
                 if not annotation_str or not str(annotation_str).strip():
                     continue
@@ -1999,9 +2080,36 @@ class LLMAnnotator:
                 meta['annotation_json'] = annotation_data
                 cleaned_meta = {k: v for k, v in meta.items() if v not in (None, '')}
 
-                entry: Dict[str, Any] = {'text': str(row[text_column])}
+                entry_id = row.get('id')
+                if entry_id is not None:
+                    entry_id = self._serialize_meta_value(entry_id)
+
+                if isinstance(entry_id, str):
+                    stripped_id = entry_id.strip()
+                    if stripped_id.isdigit():
+                        entry_id = int(stripped_id)
+                    elif stripped_id:
+                        entry_id = stripped_id
+                    else:
+                        entry_id = None
+
+                if entry_id is None:
+                    if isinstance(row_index, (int, np.integer)):
+                        entry_id = int(row_index)
+                    elif isinstance(row_index, str) and row_index.isdigit():
+                        entry_id = int(row_index)
+                    else:
+                        entry_id = counter
+
+                entry: Dict[str, Any] = {
+                    'id': entry_id,
+                    'text': str(row[text_column]),
+                    'label': [],
+                    'Comments': []
+                }
                 if entry_labels:
-                    entry['labels'] = entry_labels
+                    unique_labels = list(dict.fromkeys(label for label in entry_labels if label))
+                    entry['label'] = unique_labels
                 if cleaned_meta:
                     entry['meta'] = cleaned_meta
 

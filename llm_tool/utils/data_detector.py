@@ -40,13 +40,14 @@ Antoine Lemor
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -449,43 +450,219 @@ class DataDetector:
         }
 
     @staticmethod
-    def detect_id_column_candidates(df, text_column: Optional[str] = None) -> List[Dict[str, Any]]:
+    def detect_id_column_candidates(
+        df,
+        text_column: Optional[str] = None,
+        max_candidates: int = 10,
+    ) -> List[Dict[str, Any]]:
         """Identify potential ID columns in a dataframe."""
 
-        if not HAS_PANDAS:
+        if not HAS_PANDAS or df is None:
             return []
 
-        candidates: List[Dict[str, Any]] = []
+        total_rows = max(len(df), 1)
+        single_column_candidates: List[Dict[str, Any]] = []
 
         for col in df.columns:
-            series = df[col]
-            unique_ratio = series.nunique(dropna=True) / max(len(series), 1)
-            dtype = str(series.dtype)
-            is_numeric = pd.api.types.is_numeric_dtype(series)  # type: ignore[attr-defined]
-            is_string = pd.api.types.is_string_dtype(series)  # type: ignore[attr-defined]
-            looks_like_id = DataDetector._looks_like_identifier(col)
-
-            if unique_ratio < 0.8:
+            if text_column and col == text_column:
                 continue
 
+            series = df[col]
+            if series.dropna().empty:
+                continue
+
+            dtype = str(series.dtype)
+            try:
+                is_numeric = pd.api.types.is_numeric_dtype(series)  # type: ignore[attr-defined]
+                is_string = pd.api.types.is_string_dtype(series)  # type: ignore[attr-defined]
+            except Exception:
+                is_numeric = False
+                is_string = False
+
+            # Skip complex objects that pandas stores as "object" but are not strings
             if dtype == "object" and not is_string:
                 continue
 
-            if col == text_column:
+            unique_count = series.nunique(dropna=True)
+            unique_ratio = unique_count / total_rows if total_rows else 0.0
+            looks_like_id = DataDetector._looks_like_identifier(col)
+
+            keep_column = (
+                unique_ratio >= 0.6
+                or looks_like_id
+                or bool(is_numeric)
+            )
+
+            if not keep_column:
                 continue
 
-            candidates.append(
+            single_column_candidates.append(
                 {
                     "name": col,
                     "dtype": dtype,
                     "unique_ratio": unique_ratio,
-                    "is_numeric": bool(is_numeric),
-                    "has_id_in_name": looks_like_id,
+                    "looks_like_id": looks_like_id,
+                    "is_combo": False,
+                    "columns": (col,),
+                    "return_value": col,
                 }
             )
 
-        candidates.sort(key=lambda x: (x["unique_ratio"], x["has_id_in_name"]), reverse=True)
-        return candidates
+        # Limit base candidates to keep table readable while preserving highest scores and heuristics
+        single_column_candidates.sort(
+            key=lambda item: (
+                item["unique_ratio"],
+                1 if item["looks_like_id"] else 0,
+                item["name"].lower(),
+            ),
+            reverse=True,
+        )
+        single_column_candidates = single_column_candidates[:max_candidates]
+
+        # Generate combo candidates (pairs) to capture multi-column identifiers
+        combo_candidates: List[Dict[str, Any]] = []
+        if len(single_column_candidates) >= 2 and total_rows:
+            # Prioritize columns that need help (low unique ratio) or look like IDs
+            combo_source = sorted(
+                single_column_candidates,
+                key=lambda item: (
+                    0 if item["unique_ratio"] >= 0.95 else 1,
+                    0 if item["looks_like_id"] else 1,
+                    item["unique_ratio"],
+                ),
+            )[: max(6, max_candidates)]
+
+            for first, second in itertools.combinations(combo_source, 2):
+                combo_cols = (first["columns"][0], second["columns"][0])
+
+                try:
+                    combo_frame = df[list(combo_cols)].copy()
+                except KeyError:
+                    continue
+
+                if combo_frame.dropna(how="all").empty:
+                    continue
+
+                sample_combo_series = (
+                    combo_frame.fillna("__nan__")
+                    .astype(str)
+                    .agg("||".join, axis=1)
+                )
+                combo_unique_ratio = sample_combo_series.nunique(dropna=True) / total_rows
+
+                # Only surface combos that improve uniqueness or reach near-uniqueness
+                if combo_unique_ratio < max(first["unique_ratio"], second["unique_ratio"], 0.6):
+                    continue
+
+                combo_candidates.append(
+                    {
+                        "name": " + ".join(combo_cols),
+                        "dtype": f"combo ({len(combo_cols)})",
+                        "unique_ratio": combo_unique_ratio,
+                        "looks_like_id": first["looks_like_id"] or second["looks_like_id"],
+                        "is_combo": True,
+                        "columns": combo_cols,
+                        "return_value": "+".join(combo_cols),
+                    }
+                )
+
+        all_candidates = single_column_candidates + combo_candidates
+        all_candidates.sort(
+            key=lambda item: (
+                item["unique_ratio"],
+                1 if item.get("is_combo") else 0,
+                1 if item.get("looks_like_id") else 0,
+                item["name"].lower(),
+            ),
+            reverse=True,
+        )
+        return all_candidates
+
+    @staticmethod
+    def _compute_global_unique_ratios(
+        data_path: Union[str, Path],
+        column_sets: List[Tuple[str, ...]],
+        max_unique_values: int = 750_000,
+        chunksize: int = 50_000,
+    ) -> Tuple[int, Dict[Tuple[str, ...], float]]:
+        """Compute unique ratios for columns/combos across the full dataset."""
+
+        if not HAS_PANDAS:
+            return 0, {}
+
+        path = Path(data_path)
+        if not path.exists():
+            return 0, {}
+
+        suffix = path.suffix.lower()
+        needed_columns = sorted({col for combo in column_sets for col in combo})
+
+        unique_maps: Dict[Tuple[str, ...], set] = {combo: set() for combo in column_sets}
+        total_rows = 0
+
+        def _update_unique_sets(chunk):
+            nonlocal total_rows
+            total_rows += len(chunk)
+
+            for combo in column_sets:
+                target_set = unique_maps[combo]
+
+                if len(combo) == 1:
+                    col = combo[0]
+                    if col not in chunk.columns:
+                        continue
+                    series = chunk[col].fillna("__nan__").astype(str)
+                    target_set.update(series)
+                else:
+                    missing = [col for col in combo if col not in chunk.columns]
+                    if missing:
+                        continue
+                    combo_series = chunk[list(combo)].fillna("__nan__").astype(str).agg("||".join, axis=1)
+                    target_set.update(combo_series)
+
+                if len(target_set) > max_unique_values:
+                    # Prevent unbounded memory usage; signal by keeping current count and continue.
+                    target_set.add("__overflow__")
+
+        try:
+            if suffix in {".csv", ".tsv", ".txt"}:
+                read_kwargs = {"usecols": needed_columns, "chunksize": chunksize}
+                if suffix == ".tsv":
+                    read_kwargs["sep"] = "\t"
+                reader = pd.read_csv(path, **read_kwargs)
+                for chunk in reader:
+                    _update_unique_sets(chunk)
+            elif suffix in {".jsonl", ".ndjson"}:
+                for chunk in pd.read_json(path, lines=True, chunksize=chunksize):
+                    _update_unique_sets(chunk)
+            elif suffix in {".parquet"}:
+                chunk = pd.read_parquet(path, columns=needed_columns)
+                _update_unique_sets(chunk)
+            elif suffix in {".json"}:
+                chunk = pd.read_json(path)
+                _update_unique_sets(chunk)
+            elif suffix in {".xlsx", ".xls"}:
+                chunk = pd.read_excel(path, usecols=needed_columns)
+                _update_unique_sets(chunk)
+            else:
+                # Fallback: attempt CSV parsing
+                reader = pd.read_csv(path, usecols=needed_columns, chunksize=chunksize)
+                for chunk in reader:
+                    _update_unique_sets(chunk)
+        except Exception as exc:
+            logger.debug("Unable to compute global unique ratios for %s: %s", path, exc)
+            return total_rows, {}
+
+        if not total_rows:
+            return 0, {}
+
+        ratios: Dict[Tuple[str, ...], float] = {}
+        for combo, values in unique_maps.items():
+            if "__overflow__" in values:
+                ratios[combo] = min(1.0, max_unique_values / total_rows)
+            else:
+                ratios[combo] = len(values) / total_rows
+        return total_rows, ratios
 
     @staticmethod
     def _looks_like_identifier(column_name: str) -> bool:
@@ -735,6 +912,7 @@ class DataDetector:
         df,
         text_column: Optional[str] = None,
         step_label: str = "Identifier Column Selection",
+        data_path: Optional[Union[str, Path]] = None,
     ) -> Optional[str]:
         """Interactive helper to pick an ID column using Rich."""
 
@@ -745,8 +923,6 @@ class DataDetector:
         from rich.prompt import Prompt, Confirm
         from rich.table import Table
 
-        candidates = DataDetector.detect_id_column_candidates(df, text_column)
-
         console.print(f"\n[bold]{step_label}[/bold]")
         console.print()
         console.print("[bold cyan]📋 What is an ID column?[/bold cyan]")
@@ -756,8 +932,76 @@ class DataDetector:
         console.print("  • [yellow]Not mandatory[/yellow] - we can generate one automatically")
         console.print()
 
-        if not candidates:
-            console.print("[yellow]ℹ️  No unique ID columns detected[/yellow]")
+        candidates = DataDetector.detect_id_column_candidates(df, text_column)
+
+        total_rows_full = 0
+        if data_path and candidates:
+            try:
+                total_rows_full, ratios = DataDetector._compute_global_unique_ratios(
+                    data_path,
+                    [tuple(candidate["columns"]) for candidate in candidates],
+                )
+                for candidate in candidates:
+                    candidate["global_unique_ratio"] = ratios.get(tuple(candidate["columns"]))
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("Unable to compute full unique ratios for %s: %s", data_path, exc)
+
+        if candidates:
+            id_table = Table(title="Candidate ID Columns", box=box.ROUNDED)
+            id_table.add_column("#", style="cyan", width=4)
+            id_table.add_column("Candidate", style="green", min_width=26)
+            id_table.add_column("Type", style="yellow", width=14)
+            id_table.add_column("Unique %", style="cyan", width=20, justify="right")
+            id_table.add_column("Notes", style="magenta", overflow="fold")
+
+            sample_rows = len(df)
+            for idx, candidate in enumerate(candidates, 1):
+                sample_ratio = candidate["unique_ratio"]
+                global_ratio = candidate.get("global_unique_ratio")
+
+                if global_ratio is not None:
+                    ratio_display = f"{global_ratio * 100:.1f}%"
+                    if abs(global_ratio - sample_ratio) > 0.05:
+                        ratio_display += f" (sample {sample_ratio * 100:.1f}%)"
+                    else:
+                        ratio_display += " (full)"
+                else:
+                    ratio_display = f"{sample_ratio * 100:.1f}% (sample)"
+
+                notes: List[str] = []
+                if candidate.get("is_combo"):
+                    notes.append("combined columns")
+                if candidate.get("looks_like_id") and not candidate.get("is_combo"):
+                    notes.append("id-like name")
+
+                check_ratio = global_ratio if global_ratio is not None else sample_ratio
+                if check_ratio >= 0.999:
+                    notes.append("✓ unique")
+                elif check_ratio >= 0.95:
+                    notes.append("near-unique")
+                else:
+                    notes.append("⚠ duplicates remain")
+
+                id_table.add_row(
+                    str(idx),
+                    candidate["name"],
+                    candidate["dtype"],
+                    ratio_display,
+                    ", ".join(notes),
+                )
+
+            id_table.add_row("0", "[dim]None (auto-generate)[/dim]", "", "", "")
+            if len(getattr(df, "columns", [])) >= 2:
+                id_table.add_row("C", "[dim]Combine columns manually[/dim]", "", "", "")
+
+            console.print(id_table)
+            if total_rows_full and total_rows_full != sample_rows:
+                console.print(
+                    f"[dim]Sample analysed: {sample_rows:,} rows • Full dataset: {total_rows_full:,} rows[/dim]"
+                )
+            console.print()
+        else:
+            console.print("[yellow]ℹ️  No likely ID columns detected automatically[/yellow]")
             console.print("[dim]  → An 'llm_annotation_id' column can be created automatically[/dim]")
 
             df_columns = list(df.columns) if hasattr(df, "columns") else []
@@ -799,41 +1043,57 @@ class DataDetector:
             )
             return None
 
-        id_table = Table(title="Candidate ID Columns", box=box.ROUNDED)
-        id_table.add_column("#", style="cyan", width=6)
-        id_table.add_column("Column", style="green", width=32)
-        id_table.add_column("Type", style="yellow", width=14)
-        id_table.add_column("Unique %", style="cyan", width=12, justify="right")
+        # Prompt for selection
+        default_choice = "1" if candidates else "0"
+        numeric_choices = [str(i) for i in range(0, len(candidates) + 1)]
+        selection_choices = numeric_choices.copy()
 
-        for idx, candidate in enumerate(candidates, 1):
-            id_table.add_row(
-                str(idx),
-                candidate["name"],
-                candidate["dtype"],
-                f"{candidate['unique_ratio'] * 100:.1f}%",
-            )
+        allow_manual_combine = len(getattr(df, "columns", [])) >= 2
+        if allow_manual_combine:
+            selection_choices.extend(["C", "c"])
+            if not candidates:
+                default_choice = "c"
 
-        id_table.add_row("0", "[dim]None (auto-generate)[/dim]", "", "")
-
-        console.print(id_table)
-        console.print()
-
-        max_choice = len(candidates)
-        choices = [str(i) for i in range(0, max_choice + 1)]
         choice = Prompt.ask(
             "[bold yellow]Select ID column[/bold yellow]",
-            choices=choices,
-            default="0" if not candidates else "1",
-        )
+            choices=selection_choices,
+            default=default_choice,
+        ).strip()
+
+        if choice.lower() == "c":
+            columns = list(map(str, df.columns))
+            console.print("\n[bold]Select columns to combine into a unique identifier:[/bold]")
+            for idx, col in enumerate(columns, 1):
+                console.print(f"  {idx}. {col}")
+            console.print("[dim]Enter column numbers separated by commas (e.g., '1,2')[/dim]")
+
+            while True:
+                selection = Prompt.ask("[bold yellow]Columns to combine[/bold yellow]", default="").strip()
+                if not selection:
+                    console.print("[yellow]No columns selected. Keeping auto-generated IDs.[/yellow]")
+                    return None
+                try:
+                    indices = [int(part.strip()) - 1 for part in selection.split(",")]
+                    if not indices or any(idx < 0 or idx >= len(columns) for idx in indices):
+                        raise ValueError
+                except ValueError:
+                    console.print("[red]Invalid selection. Please enter valid column numbers (e.g., '1,3').[/red]")
+                    continue
+
+                selected_cols = [columns[idx] for idx in indices]
+                combined_name = " + ".join(selected_cols)
+                return_value = "+".join(selected_cols)
+                console.print(f"[green]✓ ID column: '{combined_name}'[/green]")
+                return return_value
 
         if choice == "0":
             console.print("[dim]✓ An 'llm_annotation_id' will be generated automatically[/dim]")
             return None
 
         selected_idx = int(choice) - 1
-        selected_column = candidates[selected_idx]["name"]
-        console.print(f"[green]✓ ID column: '{selected_column}'[/green]")
-        return selected_column
+        selected_candidate = candidates[selected_idx]
+        console.print(f"[green]✓ ID column: '{selected_candidate['name']}'[/green]")
+        return selected_candidate["return_value"]
 
     @staticmethod
     def suggest_text_column(dataset: DatasetInfo) -> Optional[str]:

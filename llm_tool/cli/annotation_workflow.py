@@ -49,6 +49,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
+from rich.panel import Panel
 try:
     from rich import box
 except ImportError:  # pragma: no cover - optional styling
@@ -57,6 +58,14 @@ except ImportError:  # pragma: no cover - optional styling
 from ..utils.language_detector import LanguageDetector
 from llm_tool.utils.data_detector import DataDetector
 from llm_tool.utils.session_summary import SessionSummary, merge_summary, read_summary
+from llm_tool.utils.cost_estimator import (
+    DEFAULT_PROMPT_HEADER,
+    CostEstimate,
+    ModelPricing,
+    estimate_annotation_cost,
+    format_cost_estimate_lines,
+    resolve_model_pricing,
+)
 from llm_tool.utils.model_metrics import load_language_metrics, summarize_final_metrics
 
 
@@ -328,18 +337,265 @@ def _coerce_to_int(value: Any) -> Optional[int]:
                 return None
     return None
 
-    if choice.isdigit():
-        idx = int(choice)
-        one_based_idx = idx - 1
 
-        if candidate_columns and 0 <= one_based_idx < len(candidate_columns):
-            return candidate_columns[one_based_idx]
+def _load_dataframe_for_estimation(data_path: Path, data_format: str) -> pd.DataFrame:
+    """Load dataset into a DataFrame for cost estimation."""
+    import pandas as pd
 
-        if 0 <= one_based_idx < len(all_columns):
-            return all_columns[one_based_idx]
+    suffix = data_format.lower()
+    if suffix == 'csv' or data_path.suffix == '.csv':
+        return pd.read_csv(data_path)
+    if suffix == 'json' or data_path.suffix == '.json':
+        return pd.read_json(data_path)
+    if suffix == 'jsonl' or data_path.suffix == '.jsonl':
+        return pd.read_json(data_path, lines=True)
+    if suffix in {'xlsx', 'xls'} or data_path.suffix in {'.xlsx', '.xls'}:
+        return pd.read_excel(data_path)
+    if suffix == 'parquet' or data_path.suffix == '.parquet':
+        return pd.read_parquet(data_path)
+    raise ValueError(f"Unsupported data format '{data_format}' for cost estimation")
 
-        if 0 <= idx < len(all_columns):
-            return all_columns[idx]
+
+def _apply_annotation_sampling(
+    df: pd.DataFrame,
+    *,
+    annotation_limit: Optional[int],
+    sample_strategy: str,
+    sample_seed: int = 42,
+) -> pd.DataFrame:
+    """Apply the same sampling strategy as the annotator."""
+    if annotation_limit and len(df) > annotation_limit:
+        if sample_strategy == 'random':
+            return df.sample(annotation_limit, random_state=sample_seed)
+        return df.head(annotation_limit)
+    return df
+
+
+def _compute_cost_estimate_for_selection(
+    *,
+    provider: str,
+    model_name: str,
+    data_path: Path,
+    data_format: str,
+    text_columns: List[str],
+    prompt_configs: List[Dict[str, Any]],
+    annotation_limit: Optional[int],
+    sample_strategy: Optional[str],
+    max_tokens: int,
+    prompt_header: str = DEFAULT_PROMPT_HEADER,
+) -> Tuple[Optional[CostEstimate], Optional[Exception], Optional[ModelPricing]]:
+    """Return cost estimate, error (if any), and pricing reference for the selection."""
+    pricing = resolve_model_pricing(provider, model_name)
+    if pricing is None:
+        return None, None, None
+
+    try:
+        df_full = _load_dataframe_for_estimation(data_path, data_format)
+        df_subset = _apply_annotation_sampling(
+            df_full,
+            annotation_limit=annotation_limit,
+            sample_strategy=sample_strategy or 'head',
+            sample_seed=42,
+        )
+
+        prompt_payload: List[Dict[str, Any]] = []
+        for prompt_cfg in prompt_configs:
+            prompt_section = prompt_cfg.get('prompt') or {}
+            prompt_text = (
+                prompt_section.get('content')
+                or prompt_section.get('prompt')
+                or prompt_cfg.get('content')
+                or ""
+            )
+            raw_keys = (
+                prompt_section.get('keys')
+                or prompt_section.get('expected_keys')
+                or prompt_cfg.get('expected_keys')
+                or []
+            )
+            if isinstance(raw_keys, Iterable) and not isinstance(raw_keys, (str, bytes)):
+                expected_keys = list(raw_keys)
+            else:
+                expected_keys = []
+
+            prompt_payload.append({
+                "prompt": prompt_text,
+                "expected_keys": expected_keys,
+            })
+
+        cost_estimate = estimate_annotation_cost(
+            df_subset=df_subset,
+            text_columns=text_columns,
+            prompts=prompt_payload,
+            pricing=pricing,
+            max_output_tokens=max_tokens,
+            prompt_header=prompt_header,
+        )
+        return cost_estimate, None, pricing
+    except Exception as exc:  # pragma: no cover - estimation remains best effort
+        return None, exc, pricing
+
+
+def _format_stat_value(value: Any) -> str:
+    if value is None:
+        return "—"
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{numeric:,.0f}"
+
+
+def _render_component_token_tables(console, component_stats: Optional[List[Dict[str, Any]]]) -> None:
+    if not console or not component_stats:
+        return
+
+    metrics = [
+        ("Minimum", "char_min", "token_min"),
+        ("25th Percentile", "char_p25", "token_p25"),
+        ("Median", "char_median", "token_median"),
+        ("Mean", "char_mean", "token_mean"),
+        ("75th Percentile", "char_p75", "token_p75"),
+        ("95th Percentile", "char_p95", "token_p95"),
+        ("Maximum", "char_max", "token_max"),
+        ("Std Deviation", "char_std", "token_std"),
+    ]
+
+    console.print("\n[bold cyan]Token Breakdown[/bold cyan]\n")
+
+    for component in component_stats:
+        stats = component.get("stats") or {}
+        table_title = f"{component.get('label', 'Component')} Token Statistics"
+        stats_table = Table(
+            title=table_title,
+            border_style="cyan",
+            show_header=True,
+            header_style="bold",
+        )
+        stats_table.add_column("Metric", style="cyan", width=20)
+        stats_table.add_column("Characters", style="yellow", justify="right", width=15)
+        stats_table.add_column("Tokens", style="green", justify="right", width=15)
+
+        for metric_name, char_key, token_key in metrics:
+            stats_table.add_row(
+                metric_name,
+                _format_stat_value(stats.get(char_key)),
+                _format_stat_value(stats.get(token_key)),
+            )
+
+        console.print(stats_table)
+
+        info_bits: List[str] = []
+        samples = component.get("samples")
+        if samples is not None:
+            info_bits.append(f"Samples: {int(samples):,}")
+        tokens_per_request = component.get("tokens_per_request")
+        if tokens_per_request is not None:
+            info_bits.append(f"Tokens/request: {float(tokens_per_request):,.1f}")
+        tokens_total = component.get("tokens_total")
+        if tokens_total is not None:
+            info_bits.append(f"Total tokens: {int(tokens_total):,}")
+
+        metadata = component.get("metadata") or {}
+        if component.get("type") == "text" and metadata.get("text_columns"):
+            info_bits.append(f"Columns: {', '.join(metadata['text_columns'])}")
+        if component.get("type") == "prompt":
+            if metadata.get("expected_keys"):
+                info_bits.append(f"Expected keys: {len(metadata['expected_keys'])}")
+            preview = metadata.get("preview")
+            if preview:
+                info_bits.append(f"Preview: {preview}")
+
+        if info_bits:
+            console.print("[dim]" + " | ".join(info_bits) + "[/dim]")
+        console.print("")
+
+
+def _render_component_contributions(console, contributions: Optional[List[Dict[str, Any]]]) -> None:
+    if not console or not contributions:
+        return
+
+    contributions_table = Table(
+        title="Token Contribution Summary",
+        border_style="magenta",
+        show_header=True,
+        header_style="bold",
+    )
+    contributions_table.add_column("Component", style="cyan", width=32)
+    contributions_table.add_column("Tokens/request", style="green", justify="right", width=16)
+    contributions_table.add_column("Total tokens", style="yellow", justify="right", width=16)
+    contributions_table.add_column("Cost ($)", style="magenta", justify="right", width=12)
+
+    for component in contributions:
+        contributions_table.add_row(
+            component.get("label", "Component"),
+            f"{component.get('tokens_per_request', 0.0):,.1f}",
+            f"{component.get('tokens_total', 0):,}",
+            f"{component.get('cost', 0.0):,.4f}",
+        )
+        for sub in component.get("sub_components", []):
+            contributions_table.add_row(
+                f"  ↳ {sub.get('label', 'Sub-component')}",
+                f"{sub.get('tokens_per_request', 0.0):,.1f}",
+                f"{sub.get('tokens_total', 0):,}",
+                f"{sub.get('cost', 0.0):,.4f}",
+                style="dim",
+            )
+
+    console.print(contributions_table)
+    console.print("")
+
+
+def _display_cost_estimate_panel(
+    console,
+    *,
+    cost_estimate: Optional[CostEstimate],
+    cost_pricing: Optional[ModelPricing],
+    cost_estimate_error: Optional[Exception],
+    provider: str,
+    model_name: str,
+) -> None:
+    """
+    Render the API cost estimate (or a fallback message) in the configuration summary.
+
+    Parameters mirror the computation helper so CLI variants can share the same UX.
+    """
+    if cost_estimate:
+        rich_lines = format_cost_estimate_lines(cost_estimate, rich_markup=True)
+        plain_lines = format_cost_estimate_lines(cost_estimate, rich_markup=False)
+        if console:
+            _render_component_token_tables(console, cost_estimate.assumptions.get("component_token_stats"))
+            _render_component_contributions(console, cost_estimate.assumptions.get("component_token_contributions"))
+            console.print(
+                Panel(
+                    "\n".join(rich_lines),
+                    title="💰 Estimated API Cost",
+                    border_style="bright_magenta",
+                )
+            )
+        else:
+            print("\n".join(plain_lines))
+        return
+
+    if cost_pricing:
+        message = "Unable to compute API cost estimate"
+        if cost_estimate_error:
+            message += f": {cost_estimate_error}"
+        if console:
+            console.print(f"[dim yellow]{message}.[/dim yellow]")
+        else:
+            print(f"{message}.")
+        return
+
+    if provider in {'openai', 'anthropic', 'google'}:
+        message = (
+            f"No pricing snapshot registered for {provider}:{model_name}; "
+            "API cost estimate unavailable."
+        )
+        if console:
+            console.print(f"[dim yellow]{message}[/dim yellow]")
+        else:
+            print(message)
 
     return None
 
@@ -1364,7 +1620,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         cli.console,
         df_for_id,
         text_column=text_column,
-        step_label="Step 2b/7: Identifier Column Selection"
+        step_label="Step 2b/7: Identifier Column Selection",
+        data_path=data_path
     )
     identifier_source = "user" if identifier_column else "auto"
     auto_identifier_column = identifier_column or "llm_annotation_id"
@@ -1807,11 +2064,21 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # Check if model supports parameter tuning
     model_name_lower = model_name.lower()
     is_o_series = any(x in model_name_lower for x in ['o1', 'o3', 'o4'])
-    supports_params = not is_o_series
+    is_gpt5_series = provider == 'openai' and model_name_lower.startswith('gpt-5')
+    is_locked_openai = False
+
+    supports_params = not (is_o_series or is_locked_openai or is_gpt5_series)
 
     if not supports_params:
-        cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
-        cli.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
+        if is_o_series:
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
+        elif is_gpt5_series:
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses locked sampling parameters[/yellow]")
+            cli.console.print("[dim]   Temperature and top_p are fixed to 1.0; only max tokens can be adjusted.[/dim]")
+        else:
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' does not allow temperature/top_p overrides[/yellow]")
+            cli.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
+
         configure_params = False
     else:
         cli.console.print("[yellow]Configure model parameters?[/yellow]")
@@ -1821,7 +2088,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         configure_params = Confirm.ask("\nConfigure model parameters?", default=False)
 
     # Default values
-    temperature = 0.7
+    temperature = 1.0 if not supports_params else 0.7
     max_tokens = 1000
     top_p = 1.0
     top_k = 40
@@ -1867,6 +2134,15 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             cli.console.print("  • [yellow]Medium (20-50)[/yellow]  - Balanced diversity")
             cli.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
             top_k = cli._int_prompt_with_validation("Top K", 40, 1, 100)
+
+    if is_gpt5_series:
+        cli.console.print("\n[cyan]📏 Max Tokens (GPT-5 Series):[/cyan]")
+        cli.console.print("  Maximum response length; temperature/top_p remain fixed at 1.0.")
+        cli.console.print("  [dim]Note: higher values increase API usage.[/dim]")
+        max_tokens = cli._int_prompt_with_validation("Max tokens", max_tokens, 50, 8000)
+        temperature = 1.0
+        top_p = 1.0
+        top_k = None
 
     model_config_section = factory_metadata_state.setdefault('model_configuration', {})
     model_config_section.update({
@@ -1914,6 +2190,30 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'top_p': top_p,
         'top_k': top_k if provider in ['ollama', 'google'] else None,
     })
+
+    cost_estimate: Optional[CostEstimate] = None
+    cost_estimate_error: Optional[Exception] = None
+    cost_pricing: Optional[ModelPricing] = None
+    cost_estimate, cost_estimate_error, cost_pricing = _compute_cost_estimate_for_selection(
+        provider=provider,
+        model_name=model_name,
+        data_path=data_path,
+        data_format=data_format,
+        text_columns=[text_column],
+        prompt_configs=prompt_configs,
+        annotation_limit=annotation_limit,
+        sample_strategy=sample_strategy,
+        max_tokens=max_tokens,
+        prompt_header=DEFAULT_PROMPT_HEADER,
+    )
+
+    if cost_estimate:
+        metadata_cfg = locals().get('metadata_processing_config')
+        if isinstance(metadata_cfg, dict):
+            metadata_cfg['estimated_cost_usd'] = round(cost_estimate.total_cost, 6)
+            metadata_cfg['estimated_input_tokens'] = cost_estimate.input_tokens
+            metadata_cfg['estimated_output_tokens'] = cost_estimate.output_tokens_estimated
+            metadata_cfg['pricing_last_updated'] = cost_estimate.pricing_last_updated
 
     # Display comprehensive summary
     summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
@@ -1970,6 +2270,15 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
     cli.console.print("\n")
     cli.console.print(summary_table)
+
+    _display_cost_estimate_panel(
+        cli.console,
+        cost_estimate=cost_estimate,
+        cost_pricing=cost_pricing,
+        cost_estimate_error=cost_estimate_error,
+        provider=provider,
+        model_name=model_name,
+    )
 
     if not Confirm.ask("\n[bold yellow]Start annotation?[/bold yellow]", default=True):
         return
@@ -2204,6 +2513,13 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'output_path': str(default_output_path),
         'output_format': data_format,
     })
+    if cost_estimate:
+        factory_metadata_state.setdefault('cost', {}).update({
+            'estimated_cost_usd': cost_estimate.total_cost,
+            'estimated_input_tokens': cost_estimate.input_tokens,
+            'estimated_output_tokens': cost_estimate.output_tokens_estimated,
+            'pricing_last_updated': cost_estimate.pricing_last_updated,
+        })
     _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
 
     # Prepare prompts payload for pipeline
@@ -2278,6 +2594,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         }
         pipeline_config['options'] = options
 
+    if cost_estimate:
+        pipeline_config['estimated_cost_usd'] = cost_estimate.total_cost
+        pipeline_config['estimated_input_tokens'] = cost_estimate.input_tokens
+        pipeline_config['estimated_output_tokens'] = cost_estimate.output_tokens_estimated
+
     # ============================================================
     # SAVE REPRODUCIBILITY METADATA
     # ============================================================
@@ -2307,6 +2628,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             'annotation_sample_size': annotation_limit,
             'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
         })
+        if cost_estimate:
+            metadata_processing_config['estimated_cost_usd'] = round(cost_estimate.total_cost, 6)
+            metadata_processing_config['estimated_input_tokens'] = cost_estimate.input_tokens
+            metadata_processing_config['estimated_output_tokens'] = cost_estimate.output_tokens_estimated
+            metadata_processing_config['pricing_last_updated'] = cost_estimate.pricing_last_updated
         metadata_progress.update({
             'requested': requested_rows,
             'completed': 0,
@@ -3023,7 +3349,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         cli.console,
         df_sample,
         text_column=text_column,
-        step_label="Step 1.2b/4: Identifier Column Selection"
+        step_label="Step 1.2b/4: Identifier Column Selection",
+        data_path=data_path
     )
     identifier_source = "user" if identifier_column else "auto"
     auto_identifier_column = identifier_column or "llm_annotation_id"
@@ -3427,11 +3754,16 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # Check if model supports parameter tuning
     model_name_lower = model_name.lower()
     is_o_series = any(x in model_name_lower for x in ['o1', 'o3', 'o4'])
-    supports_params = not is_o_series
+    is_gpt5_series = provider == 'openai' and model_name_lower.startswith('gpt-5')
+    supports_params = not (is_o_series or is_gpt5_series)
 
     if not supports_params:
-        cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
-        cli.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
+        if is_o_series:
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
+            cli.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
+        elif is_gpt5_series:
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses locked sampling parameters[/yellow]")
+            cli.console.print("[dim]   Temperature and top_p are fixed to 1.0; only max tokens can be adjusted.[/dim]")
         configure_params = False
     else:
         cli.console.print("[yellow]Configure model parameters?[/yellow]")
@@ -3488,6 +3820,15 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             cli.console.print("  • [red]Large (50+)[/red]    - Maximum diversity")
             top_k = cli._int_prompt_with_validation("Top K", 40, 1, 100)
 
+    if is_gpt5_series:
+        cli.console.print("\n[cyan]📏 Max Tokens (GPT-5 Series):[/cyan]")
+        cli.console.print("  Maximum response length; temperature/top_p remain fixed at 1.0.")
+        cli.console.print("  [dim]Note: higher values increase API usage.[/dim]")
+        max_tokens = cli._int_prompt_with_validation("Max tokens", max_tokens, 50, 8000)
+        temperature = 1.0
+        top_p = 1.0
+        top_k = None
+
     # Step 1.6: Execute
     cli.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     cli.console.print("[bold cyan]  STEP 1.6:[/bold cyan] [bold white]Review & Execute[/bold white]")
@@ -3504,6 +3845,22 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     else:
         annotation_mode = 'local'
         annotation_mode_display = "Local"
+
+    cost_estimate: Optional[CostEstimate] = None
+    cost_estimate_error: Optional[Exception] = None
+    cost_pricing: Optional[ModelPricing] = None
+    cost_estimate, cost_estimate_error, cost_pricing = _compute_cost_estimate_for_selection(
+        provider=provider,
+        model_name=model_name,
+        data_path=data_path,
+        data_format=data_format,
+        text_columns=[text_column],
+        prompt_configs=prompt_configs,
+        annotation_limit=annotation_limit,
+        sample_strategy=sample_strategy,
+        max_tokens=max_tokens,
+        prompt_header=DEFAULT_PROMPT_HEADER,
+    )
 
     # Display comprehensive summary
     summary_table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
@@ -3555,6 +3912,15 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
     cli.console.print("\n")
     cli.console.print(summary_table)
+
+    _display_cost_estimate_panel(
+        cli.console,
+        cost_estimate=cost_estimate,
+        cost_pricing=cost_pricing,
+        cost_estimate_error=cost_estimate_error,
+        provider=provider,
+        model_name=model_name,
+    )
 
     if not Confirm.ask("\n[bold yellow]Start annotation?[/bold yellow]", default=True):
         return
@@ -3809,6 +4175,12 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'lang_column': lang_column,  # From Step 4b: Language column for training metadata
         'create_annotated_subset': True,
     }
+
+    if cost_estimate:
+        pipeline_config['estimated_cost_usd'] = cost_estimate.total_cost
+        pipeline_config['estimated_input_tokens'] = cost_estimate.input_tokens
+        pipeline_config['estimated_output_tokens'] = cost_estimate.output_tokens_estimated
+        pipeline_config['pricing_last_updated'] = cost_estimate.pricing_last_updated
 
     pipeline_config.update({
         'session_dirs': {key: str(value) for key, value in session_dirs.items()},

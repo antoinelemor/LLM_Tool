@@ -1523,7 +1523,8 @@ def _training_studio_intelligent_dataset_selector(
             self.console,
             df_for_id_check,
             text_column=text_column,
-            step_label=""  # Empty since we already printed the header
+            step_label="",  # Empty since we already printed the header
+            data_path=data_path
         )
     except Exception as e:
         self.logger.warning(f"Could not load dataframe for ID detection: {e}")
@@ -3208,7 +3209,8 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 self.console,
                 df,
                 text_column=text_column,
-                step_label="Identifier Column (Optional)"
+                step_label="Identifier Column (Optional)",
+                data_path=data_path
             )
         except Exception as e:
             self.logger.warning(f"Could not detect ID columns: {e}")
@@ -11914,7 +11916,8 @@ def integrate_training_arena_in_annotator_factory(
             console,
             df,
             text_column=selected_text_column,
-            step_label="Identifier Column (Optional)"
+            step_label="Identifier Column (Optional)",
+            data_path=data_path
         )
     except Exception as e:
         logger.warning(f"Could not detect ID columns: {e}")
