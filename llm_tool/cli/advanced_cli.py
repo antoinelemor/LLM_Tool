@@ -3027,7 +3027,8 @@ class AdvancedCLI:
 
                 pipeline_with_progress = PipelineController(
                     settings=self.settings,
-                    session_id=session_id  # Pass session_id for organized logging
+                    session_id=session_id,  # Pass session_id for organized logging
+                    session_mode="factory",
                 )
 
                 with RichProgressManager(show_json_every=1, compact_mode=False) as progress_manager:
@@ -5341,7 +5342,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             pipeline_with_progress = PipelineController(
                 settings=self.settings,
-                session_id=test_session_id  # Pass session_id for organized logging
+                session_id=test_session_id,  # Pass session_id for organized logging
+                session_mode="factory",
             )
 
             # Use the enhanced Rich progress manager with JSON display
@@ -7262,11 +7264,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                         annotation_data = json.loads(annotation_str)
 
-                        # Build Doccano entry
+                        # Build Doccano entry with doccano-compatible label field
                         doccano_entry = {
                             'text': str(row[text_column]),
-                            'labels': []
                         }
+                        doccano_labels = []
 
                         # Extract labels from annotation
                         for label_key in all_label_keys:
@@ -7274,9 +7276,31 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                 label_value = annotation_data[label_key]
                                 # Handle different label formats
                                 if isinstance(label_value, list):
-                                    doccano_entry['labels'].extend(label_value)
-                                elif isinstance(label_value, str) and label_value.strip():
-                                    doccano_entry['labels'].append(label_value)
+                                    for candidate in label_value:
+                                        if candidate is None:
+                                            continue
+                                        candidate_str = str(candidate).strip()
+                                        if candidate_str:
+                                            doccano_labels.append(candidate_str)
+                                elif isinstance(label_value, (str, int, float, bool)):
+                                    candidate_str = str(label_value).strip()
+                                    if candidate_str:
+                                        doccano_labels.append(candidate_str)
+                                elif label_value is not None:
+                                    candidate_str = str(label_value).strip()
+                                    if candidate_str:
+                                        doccano_labels.append(candidate_str)
+
+                        if doccano_labels:
+                            seen = set()
+                            ordered_labels = []
+                            for lbl in doccano_labels:
+                                if lbl not in seen:
+                                    ordered_labels.append(lbl)
+                                    seen.add(lbl)
+                            doccano_entry['label'] = ordered_labels
+                        else:
+                            doccano_entry['label'] = []
 
                         # Add metadata (everything except text and annotation columns)
                         metadata = {}
@@ -7292,7 +7316,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                     else:
                                         metadata[col] = str(val)
 
-                        doccano_entry['meta'] = metadata
+                        if metadata:
+                            doccano_entry['meta'] = metadata
 
                         # Write to JSONL
                         f.write(json.dumps(doccano_entry, ensure_ascii=False) + '\n')
@@ -9264,7 +9289,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 pipeline_with_progress = PipelineController(
                     settings=self.settings,
-                    session_id=session_id  # Pass session_id for organized logging
+                    session_id=session_id,  # Pass session_id for organized logging
+                    session_mode="annotator",
                 )
 
                 with RichProgressManager(

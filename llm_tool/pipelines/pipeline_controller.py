@@ -79,7 +79,13 @@ class PipelineState:
 class PipelineController:
     """Main controller for orchestrating the complete pipeline"""
 
-    def __init__(self, settings: Optional[Settings] = None, progress_callback=None, session_id: Optional[str] = None):
+    def __init__(
+        self,
+        settings: Optional[Settings] = None,
+        progress_callback=None,
+        session_id: Optional[str] = None,
+        session_mode: str = "factory",
+    ):
         """Initialize the pipeline controller
 
         Args:
@@ -96,6 +102,7 @@ class PipelineController:
         self.logger = logging.getLogger(__name__)
         self.progress_callback = progress_callback
         self.session_id = session_id  # Store session ID for organized logging
+        self.session_mode = (session_mode or "factory").strip().lower()
 
         # Import components lazily to avoid circular dependencies
         self._annotation_module = None
@@ -979,8 +986,41 @@ class PipelineController:
         """Save the current pipeline state to disk"""
         # Determine save location based on session_id
         if self.session_id:
-            # Organized structure: logs/annotator_factory/{session_id}/pipeline_state/
-            pipeline_state_dir = self.settings.paths.logs_dir / "annotator_factory" / self.session_id / "pipeline_state"
+            # Organized structure: logs/{mode}/{session_id}/pipeline_state/
+            normalized_mode = (self.session_mode or "").replace("-", "_")
+            mode_folder: Optional[str] = None
+
+            if normalized_mode:
+                if "factory" in normalized_mode and "annotator" not in normalized_mode:
+                    mode_folder = "annotator_factory"
+                elif "annotator" in normalized_mode and not normalized_mode.endswith("factory"):
+                    mode_folder = "annotator"
+                elif normalized_mode.endswith("factory"):
+                    mode_folder = "annotator_factory"
+
+            if mode_folder is None:
+                annotator_session_dir = (
+                    self.settings.paths.logs_dir / "annotator" / self.session_id
+                )
+                factory_session_dir = (
+                    self.settings.paths.logs_dir / "annotator_factory" / self.session_id
+                )
+
+                if annotator_session_dir.exists() and not factory_session_dir.exists():
+                    mode_folder = "annotator"
+                elif factory_session_dir.exists() and not annotator_session_dir.exists():
+                    mode_folder = "annotator_factory"
+                elif annotator_session_dir.exists():
+                    mode_folder = "annotator"
+                else:
+                    mode_folder = "annotator_factory"
+
+            pipeline_state_dir = (
+                self.settings.paths.logs_dir
+                / mode_folder
+                / self.session_id
+                / "pipeline_state"
+            )
             pipeline_state_dir.mkdir(parents=True, exist_ok=True)
 
             # Use descriptive filename with timestamp

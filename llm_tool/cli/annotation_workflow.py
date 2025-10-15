@@ -693,71 +693,95 @@ def _persist_annotation_outputs(
     annotation_results["full_output_path"] = str(full_output_path)
     annotation_results["output_file"] = str(full_output_path)
 
-    # Build annotations-only CSV if the output is CSV
-    if full_output_path.suffix.lower() != ".csv":
-        return paths
+    if full_output_path.suffix.lower() == ".csv":
+        subset_target = dataset_root / f"{full_output_path.stem}_annotations_only{full_output_path.suffix}"
 
-    try:
-        with full_output_path.open("r", newline="", encoding="utf-8") as src_file:
-            reader = csv.DictReader(src_file)
-            rows = list(reader)
-            fieldnames = reader.fieldnames or []
+        subset_moved = False
+        existing_subset = annotation_results.get("annotated_subset_path")
+        if existing_subset:
+            try:
+                subset_source_path = Path(existing_subset)
+                if subset_source_path.exists():
+                    subset_target.parent.mkdir(parents=True, exist_ok=True)
+                    if subset_target.exists() and subset_target.resolve() != subset_source_path.resolve():
+                        subset_target.unlink()
+                    if subset_source_path.resolve() != subset_target.resolve():
+                        subset_source_path.rename(subset_target)
+                    else:
+                        subset_target = subset_source_path
+                    subset_moved = True
+            except Exception as exc:
+                cli.logger.warning(f"Failed to relocate existing annotations subset: {exc}")
 
-        if not fieldnames or not rows:
-            return paths
+        if subset_moved:
+            paths["annotations_only_path"] = str(subset_target)
+            annotation_results["annotations_only_path"] = str(subset_target)
+            annotation_results["annotated_subset_path"] = str(subset_target)
+        else:
+            try:
+                with full_output_path.open("r", newline="", encoding="utf-8") as src_file:
+                    reader = csv.DictReader(src_file)
+                    rows = list(reader)
+                    fieldnames = reader.fieldnames or []
 
-        # Identify annotation-bearing columns
-        annotation_columns = set()
-        annotation_column_hint = str(annotation_results.get("annotation_column", "")).strip()
-        if annotation_column_hint and annotation_column_hint in fieldnames:
-            annotation_columns.add(annotation_column_hint)
+                if fieldnames and rows:
+                    annotation_columns = set()
+                    annotation_column_hint = str(annotation_results.get("annotation_column", "")).strip()
+                    if annotation_column_hint and annotation_column_hint in fieldnames:
+                        annotation_columns.add(annotation_column_hint)
 
-        model_hint = str(annotation_results.get("model", "")).strip()
-        if model_hint:
-            safe_model_name = model_hint.replace(":", "_").replace("/", "_")
-            if safe_model_name in fieldnames:
-                annotation_columns.add(safe_model_name)
+                    model_hint = str(annotation_results.get("model", "")).strip()
+                    if model_hint:
+                        safe_model_name = model_hint.replace(":", "_").replace("/", "_")
+                        if safe_model_name in fieldnames:
+                            annotation_columns.add(safe_model_name)
 
-        for column in fieldnames:
-            col_lower = column.lower()
-            if col_lower in {"annotation", "annotations", "labels", "label", "predictions", "prediction"}:
-                annotation_columns.add(column)
-            elif col_lower.endswith("_annotation") or col_lower.endswith("_annotations"):
-                annotation_columns.add(column)
-            elif col_lower.endswith("_labels") or col_lower.endswith("_prediction"):
-                annotation_columns.add(column)
+                    for column in fieldnames:
+                        col_lower = column.lower()
+                        if col_lower in {"annotation", "annotations", "labels", "label", "predictions", "prediction"}:
+                            annotation_columns.add(column)
+                        elif col_lower.endswith("_annotation") or col_lower.endswith("_annotations"):
+                            annotation_columns.add(column)
+                        elif col_lower.endswith("_labels") or col_lower.endswith("_prediction"):
+                            annotation_columns.add(column)
 
-        if not annotation_columns:
-            sample_values = rows[: min(50, len(rows))]
-            for column in fieldnames:
-                if any(
-                    (value := (row.get(column) or "").strip())
-                    and (value.startswith("{") or value.startswith("["))
-                    for row in sample_values
-                ):
-                    annotation_columns.add(column)
+                    if not annotation_columns:
+                        sample_values = rows[: min(50, len(rows))]
+                        for column in fieldnames:
+                            if any(
+                                (value := (row.get(column) or "").strip())
+                                and (value.startswith("{") or value.startswith("["))
+                                for row in sample_values
+                            ):
+                                annotation_columns.add(column)
 
-        def _row_has_annotation(row: Dict[str, Any]) -> bool:
-            for column in annotation_columns:
-                value = str(row.get(column, "")).strip()
-                if value and value.lower() not in {"nan", "none", "null", "{}", "[]"}:
-                    return True
-            return False
+                    def _row_has_annotation(row: Dict[str, Any]) -> bool:
+                        for column in annotation_columns:
+                            value = str(row.get(column, "")).strip()
+                            if value and value.lower() not in {"nan", "none", "null", "{}", "[]"}:
+                                return True
+                        return False
 
-        annotated_rows = [row for row in rows if _row_has_annotation(row)]
-        if not annotated_rows:
-            return paths
+                    annotated_rows = [row for row in rows if _row_has_annotation(row)]
+                    if annotated_rows:
+                        with subset_target.open("w", newline="", encoding="utf-8") as dest_file:
+                            writer = csv.DictWriter(dest_file, fieldnames=fieldnames)
+                            writer.writeheader()
+                            writer.writerows(annotated_rows)
 
-        annotations_only_path = dataset_root / f"{full_output_path.stem}_annotations_only.csv"
-        with annotations_only_path.open("w", newline="", encoding="utf-8") as dest_file:
-            writer = csv.DictWriter(dest_file, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(annotated_rows)
+                        paths["annotations_only_path"] = str(subset_target)
+                        annotation_results["annotations_only_path"] = str(subset_target)
+                        annotation_results["annotated_subset_path"] = str(subset_target)
+            except Exception as exc:
+                cli.logger.warning(f"Failed to create annotations-only subset: {exc}")
 
-        paths["annotations_only_path"] = str(annotations_only_path)
-        annotation_results["annotations_only_path"] = str(annotations_only_path)
-    except Exception as exc:
-        cli.logger.warning(f"Failed to create annotations-only CSV: {exc}")
+        if paths["annotations_only_path"]:
+            legacy_subset = dataset_root / f"{full_output_path.stem}_annotated_only{full_output_path.suffix}"
+            try:
+                if legacy_subset.exists() and legacy_subset.resolve() != Path(paths["annotations_only_path"]).resolve():
+                    legacy_subset.unlink()
+            except Exception as exc:
+                cli.logger.debug(f"Could not remove legacy subset file {legacy_subset}: {exc}")
 
     return paths
 
@@ -2744,7 +2768,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'run_validation': False,
         'run_training': False,
         'lang_column': lang_column,  # From Step 4b: Language column for training metadata
-        'create_annotated_subset': True,
+        'create_annotated_subset': False,  # CLI handles subset export downstream
         'session_dirs': {key: str(value) for key, value in session_dirs.items()},
         'provider_subdir': str(provider_subdir),
         'model_subdir': str(model_subdir),
@@ -2880,7 +2904,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         from ..pipelines.pipeline_controller import PipelineController
         pipeline_with_progress = PipelineController(
             settings=cli.settings,
-            session_id=session_id  # Pass session_id for organized logging
+            session_id=session_id,  # Pass session_id for organized logging
+            session_mode=AnnotationMode.ANNOTATOR.value,
         )
 
         # Use RichProgressManager for elegant display
@@ -4429,7 +4454,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'run_validation': False,
         'run_training': False,
         'lang_column': lang_column,  # From Step 4b: Language column for training metadata
-        'create_annotated_subset': True,
+        'create_annotated_subset': False,  # CLI handles subset export downstream
     }
 
     if cost_estimate:
@@ -4570,7 +4595,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         from ..pipelines.pipeline_controller import PipelineController
         pipeline_with_progress = PipelineController(
             settings=cli.settings,
-            session_id=session_id  # Pass session_id for organized logging
+            session_id=session_id,  # Pass session_id for organized logging
+            session_mode=AnnotationMode.FACTORY.value,
         )
 
         # Use RichProgressManager for elegant display
@@ -5486,7 +5512,12 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
 
         pipeline_with_progress = PipelineController(
             settings=cli.settings,
-            session_id=resume_session_id  # Pass session_id for organized logging
+            session_id=resume_session_id,  # Pass session_id for organized logging
+            session_mode=(
+                AnnotationMode.FACTORY.value
+                if is_factory_workflow
+                else AnnotationMode.ANNOTATOR.value
+            ),
         )
 
         from ..utils.rich_progress_manager import RichProgressManager
