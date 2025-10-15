@@ -1393,6 +1393,9 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     )
     tracker.update_status("active")
 
+    factory_metadata_state: Optional[Dict[str, Any]] = None
+    factory_metadata_targets: Optional[List[Path]] = None
+
     metadata_root = session_dirs.get("metadata", session_dirs["base"] / "metadata")
     metadata_targets: List[Path] = []
     fallback_metadata_path = metadata_root / "session_state.json"
@@ -2059,19 +2062,20 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         else:
             batch_size = None  # Not used when incremental save is disabled
 
-    processing_section = factory_metadata_state.setdefault('processing_configuration', {})
-    processing_section.update({
-        'parallel_workers': None if openai_batch_mode else num_processes,
-        'batch_size': None if openai_batch_mode else batch_size,
-        'incremental_save': None if openai_batch_mode else save_incrementally,
-        'openai_batch_mode': openai_batch_mode,
-    })
-    factory_metadata_state.setdefault('annotation_progress', {}).update({
-        'requested': factory_metadata_state.get('annotation_progress', {}).get('requested', 'all'),
-        'completed': 0,
-        'remaining': 'all',
-    })
-    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
+    if factory_metadata_state is not None and factory_metadata_targets is not None:
+        processing_section = factory_metadata_state.setdefault('processing_configuration', {})
+        processing_section.update({
+            'parallel_workers': None if openai_batch_mode else num_processes,
+            'batch_size': None if openai_batch_mode else batch_size,
+            'incremental_save': None if openai_batch_mode else save_incrementally,
+            'openai_batch_mode': openai_batch_mode,
+        })
+        factory_metadata_state.setdefault('annotation_progress', {}).update({
+            'requested': factory_metadata_state.get('annotation_progress', {}).get('requested', 'all'),
+            'completed': 0,
+            'remaining': 'all',
+        })
+        _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
 
     # ============================================================
     # MODEL PARAMETERS
@@ -2162,17 +2166,18 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         top_p = 1.0
         top_k = None
 
-    model_config_section = factory_metadata_state.setdefault('model_configuration', {})
-    model_config_section.update({
-        'annotation_mode': 'openai_batch' if (provider == 'openai' and openai_batch_mode) else (
-            'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
-        ),
-        'temperature': temperature,
-        'max_tokens': max_tokens,
-        'top_p': top_p,
-        'top_k': top_k if provider in ['ollama', 'google'] else None,
-    })
-    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
+    if factory_metadata_state is not None and factory_metadata_targets is not None:
+        model_config_section = factory_metadata_state.setdefault('model_configuration', {})
+        model_config_section.update({
+            'annotation_mode': 'openai_batch' if (provider == 'openai' and openai_batch_mode) else (
+                'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
+            ),
+            'temperature': temperature,
+            'max_tokens': max_tokens,
+            'top_p': top_p,
+            'top_k': top_k if provider in ['ollama', 'google'] else None,
+        })
+        _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
 
     tracker.mark_step(
         5,
@@ -2559,18 +2564,19 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     cli.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
     cli.console.print(f"   {default_output_path}")
     cli.console.print()
-    factory_metadata_state.setdefault('output', {}).update({
-        'output_path': str(default_output_path),
-        'output_format': data_format,
-    })
-    if cost_estimate:
-        factory_metadata_state.setdefault('cost', {}).update({
-            'estimated_cost_usd': cost_estimate.total_cost,
-            'estimated_input_tokens': cost_estimate.input_tokens,
-            'estimated_output_tokens': cost_estimate.output_tokens_estimated,
-            'pricing_last_updated': cost_estimate.pricing_last_updated,
+    if factory_metadata_state is not None and factory_metadata_targets is not None:
+        factory_metadata_state.setdefault('output', {}).update({
+            'output_path': str(default_output_path),
+            'output_format': data_format,
         })
-    _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
+        if cost_estimate:
+            factory_metadata_state.setdefault('cost', {}).update({
+                'estimated_cost_usd': cost_estimate.total_cost,
+                'estimated_input_tokens': cost_estimate.input_tokens,
+                'estimated_output_tokens': cost_estimate.output_tokens_estimated,
+                'pricing_last_updated': cost_estimate.pricing_last_updated,
+            })
+        _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
 
     # Prepare prompts payload for pipeline
     prompts_payload = []
@@ -4819,6 +4825,21 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     data_source.setdefault('identifier_column', identifier_column)
     proc_config.setdefault('identifier_column', identifier_column)
 
+    # Resolve session identifier early so downstream logic can rely on it
+    session_info = metadata.get('annotation_session') or {}
+    session_id = (
+        metadata.get('session_id')
+        or session_info.get('session_id')
+        or session_info.get('session_name')
+        or session_info.get('id')
+    )
+    if not session_id:
+        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    # Persist back into the working metadata snapshot so any derived files include the ID
+    metadata['session_id'] = session_id
+    session_info.setdefault('session_id', session_id)
+    metadata['annotation_session'] = session_info
+
     # Get export preferences
     export_to_doccano = export_prefs.get('export_to_doccano', False)
     export_to_labelstudio = export_prefs.get('export_to_labelstudio', False)
@@ -5126,7 +5147,23 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     top_k = model_config.get('top_k', 40)
 
     num_processes = proc_config.get('parallel_workers', 1)
+    if not isinstance(num_processes, int) or num_processes < 1:
+        # Some older metadata stored None/strings; fall back to safe defaults
+        try:
+            num_processes = int(num_processes)
+        except (TypeError, ValueError):
+            num_processes = 1
+        if num_processes < 1:
+            num_processes = 1
+
     batch_size = proc_config.get('batch_size', 1)
+    if not isinstance(batch_size, int) or batch_size < 1:
+        try:
+            batch_size = int(batch_size)
+        except (TypeError, ValueError):
+            batch_size = 1
+        if batch_size < 1:
+            batch_size = 1
 
     total_rows = data_source.get('total_rows')
     annotation_limit = None if total_rows == 'all' else total_rows
