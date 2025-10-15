@@ -6424,6 +6424,9 @@ def _display_split_summary(self, split_config: Dict[str, Any], keys_to_train: Li
         if defaults:
             self.console.print(f"\n  [dim]Defaults (for others): {defaults['train_ratio']:.1%} / {defaults['validation_ratio']:.1%} / {defaults['test_ratio']:.1%}[/dim]")
 
+    self.console.print(
+        "[dim]Reminder:[/dim] This validation split feeds Validation Lab (Mode 5). After human review, place the curated validation set inside your session directory under [white]validation/<session>/[/white] to compare model vs manual annotations."
+    )
     self.console.print()
 
 def _collect_quick_mode_parameters(

@@ -55,7 +55,7 @@ import copy
 import numpy as np
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple, Set
+from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from collections import defaultdict, Counter
@@ -170,6 +170,7 @@ from llm_tool.utils.session_summary import (
 )
 from llm_tool.utils.training_paths import get_training_logs_base
 from . import training_arena_integrated as training_arena
+from .validation_lab import run_validation_lab
 from .annotation_workflow import (
     AnnotationMode,
     ANNOTATOR_RESUME_STEPS,
@@ -1548,6 +1549,7 @@ class AdvancedCLI:
         return {
             "annotator": Path("logs") / "annotator",
             "annotator_factory": Path("logs") / "annotator_factory",
+            "validation_lab": Path("logs") / "validation_lab",
             "training_arena": get_training_logs_base(),
             "bert_annotation_studio": Path("logs") / "annotation_studio",
         }
@@ -1559,6 +1561,51 @@ class AdvancedCLI:
         if not base_dir:
             return []
         return collect_summaries_for_mode(base_dir, mode, limit)
+
+    def _prompt_validation_lab_resume(self, records: List[SummaryRecord]) -> Optional[str]:
+        if not records:
+            return None
+
+        if HAS_RICH and self.console:
+            table = Table(title="📂 Sessions Validation Lab", border_style="cyan")
+            table.add_column("#", justify="right", style="cyan", width=4)
+            table.add_column("Session", style="white")
+            table.add_column("Statut", style="green")
+            table.add_column("Mise à jour", style="yellow")
+            for idx, record in enumerate(records, 1):
+                summary = record.summary
+                updated = summary.updated_at.replace("T", " ")
+                table.add_row(str(idx), summary.session_id, summary.status, updated)
+            self.console.print()
+            self.console.print(table)
+            self.console.print()
+        else:
+            print("\nSessions Validation Lab disponibles:")
+            for idx, record in enumerate(records, 1):
+                summary = record.summary
+                print(f"  {idx}. {summary.session_id} [{summary.status}] · {summary.updated_at}")
+            print()
+
+        choices = [str(i) for i in range(1, len(records) + 1)] + ["back"]
+        if HAS_RICH and self.console:
+            selection = Prompt.ask(
+                "[bold yellow]Choisir une session à reprendre[/bold yellow]",
+                choices=choices,
+                default="back",
+            )
+        else:
+            selection = input("Choisir une session (ou 'back'): ").strip() or "back"
+
+        if selection == "back":
+            return None
+
+        try:
+            index = int(selection) - 1
+        except ValueError:
+            return None
+        if index < 0 or index >= len(records):
+            return None
+        return records[index].summary.session_id
 
     def _discover_annotation_metadata(self, session_id: str, session_dir: Path) -> List[Path]:
         """
@@ -5696,184 +5743,78 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             studio.run(session_action="3")
 
     def validation_lab(self):
-        """Validation lab for quality control and Doccano export"""
-        # Display ASCII logo only
+        """Validation Lab hub for validation-ready exports."""
         self._display_ascii_logo()
-
-        # Display mode-specific banner
         self._display_mode_banner('validation')
-
-        # Display personalized mode info
         self._display_section_header(
             "🔍 Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement",
-            "Quality assurance tools: Validate LLM annotations, detect imbalances, prepare stratified samples for human review",
-            mode_info={
-                'workflow': 'Load Annotations → Quality Metrics (0-100 score) → Stratified Sampling → Export to Doccano/Label Studio',
-                'capabilities': ['Quality Scoring', 'Label Distribution Analysis', 'Stratified Sampling', 'Inter-Annotator Agreement (Cohen\'s Kappa)', 'Schema Validation'],
-                'input': 'Annotated JSON/JSONL files from LLM or BERT Studio',
-                'output': 'Quality reports + Validation metrics + Doccano/Label Studio export files + Sample selection justification',
-                'best_for': 'Quality assurance before training, human validation workflows, detecting annotation issues'
-            }
+            "Collect validation exports from Annotator, Factory, and Training Arena to compute quality metrics."
         )
 
-        # ⚠️ DEVELOPMENT WARNING
-        if HAS_RICH and self.console:
-            warning_panel = Panel(
-                Align.center(
-                    "[bold yellow]⚠️  UNDER DEVELOPMENT ⚠️[/bold yellow]\n\n"
-                    "[yellow]This mode is currently in active development and is NOT complete.[/yellow]\n"
-                    "[dim]Some features may not work as expected or may be missing entirely.[/dim]\n"
-                    "[dim]Use at your own risk for testing purposes only.[/dim]",
-                    vertical="middle"
-                ),
-                title="[bold red]Development Status[/bold red]",
-                border_style="red",
-                box=box.DOUBLE,
-                padding=(1, 2),
-            )
-            self.console.print()
-            self.console.print(Align.center(warning_panel))
-            self.console.print()
+        resume_records = self._fetch_resume_records("validation_lab", limit=25)
+        resume_available = len(resume_records) > 0
 
-            # Ask user if they want to continue
-            if not Confirm.ask("[yellow]Do you want to continue anyway?[/yellow]", default=False):
-                self.console.print("[dim]Returning to main menu...[/dim]")
-                return
+        choice: Optional[str] = None
 
         if HAS_RICH and self.console:
-            # Create mode menu
-            self.console.print("\n[bold cyan]🎯 Validation Lab Options[/bold cyan]\n")
+            self.console.print("\n[bold cyan]🎯 Options Validation Lab[/bold cyan]\n")
+            options_table = Table(show_header=False, box=None, padding=(0, 2))
+            options_table.add_column("Option", style="cyan", width=8)
+            options_table.add_column("Description")
 
-            lab_options_table = Table(show_header=False, box=None, padding=(0, 2))
-            lab_options_table.add_column("Option", style="cyan", width=8)
-            lab_options_table.add_column("Description")
+            resume_label = "🔄 Reprendre une session"
+            if not resume_available:
+                resume_label += " [dim](aucune disponible)[/dim]"
 
-            options = [
-                ("1", "🔍 Start Validation Workflow (Quality scoring + sampling + export)"),
-                ("0", "⬅️  Back to main menu")
-            ]
+            options_table.add_row("[bold cyan]1[/bold cyan]", "🆕 Lancer une nouvelle session")
+            options_table.add_row("[bold cyan]2[/bold cyan]", resume_label)
+            options_table.add_row("[bold cyan]0[/bold cyan]", "⬅️  Retour au menu principal")
 
-            for option, desc in options:
-                lab_options_table.add_row(f"[bold cyan]{option}[/bold cyan]", desc)
-
-            panel = Panel(
-                lab_options_table,
-                title="[bold]🔍 Validation Lab[/bold]",
-                border_style="magenta"
+            self.console.print(
+                Panel(
+                    options_table,
+                    title="[bold]🔍 Validation Lab[/bold]",
+                    border_style="cyan",
+                )
             )
 
-            self.console.print(panel)
-
+            valid_choices = ["0", "1"]
+            if resume_available:
+                valid_choices.append("2")
             choice = Prompt.ask(
-                "\n[bold yellow]Select an option[/bold yellow]",
-                choices=["0", "1"],
-                default="1"
+                "[bold yellow]Sélectionner une option[/bold yellow]",
+                choices=valid_choices,
+                default="1",
             )
-
-            if choice == "0":
-                return
-
-            # Select annotations file
-            self.console.print("\n[bold]Select Annotations File:[/bold]")
-            annotations_path = self._prompt_file_path("Annotations file path")
-
-            # Load and analyze
-            self.console.print("\n[cyan]Analyzing annotations...[/cyan]")
-
-            from ..validators.annotation_validator import AnnotationValidator, ValidationConfig
-
-            validator = AnnotationValidator()
-
-            # Configuration
-            self.console.print("\n[bold]Validation Configuration:[/bold]")
-
-            sample_size = self._int_prompt_with_validation("Sample size for validation", default=100, min_value=10, max_value=1000)
-            stratified = Confirm.ask("Use stratified sampling?", default=True)
-            export_doccano = Confirm.ask("Export to Doccano format?", default=True)
-
-            # Run validation
-            with self.console.status("[bold green]Running validation...", spinner="dots"):
-                config = ValidationConfig(
-                    sample_size=sample_size,
-                    stratified_sampling=stratified,
-                    export_to_doccano=export_doccano,
-                    export_format='both'
-                )
-
-                validator.config = config
-                result = validator.validate(
-                    input_file=annotations_path,
-                    output_dir="./validation"
-                )
-
-            # Display results
-            self.console.print("\n[bold]Validation Results:[/bold]\n")
-
-            # Quality score with color coding
-            score = result.quality_score
-            if score >= 80:
-                color = "green"
-            elif score >= 60:
-                color = "yellow"
-            else:
-                color = "red"
-
-            self.console.print(f"[{color}]Quality Score: {score:.1f}/100[/{color}]")
-
-            # Statistics table
-            stats_table = Table(title="📊 Annotation Statistics", border_style="blue")
-            stats_table.add_column("Metric", style="cyan")
-            stats_table.add_column("Value", style="white")
-
-            stats_table.add_row("Total Annotations", str(result.total_annotations))
-            stats_table.add_row("Validated Samples", str(result.validated_samples))
-            stats_table.add_row("Unique Labels", str(len(result.label_distribution)))
-
-            if result.confidence_stats:
-                stats_table.add_row("Avg Confidence", f"{result.confidence_stats.get('mean', 0):.3f}")
-                stats_table.add_row("Low Confidence %", f"{result.confidence_stats.get('low_confidence_percentage', 0):.1f}%")
-
-            self.console.print(stats_table)
-
-            # Issues found
-            if result.issues_found:
-                self.console.print(f"\n[yellow]⚠ {len(result.issues_found)} issues found:[/yellow]")
-                for issue in result.issues_found[:5]:
-                    self.console.print(f"  - {issue['type']}: {issue.get('message', issue.get('column', ''))}")
-
-            # Export paths
-            self.console.print("\n[bold]Exports:[/bold]")
-            if result.doccano_export_path:
-                self.console.print(f"📁 Doccano: {result.doccano_export_path}")
-            if result.export_path:
-                self.console.print(f"📁 Data: {result.export_path}")
-
-            self.console.print("\n[green]✅ Validation complete![/green]")
-
         else:
             print("\n=== Validation Lab ===")
-            print("Quality control and validation\n")
+            print("1. Lancer une nouvelle session")
+            if resume_available:
+                print("2. Reprendre une session")
+            else:
+                print("2. Reprendre une session (aucune disponible)")
+            print("0. Retour au menu principal")
+            raw_choice = input("Choix: ").strip() or "1"
+            if raw_choice in {"0", "1", "2"}:
+                if raw_choice == "2" and not resume_available:
+                    print("Aucune session disponible pour reprise.")
+                    raw_choice = "1"
+                choice = raw_choice
+            else:
+                choice = "1"
 
-            # ⚠️ DEVELOPMENT WARNING
-            print("\n" + "="*60)
-            print("⚠️  UNDER DEVELOPMENT - NOT COMPLETE ⚠️")
-            print("="*60)
-            print("This mode is currently in active development.")
-            print("Some features may not work as expected or may be missing.")
-            print("Use at your own risk for testing purposes only.")
-            print("="*60 + "\n")
+        if choice == "0":
+            return
 
-            continue_choice = input("Do you want to continue anyway? (y/N): ").strip().lower()
-            if continue_choice not in ['y', 'yes']:
-                print("Returning to main menu...")
-                return
+        if choice == "1":
+            run_validation_lab(self, mode="new")
+            return
 
-            annotations_path = input("\nAnnotations file path: ").strip()
-            sample_size = int(input("Sample size (default 100): ").strip() or "100")
-
-            print("\nRunning validation...")
-            print("✅ Validation complete!")
-            print(f"Exported to: ./validation/")
+        if choice == "2" and resume_available:
+            session_id = self._prompt_validation_lab_resume(resume_records)
+            if session_id:
+                run_validation_lab(self, mode="resume", preferred_session_id=session_id)
+            return
 
     def analytics_dashboard(self):
         """Analytics dashboard"""
@@ -7175,7 +7116,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                   prompt_configs: list, data_path: Path, timestamp: str,
                                   sample_size=None, session_dirs=None,
                                   provider_folder: str = "model_provider",
-                                  model_folder: str = "model_name"):
+                                  model_folder: str = "model_name",
+                                  validation_destination: Optional[Path] = None):
         """Export annotations to Doccano JSONL format
 
         Parameters
@@ -7185,11 +7127,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             - 'all': export all annotations
             - 'representative': export 10% (minimum 100)
             - int: export specific number
+        validation_destination : Path, optional
+            Additional directory where the JSONL should be copied (for Validation Lab storage).
         """
         import json
         import pandas as pd
 
         try:
+            validation_copy_path = None
             self.console.print("\n[bold cyan]📤 Exporting to Doccano JSONL...[/bold cyan]")
 
             # Load the annotated file
@@ -7359,11 +7304,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         self.logger.warning(f"Error processing row {idx}: {e}")
                         continue
 
+            # Optional copy for Validation Lab session storage
+            if validation_destination:
+                try:
+                    validation_destination.mkdir(parents=True, exist_ok=True)
+                    validation_copy_path = validation_destination / jsonl_filename
+                    shutil.copy2(jsonl_path, validation_copy_path)
+                except Exception as copy_exc:
+                    validation_copy_path = None
+                    self.console.print(
+                        f"[yellow]⚠️  Could not copy export to Validation Lab directory: {copy_exc}[/yellow]"
+                    )
+
             # Display success
             self.console.print(f"\n[bold green]✅ Doccano JSONL export completed![/bold green]")
             self.console.print(f"[bold cyan]📄 JSONL File:[/bold cyan]")
             self.console.print(f"   {jsonl_path}")
             self.console.print(f"[cyan]   Exported: {exported_count:,} entries[/cyan]\n")
+            if validation_copy_path:
+                self.console.print(f"[cyan]   Validation Lab copy: {validation_copy_path}[/cyan]")
 
             self.console.print("[yellow]📌 Next Steps:[/yellow]")
             self.console.print("  1. Import this JSONL file into Doccano for validation")
@@ -7371,9 +7330,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("  3. Export validated annotations from Doccano")
             self.console.print("  4. Use LLM Tool to calculate metrics on validated data\n")
 
+            return {
+                "jsonl_path": jsonl_path,
+                "validation_copy_path": validation_copy_path,
+                "exported_count": exported_count,
+            }
+
         except Exception as e:
             self.console.print(f"\n[red]❌ Doccano export failed: {e}[/red]")
             self.logger.exception("Doccano JSONL export failed")
+            return None
 
     def _export_to_labelstudio_jsonl(self, output_file: str, text_column: str,
                                       prompt_configs: list, data_path: Path, timestamp: str,

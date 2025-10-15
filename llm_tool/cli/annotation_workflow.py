@@ -644,6 +644,18 @@ def create_session_directories(mode: AnnotationMode, session_id: str) -> Dict[st
     return dirs
 
 
+def ensure_validation_session_dirs(session_id: str) -> Dict[str, Path]:
+    """Create Validation Lab storage structure for a session."""
+    base_dir = Path("validation")
+    session_root = base_dir / session_id
+    doccano_dir = session_root / "doccano"
+    doccano_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "session_root": session_root,
+        "doccano": doccano_dir,
+    }
+
+
 ANNOTATOR_RESUME_STEPS = {
     1: {"key": "data_selection", "name": "Select dataset"},
     2: {"key": "column_mapping", "name": "Configure columns"},
@@ -1503,6 +1515,12 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'labelstudio_direct_export': False,
         'labelstudio_api_url': None,
         'labelstudio_api_key': None,
+        'validation_lab': {
+            'enabled': False,
+            'mode': AnnotationMode.ANNOTATOR.value,
+            'session_dir': None,
+            'exports': {},
+        },
     }
     metadata_progress: Dict[str, Any] = {
         'requested': 'all',
@@ -2307,18 +2325,27 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # ============================================================
     # VALIDATION TOOL EXPORT OPTION
     # ============================================================
-    cli.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
-    cli.console.print("[dim]Export annotations to JSONL format for human validation[/dim]\n")
+    validation_lab_session_dirs: Optional[Dict[str, Path]] = None
+    validation_lab_exports: Dict[str, str] = {}
+
+    validation_hint = f"validation/{session_id}/doccano"
+
+    cli.console.print("\n[bold cyan]📤 Validation Lab Preparation[/bold cyan]")
+    cli.console.print(
+        f"[dim]Export annotations, review them manually, then copy the validated JSONL into [white]{validation_hint}[/white] so Validation Lab (Mode 5) can compute agreement metrics.[/dim]\n"
+    )
 
     cli.console.print("[yellow]Available validation tools:[/yellow]")
     cli.console.print("  • [cyan]Doccano[/cyan] - Simple, lightweight NLP annotation tool")
     cli.console.print("  • [cyan]Label Studio[/cyan] - Advanced, feature-rich annotation platform")
     cli.console.print("  • Both are open-source and free\n")
 
-    cli.console.print("[green]Why validate with external tools?[/green]")
-    cli.console.print("  • Review and correct LLM annotations")
-    cli.console.print("  • Calculate inter-annotator agreement")
-    cli.console.print("  • Export validated data for metrics calculation\n")
+    cli.console.print("[green]Workflow with Validation Lab:[/green]")
+    cli.console.print("  • Export annotations for human review (Doccano works best with Validation Lab)")
+    cli.console.print("  • Make corrections manually, then export the validated JSONL")
+    cli.console.print(
+        f"  • Drop the validated file into [white]{validation_hint}[/white] and reopen Validation Lab (Mode 5)\n"
+    )
 
     # Initialize export flags
     export_to_doccano = False
@@ -2328,11 +2355,18 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     labelstudio_api_url = None
     labelstudio_api_key = None
     prediction_mode = "with"
+    validation_lab_enabled = False
+    validation_dataset_label = (
+        metadata_data_source.get('file_name')
+        or metadata_data_source.get('dataset_name')
+        or metadata_data_source.get('display_name')
+    )
 
     # Step 1: Ask if user wants to export
     export_confirm = Confirm.ask(
-        "[bold yellow]Export to validation tool?[/bold yellow]",
-        default=False
+        "[bold yellow]Prepare a Doccano export for Validation Lab?[/bold yellow]\n"
+        f"[dim]After manual review in Doccano, copy the validated JSONL into [white]{validation_hint}[/white] and reopen Validation Lab (Mode 5) to compute metrics.[/dim]",
+        default=False,
     )
 
     if export_confirm:
@@ -2346,8 +2380,24 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         # Set the appropriate export flag
         if tool_choice == "doccano":
             export_to_doccano = True
+            validation_lab_enabled = True
+            validation_lab_session_dirs = ensure_validation_session_dirs(session_id)
+            metadata_export_preferences['validation_lab'] = {
+                'enabled': True,
+                'mode': AnnotationMode.ANNOTATOR.value,
+                'session_dir': str(validation_lab_session_dirs['session_root']),
+                'exports': {},
+                'dataset': validation_dataset_label,
+            }
         else:  # labelstudio
             export_to_labelstudio = True
+            metadata_export_preferences['validation_lab'] = {
+                'enabled': False,
+                'mode': AnnotationMode.ANNOTATOR.value,
+                'session_dir': None,
+                'exports': {},
+                'dataset': validation_dataset_label,
+            }
 
         # Step 2b: If Label Studio, ask export method
         labelstudio_direct_export = False
@@ -2963,7 +3013,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
         # Export to Doccano JSONL if requested
         if export_to_doccano:
-            cli._export_to_doccano_jsonl(
+            validation_destination = None
+            if validation_lab_session_dirs:
+                validation_destination = validation_lab_session_dirs['doccano']
+
+            doccano_export_result = cli._export_to_doccano_jsonl(
                 output_file=output_file,
                 text_column=text_column,
                 prompt_configs=prompt_configs,
@@ -2972,8 +3026,18 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 sample_size=export_sample_size,
                 session_dirs=session_dirs,
                 provider_folder=provider_folder,
-                model_folder=model_folder
+                model_folder=model_folder,
+                validation_destination=validation_destination,
             )
+            if doccano_export_result:
+                doccano_path = doccano_export_result.get('jsonl_path')
+                validation_copy_path = doccano_export_result.get('validation_copy_path')
+                if doccano_path:
+                    exports_entry = metadata_export_preferences.setdefault('validation_lab', {})
+                    exports_dict = exports_entry.setdefault('exports', {})
+                    target_path = validation_copy_path or doccano_path
+                    exports_dict['doccano'] = str(target_path)
+                    validation_lab_exports['doccano'] = str(target_path)
 
         # Export to Label Studio if requested
         if export_to_labelstudio:
@@ -3012,9 +3076,20 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 "export_doccano": export_to_doccano,
                 "export_labelstudio": export_to_labelstudio,
                 "prediction_mode": prediction_mode,
+                "validation_lab_enabled": validation_lab_enabled,
+                "validation_lab_session_dir": str(validation_lab_session_dirs['session_root']) if validation_lab_session_dirs else None,
+                "validation_lab_exports": validation_lab_exports,
+                "validation_lab_dataset": validation_dataset_label,
             },
         )
-        tracker.update_status("completed")
+        tracker.update_status(
+            "completed",
+            extra={
+                "validation_lab_enabled": validation_lab_enabled,
+                "validation_lab_session_dir": str(validation_lab_session_dirs['session_root']) if validation_lab_session_dirs else None,
+                "validation_lab_dataset": validation_dataset_label,
+            },
+        )
 
         cli.console.print("\n[dim]Press Enter to return to menu...[/dim]")
         input()
@@ -3947,28 +4022,55 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # ============================================================
     # VALIDATION TOOL EXPORT OPTION
     # ============================================================
-    cli.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
-    cli.console.print("[dim]Export annotations to JSONL format for human validation[/dim]\n")
+    validation_lab_session_dirs: Optional[Dict[str, Path]] = None
+    validation_lab_exports: Dict[str, str] = {}
+    validation_lab_enabled = False
+    factory_dataset_label = (
+        (factory_metadata_state.get('data_source') or {}).get('file_name')
+        or (factory_metadata_state.get('data_source') or {}).get('dataset_name')
+        or (factory_metadata_state.get('data_source') or {}).get('display_name')
+    )
+    validation_lab_pref = {
+        'enabled': False,
+        'mode': AnnotationMode.FACTORY.value,
+        'session_dir': None,
+        'exports': {},
+        'dataset': factory_dataset_label,
+    }
+
+    validation_hint = f"validation/{session_id}/doccano"
+
+    cli.console.print("\n[bold cyan]📤 Validation Lab Preparation[/bold cyan]")
+    cli.console.print(
+        f"[dim]Export annotations, review them manually, then copy the validated JSONL into [white]{validation_hint}[/white] so Validation Lab (Mode 5) can compute agreement metrics.[/dim]\n"
+    )
 
     cli.console.print("[yellow]Available validation tools:[/yellow]")
     cli.console.print("  • [cyan]Doccano[/cyan] - Simple, lightweight NLP annotation tool")
     cli.console.print("  • [cyan]Label Studio[/cyan] - Advanced, feature-rich annotation platform")
     cli.console.print("  • Both are open-source and free\n")
 
-    cli.console.print("[green]Why validate with external tools?[/green]")
-    cli.console.print("  • Review and correct LLM annotations")
-    cli.console.print("  • Calculate inter-annotator agreement")
-    cli.console.print("  • Export validated data for metrics calculation\n")
+    cli.console.print("[green]Workflow with Validation Lab:[/green]")
+    cli.console.print("  • Export annotations for human review (Doccano works best with Validation Lab)")
+    cli.console.print("  • Make corrections manually, then export the validated JSONL")
+    cli.console.print(
+        f"  • Drop the validated file into [white]{validation_hint}[/white] and reopen Validation Lab (Mode 5)\n"
+    )
 
     # Initialize export flags
     export_to_doccano = False
     export_to_labelstudio = False
     export_sample_size = None
+    labelstudio_direct_export = False
+    labelstudio_api_url = None
+    labelstudio_api_key = None
+    prediction_mode = "with"
 
     # Step 1: Ask if user wants to export
     export_confirm = Confirm.ask(
-        "[bold yellow]Export to validation tool?[/bold yellow]",
-        default=False
+        "[bold yellow]Prepare a Doccano export for Validation Lab?[/bold yellow]\n"
+        f"[dim]After manual review in Doccano, copy the validated JSONL into [white]{validation_hint}[/white] and reopen Validation Lab (Mode 5) to compute metrics.[/dim]",
+        default=False,
     )
 
     if export_confirm:
@@ -3982,8 +4084,20 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         # Set the appropriate export flag
         if tool_choice == "doccano":
             export_to_doccano = True
+            validation_lab_enabled = True
+            validation_lab_session_dirs = ensure_validation_session_dirs(session_id)
+            validation_lab_pref.update({
+                'enabled': True,
+                'session_dir': str(validation_lab_session_dirs['session_root']),
+                'exports': {},
+            })
         else:  # labelstudio
             export_to_labelstudio = True
+            validation_lab_pref.update({
+                'enabled': False,
+                'session_dir': None,
+                'exports': {},
+            })
 
         # Step 2b: If Label Studio, ask export method
         labelstudio_direct_export = False
@@ -4066,6 +4180,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'labelstudio_direct_export': labelstudio_direct_export if export_confirm and export_to_labelstudio else False,
         'labelstudio_api_url': labelstudio_api_url if export_confirm and export_to_labelstudio else None,
         'labelstudio_api_key': labelstudio_api_key if export_confirm and export_to_labelstudio else None,
+        'validation_lab': validation_lab_pref,
     }
     _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
 
@@ -4582,7 +4697,11 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
         # Export to Doccano JSONL if requested
         if export_to_doccano:
-            cli._export_to_doccano_jsonl(
+            validation_destination = None
+            if validation_lab_session_dirs:
+                validation_destination = validation_lab_session_dirs['doccano']
+
+            doccano_export_result = cli._export_to_doccano_jsonl(
                 output_file=output_file,
                 text_column=text_column,
                 prompt_configs=prompt_configs,
@@ -4591,8 +4710,16 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 sample_size=export_sample_size,
                 session_dirs=session_dirs,
                 provider_folder=provider_folder,
-                model_folder=model_folder
+                model_folder=model_folder,
+                validation_destination=validation_destination,
             )
+            if doccano_export_result:
+                doccano_path = doccano_export_result.get('jsonl_path')
+                validation_copy_path = doccano_export_result.get('validation_copy_path')
+                if doccano_path:
+                    target_path = validation_copy_path or doccano_path
+                    validation_lab_pref.setdefault('exports', {})['doccano'] = str(target_path)
+                    validation_lab_exports['doccano'] = str(target_path)
 
         # Export to Label Studio if requested
         if export_to_labelstudio:
@@ -4624,6 +4751,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                     model_folder=model_folder
                 )
 
+        # Persist updated export preferences with Validation Lab metadata
+        factory_metadata_state.setdefault('export_preferences', {})['validation_lab'] = validation_lab_pref
+        _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
+
         tracker.mark_step(
             10,
             detail="Factory workflow complete",
@@ -4631,9 +4762,20 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 "export_doccano": export_to_doccano,
                 "export_labelstudio": export_to_labelstudio,
                 "prediction_mode": prediction_mode,
+                "validation_lab_enabled": validation_lab_enabled,
+                "validation_lab_session_dir": str(validation_lab_session_dirs['session_root']) if validation_lab_session_dirs else None,
+                "validation_lab_exports": validation_lab_exports,
+                "validation_lab_dataset": factory_dataset_label,
             },
         )
-        tracker.update_status("completed")
+        tracker.update_status(
+            "completed",
+            extra={
+                "validation_lab_enabled": validation_lab_enabled,
+                "validation_lab_session_dir": str(validation_lab_session_dirs['session_root']) if validation_lab_session_dirs else None,
+                "validation_lab_dataset": factory_dataset_label,
+            },
+        )
 
         cli.console.print("\n[dim]Press Enter to return to menu...[/dim]")
         input()
