@@ -644,6 +644,124 @@ def create_session_directories(mode: AnnotationMode, session_id: str) -> Dict[st
     return dirs
 
 
+def _persist_annotation_outputs(
+    cli,
+    *,
+    source_output_path: Union[str, Path],
+    session_dirs: Dict[str, Path],
+    provider_folder: str,
+    model_folder: str,
+    dataset_name: str,
+    annotation_results: Dict[str, Any]
+) -> Dict[str, Optional[str]]:
+    """
+    Ensure annotated CSVs are stored under the session's log structure and create
+    an annotations-only companion file for quick inspection.
+    """
+    from pathlib import Path
+    import csv
+    import shutil
+
+    paths: Dict[str, Optional[str]] = {"full_path": None, "annotations_only_path": None}
+
+    annotated_data_root = session_dirs.get("annotated_data")
+    if not annotated_data_root:
+        return paths
+
+    annotated_data_root = Path(annotated_data_root)
+    dataset_root = annotated_data_root / provider_folder / model_folder / dataset_name
+    dataset_root.mkdir(parents=True, exist_ok=True)
+
+    source_path = Path(source_output_path)
+    full_output_path = dataset_root / source_path.name
+
+    # Move into organised structure if needed (avoids lingering copies in data/)
+    try:
+        full_output_path.parent.mkdir(parents=True, exist_ok=True)
+        if source_path.exists():
+            if source_path.resolve() != full_output_path.resolve():
+                if full_output_path.exists():
+                    full_output_path.unlink()
+                shutil.move(str(source_path), str(full_output_path))
+        else:
+            cli.logger.warning(f"Annotated output not found at {source_path}")
+    except Exception as exc:
+        cli.logger.warning(f"Failed to organise annotated output: {exc}")
+        full_output_path = source_path
+
+    paths["full_path"] = str(full_output_path)
+    annotation_results["full_output_path"] = str(full_output_path)
+    annotation_results["output_file"] = str(full_output_path)
+
+    # Build annotations-only CSV if the output is CSV
+    if full_output_path.suffix.lower() != ".csv":
+        return paths
+
+    try:
+        with full_output_path.open("r", newline="", encoding="utf-8") as src_file:
+            reader = csv.DictReader(src_file)
+            rows = list(reader)
+            fieldnames = reader.fieldnames or []
+
+        if not fieldnames or not rows:
+            return paths
+
+        # Identify annotation-bearing columns
+        annotation_columns = set()
+        annotation_column_hint = str(annotation_results.get("annotation_column", "")).strip()
+        if annotation_column_hint and annotation_column_hint in fieldnames:
+            annotation_columns.add(annotation_column_hint)
+
+        model_hint = str(annotation_results.get("model", "")).strip()
+        if model_hint:
+            safe_model_name = model_hint.replace(":", "_").replace("/", "_")
+            if safe_model_name in fieldnames:
+                annotation_columns.add(safe_model_name)
+
+        for column in fieldnames:
+            col_lower = column.lower()
+            if col_lower in {"annotation", "annotations", "labels", "label", "predictions", "prediction"}:
+                annotation_columns.add(column)
+            elif col_lower.endswith("_annotation") or col_lower.endswith("_annotations"):
+                annotation_columns.add(column)
+            elif col_lower.endswith("_labels") or col_lower.endswith("_prediction"):
+                annotation_columns.add(column)
+
+        if not annotation_columns:
+            sample_values = rows[: min(50, len(rows))]
+            for column in fieldnames:
+                if any(
+                    (value := (row.get(column) or "").strip())
+                    and (value.startswith("{") or value.startswith("["))
+                    for row in sample_values
+                ):
+                    annotation_columns.add(column)
+
+        def _row_has_annotation(row: Dict[str, Any]) -> bool:
+            for column in annotation_columns:
+                value = str(row.get(column, "")).strip()
+                if value and value.lower() not in {"nan", "none", "null", "{}", "[]"}:
+                    return True
+            return False
+
+        annotated_rows = [row for row in rows if _row_has_annotation(row)]
+        if not annotated_rows:
+            return paths
+
+        annotations_only_path = dataset_root / f"{full_output_path.stem}_annotations_only.csv"
+        with annotations_only_path.open("w", newline="", encoding="utf-8") as dest_file:
+            writer = csv.DictWriter(dest_file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(annotated_rows)
+
+        paths["annotations_only_path"] = str(annotations_only_path)
+        annotation_results["annotations_only_path"] = str(annotations_only_path)
+    except Exception as exc:
+        cli.logger.warning(f"Failed to create annotations-only CSV: {exc}")
+
+    return paths
+
+
 def ensure_validation_session_dirs(session_id: str) -> Dict[str, Path]:
     """Create Validation Lab storage structure for a session."""
     base_dir = Path("validation")
@@ -1474,8 +1592,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     cli.console.print(f"[green]✓ Selected: {data_path.name} ({data_format})[/green]")
 
     dataset_name = data_path.stem
-    annotations_dir = cli.settings.paths.data_dir / 'annotations'
-    annotations_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = Path(session_dirs['annotated_data']) / '_staging'
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
     run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -1692,7 +1810,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     if metadata_path not in metadata_targets:
         metadata_targets.append(metadata_path)
 
-    default_output_path = annotations_dir / f"{data_path.stem}_{safe_model_name}_annotations_{run_timestamp}.{data_format}"
+    default_output_path = staging_dir / f"{data_path.stem}_{safe_model_name}_annotations_{run_timestamp}.{data_format}"
     metadata_output_config = {
         'output_path': str(default_output_path),
         'output_format': data_format,
@@ -2814,6 +2932,19 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         # Get results
         annotation_results = state.annotation_results or {}
         output_file = annotation_results.get('output_file', str(default_output_path))
+        output_paths = _persist_annotation_outputs(
+            cli,
+            source_output_path=output_file,
+            session_dirs=session_dirs,
+            provider_folder=provider_folder,
+            model_folder=model_folder,
+            dataset_name=dataset_name,
+            annotation_results=annotation_results,
+        )
+        if output_paths.get("full_path"):
+            output_file = output_paths["full_path"]
+            annotation_results['output_file'] = output_file
+        subset_path = output_paths.get("annotations_only_path") or annotation_results.get('annotated_subset_path')
         if metadata_state:
             metadata_state = copy.deepcopy(metadata_state)
             metadata_state.setdefault('annotation_session', {})['status'] = 'completed'
@@ -2848,8 +2979,6 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             mean_time = annotation_results.get('mean_inference_time')
             if isinstance(mean_time, (int, float)):
                 cli.console.print(f"   Avg inference time: {mean_time:.2f}s")
-
-        subset_path = annotation_results.get('annotated_subset_path')
 
         if isinstance(total_annotated, int):
             metadata_progress['completed'] = total_annotated
@@ -3292,11 +3421,11 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
         df = pd.read_sql(f"SELECT * FROM {selected_table}", engine)
 
-        # Save to CSV in data/annotations
-        annotations_dir = cli.settings.paths.data_dir / 'annotations'
-        annotations_dir.mkdir(parents=True, exist_ok=True)
+        # Save to staging CSV inside session logs
+        staging_dir = Path(session_dirs['annotated_data']) / '_staging'
+        staging_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        data_path = annotations_dir / f"quickstart_sql_{selected_table}_{timestamp}.csv"
+        data_path = staging_dir / f"quickstart_sql_{selected_table}_{timestamp}.csv"
         df.to_csv(data_path, index=False)
         data_format = 'csv'
 
@@ -4664,47 +4793,61 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         # ============================================================
         # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)
         # ============================================================
-        training_results = cli._post_annotation_training_workflow(
-            output_file=output_file,
-            text_column=text_column,
-            prompt_configs=prompt_configs,
-            session_id=session_id,
-            session_dirs=session_dirs  # Pass session directories for organized logging
-        )
-        tracker.mark_step(
-            8,
-            detail="Training workflow executed",
-            extra={"training_session_id": session_id},
-        )
-
-        model_annotation_summary = _launch_model_annotation_stage(
-            cli,
-            session_id=session_id,
-            session_dirs=session_dirs,
-            training_results=training_results,
-            prompt_configs=prompt_configs,
-            text_column=text_column,
-            annotation_output=output_file,
-            dataset_path=data_path,
-        )
-
-        if isinstance(model_annotation_summary, dict):
-            status = model_annotation_summary.get("status", "completed")
-            detail = model_annotation_summary.get("detail")
-            extra = model_annotation_summary.get("extra")
-            overall_status = status if status in {"failed", "cancelled"} else None
-            tracker.mark_step(
-                9,
-                status=status,
-                detail=detail,
-                overall_status=overall_status,
-                extra=extra,
+        training_results: Optional[Dict[str, Any]] = None
+        if is_factory_workflow:
+            training_results = cli._post_annotation_training_workflow(
+                output_file=output_file,
+                text_column=text_column,
+                prompt_configs=prompt_configs,
+                session_id=session_id,
+                session_dirs=session_dirs  # Pass session directories for organized logging
             )
+            tracker.mark_step(
+                8,
+                detail="Training workflow executed",
+                extra={"training_session_id": session_id},
+            )
+
+            model_annotation_summary = _launch_model_annotation_stage(
+                cli,
+                session_id=session_id,
+                session_dirs=session_dirs,
+                training_results=training_results,
+                prompt_configs=prompt_configs,
+                text_column=text_column,
+                annotation_output=output_file,
+                dataset_path=data_path,
+            )
+
+            if isinstance(model_annotation_summary, dict):
+                status = model_annotation_summary.get("status", "completed")
+                detail = model_annotation_summary.get("detail")
+                extra = model_annotation_summary.get("extra")
+                overall_status = status if status in {"failed", "cancelled"} else None
+                tracker.mark_step(
+                    9,
+                    status=status,
+                    detail=detail,
+                    overall_status=overall_status,
+                    extra=extra,
+                )
+            else:
+                tracker.mark_step(
+                    9,
+                    status="skipped",
+                    detail="Model annotation stage skipped",
+                )
         else:
+            cli.console.print("\n[dim]🛈 Training workflow is reserved for Annotator Factory (mode 2). Skipping post-annotation training.[/dim]\n")
+            tracker.mark_step(
+                8,
+                status="skipped",
+                detail="Training workflow not run in Annotator mode",
+            )
             tracker.mark_step(
                 9,
                 status="skipped",
-                detail="Model annotation stage skipped",
+                detail="Model annotation deployment skipped (no trained models in Annotator mode)",
             )
 
         # Export to Doccano JSONL if requested
@@ -4804,6 +4947,13 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     import json
     from datetime import datetime
     metadata_state: Optional[Dict[str, Any]] = copy.deepcopy(metadata) if metadata else None
+    annotation_session = {}
+    if metadata_state:
+        annotation_session = metadata_state.get('annotation_session') or {}
+    if not annotation_session:
+        annotation_session = (metadata or {}).get('annotation_session', {})
+    workflow_name = str(annotation_session.get('workflow', '')).lower()
+    is_factory_workflow = "factory" in workflow_name
 
     # Extract all parameters from metadata
     data_source = metadata.get('data_source', {})
@@ -5115,9 +5265,9 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                 cli.console.print("[yellow]Switching to relaunch mode[/yellow]")
                 action_mode = 'relaunch'
 
-    # Prepare output path
-    annotations_dir = cli.settings.paths.data_dir / 'annotations'
-    annotations_dir.mkdir(parents=True, exist_ok=True)
+    # Prepare output path (stage inside session logs)
+    staging_dir = Path(session_dirs['annotated_data']) / '_staging'
+    staging_dir.mkdir(parents=True, exist_ok=True)
     safe_model_name = model_config.get('model_name', 'unknown').replace(':', '_').replace('/', '_')
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -5126,7 +5276,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         default_output_path = original_output
     else:
         output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
-        default_output_path = annotations_dir / output_filename
+        default_output_path = staging_dir / output_filename
         identifier_column = default_identifier
         data_source['identifier_column'] = identifier_column
         proc_config['identifier_column'] = identifier_column
@@ -5361,10 +5511,26 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         # Display results
         annotation_results = state.annotation_results or {}
         output_file = annotation_results.get('output_file', str(default_output_path))
+        provider_folder_name = str(model_config.get('provider', provider or 'model_provider')).replace("/", "_")
+        output_paths = _persist_annotation_outputs(
+            cli,
+            source_output_path=output_file,
+            session_dirs=session_dirs or {},
+            provider_folder=provider_folder_name,
+            model_folder=safe_model_name,
+            dataset_name=data_path.stem,
+            annotation_results=annotation_results,
+        )
+        if output_paths.get("full_path"):
+            output_file = output_paths["full_path"]
+            annotation_results['output_file'] = output_file
+        annotations_only_path = output_paths.get("annotations_only_path")
 
         cli.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
         cli.console.print(f"\n[bold cyan]📄 Output File:[/bold cyan]")
         cli.console.print(f"   {output_file}")
+        if annotations_only_path:
+            cli.console.print(f"   [dim]Annotations-only CSV:[/dim] {annotations_only_path}")
 
         total_annotated = annotation_results.get('total_annotated', 0)
         if total_annotated:
@@ -5379,36 +5545,38 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         # ============================================================
         # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)
         # ============================================================
-        # Build prompt_configs for training workflow
-        prompt_configs_for_training = []
-        for p in prompts:
-            prompt_configs_for_training.append({
-                'prompt': {
-                    'keys': p.get('expected_keys', []),
-                    'content': p.get('prompt_content', p.get('prompt', '')),
-                    'name': p.get('name', 'prompt')
-                },
-                'prefix': p.get('prefix', '')
-            })
+        if is_factory_workflow:
+            prompt_configs_for_training = []
+            for p in prompts:
+                prompt_configs_for_training.append({
+                    'prompt': {
+                        'keys': p.get('expected_keys', []),
+                        'content': p.get('prompt_content', p.get('prompt', '')),
+                        'name': p.get('name', 'prompt')
+                    },
+                    'prefix': p.get('prefix', '')
+                })
 
-        training_results = cli._post_annotation_training_workflow(
-            output_file=output_file,
-            text_column=data_source.get('text_column', 'text'),
-            prompt_configs=prompt_configs_for_training,
-            session_id=session_id,
-            session_dirs=None  # No session_dirs in resume context
-        )
+            training_results = cli._post_annotation_training_workflow(
+                output_file=output_file,
+                text_column=data_source.get('text_column', 'text'),
+                prompt_configs=prompt_configs_for_training,
+                session_id=session_id,
+                session_dirs=session_dirs,
+            )
 
-        _launch_model_annotation_stage(
-            cli,
-            session_id=session_id,
-            session_dirs=None,
-            training_results=training_results,
-            prompt_configs=prompt_configs_for_training,
-            text_column=data_source.get('text_column', 'text'),
-            annotation_output=output_file,
-            dataset_path=data_path,
-        )
+            _launch_model_annotation_stage(
+                cli,
+                session_id=session_id,
+                session_dirs=session_dirs,
+                training_results=training_results,
+                prompt_configs=prompt_configs_for_training,
+                text_column=data_source.get('text_column', 'text'),
+                annotation_output=output_file,
+                dataset_path=data_path,
+            )
+        else:
+            cli.console.print("[dim]🛈 Training workflow is skipped in Annotator mode. Use Annotator Factory to launch model fine-tuning.[/dim]\n")
 
         # Export to Doccano JSONL if enabled in preferences
         if export_to_doccano:

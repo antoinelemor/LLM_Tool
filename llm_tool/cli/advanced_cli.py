@@ -177,6 +177,7 @@ from .annotation_workflow import (
     FACTORY_RESUME_STEPS,
     AnnotationResumeTracker,
     _launch_model_annotation_stage,
+    _persist_annotation_outputs,
     create_session_directories,
     execute_from_metadata,
     run_annotator_workflow,
@@ -8389,6 +8390,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         Supports multiple database systems with intelligent sampling and flexible output options.
         """
         self.console.print("\n[bold cyan]🗄️  SQL Database Annotator[/bold cyan]\n")
+        from datetime import datetime
+
+        session_id = f"annotator_db_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        session_dirs = self._create_annotator_session_directories(session_id)
 
         # ========================================
         # STEP 1/9: Database Connection
@@ -9295,6 +9300,20 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 input("\nPress Enter to continue...")
                 return
 
+            annotation_results = state.annotation_results or {}
+            persist_paths = _persist_annotation_outputs(
+                self,
+                source_output_path=pipeline_output_file,
+                session_dirs=session_dirs,
+                provider_folder=(llm_config.provider or "model_provider").replace("/", "_"),
+                model_folder=safe_model_name,
+                dataset_name=f"{selected_table}_{timestamp}",
+                annotation_results=annotation_results,
+            )
+            full_output_path = Path(persist_paths.get("full_path", pipeline_output_file))
+            annotations_only_path = persist_paths.get("annotations_only_path")
+            pipeline_output_file = full_output_path
+
             # ========================================
             # Save results to final destination
             # ========================================
@@ -9383,24 +9402,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print(f"[dim]Annotations also saved in data/annotations: {pipeline_output_file.name}[/dim]")
                 else:
                     # Using default location in data/annotations
-                    self.console.print(f"[green]✓ Annotations saved: {pipeline_output_file}[/green]")
-
+                    self.console.print(f"[green]✓ Annotations saved: {full_output_path}[/green]")
+                    if annotations_only_path:
+                        self.console.print(f"[dim]  Annotated rows CSV:[/dim] {annotations_only_path}")
                 # Clean up temporary input file
                 if temp_input_file.exists():
                     temp_input_file.unlink()
 
             self.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
-
-            # ============================================================
-            # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)
-            # ============================================================
-            self._post_annotation_training_workflow(
-                output_file=str(pipeline_output_file),
-                text_column=text_column,
-                prompt_configs=prompt_configs,
-                session_id=None,
-                session_dirs=None  # No session context in this flow
-            )
+            self.console.print("[dim]🛈 Training workflows are available in Annotator Factory (mode 2). Skipping model training.[/dim]\n")
 
             # Export to Doccano JSONL if requested
             if export_to_doccano:
