@@ -3027,8 +3027,7 @@ class AdvancedCLI:
 
                 pipeline_with_progress = PipelineController(
                     settings=self.settings,
-                    session_id=session_id,  # Pass session_id for organized logging
-                    session_mode="factory",
+                    session_id=session_id  # Pass session_id for organized logging
                 )
 
                 with RichProgressManager(show_json_every=1, compact_mode=False) as progress_manager:
@@ -3900,6 +3899,84 @@ class AdvancedCLI:
 
         # Default for unknown models
         return "Custom or community model"
+
+    def _ensure_detected_llms(self) -> None:
+        """Ensure the in-memory LLM catalog is populated before prompting the user."""
+        if self.detected_llms:
+            return
+
+        try:
+            self.detected_llms = self.llm_detector.detect_all_llms()
+        except Exception:  # pragma: no cover - defensive fallback
+            self.detected_llms = {"local": [], "openai": [], "anthropic": []}
+            if self.console:
+                self.console.print("[red]⚠️ Unable to refresh available LLMs list.[/red]")
+
+    def _interactive_model_update(self, model_config: Dict[str, Any]) -> bool:
+        """
+        Launch the interactive model picker and apply the selection to the given config.
+
+        Returns True when the configuration changed.
+        """
+        self._ensure_detected_llms()
+
+        if not self.detected_llms:
+            if self.console:
+                self.console.print("[red]No annotation models detected. Configure providers first.[/red]")
+            return False
+
+        selected_model = self._select_llm_interactive()
+        if not selected_model:
+            return False
+
+        current_provider = model_config.get("provider")
+        current_model_name = model_config.get("model_name")
+        current_mode = model_config.get("annotation_mode", "local")
+
+        new_provider = selected_model.provider or "ollama"
+        new_model_name = selected_model.name
+
+        # Determine annotation mode while preserving explicit OpenAI batch selection
+        if new_provider == "ollama":
+            new_mode = "local"
+        elif current_mode == "openai_batch" and new_provider == "openai":
+            new_mode = "openai_batch"
+        else:
+            new_mode = "api"
+
+        changed = False
+        if current_provider != new_provider:
+            model_config["provider"] = new_provider
+            changed = True
+
+        if current_model_name != new_model_name:
+            model_config["model_name"] = new_model_name
+            changed = True
+
+        if model_config.get("annotation_mode") != new_mode:
+            model_config["annotation_mode"] = new_mode
+            changed = True
+
+        # Reset OpenAI batch flag if provider changed away from OpenAI
+        if new_provider != "openai" and model_config.get("openai_batch_mode"):
+            model_config["openai_batch_mode"] = False
+            changed = True
+
+        if selected_model.context_length:
+            if model_config.get("context_window") != selected_model.context_length:
+                model_config["context_window"] = selected_model.context_length
+                changed = True
+        else:
+            model_config.pop("context_window", None)
+
+        if selected_model.size:
+            if model_config.get("model_size") != selected_model.size:
+                model_config["model_size"] = selected_model.size
+                changed = True
+        else:
+            model_config.pop("model_size", None)
+
+        return changed
 
     def _select_llm_interactive(self) -> ModelInfo:
         """Let user interactively select an LLM from available options"""
@@ -5342,8 +5419,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             pipeline_with_progress = PipelineController(
                 settings=self.settings,
-                session_id=test_session_id,  # Pass session_id for organized logging
-                session_mode="factory",
+                session_id=test_session_id  # Pass session_id for organized logging
             )
 
             # Use the enhanced Rich progress manager with JSON display
@@ -6681,37 +6757,36 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             elif choice == "2":
                 # Modify model
-                self.console.print("\n[yellow]Current model:[/yellow]")
                 model_config = modified.setdefault('model_configuration', {})
+                self.console.print("\n[yellow]Current model configuration:[/yellow]")
                 self.console.print(f"  Provider: {model_config.get('provider', 'N/A')}")
                 self.console.print(f"  Model: {model_config.get('model_name', 'N/A')}")
+                annotation_mode = model_config.get('annotation_mode')
+                if annotation_mode:
+                    self.console.print(f"  Mode: {annotation_mode}")
 
                 changed_this_round = False
 
                 if Confirm.ask("Change model?", default=False):
-                    # Reuse model selection from smart annotate
-                    provider = Prompt.ask(
-                        "Provider",
-                        choices=["ollama", "openai", "anthropic"],
-                        default=model_config.get('provider', 'ollama')
-                    )
-                    current_model_name = model_config.get('model_name')
-                    if current_model_name:
-                        model_name = Prompt.ask("Model name", default=current_model_name)
+                    changed_this_round = self._interactive_model_update(model_config)
+                    if changed_this_round:
+                        provider = model_config.get('provider', 'N/A')
+                        model_name = model_config.get('model_name', 'N/A')
+                        mode = model_config.get('annotation_mode', 'local')
+                        self.console.print(
+                            f"[green]✓ Model configuration updated[/green]\n"
+                            f"[dim]  → Provider:[/dim] {provider}    "
+                            f"[dim]Model:[/dim] {model_name}    "
+                            f"[dim]Mode:[/dim] {mode}"
+                        )
+                        context_window = model_config.get('context_window')
+                        if context_window and self.console:
+                            self.console.print(f"[dim]    Context window:[/dim] {context_window:,} tokens")
                     else:
-                        model_name = Prompt.ask("Model name")
-                    if provider != model_config.get('provider'):
-                        model_config['provider'] = provider
-                        changed_this_round = True
-                    if model_name and model_name != model_config.get('model_name'):
-                        model_config['model_name'] = model_name
-                        changed_this_round = True
+                        self.console.print("[dim]No changes applied to model configuration[/dim]")
 
                 if changed_this_round:
                     changes_made = True
-                    self.console.print("[green]✓ Model configuration updated[/green]")
-                else:
-                    self.console.print("[dim]No changes applied to model configuration[/dim]")
 
             elif choice == "3":
                 # Modify model parameters
@@ -7270,26 +7345,64 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         }
                         doccano_labels = []
 
+                        def _normalize_component(value):
+                            """Normalize label components, skipping empty/null-like values."""
+                            if value is None:
+                                return None
+                            if isinstance(value, bool):
+                                token = "true" if value else "false"
+                            elif isinstance(value, (int, float)):
+                                token = str(value)
+                            else:
+                                token = str(value).strip()
+                            token = token.strip(",;")
+                            if not token:
+                                return None
+                            lowered = token.lower()
+                            if lowered in {"null", "none", "nan"}:
+                                return None
+                            sanitized = re.sub(r"[^\w]+", "_", lowered).strip("_")
+                            return sanitized or None
+
                         # Extract labels from annotation
-                        for label_key in all_label_keys:
-                            if label_key in annotation_data:
-                                label_value = annotation_data[label_key]
-                                # Handle different label formats
-                                if isinstance(label_value, list):
-                                    for candidate in label_value:
-                                        if candidate is None:
-                                            continue
-                                        candidate_str = str(candidate).strip()
-                                        if candidate_str:
-                                            doccano_labels.append(candidate_str)
-                                elif isinstance(label_value, (str, int, float, bool)):
-                                    candidate_str = str(label_value).strip()
-                                    if candidate_str:
-                                        doccano_labels.append(candidate_str)
-                                elif label_value is not None:
-                                    candidate_str = str(label_value).strip()
-                                    if candidate_str:
-                                        doccano_labels.append(candidate_str)
+                        label_keys_to_process = set(annotation_data.keys())
+                        if all_label_keys:
+                            label_keys_to_process |= all_label_keys
+
+                        for label_key in label_keys_to_process:
+                            if label_key not in annotation_data:
+                                continue
+
+                            label_value = annotation_data[label_key]
+                            normalized_key = _normalize_component(label_key)
+                            if not normalized_key:
+                                normalized_key = _normalize_component(str(label_key))
+                            if not normalized_key:
+                                normalized_key = str(label_key).strip().replace(" ", "_")
+
+                            def add_combined_label(raw_value):
+                                normalized_value = _normalize_component(raw_value)
+                                if normalized_value:
+                                    combined = f"{normalized_key}_{normalized_value}"
+                                    doccano_labels.append(combined)
+
+                            # Handle different label formats
+                            if isinstance(label_value, list):
+                                for candidate in label_value:
+                                    add_combined_label(candidate)
+                            elif isinstance(label_value, dict):
+                                for sub_key, sub_value in label_value.items():
+                                    nested_key = _normalize_component(sub_key)
+                                    if nested_key:
+                                        combined_key = f"{normalized_key}_{nested_key}"
+                                    else:
+                                        combined_key = normalized_key
+
+                                    normalized_value = _normalize_component(sub_value)
+                                    if normalized_value:
+                                        doccano_labels.append(f"{combined_key}_{normalized_value}")
+                            else:
+                                add_combined_label(label_value)
 
                         if doccano_labels:
                             seen = set()
@@ -9289,8 +9402,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 pipeline_with_progress = PipelineController(
                     settings=self.settings,
-                    session_id=session_id,  # Pass session_id for organized logging
-                    session_mode="annotator",
+                    session_id=session_id  # Pass session_id for organized logging
                 )
 
                 with RichProgressManager(

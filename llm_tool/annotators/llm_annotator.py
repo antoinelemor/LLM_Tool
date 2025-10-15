@@ -53,6 +53,7 @@ Antoine Lemor
 import os
 import sys
 import json
+import re
 import shutil
 import logging
 import time
@@ -1798,60 +1799,40 @@ class LLMAnnotator:
             if config.get('create_annotated_subset'):
                 subset_path = self._save_annotated_subset(data, config)
 
-        doccano_path = None
-        if config.get('export_to_doccano'):
-            annotation_col = config.get('annotation_column', 'annotation')
-            text_cols = config.get('text_columns') or []
-            text_col = config.get('text_column')
-            if not text_col and text_cols:
-                text_col = text_cols[0]
-            annotated_only = data
-            if annotation_col in data.columns:
-                annotated_only = data[data[annotation_col].notna()]
-            try:
-                doccano_path = self._export_to_doccano(
-                    annotated_df=annotated_only,
-                    annotation_column=annotation_col,
-                    text_column=text_col or annotation_col,
-                    config=config
-                )
-            except Exception as exc:
-                self.logger.warning("[DOCCANO] Export failed: %s", exc)
-            else:
-                if doccano_path:
-                    config['doccano_export_path'] = str(doccano_path)
-            if subset_path:
-                self.logger.info(f"Annotated subset saved to {subset_path}")
+        doccano_path: Optional[Path] = None
 
-            export_prefs = config.get('export_preferences', {})
-            export_doccano = config.get('export_to_doccano') or export_prefs.get('export_to_doccano')
-            if export_doccano:
-                annotation_column = config.get('annotation_column', 'annotation')
-                text_column = config.get('text_column')
-                if not text_column:
-                    text_cols = config.get('text_columns') or []
-                    if text_cols:
-                        text_column = text_cols[0]
-                if annotation_column in data.columns and text_column in data.columns:
-                    mask = (
-                        data[annotation_column].notna()
-                        & data[annotation_column].astype(str).str.strip().ne('')
-                        & data[annotation_column].astype(str).str.lower().ne('nan')
-                    )
-                    annotated_df = data.loc[mask].copy()
-                    if not annotated_df.empty:
-                        try:
-                            doccano_path = self._export_doccano_jsonl(
-                                annotated_df=annotated_df,
-                                annotation_column=annotation_column,
-                                text_column=text_column,
-                                config=config
-                            )
-                            if doccano_path:
-                                self.logger.info(f"Doccano export saved to {doccano_path}")
-                                config['doccano_export_path'] = str(doccano_path)
-                        except Exception as exc:
-                            self.logger.warning(f"Doccano export failed: {exc}")
+        if subset_path:
+            self.logger.info(f"Annotated subset saved to {subset_path}")
+
+        export_prefs = config.get('export_preferences', {})
+        export_doccano = config.get('export_to_doccano') or export_prefs.get('export_to_doccano')
+        if export_doccano:
+            annotation_column = config.get('annotation_column', 'annotation')
+            text_column = config.get('text_column')
+            if not text_column:
+                text_cols = config.get('text_columns') or []
+                if text_cols:
+                    text_column = text_cols[0]
+            if annotation_column in data.columns and text_column in data.columns:
+                mask = (
+                    data[annotation_column].notna()
+                    & data[annotation_column].astype(str).str.strip().ne('')
+                    & data[annotation_column].astype(str).str.lower().ne('nan')
+                )
+                annotated_df = data.loc[mask].copy()
+                if not annotated_df.empty:
+                    try:
+                        doccano_path = self._export_doccano_jsonl(
+                            annotated_df=annotated_df,
+                            annotation_column=annotation_column,
+                            text_column=text_column,
+                            config=config
+                        )
+                        if doccano_path:
+                            self.logger.info(f"Doccano export saved to {doccano_path}")
+                            config['doccano_export_path'] = str(doccano_path)
+                    except Exception as exc:
+                        self.logger.warning(f"Doccano export failed: {exc}")
 
     def _save_data(self, data: pd.DataFrame, path: str, format: str):
         """Save data to file"""
@@ -1979,41 +1960,75 @@ class LLMAnnotator:
         default_dir = self.settings.paths.logs_dir / "doccano_exports"
 
         doccano_base: Optional[Path] = None
+        session_root: Optional[Path] = None
+
         if isinstance(session_dirs, dict):
             doccano_dir_hint = session_dirs.get('doccano')
             if doccano_dir_hint:
                 doccano_base = Path(doccano_dir_hint)
+                try:
+                    session_root = doccano_base.parent.parent
+                except IndexError:
+                    session_root = None
+
+            if doccano_base is None:
+                session_root_hint = session_dirs.get('session_root') or session_dirs.get('base')
+                if session_root_hint:
+                    session_root = Path(session_root_hint)
+                    doccano_base = session_root / 'validation_exports' / 'doccano'
 
         if doccano_base is None:
             output_path = config.get('output_path')
             if output_path:
                 try:
                     output_path_obj = Path(output_path)
-                    session_root = None
                     for parent in output_path_obj.parents:
-                        parent_name = parent.name
-                        if parent_name.startswith('factory_session_') and parent.parent.name == 'annotator_factory':
+                        grandparent = parent.parent
+                        if grandparent and grandparent.name in {'annotator', 'annotator_factory'}:
                             session_root = parent
+                            doccano_base = session_root / 'validation_exports' / 'doccano'
                             break
-                        if parent_name.startswith('session_') and parent.parent.name == 'annotator':
+                        parent_lower = parent.name.lower()
+                        if parent_lower.startswith(('annotator_session_', 'factory_session_', 'test_', 'session_')):
                             session_root = parent
+                            doccano_base = session_root / 'validation_exports' / 'doccano'
                             break
-                    if session_root:
-                        doccano_base = session_root / 'validation_exports' / 'doccano'
                 except Exception:
+                    session_root = None
                     doccano_base = None
+
+        if doccano_base is None:
+            session_id_hint = config.get('session_id')
+            if session_id_hint:
+                mode_hint = (config.get('annotation_mode') or '').lower()
+                mode_folder = 'annotator_factory' if 'factory' in mode_hint else 'annotator'
+                session_root = (
+                    self.settings.paths.logs_dir
+                    / mode_folder
+                    / session_id_hint
+                )
+                doccano_base = session_root / 'validation_exports' / 'doccano'
 
         if doccano_base is None:
             doccano_base = default_dir
 
         doccano_base = Path(doccano_base)
+        if session_root is None:
+            try:
+                if (
+                    doccano_base.parent.name == 'doccano'
+                    and doccano_base.parent.parent.name == 'validation_exports'
+                ):
+                    session_root = doccano_base.parent.parent.parent
+            except Exception:
+                session_root = None
 
-        provider_folder = (
+        provider_folder_raw = (
             config.get('provider_folder')
             or config.get('annotation_provider')
             or config.get('provider')
-            or 'provider'
         )
+        provider_folder = self._sanitize_path_component(provider_folder_raw, 'provider')
 
         model_reference = (
             config.get('model_folder')
@@ -2025,12 +2040,37 @@ class LLMAnnotator:
                 model_reference.get('model_name')
                 or model_reference.get('name')
             )
-        model_folder = str(model_reference or 'model').replace('/', '_')
+        model_folder = self._sanitize_path_component(model_reference, 'model')
 
-        dataset_name = config.get('dataset_name') or Path(config.get('file_path', 'dataset')).stem
+        dataset_reference = (
+            config.get('dataset_name')
+            or config.get('file_path')
+            or 'dataset'
+        )
+        dataset_name = self._sanitize_path_component(Path(str(dataset_reference)).stem, 'dataset')
 
-        doccano_dir = doccano_base / provider_folder / model_folder / dataset_name
+        provider_root = doccano_base / provider_folder
+        provider_root.mkdir(parents=True, exist_ok=True)
+
+        for alt_model_dir in provider_root.iterdir():
+            if not alt_model_dir.is_dir():
+                continue
+            normalized = self._sanitize_path_component(alt_model_dir.name, 'model')
+            if normalized == model_folder and alt_model_dir.name != model_folder:
+                try:
+                    shutil.rmtree(alt_model_dir, ignore_errors=True)
+                except Exception as exc:
+                    self.logger.debug(f"[DOCCANO] Unable to clean legacy model directory {alt_model_dir}: {exc}")
+
+        doccano_dir = provider_root / model_folder / dataset_name
         doccano_dir.mkdir(parents=True, exist_ok=True)
+
+        # Keep only the latest export for this dataset
+        for existing_export in doccano_dir.glob("*.jsonl"):
+            try:
+                existing_export.unlink()
+            except Exception as exc:
+                self.logger.debug(f"[DOCCANO] Unable to remove legacy export {existing_export}: {exc}")
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         doccano_path = doccano_dir / f"{dataset_name}_doccano_{timestamp}.jsonl"
@@ -2124,7 +2164,64 @@ class LLMAnnotator:
             self.logger.warning("[DOCCANO] Export produced zero entries; no file generated.")
             return None
 
+        if session_root:
+            try:
+                session_id_for_validation = session_root.name
+                validation_provider_root = (
+                    self.settings.paths.validation_dir
+                    / session_id_for_validation
+                    / "doccano"
+                    / provider_folder
+                )
+                validation_provider_root.mkdir(parents=True, exist_ok=True)
+
+                for alt_model_dir in validation_provider_root.iterdir():
+                    if not alt_model_dir.is_dir():
+                        continue
+                    normalized = self._sanitize_path_component(alt_model_dir.name, 'model')
+                    if normalized == model_folder and alt_model_dir.name != model_folder:
+                        try:
+                            shutil.rmtree(alt_model_dir, ignore_errors=True)
+                        except Exception as exc:
+                            self.logger.debug(f"[DOCCANO] Unable to clean legacy validation directory {alt_model_dir}: {exc}")
+
+                validation_model_root = validation_provider_root / model_folder
+                validation_model_root.mkdir(parents=True, exist_ok=True)
+
+                validation_dir = validation_model_root / dataset_name
+                validation_dir.mkdir(parents=True, exist_ok=True)
+                for legacy_validation in validation_dir.glob("*.jsonl"):
+                    try:
+                        legacy_validation.unlink()
+                    except Exception as exc:
+                        self.logger.debug(f"[DOCCANO] Unable to remove legacy validation export {legacy_validation}: {exc}")
+                validation_copy_path = validation_dir / doccano_path.name
+                shutil.copy2(doccano_path, validation_copy_path)
+
+                legacy_plain = (
+                    self.settings.paths.validation_dir
+                    / session_id_for_validation
+                    / "doccano"
+                    / doccano_path.name
+                )
+                if legacy_plain.exists() and legacy_plain != validation_copy_path:
+                    try:
+                        legacy_plain.unlink()
+                    except Exception as exc:
+                        self.logger.debug(f"[DOCCANO] Unable to remove legacy validation export {legacy_plain}: {exc}")
+            except Exception as exc:
+                self.logger.debug(f"[DOCCANO] Unable to mirror export to validation directory: {exc}")
+
         return doccano_path
+
+    @staticmethod
+    def _sanitize_path_component(value: Optional[str], fallback: str) -> str:
+        """Return filesystem-friendly component names (letters, digits, ._-)."""
+        if not value:
+            return fallback
+        sanitized = re.sub(r'[^A-Za-z0-9._-]+', '_', str(value))
+        sanitized = sanitized.strip('_')
+        return sanitized or fallback
 
     @staticmethod
     def _serialize_meta_value(value: Any) -> Optional[Any]:

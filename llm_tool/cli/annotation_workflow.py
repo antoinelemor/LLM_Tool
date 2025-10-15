@@ -2778,6 +2778,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'provider_folder': provider_folder,
         'model_folder': model_folder,
         'dataset_name': dataset_name,
+        'session_id': session_id,
     }
 
     if annotation_mode == 'openai_batch':
@@ -3450,7 +3451,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         staging_dir = Path(session_dirs['annotated_data']) / '_staging'
         staging_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        data_path = staging_dir / f"quickstart_sql_{selected_table}_{timestamp}.csv"
+        data_path = staging_dir / f"sql_{selected_table}_{timestamp}.csv"
         df.to_csv(data_path, index=False)
         data_format = 'csv'
 
@@ -4472,6 +4473,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'model_subdir': str(model_subdir),
         'dataset_subdir': str(dataset_subdir),
         'openai_batch_dir': str(batch_dir),
+        'session_id': session_id,
     })
 
     if annotation_mode == 'openai_batch':
@@ -5401,6 +5403,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         'batch_size': batch_size,
         'run_validation': False,
         'run_training': False,
+        'session_id': session_id,
     }
 
     # Add resume information if resuming
