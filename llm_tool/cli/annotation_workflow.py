@@ -2325,7 +2325,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # Metadata is ALWAYS saved automatically for reproducibility
     save_metadata = True
     metadata_state: Optional[Dict[str, Any]] = None
-    metadata_path: Optional[Path] = None
+    # Use the most recent metadata target if one exists (second entry is the primary file)
+    metadata_path: Optional[Path] = metadata_targets[-1] if metadata_targets else None
 
     # ============================================================
     # VALIDATION TOOL EXPORT OPTION
@@ -2498,6 +2499,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         progress=metadata_progress,
     )
     _persist_metadata_bundle(metadata_targets, snapshot_after_exports)
+    metadata_state = copy.deepcopy(snapshot_after_exports)
 
     # ============================================================
     # EXECUTE ANNOTATION
@@ -2507,7 +2509,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # Structure: logs/annotator/{session_id}/annotated_data/{dataset_name}/
     safe_model_name = model_name.replace(':', '_').replace('/', '_')
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    metadata.setdefault('annotation_session', {})['timestamp'] = timestamp
+    metadata_state.setdefault('annotation_session', {})['timestamp'] = timestamp
 
     # Determine annotation mode before creating directories
     if provider == 'openai' and openai_batch_mode:
@@ -2718,19 +2720,23 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             progress=metadata_progress,
         )
         _persist_metadata_bundle(metadata_targets, ready_metadata)
+        metadata_state = copy.deepcopy(ready_metadata)
 
         cli.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
         cli.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
-        cli.console.print(f"   {metadata_path}\n")
+        cli.console.print(f"   {metadata_path if metadata_path else 'Not available'}\n")
+        detail_message = f"Metadata saved: {metadata_path.name}" if metadata_path else "Metadata saved"
+        tracker_extra = {
+            "dataset_path": str(data_path),
+            "text_column": text_column,
+            "identifier_column": identifier_column,
+        }
+        if metadata_path:
+            tracker_extra["metadata_path"] = str(metadata_path)
         tracker.mark_step(
             5,
-            detail=f"Metadata saved: {metadata_path.name}",
-            extra={
-                "metadata_path": str(metadata_path),
-                "dataset_path": str(data_path),
-                "text_column": text_column,
-                "identifier_column": identifier_column,
-            },
+            detail=detail_message,
+            extra=tracker_extra,
         )
 
     # Execute pipeline with Rich progress
@@ -4797,6 +4803,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     """Execute annotation based on loaded metadata"""
     import json
     from datetime import datetime
+    metadata_state: Optional[Dict[str, Any]] = copy.deepcopy(metadata) if metadata else None
 
     # Extract all parameters from metadata
     data_source = metadata.get('data_source', {})
@@ -5275,7 +5282,8 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
 
     # Save new metadata for this execution
     if action_mode == 'relaunch' and metadata_root is not None:
-        new_metadata = copy.deepcopy(metadata)
+        base_metadata_payload = metadata_state if metadata_state else metadata
+        new_metadata = copy.deepcopy(base_metadata_payload)
         new_metadata['annotation_session']['timestamp'] = timestamp
         new_metadata['annotation_session']['relaunch_from'] = str(metadata_file.name)
         new_metadata['annotation_session']['action_mode'] = 'relaunch'
@@ -5295,7 +5303,8 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         cli.console.print(f"   {new_metadata_path}\n")
 
     if action_mode == 'resume' and metadata_root is not None:
-        resume_metadata = copy.deepcopy(metadata)
+        base_metadata_payload = metadata_state if metadata_state else metadata
+        resume_metadata = copy.deepcopy(base_metadata_payload)
         resume_metadata['annotation_session']['timestamp'] = timestamp
         resume_metadata['annotation_session']['resume_from'] = str(metadata_file.name)
         resume_metadata['annotation_session']['action_mode'] = 'resume'
