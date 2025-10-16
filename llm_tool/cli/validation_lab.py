@@ -960,16 +960,33 @@ class ValidationLabController:
         summary = record.summary
         extra = summary.extra or {}
         enabled = extra.get("validation_lab_enabled") or extra.get("validation_lab_opt_in")
-        exports = extra.get("validation_lab_exports") or {}
+        exports_raw = extra.get("validation_lab_exports")
+        exports = dict(exports_raw) if isinstance(exports_raw, dict) else {}
         validation_session_dir = extra.get("validation_lab_session_dir")
         dataset_name = extra.get("dataset")
 
         metadata_info = self._load_validation_metadata_from_files(summary.session_id, record.directory)
         if metadata_info:
             enabled = metadata_info.get("enabled", enabled)
-            exports = metadata_info.get("exports") or exports
+            metadata_exports = metadata_info.get("exports") or {}
+            if isinstance(metadata_exports, dict):
+                exports.update(metadata_exports)
             validation_session_dir = metadata_info.get("session_dir") or validation_session_dir
             dataset_name = metadata_info.get("dataset_name") or dataset_name
+
+        resolved_session_dir = self._resolve_validation_session_dir(validation_session_dir, record.directory)
+        if resolved_session_dir and resolved_session_dir.exists():
+            discovered = self._discover_validation_exports_from_dir(resolved_session_dir)
+            enabled = enabled or bool(discovered)
+            exports = self._merge_discovered_exports(exports, discovered)
+            validation_session_dir = str(resolved_session_dir)
+        elif not exports:
+            default_dir = (self._validation_data_root / summary.session_id).resolve()
+            if default_dir.exists():
+                discovered = self._discover_validation_exports_from_dir(default_dir)
+                enabled = enabled or bool(discovered)
+                exports = self._merge_discovered_exports(exports, discovered)
+                validation_session_dir = str(default_dir)
 
         if not enabled or not exports:
             return []
@@ -1025,6 +1042,94 @@ class ValidationLabController:
             }
         return None
 
+    def _resolve_validation_session_dir(
+        self,
+        session_dir: Optional[str],
+        record_directory: Path,
+    ) -> Optional[Path]:
+        if not session_dir:
+            return None
+
+        raw = Path(session_dir)
+        record_root = record_directory.resolve()
+        validation_root = self._validation_data_root.resolve()
+        candidates: List[Path] = []
+
+        if raw.is_absolute():
+            candidates.append(raw)
+        else:
+            candidates.extend(
+                [
+                    (Path.cwd() / raw),
+                    record_root / raw,
+                ]
+            )
+            relative_for_validation = raw
+            if raw.parts and raw.parts[0] == validation_root.name:
+                relative_for_validation = Path(*raw.parts[1:]) if len(raw.parts) > 1 else Path()
+            if relative_for_validation:
+                candidates.append(validation_root / relative_for_validation)
+            candidates.append(validation_root / raw.name)
+
+        seen: Set[str] = set()
+        fallback: Optional[Path] = None
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            if fallback is None:
+                fallback = resolved
+            if resolved.exists():
+                return resolved
+        return fallback
+
+    def _discover_validation_exports_from_dir(self, session_dir: Path) -> List[Tuple[str, Path]]:
+        exports: List[Tuple[str, Path]] = []
+        if not session_dir.exists():
+            return exports
+
+        allowed_suffixes = {".jsonl", ".csv", ".parquet"}
+        for path in session_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            suffix = path.suffix.lower()
+            if suffix not in allowed_suffixes:
+                continue
+            if path.name.startswith("."):
+                continue
+            relative = path.relative_to(session_dir)
+            label = relative.name
+            if "doccano" in relative.parts:
+                label = f"Doccano: {label}"
+            exports.append((label, path))
+        return exports
+
+    def _merge_discovered_exports(
+        self,
+        existing: Dict[str, str],
+        discovered: List[Tuple[str, Path]],
+    ) -> Dict[str, str]:
+        if not discovered:
+            return existing
+
+        merged = dict(existing)
+        existing_paths = {Path(p).resolve() for p in merged.values()}
+
+        for label, path in discovered:
+            resolved = path.resolve()
+            if resolved in existing_paths:
+                continue
+            unique_label = label
+            dedupe_index = 2
+            while unique_label in merged:
+                unique_label = f"{label} ({dedupe_index})"
+                dedupe_index += 1
+            merged[unique_label] = str(resolved)
+            existing_paths.add(resolved)
+        return merged
+
     def _collect_training_candidates(self) -> List[ValidationCandidate]:
         records = self.cli._fetch_resume_records("training_arena", limit=50)  # type: ignore[attr-defined]
         candidates: List[ValidationCandidate] = []
@@ -1037,6 +1142,20 @@ class ValidationLabController:
                 exports.extend(metadata_exports)
             summary_exports = self._extract_training_validation_from_summary(summary.extra or {}, record.directory)
             exports.extend(summary_exports)
+            validation_dir_candidates: List[Path] = []
+            extra = summary.extra or {}
+            session_dir_hint = extra.get("validation_lab_session_dir") or extra.get("validation_session_dir")
+            resolved_hint = self._resolve_validation_session_dir(session_dir_hint, record.directory)
+            if resolved_hint and resolved_hint.exists():
+                validation_dir_candidates.append(resolved_hint)
+            default_validation_dir = (self._validation_data_root / summary.session_id).resolve()
+            if default_validation_dir.exists():
+                validation_dir_candidates.append(default_validation_dir)
+            for candidate_dir in validation_dir_candidates:
+                discovered = self._discover_validation_exports_from_dir(candidate_dir)
+                for _, path in discovered:
+                    exports.append(path)
+            validation_session_dir_str = str(validation_dir_candidates[0]) if validation_dir_candidates else None
             if not exports:
                 continue
             dataset_name = (
@@ -1060,7 +1179,7 @@ class ValidationLabController:
                         export_label=path_obj.name,
                         export_path=str(path_obj),
                         export_exists=path_obj.exists(),
-                        validation_session_dir=None,
+                        validation_session_dir=validation_session_dir_str,
                         updated_at=summary.updated_at,
                     )
                 )

@@ -47,7 +47,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +74,17 @@ class DatasetInfo:
     label_column: Optional[str] = None
     column_types: Dict[str, str] = field(default_factory=dict)
     text_scores: Dict[str, float] = field(default_factory=dict)
+    source: Optional[str] = None
 
 
 class DataDetector:
     """Auto-detect and analyse available datasets."""
 
     @staticmethod
-    def scan_directory(directory: Path = Path.cwd()) -> List[DatasetInfo]:
+    def scan_directory(
+        directory: Path = Path.cwd(),
+        label: Optional[str] = None
+    ) -> List[DatasetInfo]:
         """Scan a directory (recursively) for supported datasets."""
 
         supported_extensions = {".csv", ".json", ".jsonl", ".xlsx", ".xls", ".parquet", ".rdata"}
@@ -98,10 +102,58 @@ class DataDetector:
 
             info = DataDetector.analyze_file(path)
             if info:
+                info.source = label or str(directory)
                 datasets.append(info)
 
         datasets.sort(key=lambda d: d.path.name)
         return datasets
+
+    @staticmethod
+    def scan_directories(
+        directories: Iterable[Union[Path, Tuple[Path, str]]]
+    ) -> List[DatasetInfo]:
+        """
+        Scan multiple directories for datasets, consolidating unique paths.
+
+        Args:
+            directories: Iterable of Path objects or (Path, label) tuples.
+
+        Returns:
+            Sorted list of unique DatasetInfo instances.
+        """
+        dataset_map: Dict[Path, DatasetInfo] = {}
+
+        for entry in directories:
+            if isinstance(entry, tuple):
+                directory, label = entry
+            else:
+                directory, label = entry, None
+
+            directory = Path(directory)
+            if not directory.exists() or not directory.is_dir():
+                continue
+
+            label_value = label or str(directory)
+
+            for dataset in DataDetector.scan_directory(directory, label_value):
+                try:
+                    resolved = dataset.path.resolve()
+                except OSError:  # pragma: no cover - defensive resolution failure
+                    resolved = dataset.path
+
+                if resolved in dataset_map:
+                    existing = dataset_map[resolved]
+                    if label_value and existing.source:
+                        if label_value not in existing.source.split(", "):
+                            existing.source = f"{existing.source}, {label_value}"
+                    elif label_value:
+                        existing.source = label_value
+                    continue
+
+                dataset.source = label_value
+                dataset_map[resolved] = dataset
+
+        return sorted(dataset_map.values(), key=lambda d: d.path.name.lower())
 
     @staticmethod
     def analyze_file(file_path: Path) -> Optional[DatasetInfo]:

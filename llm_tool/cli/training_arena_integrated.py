@@ -1116,7 +1116,7 @@ def _training_studio_intelligent_dataset_selector(
         datasets_table.add_column("Name", style="white", width=40)
         datasets_table.add_column("Format", style="yellow", width=8)
         datasets_table.add_column("Size", style="green", width=10)
-        datasets_table.add_column("Folder", style="magenta", width=20)
+        datasets_table.add_column("Origin", style="magenta", width=24)
 
         for i, ds in enumerate(self.detected_datasets, 1):  # Show ALL datasets
             # Calculate file size
@@ -1135,15 +1135,21 @@ def _training_studio_intelligent_dataset_selector(
                 self.logger.debug(f"Could not get size for {ds.path}: {e}")
                 size_str = "—"
 
-            # Get folder name (parent directory name)
-            folder_name = ds.path.parent.name if hasattr(ds, 'path') and ds.path.parent.name else "data"
+            # Determine origin label, preferring recorded source
+            origin_label = getattr(ds, "source", None)
+            if not origin_label and hasattr(ds, "path"):
+                try:
+                    origin_label = str(ds.path.parent.relative_to(Path.cwd()))
+                except Exception:
+                    origin_label = ds.path.parent.name if ds.path.parent.name else ds.path.parent.as_posix()
+            origin_label = origin_label or "data"
 
             datasets_table.add_row(
                 str(i),
                 ds.path.name if hasattr(ds, 'path') else "—",
                 ds.format if hasattr(ds, 'format') else "—",
                 size_str,
-                folder_name
+                origin_label
             )
 
         self.console.print(datasets_table)
@@ -1764,7 +1770,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             datasets_table.add_column("Name", style="white", width=40)
             datasets_table.add_column("Format", style="yellow", width=8)
             datasets_table.add_column("Size", style="green", width=10)
-            datasets_table.add_column("Folder", style="magenta", width=20)
+            datasets_table.add_column("Origin", style="magenta", width=24)
 
             for i, ds in enumerate(self.detected_datasets, 1):  # Show ALL datasets, not just [:10]
                 # Calculate file size
@@ -1783,15 +1789,21 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                     self.logger.debug(f"Could not get size for {ds.path}: {e}")
                     size_str = "—"
 
-                # Get folder name (parent directory name)
-                folder_name = ds.path.parent.name if hasattr(ds, 'path') and ds.path.parent.name else "data"
+                # Determine origin label, using stored source when available
+                origin_label = getattr(ds, "source", None)
+                if not origin_label and hasattr(ds, "path"):
+                    try:
+                        origin_label = str(ds.path.parent.relative_to(Path.cwd()))
+                    except Exception:
+                        origin_label = ds.path.parent.name if ds.path.parent.name else ds.path.parent.as_posix()
+                origin_label = origin_label or "data"
 
                 datasets_table.add_row(
                     str(i),
                     ds.path.name if hasattr(ds, 'path') else "—",
                     ds.format if hasattr(ds, 'format') else "—",
                     size_str,
-                    folder_name
+                    origin_label
                 )
 
             self.console.print(datasets_table)

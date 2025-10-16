@@ -55,7 +55,7 @@ import copy
 import numpy as np
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Union
 from dataclasses import dataclass, field
 from datetime import datetime
 from collections import defaultdict, Counter
@@ -1230,9 +1230,7 @@ class AdvancedCLI:
             with self.console.status("[bold green]🔍 Scanning environment...", spinner="dots"):
                 self.detected_llms = self.llm_detector.detect_all_llms()
                 self.available_trainer_models = self.trainer_model_detector.get_available_models()
-                # Scan only in data/ directory
-                data_dir = self.settings.paths.data_dir
-                self.detected_datasets = self.data_detector.scan_directory(data_dir)
+                self.detected_datasets = self._detect_available_datasets()
                 # Detect system resources
                 self.system_resources = self.resource_detector.detect_all()
 
@@ -1251,9 +1249,7 @@ class AdvancedCLI:
 
             self.detected_llms = self.llm_detector.detect_all_llms()
             self.available_trainer_models = self.trainer_model_detector.get_available_models()
-            # Scan only in data/ directory
-            data_dir = self.settings.paths.data_dir
-            self.detected_datasets = self.data_detector.scan_directory(data_dir)
+            self.detected_datasets = self._detect_available_datasets()
 
             # Count LLMs and trainer models
             llm_count = sum(len(m) for m in self.detected_llms.values())
@@ -1263,6 +1259,37 @@ class AdvancedCLI:
             print(f"✓ {trainer_count} trainable models available")
             print(f"✓ Found {len(self.detected_datasets)} datasets")
             print()
+
+    def _detect_available_datasets(self) -> List[DatasetInfo]:
+        """Collect datasets from data, annotations, validation, and logs directories."""
+
+        dataset_roots: List[Union[Path, Tuple[Path, str]]] = []
+
+        def add_root(path: Optional[Path], label: str) -> None:
+            if not path:
+                return
+            candidate = Path(path)
+            if candidate.exists() and candidate.is_dir():
+                dataset_roots.append((candidate, label))
+
+        data_dir = self.settings.paths.data_dir
+        add_root(data_dir, "data")
+        add_root(Path.cwd() / "annotations", "annotations")
+        add_root(self.settings.paths.validation_dir, "validation")
+
+        logs_dir = self.settings.paths.logs_dir
+        if logs_dir.exists() and logs_dir.is_dir():
+            add_root(logs_dir, "logs")
+            for sub in ["training_arena", "annotator_factory", "annotation_factory", "training_factory"]:
+                add_root(logs_dir / sub, f"logs/{sub}")
+
+        if dataset_roots:
+            return self.data_detector.scan_directories(dataset_roots)
+
+        if data_dir.exists():
+            return self.data_detector.scan_directory(data_dir, "data")
+
+        return self.data_detector.scan_directory(Path.cwd())
 
     def _display_detection_results(self):
         """Display auto-detection results in a professional format"""
@@ -1361,7 +1388,7 @@ class AdvancedCLI:
         datasets_table.add_column("File", style="cyan", no_wrap=True, width=30)
         datasets_table.add_column("Format", style="white bold", width=12, justify="center")
         datasets_table.add_column("Size", style="green", width=10, justify="right")
-        datasets_table.add_column("Folder", style="yellow", width=20)
+        datasets_table.add_column("Origin", style="yellow", width=24, no_wrap=True)
         datasets_table.add_column("Columns", style="dim", width=35)
 
         if self.detected_datasets:
@@ -1380,14 +1407,19 @@ class AdvancedCLI:
                     'TSV': 'yellow bold'
                 }.get(dataset.format.upper(), 'white')
 
-                # Get folder name (parent directory name)
-                folder_name = dataset.path.parent.name if dataset.path.parent.name else "data"
+                # Determine dataset origin (source label or relative folder)
+                origin_label = dataset.source
+                if not origin_label:
+                    try:
+                        origin_label = str(dataset.path.parent.relative_to(Path.cwd()))
+                    except ValueError:
+                        origin_label = dataset.path.parent.name or dataset.path.parent.as_posix()
 
                 datasets_table.add_row(
                     dataset.path.name,
                     f"[{format_style}]{dataset.format.upper()}[/{format_style}]",
                     f"{dataset.size_mb:.1f} MB" if dataset.size_mb else "Unknown",
-                    folder_name,
+                    origin_label,
                     columns_preview
                 )
         else:
@@ -4357,6 +4389,7 @@ class AdvancedCLI:
                         datasets_table.add_column("Name", style="white", width=50, no_wrap=True)
                         datasets_table.add_column("Format", style="yellow bold", width=8, justify="center")
                         datasets_table.add_column("Size", style="green", width=10, justify="right")
+                        datasets_table.add_column("Origin", style="yellow", width=24, no_wrap=True)
                         datasets_table.add_column("Path", style="dim", width=45, no_wrap=True)
 
                         for i, dataset in enumerate(datasets, 1):
@@ -4368,11 +4401,19 @@ class AdvancedCLI:
                             if len(path_str) > 40:
                                 path_str = "..." + path_str[-37:]
 
+                            origin_label = dataset.source
+                            if not origin_label:
+                                try:
+                                    origin_label = str(dataset.path.parent.relative_to(Path.cwd()))
+                                except ValueError:
+                                    origin_label = dataset.path.parent.name or dataset.path.parent.as_posix()
+
                             datasets_table.add_row(
                                 str(i),
                                 dataset.path.name,
                                 dataset.format.upper(),
                                 size_str,
+                                origin_label,
                                 path_str
                             )
 

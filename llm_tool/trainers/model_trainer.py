@@ -439,6 +439,31 @@ class ModelTrainer:
             "google/long-t5-tglobal-base": LongT5TGlobalBase,
         }
 
+    def _to_label_predictions(self, predictions: Any) -> np.ndarray:
+        """Convert model outputs (probabilities/logits) to discrete label ids."""
+        preds = np.asarray(predictions)
+
+        if preds.size == 0:
+            return np.array([], dtype=int)
+
+        if preds.ndim == 1:
+            if np.issubdtype(preds.dtype, np.floating):
+                return (preds >= 0.5).astype(int)
+            return preds.astype(int)
+
+        if preds.ndim == 2:
+            if preds.shape[1] == 0:
+                return np.array([], dtype=int)
+            if preds.shape[1] == 1:
+                column = preds[:, 0]
+                if np.issubdtype(column.dtype, np.floating):
+                    return (column >= 0.5).astype(int)
+                return column.astype(int)
+            return np.argmax(preds, axis=1).astype(int)
+
+        # Fallback for higher dimensional outputs: reduce across last axis.
+        return np.argmax(preds, axis=-1).astype(int)
+
     def load_data(self, data_path: str, text_column: str = "text",
                   label_column: str = "label",
                   split_config: Optional[Dict[str, Any]] = None,
@@ -1044,8 +1069,8 @@ class ModelTrainer:
             if len(test_df) > 0:
                 # Evaluate on separate test set (final unbiased evaluation)
                 self.logger.info(f"📊 Final evaluation on test set ({len(test_df)} samples)...")
-                test_predictions = model_instance.predict(test_dataloader, model_instance.model)
                 test_probs = model_instance.predict(test_dataloader, model_instance.model, proba=True)
+                test_predictions = self._to_label_predictions(test_probs)
 
                 # Calculate metrics
                 accuracy = accuracy_score(test_labels, test_predictions)
@@ -1058,10 +1083,15 @@ class ModelTrainer:
                 cm = confusion_matrix(test_labels, test_predictions)
 
                 # Get detailed classification report
+                classes = getattr(self.label_encoder, "classes_", None)
+                label_ids = list(range(len(classes))) if classes is not None else []
                 report = classification_report(
-                    test_labels, test_predictions,
-                    target_names=[str(c) for c in self.label_encoder.classes_],
-                    output_dict=True
+                    test_labels,
+                    test_predictions,
+                    labels=label_ids if label_ids else None,
+                    target_names=[str(c) for c in classes] if classes is not None else None,
+                    output_dict=True,
+                    zero_division=0
                 )
             else:
                 # No separate test set - use validation metrics from training
@@ -2119,8 +2149,8 @@ class ModelTrainer:
             self.logger.warning(f"⚠️ Training complete but no model path returned")
 
         # Evaluate on test set
-        test_predictions = model.predict(test_loader, model.model)
         test_probs = model.predict(test_loader, model.model, proba=True)
+        test_predictions = self._to_label_predictions(test_probs)
 
         # Get language-specific metrics if available - CRITICAL FIX: Use last_training_summary
         language_metrics = {}
@@ -2149,10 +2179,24 @@ class ModelTrainer:
             test_labels, test_predictions, average='macro'
         )
 
-        report = classification_report(
-            test_labels, test_predictions,
-            output_dict=True
-        )
+        label_encoder = getattr(model, "label_encoder", None)
+        if label_encoder is not None and hasattr(label_encoder, "classes_"):
+            label_ids = list(range(len(label_encoder.classes_)))
+            report = classification_report(
+                test_labels,
+                test_predictions,
+                labels=label_ids if label_ids else None,
+                target_names=[str(c) for c in label_encoder.classes_] if label_ids else None,
+                output_dict=True,
+                zero_division=0
+            )
+        else:
+            report = classification_report(
+                test_labels,
+                test_predictions,
+                output_dict=True,
+                zero_division=0
+            )
 
         # CRITICAL FIX: Return keys matching both old and new formats
         result = {
