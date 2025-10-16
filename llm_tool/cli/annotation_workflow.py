@@ -694,134 +694,134 @@ def _persist_annotation_outputs(
     annotation_results["output_file"] = str(full_output_path)
 
     if full_output_path.suffix.lower() == ".csv":
-        subset_target = dataset_root / f"{full_output_path.stem}_annotations_only{full_output_path.suffix}"
+        def _resolve_annotation_columns(csv_path: Path) -> List[str]:
+            detected: Set[str] = set()
+            hints = annotation_results.get("annotation_columns")
+            if isinstance(hints, (list, tuple, set)):
+                for col in hints:
+                    col_name = str(col or "").strip()
+                    if col_name:
+                        detected.add(col_name)
 
-        subset_moved = False
-        existing_subset = annotation_results.get("annotated_subset_path")
-        if existing_subset:
+            explicit = str(annotation_results.get("annotation_column", "")).strip()
+            if explicit:
+                detected.add(explicit)
+            else:
+                detected.add("annotation")
+
+            SAMPLE_LIMIT = 500
+            fieldnames: List[str] = []
+            samples: List[Dict[str, Any]] = []
+
             try:
-                subset_source_path = Path(existing_subset)
-                if subset_source_path.exists():
-                    subset_target.parent.mkdir(parents=True, exist_ok=True)
-                    if subset_target.exists() and subset_target.resolve() != subset_source_path.resolve():
-                        subset_target.unlink()
-                    if subset_source_path.resolve() != subset_target.resolve():
-                        subset_source_path.rename(subset_target)
-                    else:
-                        subset_target = subset_source_path
-                    subset_moved = True
-            except Exception as exc:
-                cli.logger.warning(f"Failed to relocate existing annotations subset: {exc}")
-
-        if subset_moved:
-            paths["annotations_only_path"] = str(subset_target)
-            annotation_results["annotations_only_path"] = str(subset_target)
-            annotation_results["annotated_subset_path"] = str(subset_target)
-        else:
-            try:
-                SAMPLE_LIMIT = 1000
-                fieldnames: List[str] = []
-                sample_rows: List[Dict[str, Any]] = []
-
-                with full_output_path.open("r", newline="", encoding="utf-8") as src_file:
+                with csv_path.open("r", newline="", encoding="utf-8") as src_file:
                     reader = csv.DictReader(src_file)
                     fieldnames = reader.fieldnames or []
-                    if fieldnames:
-                        for idx, row in enumerate(reader):
-                            sample_rows.append(row)
-                            if idx + 1 >= SAMPLE_LIMIT:
-                                break
+                    if not fieldnames:
+                        return [col for col in detected if col]
 
-                if fieldnames:
-                    annotation_columns: Set[str] = set()
-                    annotation_column_hint = str(annotation_results.get("annotation_column", "")).strip()
-                    if annotation_column_hint and annotation_column_hint in fieldnames:
-                        annotation_columns.add(annotation_column_hint)
-
-                    model_column_hint = str(annotation_results.get("model_column", "")).strip()
-                    if model_column_hint and model_column_hint in fieldnames:
-                        annotation_columns.add(model_column_hint)
-
-                    model_hint = str(annotation_results.get("model", "")).strip()
-                    if model_hint:
-                        safe_model_name = model_hint.replace(":", "_").replace("/", "_")
-                        if safe_model_name in fieldnames:
-                            annotation_columns.add(safe_model_name)
-
-                    for column in fieldnames:
-                        col_lower = column.lower()
-                        if col_lower in {"annotation", "annotations", "labels", "label", "predictions", "prediction"}:
-                            annotation_columns.add(column)
-                        elif col_lower.endswith("_annotation") or col_lower.endswith("_annotations"):
-                            annotation_columns.add(column)
-                        elif col_lower.endswith("_labels") or col_lower.endswith("_prediction"):
-                            annotation_columns.add(column)
-
-                    if not annotation_columns and sample_rows:
-                        sample_values = sample_rows[: min(50, len(sample_rows))]
+                    if not detected:
                         for column in fieldnames:
-                            for row in sample_values:
-                                value = (row.get(column) or "").strip()
-                                if value and (value.startswith("{") or value.startswith("[")):
-                                    annotation_columns.add(column)
-                                    break
+                            lower = column.lower()
+                            if lower in {"annotation", "annotations", "labels", "label", "predictions", "prediction"}:
+                                detected.add(column)
+                            elif lower.endswith("_annotation") or lower.endswith("_annotations"):
+                                detected.add(column)
+                            elif lower.endswith("_labels") or lower.endswith("_prediction"):
+                                detected.add(column)
 
-                    def _row_has_annotation(row: Dict[str, Any]) -> bool:
-                        for column in annotation_columns:
-                            value = str(row.get(column, "")).strip()
-                            if value and value.lower() not in {"nan", "none", "null", "{}", "[]"}:
-                                return True
-                        return False
-
-                    if annotation_columns:
-                        annotated_count = 0
-                        with full_output_path.open("r", newline="", encoding="utf-8") as src_file, subset_target.open("w", newline="", encoding="utf-8") as dest_file:
-                            reader = csv.DictReader(src_file)
-                            write_fields = reader.fieldnames or fieldnames
-                            if not write_fields:
-                                raise ValueError("Unable to determine CSV headers for annotations-only export")
-                            writer = csv.DictWriter(dest_file, fieldnames=write_fields)
-                            writer.writeheader()
-                            for row in reader:
-                                if _row_has_annotation(row):
-                                    writer.writerow(row)
-                                    annotated_count += 1
-
-                        if annotated_count:
-                            paths["annotations_only_path"] = str(subset_target)
-                            annotation_results["annotations_only_path"] = str(subset_target)
-                            annotation_results["annotated_subset_path"] = str(subset_target)
+                    for idx, row in enumerate(reader):
+                        if idx < SAMPLE_LIMIT:
+                            samples.append(row)
                         else:
-                            try:
-                                if subset_target.exists():
-                                    subset_target.unlink()
-                            except Exception:
-                                pass
-                            fallback_count = _generate_annotations_only_subset(
-                                source_csv=full_output_path,
-                                target_csv=subset_target,
-                                annotation_columns=list(annotation_columns),
-                            )
-                            if fallback_count:
-                                paths["annotations_only_path"] = str(subset_target)
-                                annotation_results["annotations_only_path"] = str(subset_target)
-                                annotation_results["annotated_subset_path"] = str(subset_target)
-                            else:
-                                cli.logger.warning(
-                                    "Unable to create annotations-only CSV for %s despite %s annotated rows.",
-                                    full_output_path,
-                                    annotation_results.get("total_annotated", "unknown"),
-                                )
-            except Exception as exc:
-                cli.logger.warning(f"Failed to create annotations-only subset: {exc}")
+                            break
+            except Exception:
+                return [col for col in detected if col]
 
-        if paths["annotations_only_path"]:
-            legacy_subset = dataset_root / f"{full_output_path.stem}_annotated_only{full_output_path.suffix}"
-            try:
-                if legacy_subset.exists() and legacy_subset.resolve() != Path(paths["annotations_only_path"]).resolve():
-                    legacy_subset.unlink()
-            except Exception as exc:
-                cli.logger.debug(f"Could not remove legacy subset file {legacy_subset}: {exc}")
+            if not detected and samples:
+                for column in fieldnames:
+                    for row in samples:
+                        value = str(row.get(column, "") or "").strip()
+                        if value and value not in {"{}", "[]"} and (value.startswith("{") or value.startswith("[")):
+                            detected.add(column)
+                            break
+
+            return [col for col in detected if col]
+
+        annotation_columns = _resolve_annotation_columns(full_output_path)
+        subset_hint = annotation_results.get("annotated_subset_path") or annotation_results.get("annotations_only_path")
+        subset_target = Path(subset_hint) if subset_hint else full_output_path.with_name(
+            f"{full_output_path.stem}_annotated_only{full_output_path.suffix}"
+        )
+
+        # Normalise destination so every run stores subsets under the organised dataset directory.
+        if subset_target.parent.resolve() != dataset_root.resolve():
+            subset_target = dataset_root / subset_target.name
+
+        try:
+            # Move an already generated subset (e.g. produced by pipeline layer) into the organised directory.
+            if subset_hint:
+                hinted_path = Path(subset_hint)
+                if hinted_path.exists() and hinted_path.resolve() != subset_target.resolve():
+                    subset_target.parent.mkdir(parents=True, exist_ok=True)
+                    if subset_target.exists():
+                        subset_target.unlink()
+                    shutil.move(str(hinted_path), str(subset_target))
+
+            if subset_target.exists():
+                paths["annotations_only_path"] = str(subset_target)
+                annotation_results["annotations_only_path"] = str(subset_target)
+                annotation_results["annotated_subset_path"] = str(subset_target)
+            elif annotation_columns:
+                subset_target.parent.mkdir(parents=True, exist_ok=True)
+                annotated_rows = _generate_annotations_only_subset(
+                    source_csv=full_output_path,
+                    target_csv=subset_target,
+                    annotation_columns=annotation_columns,
+                )
+                paths["annotations_only_path"] = str(subset_target)
+                annotation_results["annotations_only_path"] = str(subset_target)
+                annotation_results["annotated_subset_path"] = str(subset_target)
+
+                if annotated_rows == 0:
+                    cli.logger.debug(
+                        "Annotations-only subset for %s contains only headers (no annotated rows detected).",
+                        full_output_path.name,
+                    )
+            else:
+                cli.logger.warning(
+                    "Unable to determine annotation columns for %s; annotations-only CSV not created.",
+                    full_output_path,
+                )
+        except Exception as exc:
+            cli.logger.warning(f"Failed to create annotations-only subset: {exc}")
+
+    # Clean up legacy artefacts in the annotated_data root (e.g., initial dataset copies).
+    legacy_candidate = annotated_data_root / source_path.name
+    try:
+        if legacy_candidate.exists() and legacy_candidate.resolve() != full_output_path.resolve():
+            legacy_candidate.unlink()
+    except Exception as exc:
+        cli.logger.debug(f"Could not remove legacy annotations file {legacy_candidate}: {exc}")
+
+    try:
+        for raw_candidate in annotated_data_root.glob(f"{dataset_name}.*"):
+            if not raw_candidate.is_file():
+                continue
+            resolved = raw_candidate.resolve()
+            if resolved in {full_output_path.resolve(), subset_target.resolve()}:
+                continue
+            raw_candidate.unlink()
+    except Exception as exc:
+        cli.logger.debug(f"Could not remove dataset staging artefact for %s: %s", dataset_name, exc)
+
+    # Remove any lingering files at the annotated_data root (should only contain organised folders).
+    try:
+        for orphan in annotated_data_root.iterdir():
+            if orphan.is_file():
+                orphan.unlink()
+    except Exception as exc:
+        cli.logger.debug("Could not tidy annotated_data root for %s: %s", dataset_name, exc)
 
     return paths
 
@@ -858,8 +858,6 @@ def _generate_annotations_only_subset(
                             annotated_count += 1
                             break
 
-            if annotated_count == 0:
-                target_csv.unlink(missing_ok=True)
             return annotated_count
     except Exception:
         target_csv.unlink(missing_ok=True)
@@ -2849,7 +2847,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'run_validation': False,
         'run_training': False,
         'lang_column': lang_column,  # From Step 4b: Language column for training metadata
-        'create_annotated_subset': False,  # CLI handles subset export downstream
+        'create_annotated_subset': True,  # ensure compact annotated-only export is materialised
         'session_dirs': {key: str(value) for key, value in session_dirs.items()},
         'provider_subdir': str(provider_subdir),
         'model_subdir': str(model_subdir),
@@ -4567,7 +4565,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'run_validation': False,
         'run_training': False,
         'lang_column': lang_column,  # From Step 4b: Language column for training metadata
-        'create_annotated_subset': False,  # CLI handles subset export downstream
+        'create_annotated_subset': True,  # ensure compact annotated-only export is materialised
     }
 
     if cost_estimate:
