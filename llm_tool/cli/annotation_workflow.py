@@ -1616,7 +1616,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     cli.console.print(f"[green]✓ Selected: {data_path.name} ({data_format})[/green]")
 
     dataset_name = data_path.stem
-    staging_dir = Path(session_dirs['annotated_data']) / '_staging'
+    staging_dir = Path(session_dirs['annotated_data'])
     staging_dir.mkdir(parents=True, exist_ok=True)
 
     run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -3475,8 +3475,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
         df = pd.read_sql(f"SELECT * FROM {selected_table}", engine)
 
-        # Save to staging CSV inside session logs
-        staging_dir = Path(session_dirs['annotated_data']) / '_staging'
+        # Save CSV inside session logs workspace
+        staging_dir = Path(session_dirs['annotated_data'])
         staging_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         data_path = staging_dir / f"sql_{selected_table}_{timestamp}.csv"
@@ -5349,8 +5349,8 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                 cli.console.print("[yellow]Switching to relaunch mode[/yellow]")
                 action_mode = 'relaunch'
 
-    # Prepare output path (stage inside session logs)
-    staging_dir = Path(session_dirs['annotated_data']) / '_staging'
+    # Prepare output path inside session logs workspace
+    staging_dir = Path(session_dirs['annotated_data'])
     staging_dir.mkdir(parents=True, exist_ok=True)
     safe_model_name = model_config.get('model_name', 'unknown').replace(':', '_').replace('/', '_')
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -5665,8 +5665,6 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                 annotation_output=output_file,
                 dataset_path=data_path,
             )
-        else:
-            cli.console.print("[dim]🛈 Training workflow is skipped in Annotator mode. Use Annotator Factory to launch model fine-tuning.[/dim]\n")
 
         # Export to Doccano JSONL if enabled in preferences
         if export_to_doccano:

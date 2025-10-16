@@ -7190,12 +7190,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("\n[dim]Press Enter to continue...[/dim]")
         input()
 
-    def _export_to_doccano_jsonl(self, output_file: str, text_column: str,
-                                  prompt_configs: list, data_path: Path, timestamp: str,
-                                  sample_size=None, session_dirs=None,
-                                  provider_folder: str = "model_provider",
-                                  model_folder: str = "model_name",
-                                  validation_destination: Optional[Path] = None):
+    def _export_to_doccano_jsonl(
+        self,
+        output_file: str,
+        text_column: str,
+        prompt_configs: list,
+        data_path: Path,
+        timestamp: str,
+        sample_size=None,
+        session_dirs=None,
+        provider_folder: str = "model_provider",
+        model_folder: str = "model_name",
+        validation_destination: Optional[Path] = None,
+        session_id: Optional[str] = None,
+        annotation_mode: Optional[str] = None,
+        prediction_mode: str = "with",
+    ):
         """Export annotations to Doccano JSONL format
 
         Parameters

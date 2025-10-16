@@ -1800,6 +1800,7 @@ class LLMAnnotator:
                 subset_path = self._save_annotated_subset(data, config)
 
         doccano_path: Optional[Path] = None
+        state = getattr(self, "state", None)
 
         if subset_path:
             self.logger.info(f"Annotated subset saved to {subset_path}")
@@ -1831,14 +1832,14 @@ class LLMAnnotator:
                         if doccano_path:
                             self.logger.info(f"Doccano export saved to {doccano_path}")
                             config['doccano_export_path'] = str(doccano_path)
-                            if self.state and isinstance(self.state.annotation_results, dict):
-                                self.state.annotation_results['doccano_export_path'] = str(doccano_path)
+                            if state and isinstance(state.annotation_results, dict):
+                                state.annotation_results['doccano_export_path'] = str(doccano_path)
                     except Exception as exc:
                         self.logger.warning(f"Doccano export failed: {exc}")
-        elif self.state and isinstance(self.state.annotation_results, dict):
+        elif state and isinstance(state.annotation_results, dict):
             # Ensure stale paths are cleared when export disabled
-            self.state.annotation_results.pop('doccano_export_path', None)
-            self.state.annotation_results.pop('validation_doccano_export_path', None)
+            state.annotation_results.pop('doccano_export_path', None)
+            state.annotation_results.pop('validation_doccano_export_path', None)
 
     def _save_data(self, data: pd.DataFrame, path: str, format: str):
         """Save data to file"""
@@ -2264,8 +2265,8 @@ class LLMAnnotator:
                     except Exception as exc:
                         self.logger.debug(f"[DOCCANO] Unable to remove legacy validation export {legacy_plain}: {exc}")
                 config['validation_doccano_export_path'] = str(validation_copy_path)
-                if self.state and isinstance(self.state.annotation_results, dict):
-                    self.state.annotation_results['validation_doccano_export_path'] = str(validation_copy_path)
+                if state and isinstance(state.annotation_results, dict):
+                    state.annotation_results['validation_doccano_export_path'] = str(validation_copy_path)
             except Exception as exc:
                 self.logger.debug(f"[DOCCANO] Unable to mirror export to validation directory: {exc}")
 
