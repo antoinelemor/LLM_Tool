@@ -797,6 +797,21 @@ def _persist_annotation_outputs(
                                     subset_target.unlink()
                             except Exception:
                                 pass
+                            fallback_count = _generate_annotations_only_subset(
+                                source_csv=full_output_path,
+                                target_csv=subset_target,
+                                annotation_columns=list(annotation_columns),
+                            )
+                            if fallback_count:
+                                paths["annotations_only_path"] = str(subset_target)
+                                annotation_results["annotations_only_path"] = str(subset_target)
+                                annotation_results["annotated_subset_path"] = str(subset_target)
+                            else:
+                                cli.logger.warning(
+                                    "Unable to create annotations-only CSV for %s despite %s annotated rows.",
+                                    full_output_path,
+                                    annotation_results.get("total_annotated", "unknown"),
+                                )
             except Exception as exc:
                 cli.logger.warning(f"Failed to create annotations-only subset: {exc}")
 
@@ -809,6 +824,46 @@ def _persist_annotation_outputs(
                 cli.logger.debug(f"Could not remove legacy subset file {legacy_subset}: {exc}")
 
     return paths
+
+
+def _generate_annotations_only_subset(
+    *,
+    source_csv: Path,
+    target_csv: Path,
+    annotation_columns: List[str],
+) -> int:
+    """Fallback generator that extracts annotated rows without loading the full CSV into memory."""
+    import csv
+
+    if not annotation_columns:
+        return 0
+
+    try:
+        with source_csv.open("r", newline="", encoding="utf-8") as src_file:
+            reader = csv.DictReader(src_file)
+            fieldnames = reader.fieldnames or []
+            if not fieldnames:
+                return 0
+
+            annotated_count = 0
+            with target_csv.open("w", newline="", encoding="utf-8") as dest_file:
+                writer = csv.DictWriter(dest_file, fieldnames=fieldnames)
+                writer.writeheader()
+
+                for row in reader:
+                    for column in annotation_columns:
+                        value = str(row.get(column, "")).strip()
+                        if value and value.lower() not in {"nan", "none", "null", "{}", "[]"}:
+                            writer.writerow(row)
+                            annotated_count += 1
+                            break
+
+            if annotated_count == 0:
+                target_csv.unlink(missing_ok=True)
+            return annotated_count
+    except Exception:
+        target_csv.unlink(missing_ok=True)
+        raise
 
 
 def ensure_validation_session_dirs(session_id: str) -> Dict[str, Path]:
@@ -2770,7 +2825,6 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'annotation_mode': annotation_mode,
         'annotation_provider': provider,
         'annotation_model': model_name,
-        'model_column': safe_model_name,
         'model_display_name': model_name,
         'api_key': api_key if api_key else None,
         'openai_batch_mode': openai_batch_mode,
@@ -4490,7 +4544,6 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'annotation_mode': annotation_mode,
         'annotation_provider': provider,
         'annotation_model': model_name,
-        'model_column': safe_model_name,
         'model_display_name': model_name,
         'api_key': api_key if api_key else None,
         'openai_batch_mode': openai_batch_mode,
@@ -5469,7 +5522,6 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         'annotation_mode': annotation_mode,
         'annotation_provider': provider,
         'annotation_model': model_name,
-        'model_column': safe_model_name,
         'model_display_name': model_name,
         'api_key': api_key,
         'openai_batch_mode': openai_batch_mode,

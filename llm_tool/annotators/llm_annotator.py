@@ -904,17 +904,7 @@ class LLMAnnotator:
         if not model_name:
             raise ValueError("Annotation model must be specified for OpenAI batch mode.")
 
-        model_column = str(config.get('model_column') or model_name).replace(":", "_").replace("/", "_").strip()
-        if not model_column:
-            model_column = "model"
-        model_time_column = f"{model_column}_inference_time"
-        config.setdefault('model_column', model_column)
         config.setdefault('model_display_name', config.get('model_display_name') or model_name)
-
-        if model_column not in full_data.columns:
-            full_data[model_column] = pd.NA
-        if model_time_column not in full_data.columns:
-            full_data[model_time_column] = pd.NA
 
         total_rows = len(data_subset)
         prompt_count = len(prompts)
@@ -1747,16 +1737,12 @@ class LLMAnnotator:
             if row_index is not None and row_index in full_data.index:
                 full_data.loc[row_index, annotation_column] = final_json
                 full_data.loc[row_index, f"{annotation_column}_inference_time"] = per_row_time
-                full_data.loc[row_index, model_column] = final_json
-                full_data.loc[row_index, model_time_column] = per_row_time
                 applied = True
             else:
                 mask = full_data[identifier_column] == identifier_value
                 if mask.any():
                     full_data.loc[mask, annotation_column] = final_json
                     full_data.loc[mask, f"{annotation_column}_inference_time"] = per_row_time
-                    full_data.loc[mask, model_column] = final_json
-                    full_data.loc[mask, model_time_column] = per_row_time
                     applied = True
             if not applied:
                 self.logger.warning(
@@ -1794,6 +1780,20 @@ class LLMAnnotator:
             self.logger.info("[BATCH] Batch mode overrides incremental saves; writing final dataset once.")
         if output_path:
             self._save_data(full_data, output_path, output_format)
+            # Ensure parity with local annotator pipelines by materialising the annotated-only companion file.
+            subset_created = None
+            subset_flag_original = config.get('create_annotated_subset', False)
+            try:
+                config['create_annotated_subset'] = True
+                subset_created = self._save_annotated_subset(full_data, config)
+            finally:
+                config['create_annotated_subset'] = subset_flag_original
+
+            if subset_created:
+                state_obj = getattr(self, "state", None)
+                if state_obj and isinstance(state_obj.annotation_results, dict):
+                    state_obj.annotation_results['annotations_only_path'] = str(subset_created)
+                    state_obj.annotation_results['annotated_subset_path'] = str(subset_created)
 
         self.logger.info(
             "[BATCH] Completed OpenAI batch annotation in %.2fs (rows=%s, prompts=%s)",
@@ -2394,9 +2394,6 @@ class LLMAnnotator:
             'timestamp': datetime.now().isoformat()
         }
 
-        model_column = config.get('model_column')
-        if model_column:
-            summary['model_column'] = model_column
         model_display_name = config.get('model_display_name')
         if model_display_name:
             summary['model_display_name'] = model_display_name
