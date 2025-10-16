@@ -719,13 +719,21 @@ def _persist_annotation_outputs(
             annotation_results["annotated_subset_path"] = str(subset_target)
         else:
             try:
+                SAMPLE_LIMIT = 1000
+                fieldnames: List[str] = []
+                sample_rows: List[Dict[str, Any]] = []
+
                 with full_output_path.open("r", newline="", encoding="utf-8") as src_file:
                     reader = csv.DictReader(src_file)
-                    rows = list(reader)
                     fieldnames = reader.fieldnames or []
+                    if fieldnames:
+                        for idx, row in enumerate(reader):
+                            sample_rows.append(row)
+                            if idx + 1 >= SAMPLE_LIMIT:
+                                break
 
-                if fieldnames and rows:
-                    annotation_columns = set()
+                if fieldnames:
+                    annotation_columns: Set[str] = set()
                     annotation_column_hint = str(annotation_results.get("annotation_column", "")).strip()
                     if annotation_column_hint and annotation_column_hint in fieldnames:
                         annotation_columns.add(annotation_column_hint)
@@ -745,15 +753,14 @@ def _persist_annotation_outputs(
                         elif col_lower.endswith("_labels") or col_lower.endswith("_prediction"):
                             annotation_columns.add(column)
 
-                    if not annotation_columns:
-                        sample_values = rows[: min(50, len(rows))]
+                    if not annotation_columns and sample_rows:
+                        sample_values = sample_rows[: min(50, len(sample_rows))]
                         for column in fieldnames:
-                            if any(
-                                (value := (row.get(column) or "").strip())
-                                and (value.startswith("{") or value.startswith("["))
-                                for row in sample_values
-                            ):
-                                annotation_columns.add(column)
+                            for row in sample_values:
+                                value = (row.get(column) or "").strip()
+                                if value and (value.startswith("{") or value.startswith("[")):
+                                    annotation_columns.add(column)
+                                    break
 
                     def _row_has_annotation(row: Dict[str, Any]) -> bool:
                         for column in annotation_columns:
@@ -762,16 +769,30 @@ def _persist_annotation_outputs(
                                 return True
                         return False
 
-                    annotated_rows = [row for row in rows if _row_has_annotation(row)]
-                    if annotated_rows:
-                        with subset_target.open("w", newline="", encoding="utf-8") as dest_file:
-                            writer = csv.DictWriter(dest_file, fieldnames=fieldnames)
+                    if annotation_columns:
+                        annotated_count = 0
+                        with full_output_path.open("r", newline="", encoding="utf-8") as src_file, subset_target.open("w", newline="", encoding="utf-8") as dest_file:
+                            reader = csv.DictReader(src_file)
+                            write_fields = reader.fieldnames or fieldnames
+                            if not write_fields:
+                                raise ValueError("Unable to determine CSV headers for annotations-only export")
+                            writer = csv.DictWriter(dest_file, fieldnames=write_fields)
                             writer.writeheader()
-                            writer.writerows(annotated_rows)
+                            for row in reader:
+                                if _row_has_annotation(row):
+                                    writer.writerow(row)
+                                    annotated_count += 1
 
-                        paths["annotations_only_path"] = str(subset_target)
-                        annotation_results["annotations_only_path"] = str(subset_target)
-                        annotation_results["annotated_subset_path"] = str(subset_target)
+                        if annotated_count:
+                            paths["annotations_only_path"] = str(subset_target)
+                            annotation_results["annotations_only_path"] = str(subset_target)
+                            annotation_results["annotated_subset_path"] = str(subset_target)
+                        else:
+                            try:
+                                if subset_target.exists():
+                                    subset_target.unlink()
+                            except Exception:
+                                pass
             except Exception as exc:
                 cli.logger.warning(f"Failed to create annotations-only subset: {exc}")
 
@@ -3307,6 +3328,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     import pandas as pd
     from datetime import datetime
     from pathlib import Path
+
+    is_factory_workflow = True
 
     # Generate session_id if not provided (for backward compatibility)
     if session_id is None:
