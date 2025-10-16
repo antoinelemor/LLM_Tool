@@ -3179,23 +3179,51 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
 
         # Export to Doccano JSONL if requested
+        existing_doccano_path = annotation_results.get('doccano_export_path')
+        existing_validation_path = annotation_results.get('validation_doccano_export_path')
+
+        doccano_export_result = None
         if export_to_doccano:
             validation_destination = None
             if validation_lab_session_dirs:
                 validation_destination = validation_lab_session_dirs['doccano']
 
-            doccano_export_result = cli._export_to_doccano_jsonl(
-                output_file=output_file,
-                text_column=text_column,
-                prompt_configs=prompt_configs,
-                data_path=data_path,
-                timestamp=timestamp,
-                sample_size=export_sample_size,
-                session_dirs=session_dirs,
-                provider_folder=provider_folder,
-                model_folder=model_folder,
-                validation_destination=validation_destination,
+            can_reuse_existing = (
+                existing_doccano_path
+                and Path(existing_doccano_path).exists()
+                and prediction_mode == "with"
+                and (export_sample_size in (None, "all") or export_sample_size == "all")
             )
+
+            if can_reuse_existing:
+                cli.console.print(
+                    "\n[cyan]ℹ️  Reusing Doccano export generated during annotation.[/cyan]"
+                )
+                doccano_export_result = {
+                    'jsonl_path': str(existing_doccano_path),
+                    'validation_copy_path': (
+                        str(existing_validation_path)
+                        if existing_validation_path and Path(existing_validation_path).exists()
+                        else None
+                    ),
+                    'reused': True,
+                }
+            else:
+                doccano_export_result = cli._export_to_doccano_jsonl(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs,
+                    data_path=data_path,
+                    timestamp=timestamp,
+                    sample_size=export_sample_size,
+                    session_dirs=session_dirs,
+                    provider_folder=provider_folder,
+                    model_folder=model_folder,
+                    prediction_mode=prediction_mode,
+                    validation_destination=validation_destination,
+                    session_id=session_id,
+                    annotation_mode=AnnotationMode.ANNOTATOR.value,
+                )
             if doccano_export_result:
                 doccano_path = doccano_export_result.get('jsonl_path')
                 validation_copy_path = doccano_export_result.get('validation_copy_path')
@@ -4879,23 +4907,51 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             )
 
         # Export to Doccano JSONL if requested
+        existing_doccano_path = annotation_results.get('doccano_export_path')
+        existing_validation_path = annotation_results.get('validation_doccano_export_path')
+
+        doccano_export_result = None
         if export_to_doccano:
             validation_destination = None
             if validation_lab_session_dirs:
                 validation_destination = validation_lab_session_dirs['doccano']
 
-            doccano_export_result = cli._export_to_doccano_jsonl(
-                output_file=output_file,
-                text_column=text_column,
-                prompt_configs=prompt_configs,
-                data_path=data_path,
-                timestamp=timestamp,
-                sample_size=export_sample_size,
-                session_dirs=session_dirs,
-                provider_folder=provider_folder,
-                model_folder=model_folder,
-                validation_destination=validation_destination,
+            can_reuse_existing = (
+                existing_doccano_path
+                and Path(existing_doccano_path).exists()
+                and prediction_mode == "with"
+                and (export_sample_size in (None, "all") or export_sample_size == "all")
             )
+
+            if can_reuse_existing:
+                cli.console.print(
+                    "\n[cyan]ℹ️  Reusing Doccano export generated during annotation.[/cyan]"
+                )
+                doccano_export_result = {
+                    'jsonl_path': str(existing_doccano_path),
+                    'validation_copy_path': (
+                        str(existing_validation_path)
+                        if existing_validation_path and Path(existing_validation_path).exists()
+                        else None
+                    ),
+                    'reused': True,
+                }
+            else:
+                doccano_export_result = cli._export_to_doccano_jsonl(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs,
+                    data_path=data_path,
+                    timestamp=timestamp,
+                    sample_size=export_sample_size,
+                    session_dirs=session_dirs,
+                    provider_folder=provider_folder,
+                    model_folder=model_folder,
+                    prediction_mode=prediction_mode,
+                    validation_destination=validation_destination,
+                    session_id=session_id,
+                    annotation_mode=AnnotationMode.FACTORY.value,
+                )
             if doccano_export_result:
                 doccano_path = doccano_export_result.get('jsonl_path')
                 validation_copy_path = doccano_export_result.get('validation_copy_path')

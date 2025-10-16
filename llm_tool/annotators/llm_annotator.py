@@ -1831,8 +1831,14 @@ class LLMAnnotator:
                         if doccano_path:
                             self.logger.info(f"Doccano export saved to {doccano_path}")
                             config['doccano_export_path'] = str(doccano_path)
+                            if self.state and isinstance(self.state.annotation_results, dict):
+                                self.state.annotation_results['doccano_export_path'] = str(doccano_path)
                     except Exception as exc:
                         self.logger.warning(f"Doccano export failed: {exc}")
+        elif self.state and isinstance(self.state.annotation_results, dict):
+            # Ensure stale paths are cleared when export disabled
+            self.state.annotation_results.pop('doccano_export_path', None)
+            self.state.annotation_results.pop('validation_doccano_export_path', None)
 
     def _save_data(self, data: pd.DataFrame, path: str, format: str):
         """Save data to file"""
@@ -2096,21 +2102,63 @@ class LLMAnnotator:
                     continue
 
                 entry_labels: List[str] = []
+
+                def _normalize_component(value: Any) -> Optional[str]:
+                    """Return a lowercase token stripped of punctuation for Doccano labels."""
+                    if value is None:
+                        return None
+                    if isinstance(value, bool):
+                        token = "true" if value else "false"
+                    elif isinstance(value, (int, float)):
+                        token = str(value)
+                    else:
+                        token = str(value).strip()
+                    token = token.strip(",;")
+                    if not token:
+                        return None
+                    lowered = token.lower()
+                    if lowered in {"null", "none", "nan"}:
+                        return None
+                    sanitized = re.sub(r"[^\w]+", "_", lowered).strip("_")
+                    return sanitized or None
+
                 if label_keys:
-                    for key in label_keys:
-                        if key not in annotation_data:
-                            continue
-                        value = annotation_data.get(key)
-                        if isinstance(value, list):
-                            entry_labels.extend(str(v) for v in value if str(v).strip())
-                        elif value is not None and str(value).strip():
-                            entry_labels.append(str(value))
+                    label_keys_to_process: Set[str] = {
+                        key for key in label_keys if key in annotation_data
+                    }
                 else:
-                    for value in annotation_data.values():
-                        if isinstance(value, list):
-                            entry_labels.extend(str(v) for v in value if str(v).strip())
-                        elif value is not None and str(value).strip():
-                            entry_labels.append(str(value))
+                    label_keys_to_process = set(annotation_data.keys())
+
+                for label_key in label_keys_to_process:
+                    label_value = annotation_data.get(label_key)
+                    if label_value is None:
+                        continue
+
+                    normalized_key = _normalize_component(label_key)
+                    if not normalized_key:
+                        normalized_key = _normalize_component(str(label_key))
+                    if not normalized_key:
+                        normalized_key = str(label_key).strip().replace(" ", "_")
+
+                    def add_combined_label(raw_value: Any, key_prefix: str = normalized_key) -> None:
+                        normalized_value = _normalize_component(raw_value)
+                        if normalized_value:
+                            entry_labels.append(f"{key_prefix}_{normalized_value}")
+
+                    if isinstance(label_value, list):
+                        for candidate in label_value:
+                            add_combined_label(candidate)
+                    elif isinstance(label_value, dict):
+                        for sub_key, sub_value in label_value.items():
+                            nested_key = _normalize_component(sub_key)
+                            combined_key = (
+                                f"{normalized_key}_{nested_key}"
+                                if nested_key
+                                else normalized_key
+                            )
+                            add_combined_label(sub_value, key_prefix=combined_key)
+                    else:
+                        add_combined_label(label_value)
 
                 meta: Dict[str, Any] = {}
                 for column in annotated_df.columns:
@@ -2148,7 +2196,13 @@ class LLMAnnotator:
                     'Comments': []
                 }
                 if entry_labels:
-                    unique_labels = list(dict.fromkeys(label for label in entry_labels if label))
+                    seen: Set[str] = set()
+                    unique_labels: List[str] = []
+                    for label_token in entry_labels:
+                        if not label_token or label_token in seen:
+                            continue
+                        unique_labels.append(label_token)
+                        seen.add(label_token)
                     entry['label'] = unique_labels
                 if cleaned_meta:
                     entry['meta'] = cleaned_meta
@@ -2209,6 +2263,9 @@ class LLMAnnotator:
                         legacy_plain.unlink()
                     except Exception as exc:
                         self.logger.debug(f"[DOCCANO] Unable to remove legacy validation export {legacy_plain}: {exc}")
+                config['validation_doccano_export_path'] = str(validation_copy_path)
+                if self.state and isinstance(self.state.annotation_results, dict):
+                    self.state.annotation_results['validation_doccano_export_path'] = str(validation_copy_path)
             except Exception as exc:
                 self.logger.debug(f"[DOCCANO] Unable to mirror export to validation directory: {exc}")
 

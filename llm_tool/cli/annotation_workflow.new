@@ -2103,16 +2103,52 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
 
         # Export to Doccano JSONL if requested
-        if export_to_doccano:
-            cli._export_to_doccano_jsonl(
-                output_file=output_file,
-                text_column=text_column,
-                prompt_configs=prompt_configs,
-                data_path=data_path,
-                timestamp=timestamp,
-                sample_size=export_sample_size,
-                session_dirs=session_dirs
+        existing_doccano_path = annotation_results.get('doccano_export_path')
+        effective_prediction_mode = (
+            locals().get('prediction_mode')
+            or annotation_results.get('prediction_mode')
+            or 'with'
+        )
+        reuse_existing_doccano = (
+            export_to_doccano
+            and existing_doccano_path
+            and Path(existing_doccano_path).exists()
+            and effective_prediction_mode == "with"
+            and (
+                export_sample_size is None
+                or (
+                    isinstance(export_sample_size, str)
+                    and export_sample_size.lower() == "all"
+                )
             )
+        )
+
+        if export_to_doccano:
+            if reuse_existing_doccano:
+                cli.console.print(
+                    "\n[cyan]ℹ️  Reusing Doccano export generated during annotation.[/cyan]"
+                )
+            else:
+                doccano_result = cli._export_to_doccano_jsonl(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs,
+                    data_path=data_path,
+                    timestamp=timestamp,
+                    sample_size=export_sample_size,
+                    session_dirs=session_dirs
+                )
+                if (
+                    doccano_result
+                    and state
+                    and isinstance(state.annotation_results, dict)
+                ):
+                    jsonl_path = doccano_result.get('jsonl_path')
+                    if jsonl_path:
+                        state.annotation_results['doccano_export_path'] = str(jsonl_path)
+                    validation_copy = doccano_result.get('validation_copy_path')
+                    if validation_copy:
+                        state.annotation_results['validation_doccano_export_path'] = str(validation_copy)
 
         # Export to Label Studio if requested
         if export_to_labelstudio:
@@ -3425,16 +3461,52 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             )
 
         # Export to Doccano JSONL if requested
-        if export_to_doccano:
-            cli._export_to_doccano_jsonl(
-                output_file=output_file,
-                text_column=text_column,
-                prompt_configs=prompt_configs,
-                data_path=data_path,
-                timestamp=timestamp,
-                sample_size=export_sample_size,
-                session_dirs=session_dirs
+        existing_doccano_path = annotation_results.get('doccano_export_path')
+        effective_prediction_mode = (
+            locals().get('prediction_mode')
+            or annotation_results.get('prediction_mode')
+            or 'with'
+        )
+        reuse_existing_doccano = (
+            export_to_doccano
+            and existing_doccano_path
+            and Path(existing_doccano_path).exists()
+            and effective_prediction_mode == "with"
+            and (
+                export_sample_size is None
+                or (
+                    isinstance(export_sample_size, str)
+                    and export_sample_size.lower() == "all"
+                )
             )
+        )
+
+        if export_to_doccano:
+            if reuse_existing_doccano:
+                cli.console.print(
+                    "\n[cyan]ℹ️  Reusing Doccano export generated during annotation.[/cyan]"
+                )
+            else:
+                doccano_result = cli._export_to_doccano_jsonl(
+                    output_file=output_file,
+                    text_column=text_column,
+                    prompt_configs=prompt_configs,
+                    data_path=data_path,
+                    timestamp=timestamp,
+                    sample_size=export_sample_size,
+                    session_dirs=session_dirs
+                )
+                if (
+                    doccano_result
+                    and state
+                    and isinstance(state.annotation_results, dict)
+                ):
+                    jsonl_path = doccano_result.get('jsonl_path')
+                    if jsonl_path:
+                        state.annotation_results['doccano_export_path'] = str(jsonl_path)
+                    validation_copy = doccano_result.get('validation_copy_path')
+                    if validation_copy:
+                        state.annotation_results['validation_doccano_export_path'] = str(validation_copy)
 
         # Export to Label Studio if requested
         if export_to_labelstudio:
@@ -3973,27 +4045,63 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         )
 
         # Export to Doccano JSONL if enabled in preferences
-        if export_to_doccano:
-            # Build prompt_configs for export
-            prompt_configs_for_export = []
-            for p in prompts:
-                prompt_configs_for_export.append({
-                    'prompt': {
-                        'keys': p.get('expected_keys', []),
-                        'content': p.get('prompt_content', p.get('prompt', '')),
-                        'name': p.get('name', 'prompt')
-                    },
-                    'prefix': p.get('prefix', '')
-                })
-
-            cli._export_to_doccano_jsonl(
-                output_file=output_file,
-                text_column=data_source.get('text_column', 'text'),
-                prompt_configs=prompt_configs_for_export,
-                data_path=data_path,
-                timestamp=datetime.now().strftime('%Y%m%d_%H%M%S'),
-                sample_size=export_sample_size
+        existing_doccano_path = annotation_results.get('doccano_export_path')
+        effective_prediction_mode = (
+            locals().get('prediction_mode')
+            or annotation_results.get('prediction_mode')
+            or 'with'
+        )
+        reuse_existing_doccano = (
+            export_to_doccano
+            and existing_doccano_path
+            and Path(existing_doccano_path).exists()
+            and effective_prediction_mode == "with"
+            and (
+                export_sample_size is None
+                or (
+                    isinstance(export_sample_size, str)
+                    and export_sample_size.lower() == "all"
+                )
             )
+        )
+
+        if export_to_doccano:
+            if reuse_existing_doccano:
+                cli.console.print(
+                    "\n[cyan]ℹ️  Reusing Doccano export generated during annotation.[/cyan]"
+                )
+            else:
+                # Build prompt_configs for export
+                prompt_configs_for_export = []
+                for p in prompts:
+                    prompt_configs_for_export.append({
+                        'prompt': {
+                            'keys': p.get('expected_keys', []),
+                            'content': p.get('prompt_content', p.get('prompt', '')),
+                            'name': p.get('name', 'prompt')
+                        },
+                        'prefix': p.get('prefix', '')
+                    })
+
+                doccano_result = cli._export_to_doccano_jsonl(
+                    output_file=output_file,
+                    text_column=data_source.get('text_column', 'text'),
+                    prompt_configs=prompt_configs_for_export,
+                    data_path=data_path,
+                    timestamp=datetime.now().strftime('%Y%m%d_%H%M%S'),
+                    sample_size=export_sample_size
+                )
+                if (
+                    doccano_result
+                    and state
+                    and isinstance(state.annotation_results, dict)
+                ):
+                    jsonl_path = doccano_result.get('jsonl_path')
+                    if jsonl_path:
+                        state.annotation_results['doccano_export_path'] = str(jsonl_path)
+                    validation_copy = doccano_result.get('validation_copy_path')
+                    if validation_copy:
+                        state.annotation_results['validation_doccano_export_path'] = str(validation_copy)
 
         # Export to Label Studio JSONL if enabled in preferences
         if export_to_labelstudio:
