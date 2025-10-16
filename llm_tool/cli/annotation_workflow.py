@@ -738,6 +738,10 @@ def _persist_annotation_outputs(
                     if annotation_column_hint and annotation_column_hint in fieldnames:
                         annotation_columns.add(annotation_column_hint)
 
+                    model_column_hint = str(annotation_results.get("model_column", "")).strip()
+                    if model_column_hint and model_column_hint in fieldnames:
+                        annotation_columns.add(model_column_hint)
+
                     model_hint = str(annotation_results.get("model", "")).strip()
                     if model_hint:
                         safe_model_name = model_hint.replace(":", "_").replace("/", "_")
@@ -2766,6 +2770,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'annotation_mode': annotation_mode,
         'annotation_provider': provider,
         'annotation_model': model_name,
+        'model_column': safe_model_name,
+        'model_display_name': model_name,
         'api_key': api_key if api_key else None,
         'openai_batch_mode': openai_batch_mode,
         'openai_batch_mode': openai_batch_mode,
@@ -4484,6 +4490,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'annotation_mode': annotation_mode,
         'annotation_provider': provider,
         'annotation_model': model_name,
+        'model_column': safe_model_name,
+        'model_display_name': model_name,
         'api_key': api_key if api_key else None,
         'openai_batch_mode': openai_batch_mode,
         'prompts': prompts_payload,
@@ -5461,6 +5469,8 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         'annotation_mode': annotation_mode,
         'annotation_provider': provider,
         'annotation_model': model_name,
+        'model_column': safe_model_name,
+        'model_display_name': model_name,
         'api_key': api_key,
         'openai_batch_mode': openai_batch_mode,
         'prompts': prompts_payload,
