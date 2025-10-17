@@ -89,6 +89,25 @@ class ValidationLabController:
         self._validation_data_root = Path("validation")
 
     # --------------------------------------------------------------------- #
+    # Path helpers
+    # --------------------------------------------------------------------- #
+
+    def _is_within_directory(self, path: Path, directory: Path) -> bool:
+        try:
+            path.resolve().relative_to(directory.resolve())
+            return True
+        except (ValueError, RuntimeError):
+            return False
+
+    def _friendly_export_label(self, original_label: str, path_obj: Path, session_dir: Path) -> str:
+        doccano_dir = session_dir / "doccano"
+        if self._is_within_directory(path_obj, doccano_dir):
+            return f"Model predictions · {path_obj.name}"
+        if original_label and original_label.lower().startswith("doccano"):
+            return path_obj.name
+        return original_label or path_obj.name
+
+    # --------------------------------------------------------------------- #
     # Public entrypoint
     # --------------------------------------------------------------------- #
 
@@ -112,8 +131,8 @@ class ValidationLabController:
                         break
             if target is None:
                 warning = (
-                    "\n[yellow]Aucune session de Validation Lab correspondante trouvée.[/yellow]\n"
-                    "Sélection via le menu interactif."
+                    "\n[yellow]No matching Validation Lab session found to resume.[/yellow]\n"
+                    "Select the session you want to resume from the interactive menu."
                 )
                 if RICH_AVAILABLE and self.console:
                     self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
@@ -321,11 +340,14 @@ class ValidationLabController:
 
     def _print_workspace_instructions(self, session_id: str, workspace: Dict[str, Path]) -> None:
         doccano_hint = workspace["doccano"]
+        session_exports_dir = (self._validation_data_root / session_id / "doccano").resolve()
         message = (
             "\n[cyan]Validation workspace ready.[/cyan]\n"
-            f"• Drop your manually-reviewed Doccano JSONL exports into [white]{doccano_hint}[/white].\n"
-            "• Validation Lab will compare these files with the model predictions stored here.\n"
-            "• Training Arena validation sets can also be copied into this folder for later workflows.\n"
+            f"• Place the reviewer JSONL files you want to compare inside [white]{doccano_hint}[/white].\n"
+            f"• Each annotation session also keeps its exports under [white]{session_exports_dir}[/white].\n"
+            "  Copy any annotator JSONL files from there (or another session folder) into the workspace doccano directory above.\n"
+            "• Validation Lab will read the model predictions from the export you select, then prompt you to pick the reviewer files.\n"
+            "• Training Arena validation splits can also be copied here when you want to benchmark fine-tuned models.\n"
         )
         if RICH_AVAILABLE and self.console:
             self.console.print(Panel.fit(Text.from_markup(message), border_style="cyan"))
@@ -354,21 +376,38 @@ class ValidationLabController:
                 print(message.replace("[yellow]", "").replace("[/yellow]", ""))
             return
 
-        candidate = self._choose_candidate_for_metrics(candidates)
-        if not candidate:
-            return
+        selection_msg = (
+            "\n[cyan]Step 1: Choose the model export to evaluate.[/cyan]\n"
+            "Pick the JSONL file that contains the model predictions for this session.\n"
+            "You will be able to select reviewer/annotator files in the next step."
+        )
+        if RICH_AVAILABLE and self.console:
+            self.console.print(Panel.fit(Text.from_markup(selection_msg), border_style="cyan"))
+        else:
+            print(selection_msg.replace("[cyan]", "").replace("[/cyan]", ""))
 
-        model_path = Path(candidate.export_path)
-        if model_path.suffix.lower() != ".jsonl":
+        candidate: Optional[ValidationCandidate] = None
+        model_path: Optional[Path] = None
+        while True:
+            candidate = self._choose_candidate_for_metrics(candidates)
+            if not candidate:
+                return
+
+            model_path = Path(candidate.export_path)
+            if model_path.suffix.lower() == ".jsonl":
+                break
+
             warning = (
                 "\n[yellow]Metrics computation currently supports Doccano JSONL exports only.[/yellow]\n"
-                f"[dim]Selected export:[/dim] {model_path}"
+                f"[dim]Selected export:[/dim] {model_path}\n"
+                "Please choose a JSONL export created by the annotation workflow."
             )
             if RICH_AVAILABLE and self.console:
                 self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
             else:
                 print(warning.replace("[yellow]", "").replace("[/yellow]", ""))
-            return
+
+        assert model_path is not None  # for type checkers
 
         if not model_path.exists():
             warning = (
@@ -382,6 +421,23 @@ class ValidationLabController:
             else:
                 print(warning.replace("[red]", "").replace("[/red]", ""))
             return
+
+        reviewer_msg = (
+            "\n[cyan]Step 2: Select the reviewer JSONL files.[/cyan]\n"
+            f"Model predictions: [white]{model_path}[/white]\n"
+            "Pick one or more reviewer/annotator JSONL exports to compare against the model predictions.\n"
+            "Select the reviewers one at a time; after each selection you can add another or choose 'done'.\n"
+            "Use 'done' when you have added every reviewer you want to include."
+        )
+        if RICH_AVAILABLE and self.console:
+            self.console.print(Panel.fit(Text.from_markup(reviewer_msg), border_style="cyan"))
+        else:
+            print(
+                reviewer_msg.replace("[cyan]", "")
+                .replace("[/cyan]", "")
+                .replace("[white]", "")
+                .replace("[/white]", "")
+            )
 
         consensus_bundle = self._prepare_annotation_bundle(candidate, validation_workspace, model_path)
         if not consensus_bundle:
@@ -443,11 +499,22 @@ class ValidationLabController:
             )
             return bundle
 
+        if len(annotators) > 1:
+            multi_msg = (
+                "\n[cyan]Multiple reviewer files detected.[/cyan]\n"
+                "Validation Lab will build a consensus reference by asking how you want to combine these annotators.\n"
+                "You can choose majority vote, weighted voting, or Dawid–Skene, and optionally resolve ties manually."
+            )
+            if RICH_AVAILABLE and self.console:
+                self.console.print(Panel.fit(Text.from_markup(multi_msg), border_style="cyan"))
+            else:
+                print(multi_msg.replace("[cyan]", "").replace("[/cyan]", ""))
+
         join_key, overlap = self._determine_join_key_for_annotations(annotators)
         if not join_key:
             warning = (
-                "\n[yellow]Impossible de trouver un identifiant commun entre les fichiers d'annotation.[/yellow]\n"
-                "Vérifiez que les exports Doccano proviennent du même jeu de données et contiennent les mêmes métadonnées."
+                "\n[yellow]Could not find a common identifier across the selected annotation files.[/yellow]\n"
+                "Ensure the Doccano exports come from the same dataset and share metadata such as `source_id`, `transcript_speaker_id+sentence_id`, or `text`."
             )
             if RICH_AVAILABLE and self.console:
                 self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
@@ -495,8 +562,8 @@ class ValidationLabController:
 
         if not consensus_records:
             warning = (
-                "\n[yellow]Aucune donnée n'est restée après la résolution des égalités.[/yellow]\n"
-                "Impossible de calculer un jeu de référence commun."
+                "\n[yellow]No data remained after resolving tie cases.[/yellow]\n"
+                "Unable to build a consensus reference set."
             )
             if RICH_AVAILABLE and self.console:
                 self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
@@ -541,31 +608,45 @@ class ValidationLabController:
         remaining = list(manual_candidates)
 
         if not remaining:
+            workspace_doccano = workspace["doccano"]
+            session_doccano = None
+            if candidate.validation_session_dir:
+                try:
+                    session_doccano = Path(candidate.validation_session_dir).expanduser().resolve()
+                except Exception:
+                    session_doccano = None
+            if session_doccano is None:
+                session_doccano = (self._validation_data_root / candidate.session_id / "doccano").resolve()
             message = (
-                "\n[yellow]Aucun export validé trouvé pour cette session.[/yellow]\n"
-                "Déposez vos JSONL Doccano validés dans le dossier de validation avant de poursuivre."
+                "\n[yellow]No reviewer JSONL files detected for this session yet.[/yellow]\n"
+                f"Copy the annotator JSONL exports for this model into [white]{workspace_doccano}[/white] or [white]{session_doccano}[/white] before continuing."
             )
             if RICH_AVAILABLE and self.console:
                 self.console.print(Panel.fit(Text.from_markup(message), border_style="yellow"))
             else:
-                print(message.replace("[yellow]", "").replace("[/yellow]", ""))
+                print(
+                    message.replace("[yellow]", "")
+                    .replace("[/yellow]", "")
+                    .replace("[white]", "")
+                    .replace("[/white]", "")
+                )
             return []
 
         while remaining:
             if RICH_AVAILABLE and self.console:
                 table = Table(
-                    title=f"Exports annotés disponibles · {candidate.session_name or candidate.session_id}",
+                    title=f"Available reviewer exports · {candidate.session_name or candidate.session_id}",
                     border_style="cyan",
                 )
                 table.add_column("#", justify="right", style="cyan", width=4)
-                table.add_column("Fichier", style="white")
-                table.add_column("Aperçu des labels", style="magenta")
+                table.add_column("File", style="white")
+                table.add_column("Label preview", style="magenta")
                 for idx, path in enumerate(remaining, 1):
                     preview = self._summarise_label_preview(path)
                     table.add_row(str(idx), str(path), preview)
                 self.console.print(table)
             else:
-                print("\nExports annotés disponibles :")
+                print("\nAvailable reviewer exports:")
                 for idx, path in enumerate(remaining, 1):
                     preview = self._summarise_label_preview(path)
                     print(f"  {idx}. {path} · {preview}")
@@ -574,7 +655,7 @@ class ValidationLabController:
             if annotators:
                 choices.append("done")
             selection = self._ask(
-                "Sélectionner un fichier d'annotations (ou 'done' pour terminer)",
+                "Select an annotator JSONL (enter one number at a time, or 'done' to finish)",
                 default="done" if annotators else "1",
                 choices=choices,
             )
@@ -588,9 +669,9 @@ class ValidationLabController:
                 continue
 
             path = remaining.pop(index)
-            default_name = f"Annotateur {len(annotators) + 1}"
+            default_name = f"Annotator {len(annotators) + 1}"
             annotator_name = self._ask(
-                f"Nommer l'annotateur pour {path.name}",
+                f"Name this annotator for {path.name}",
                 default=default_name,
                 choices=None,
             ).strip() or default_name
@@ -605,7 +686,7 @@ class ValidationLabController:
                 records = self._load_annotation_file(path)
             except Exception as exc:  # pragma: no cover - defensive
                 if self.logger:
-                    self.logger.error("Impossible de charger %s: %s", path, exc)
+                    self.logger.error("Unable to load %s: %s", path, exc)
                 continue
 
             annotators.append(AnnotatorAnnotations(name=annotator_name, path=path, records=records))
@@ -626,7 +707,7 @@ class ValidationLabController:
                     extracted = self._extract_labels(data)
                     labels.update(extracted)
         except Exception:
-            return "prévisualisation indisponible"
+            return "preview unavailable"
         if not labels:
             return "0 label"
         preview = ", ".join(label for label, _ in labels.most_common(limit))
@@ -709,23 +790,14 @@ class ValidationLabController:
         if not annotators:
             return None, {}
 
-        examples_markup = ""
-        if preview_samples:
-            lines = []
-            for sample in preview_samples:
-                lines.append(f"[bold]{sample['key']}[/bold] · {sample['text']}")
-                for annotator in sample["annotators"]:
-                    formatted = ", ".join(f"{dim}={value}" for dim, value in annotator["values"].items())
-                    lines.append(f"    • {annotator['annotator']}: {formatted or '∅'}")
-                lines.append("")
-            examples_markup = "\n".join(lines).rstrip()
+        examples_markup = self._build_consensus_examples(preview_samples, annotators)
 
         explanation = (
-            "\n[cyan]Options de consensus pour construire un gold standard[/cyan]\n"
-            "1. [bold]Majorité simple[/bold] – chaque annotateur compte pour 1. On retient, pour chaque dimension, la valeur la plus fréquente.\n"
-            "2. [bold]Consensus pondéré[/bold] – vous attribuez un poids à chaque annotateur ; les voix sont pondérées avant de choisir la valeur.\n"
-            "3. [bold]Méthode probabiliste (Dawid–Skene)[/bold] – on estime automatiquement la fiabilité de chaque annotateur pour inférer l'étiquette réelle.\n"
-            f"\n[dim]Segments communs détectés:[/dim] {overlap:,}"
+            "\n[cyan]Consensus strategies to build the gold standard[/cyan]\n"
+            "1. [bold]Simple majority[/bold] – each annotator counts as 1 vote; the most frequent value wins per dimension.\n"
+            "2. [bold]Weighted consensus[/bold] – assign a relative weight to each annotator before tallying votes.\n"
+            "3. [bold]Probabilistic (Dawid–Skene)[/bold] – estimate annotator reliability and infer the latent true label probabilistically.\n"
+            f"\n[dim]Shared segments detected:[/dim] {overlap:,}"
         )
         if RICH_AVAILABLE and self.console:
             panel = Panel.fit(
@@ -746,7 +818,7 @@ class ValidationLabController:
                 print(examples_markup.replace("[bold]", "").replace("[/bold]", ""))
 
         selection = self._ask(
-            "Choisir la méthode (1=Majorité, 2=Pondéré, 3=Dawid-Skene)",
+            "Choose the consensus method (1=Majority, 2=Weighted, 3=Dawid-Skene)",
             default="1",
             choices=["1", "2", "3"],
         )
@@ -768,7 +840,7 @@ class ValidationLabController:
         for annotator in annotators:
             while True:
                 raw = self._ask(
-                    f"Poids relatif pour {annotator.name} (>=0)",
+                    f"Relative weight for {annotator.name} (>=0)",
                     default=str(weights.get(annotator.name, 1.0)),
                     choices=None,
                 ).strip()
@@ -780,7 +852,7 @@ class ValidationLabController:
                     annotator.weight = value
                     break
                 except ValueError:
-                    warning = "[yellow]Valeur invalide, merci de saisir un nombre positif.[/yellow]"
+                    warning = "[yellow]Invalid value. Please enter a non-negative number.[/yellow]"
                     if RICH_AVAILABLE and self.console:
                         self.console.print(Text.from_markup(warning))
                     else:
@@ -789,6 +861,87 @@ class ValidationLabController:
             for annotator in annotators:
                 weights[annotator.name] = 1.0
         return weights
+
+    def _build_consensus_examples(
+        self,
+        preview_samples: List[Dict[str, Any]],
+        annotators: List[AnnotatorAnnotations],
+    ) -> str:
+        if not preview_samples:
+            return ""
+
+        annotator_names = [annotator.name for annotator in annotators]
+
+        def format_votes(sample: Dict[str, Any], dimension: str) -> str:
+            buckets: Dict[str, List[str]] = defaultdict(list)
+            for annotator in sample["annotators"]:
+                value = annotator["values"].get(dimension)
+                if value is None:
+                    value = "∅"
+                buckets[value].append(annotator["annotator"])
+            parts = []
+            for value, names in sorted(buckets.items(), key=lambda item: (item[0] or "", item[1])):
+                name_list = ", ".join(sorted(names))
+                parts.append(f"{value} ({name_list})")
+            return "; ".join(parts)
+
+        diff_sample = None
+        diff_dimension: Optional[str] = None
+        for sample in preview_samples:
+            dimensions: Set[str] = set()
+            for annotator in sample["annotators"]:
+                dimensions.update(annotator["values"].keys())
+            for dimension in dimensions:
+                values = {ann["values"].get(dimension) for ann in sample["annotators"]}
+                if len(values) > 1:
+                    diff_sample = sample
+                    diff_dimension = dimension
+                    break
+            if diff_sample:
+                break
+
+        primary_sample = diff_sample or preview_samples[0]
+        primary_dimension = diff_dimension
+        if primary_dimension is None:
+            # default to first dimension present
+            for annotator in primary_sample["annotators"]:
+                if annotator["values"]:
+                    primary_dimension = next(iter(annotator["values"].keys()))
+                    break
+
+        if not primary_dimension:
+            return ""
+
+        votes_description = format_votes(primary_sample, primary_dimension)
+        sample_header = f"[bold]{primary_sample['key']}[/bold] · {primary_sample['text']}"
+
+        majority_example = (
+            f"• Majority example: {sample_header}\n"
+            f"  {primary_dimension}: {votes_description}. "
+            "Simple majority picks the value with the most reviewers."
+        )
+
+        lead_annotator = annotator_names[0] if annotator_names else "the lead reviewer"
+        weighted_example = (
+            f"• Weighted consensus: assign larger weights to trusted reviewers (e.g. give {lead_annotator} 2.0 and the others 1.0). "
+            "When reviewers differ, the higher weight tilts the vote toward the reviewer you trust most."
+        )
+
+        dawid_example = (
+            f"• Dawid–Skene: automatically estimates each annotator's reliability for dimensions like '{primary_dimension}'. "
+            "Useful when reviewers disagree frequently or have different expertise; the algorithm learns who is usually right and infers the latent true label."
+        )
+
+        if diff_sample is None:
+            majority_example = (
+                f"• Majority example: {sample_header}\n"
+                f"  All reviewers currently agree ({votes_description}). "
+                "Majority vote would keep this value when they stay aligned."
+            )
+            weighted_example += " Even when everyone agrees, you can set weights now for future datasets where disagreements appear."
+            dawid_example += " It will behave like majority vote when reviewers agree, and re-weight them automatically once differences show up."
+
+        return "\n".join([majority_example, weighted_example, dawid_example])
 
     def _aggregate_annotations(
         self,
@@ -800,8 +953,8 @@ class ValidationLabController:
         records_by_key, shared_keys = self._build_annotation_index(annotators, join_key)
         if not shared_keys:
             warning = (
-                "\n[yellow]Les annotateurs sélectionnés ne partagent aucun segment commun.[/yellow]\n"
-                "Vérifiez que les fichiers proviennent du même export."
+                "\n[yellow]The selected annotators do not share any common segment identifiers.[/yellow]\n"
+                "Ensure the reviewer JSONL files come from the same export or share a common join key."
             )
             if RICH_AVAILABLE and self.console:
                 self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
@@ -936,16 +1089,16 @@ class ValidationLabController:
             return "no_ties", {}, []
 
         warning = (
-            f"\n[yellow]{len(tie_cases)} segment(s) présentent une égalité parfaite entre annotateurs.[/yellow]\n"
-            "Souhaitez-vous résoudre ces cas manuellement (en choisissant la bonne étiquette) ?\n"
-            "Sinon, les segments concernés seront exclus du jeu de référence."
+            f"\n[yellow]{len(tie_cases)} segment(s) are tied across annotators.[/yellow]\n"
+            "Would you like to resolve these ties manually (by choosing the reference label)?\n"
+            "If not, the tied segments will be excluded from the consensus set."
         )
         if RICH_AVAILABLE and self.console:
             self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
         else:
             print(warning.replace("[yellow]", "").replace("[/yellow]", ""))
 
-        choice = self._ask("Résoudre manuellement les égalités ?", default="y", choices=["y", "n", "Y", "N"])
+        choice = self._ask("Resolve ties manually?", default="y", choices=["y", "n", "Y", "N"])
         manual_resolutions: Dict[str, Dict[str, str]] = defaultdict(dict)
         excluded_keys: List[str] = []
 
@@ -968,7 +1121,7 @@ class ValidationLabController:
             header = (
                 f"\n[cyan]Segment {join_key}: {key}[/cyan]\n"
                 f"{info['base_record'].get('text', '')}\n"
-                f"[dim]{case['dimension']}[/dim]"
+                f"[dim]Dimension: {case['dimension']}[/dim]"
             )
             if RICH_AVAILABLE and self.console:
                 self.console.print(Panel.fit(Text.from_markup(header), border_style="cyan"))
@@ -998,7 +1151,7 @@ class ValidationLabController:
                 else:
                     print(f"  [{idx}] {option_label}")
             option_map["exclude"] = "__exclude__"
-            selection = self._ask("Choisir la valeur de consensus ou 'exclude'", default="1", choices=list(option_map.keys()))
+            selection = self._ask("Choose the consensus value or 'exclude'", default="1", choices=list(option_map.keys()))
             selected = option_map.get(selection)
             if selected == "__exclude__":
                 excluded_keys.append(key)
@@ -1347,6 +1500,13 @@ class ValidationLabController:
         consensus: Dict[str, Optional[str]] = {}
         posterior_map: Dict[str, Dict[str, float]] = {}
         for item_idx, item in enumerate(items):
+            observed_values = item_values[item]
+            unique_observed = {value for value in observed_values.values() if value is not None}
+            if len(unique_observed) == 1:
+                chosen = next(iter(unique_observed))
+                consensus[item] = chosen
+                posterior_map[item] = {chosen: 1.0}
+                continue
             probs = gamma[item_idx]
             top = probs.max()
             winners = [categories[idx] for idx, value in enumerate(probs) if math.isclose(value, top, rel_tol=1e-9, abs_tol=1e-12)]
@@ -1385,6 +1545,7 @@ class ValidationLabController:
 
     def _collect_manual_jsonl_candidates(
         self,
+        candidate: ValidationCandidate,
         model_path: Path,
         workspace: Dict[str, Path],
     ) -> List[Path]:
@@ -1393,6 +1554,17 @@ class ValidationLabController:
             workspace["root"].resolve(),
             workspace["doccano"].resolve(),
         }
+        validation_dir_hint = candidate.validation_session_dir
+        if validation_dir_hint:
+            try:
+                hinted = Path(validation_dir_hint).expanduser().resolve()
+                search_dirs.add(hinted)
+                search_dirs.add((hinted / "doccano").resolve())
+            except Exception:
+                pass
+        legacy_validation_dir = (self._validation_data_root / candidate.session_id).resolve()
+        search_dirs.add(legacy_validation_dir)
+        search_dirs.add((legacy_validation_dir / "doccano").resolve())
         manual_paths: List[Path] = []
         seen: Set[Path] = set()
         model_resolved = model_path.resolve()
@@ -1910,9 +2082,9 @@ class ValidationLabController:
                 f"\n[cyan]Consensus:[/cyan] {consensus_stats.get('method')} · tie={consensus_stats.get('tie_policy')}"
             )
             if weight_summary:
-                extra += f" · poids: {weight_summary}"
+                extra += f" · weights: {weight_summary}"
             if exclusions or manual:
-                extra += f" · exclus: {exclusions} · résolutions: {manual}"
+                extra += f" · excluded: {exclusions} · manual_resolutions: {manual}"
             message += extra
         if RICH_AVAILABLE and self.console:
             self.console.print(Panel.fit(Text.from_markup(message), border_style="green"))
@@ -2024,6 +2196,7 @@ class ValidationLabController:
             if not export_path:
                 continue
             path_obj = Path(export_path)
+            friendly_label = self._friendly_export_label(export_label, path_obj, record.directory)
             candidates.append(
                 ValidationCandidate(
                     source=mode_label,
@@ -2031,7 +2204,7 @@ class ValidationLabController:
                     session_id=summary.session_id,
                     session_name=summary.session_name,
                     dataset=dataset_name or "-",
-                    export_label=export_label,
+                    export_label=friendly_label,
                     export_path=str(path_obj),
                     export_exists=path_obj.exists(),
                     validation_session_dir=validation_session_dir,
@@ -2128,9 +2301,10 @@ class ValidationLabController:
             if path.name.startswith("."):
                 continue
             relative = path.relative_to(session_dir)
-            label = relative.name
-            if "doccano" in relative.parts:
-                label = f"Doccano: {label}"
+            if relative.parts:
+                label = relative.name if len(relative.parts) == 1 else str(Path(*relative.parts[-2:]))
+            else:
+                label = path.name
             exports.append((label, path))
         return exports
 
