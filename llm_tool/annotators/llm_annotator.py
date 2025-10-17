@@ -112,6 +112,12 @@ except ImportError:
     NotFoundError = Exception
     logging.warning("OpenAI SDK not installed. Batch API support disabled.")
 
+OPENAI_BATCH_MAX_FILE_BYTES = 512 * 1024 * 1024  # 512 MB per input file
+OPENAI_BATCH_MAX_INPUT_TOKENS = 50_000_000  # OpenAI documented soft limit
+OPENAI_BATCH_APPROX_CHARS_PER_TOKEN = 4  # heuristic for request sizing
+OPENAI_BATCH_APPROX_TOKEN_OVERHEAD = 32  # safety margin for system tokens
+OPENAI_BATCH_COMPLETION_OVERHEAD = 64  # padding for completion tokens in batch sizing
+
 # Rich library for enhanced CLI
 try:
     from rich.console import Console
@@ -131,6 +137,144 @@ PROMPT_SUFFIXES = ["raw_per_prompt", "cleaned_per_prompt", "status_per_prompt"]
 
 # Global tracking
 status_counts = {"success": 0, "error": 0, "cleaning_failed": 0, "decode_error": 0}
+
+
+def _coerce_mapping(value: Any) -> Optional[Dict[str, Any]]:
+    """Best-effort conversion of SDK objects into plain dictionaries."""
+    if value is None:
+        return None
+
+    if isinstance(value, dict):
+        return value
+
+    for attr_name in ("model_dump", "to_dict", "dict"):
+        attr = getattr(value, attr_name, None)
+        if callable(attr):
+            try:
+                data = attr()
+            except TypeError:
+                data = None
+        else:
+            data = attr
+        if isinstance(data, dict):
+            return data
+
+    if hasattr(value, "__dict__"):
+        # Filter out private attributes that Pydantic / SDK objects may include
+        return {k: v for k, v in vars(value).items() if not k.startswith("_")}
+
+    try:
+        data = dict(value)  # type: ignore[arg-type]
+    except Exception:
+        data = None
+    return data if isinstance(data, dict) else None
+
+
+def _as_request_counts(raw_counts: Optional[Any]) -> Dict[str, int]:
+    """Normalize OpenAI batch request counts into an int-valued dict."""
+    mapping = _coerce_mapping(raw_counts) or {}
+    normalized: Dict[str, int] = {}
+
+    for key, value in mapping.items():
+        if value in (None, "", False):
+            continue
+        try:
+            normalized[str(key)] = int(value)
+            continue
+        except (TypeError, ValueError):
+            pass
+        try:
+            normalized[str(key)] = int(float(value))
+        except (TypeError, ValueError):
+            continue
+
+    return normalized
+
+
+def _stringify_error_detail(detail: Any) -> str:
+    """Convert various error payloads into a concise string."""
+    if detail is None:
+        return ""
+    if isinstance(detail, str):
+        return detail.strip()
+
+    mapping = _coerce_mapping(detail)
+    if mapping:
+        for key in ("message", "error", "description", "detail"):
+            value = mapping.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        try:
+            return json.dumps(mapping, ensure_ascii=False)
+        except Exception:
+            return str(mapping)
+
+    if isinstance(detail, (list, tuple, set)):
+        parts = [part for part in (_stringify_error_detail(item) for item in detail) if part]
+        return ", ".join(parts)
+
+    try:
+        return str(detail)
+    except Exception:
+        return repr(detail)
+
+
+def _extract_output_file_id(batch_job: Any) -> Optional[str]:
+    """Safely extract the output file id from an OpenAI batch response."""
+
+    def _normalize_candidate(candidate: Any) -> Optional[str]:
+        if candidate in (None, "", False):
+            return None
+        if isinstance(candidate, str):
+            candidate = candidate.strip()
+            return candidate or None
+        if isinstance(candidate, (list, tuple, set)):
+            for item in candidate:
+                result = _normalize_candidate(item)
+                if result:
+                    return result
+            return None
+        mapping = _coerce_mapping(candidate)
+        if mapping:
+            for key in ("output_file_id", "file_id", "id"):
+                result = _normalize_candidate(mapping.get(key))
+                if result:
+                    return result
+            return None
+        for attr in ("file_id", "id"):
+            if hasattr(candidate, attr):
+                result = _normalize_candidate(getattr(candidate, attr))
+                if result:
+                    return result
+        return None
+
+    if batch_job is None:
+        return None
+
+    candidates: List[Any] = [
+        getattr(batch_job, "output_file_id", None),
+        getattr(batch_job, "output_file", None),
+        getattr(batch_job, "output_file_ids", None),
+        getattr(batch_job, "output_files", None),
+    ]
+
+    mapping = _coerce_mapping(batch_job)
+    if mapping:
+        candidates.extend(
+            [
+                mapping.get("output_file_id"),
+                mapping.get("output_file"),
+                mapping.get("output_file_ids"),
+                mapping.get("output_files"),
+            ]
+        )
+
+    for candidate in candidates:
+        result = _normalize_candidate(candidate)
+        if result:
+            return result
+
+    return None
 
 
 class LLMAnnotator:
@@ -934,10 +1078,10 @@ class LLMAnnotator:
         output_file_path = output_dir / f"openai_batch_output_{timestamp}.jsonl"
         metadata_file_path = batch_dir / f"openai_batch_metadata_{timestamp}.json"
 
-        total_requests = total_rows * prompt_count
-        self.logger.info("[BATCH] Preparing %s requests for OpenAI batch job...", total_requests)
+        expected_total_requests = total_rows * prompt_count
+        self.logger.info("[BATCH] Preparing %s requests for OpenAI batch job...", expected_total_requests)
 
-        request_entries: List[Dict[str, Any]] = []
+        request_entries: List[Tuple[Dict[str, Any], int]] = []
         request_metadata: Dict[str, Dict[str, Any]] = {}
         per_row_custom_ids: Dict[str, List[str]] = defaultdict(list)
         prompts_by_index: Dict[int, Dict[str, Any]] = {
@@ -956,6 +1100,7 @@ class LLMAnnotator:
             prefixed_expected_keys[prompt_idx] = normalized_keys
             all_expected_keys.update(normalized_keys)
         row_lookup: Dict[str, Dict[str, Any]] = {}
+        row_results: Dict[str, Dict[str, Any]] = {}
 
         usage_keys = (
             "prompt_tokens",
@@ -1206,12 +1351,24 @@ class LLMAnnotator:
                 sanitized_identifier = identifier_key.replace("\n", " ").replace("\r", " ")
                 custom_id = f"{sanitized_identifier}|p{prompt_idx}|{row_index}"
 
-                request_entries.append({
-                    "custom_id": custom_id,
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": build_request_body(full_prompt),
-                })
+                request_body = build_request_body(full_prompt)
+                completion_limit = int(
+                    request_body.get("max_completion_tokens")
+                    or request_body.get("max_tokens")
+                    or config.get("max_tokens")
+                    or 0
+                )
+
+                request_entries.append((
+                    {
+                        "custom_id": custom_id,
+                        "method": "POST",
+                        "url": "/v1/chat/completions",
+                        "body": request_body,
+                    },
+                    len(full_prompt),
+                    completion_limit,
+                ))
 
                 request_metadata[custom_id] = {
                     "identifier": identifier_value,
@@ -1224,404 +1381,445 @@ class LLMAnnotator:
                 }
                 per_row_custom_ids[identifier_key].append(custom_id)
 
-        with input_file_path.open('w', encoding='utf-8') as handle:
-            for entry in request_entries:
-                json.dump(entry, handle, ensure_ascii=False)
-                handle.write('\n')
+        max_file_bytes = int(config.get('openai_batch_max_file_bytes', OPENAI_BATCH_MAX_FILE_BYTES))
+        max_input_tokens = int(config.get('openai_batch_max_input_tokens', OPENAI_BATCH_MAX_INPUT_TOKENS))
+        approx_chars_per_token = float(config.get('openai_batch_chars_per_token', OPENAI_BATCH_APPROX_CHARS_PER_TOKEN))
+        approx_token_overhead = int(config.get('openai_batch_token_overhead', OPENAI_BATCH_APPROX_TOKEN_OVERHEAD))
 
-        client = OpenAI(api_key=api_key)
-        with input_file_path.open('rb') as handle:
-            uploaded_file = client.files.create(file=handle, purpose='batch')
+        chunk_dir = batch_dir / "chunks"
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+
+        chunk_infos: List[Dict[str, Any]] = []
+        chunk_index = 0
+        current_chunk_index = 0
+        chunk_path: Optional[Path] = None
+        chunk_handle = None
+        chunk_size_bytes = 0
+        chunk_tokens = 0
+        chunk_request_count = 0
+
+        def _close_chunk() -> None:
+            nonlocal chunk_handle, chunk_path, chunk_size_bytes, chunk_tokens, chunk_request_count, current_chunk_index, chunk_infos
+            if chunk_handle and chunk_path:
+                chunk_handle.close()
+                chunk_infos.append(
+                    {
+                        "index": current_chunk_index,
+                        "path": chunk_path,
+                        "bytes": chunk_size_bytes,
+                        "tokens": chunk_tokens,
+                        "requests": chunk_request_count,
+                    }
+                )
+            chunk_handle = None
+            chunk_path = None
+
+        def _open_new_chunk() -> None:
+            nonlocal chunk_index, current_chunk_index, chunk_handle, chunk_path, chunk_size_bytes, chunk_tokens, chunk_request_count
+            _close_chunk()
+            chunk_index += 1
+            current_chunk_index = chunk_index
+            chunk_path = chunk_dir / f"openai_batch_input_{timestamp}_chunk{chunk_index:03d}.jsonl"
+            chunk_handle = chunk_path.open('w', encoding='utf-8')
+            chunk_size_bytes = 0
+            chunk_tokens = 0
+            chunk_request_count = 0
+
+        completion_overhead = int(config.get('openai_batch_completion_overhead', OPENAI_BATCH_COMPLETION_OVERHEAD))
+
+        for entry_dict, prompt_length, completion_limit in request_entries:
+            entry_json = json.dumps(entry_dict, ensure_ascii=False)
+            entry_bytes = entry_json.encode('utf-8')
+            entry_size = len(entry_bytes) + 1
+            approx_tokens = max(1, math.ceil(prompt_length / approx_chars_per_token) + approx_token_overhead)
+            completion_allowance = max(0, int(completion_limit or 0))
+            approx_tokens += completion_allowance + completion_overhead
+
+            if chunk_handle is None:
+                _open_new_chunk()
+            elif chunk_request_count > 0 and (
+                chunk_size_bytes + entry_size > max_file_bytes
+                or chunk_tokens + approx_tokens > max_input_tokens
+            ):
+                _open_new_chunk()
+
+            if chunk_request_count == 0 and (entry_size > max_file_bytes or approx_tokens > max_input_tokens):
+                self.logger.warning(
+                    "[BATCH] Single request (custom_id=%s) exceeds configured OpenAI batch limits "
+                    "(size=%s bytes, tokens≈%s). It will be submitted alone.",
+                    entry_dict.get("custom_id"),
+                    entry_size,
+                    approx_tokens,
+                )
+
+            if chunk_handle is None:
+                _open_new_chunk()
+
+            chunk_handle.write(entry_json)
+            chunk_handle.write('\n')
+            chunk_size_bytes += entry_size
+            chunk_tokens += approx_tokens
+            chunk_request_count += 1
+
+        _close_chunk()
+
+        if not chunk_infos:
+            raise RuntimeError("OpenAI batch preparation failed: no requests were generated.")
+
+        config['openai_batch_input_paths'] = [str(info['path']) for info in chunk_infos]
+        config['openai_batch_chunk_count'] = len(chunk_infos)
+
+        total_requests = sum(info['requests'] for info in chunk_infos)
+        if total_requests != expected_total_requests:
+            self.logger.debug(
+                "[BATCH] Request aggregation mismatch: calculated=%s, expected=%s",
+                total_requests,
+                expected_total_requests,
+            )
+
+        if len(chunk_infos) > 1:
+            self.logger.info(
+                "[BATCH] Split %s request(s) into %s chunk files (≤%s MB, ≤%s tokens per chunk).",
+                total_requests,
+                len(chunk_infos),
+                int(max_file_bytes / (1024 ** 2)),
+                max_input_tokens,
+            )
 
         completion_window = config.get('openai_batch_completion_window', '24h')
-        batch_job = client.batches.create(
-            input_file_id=uploaded_file.id,
-            endpoint="/v1/chat/completions",
-            completion_window=completion_window
-        )
-        self.logger.info("[BATCH] Submitted job %s (status: %s).", batch_job.id, batch_job.status)
 
+        def _submit_chunk(chunk_info: Dict[str, Any]) -> Dict[str, Any]:
+            chunk_label = f"chunk {chunk_info['index']:03d}"
+            local_client = OpenAI(api_key=api_key)
+            with chunk_info['path'].open('rb') as handle:
+                uploaded_file = local_client.files.create(file=handle, purpose='batch')
+            batch_job = local_client.batches.create(
+                input_file_id=uploaded_file.id,
+                endpoint="/v1/chat/completions",
+                completion_window=completion_window,
+            )
+            self.logger.info(
+                "[BATCH] Submitted %s as job %s (status: %s).",
+                chunk_label,
+                batch_job.id,
+                batch_job.status,
+            )
+            return {
+                "chunk": chunk_info,
+                "job_id": batch_job.id,
+                "input_file_id": uploaded_file.id,
+                "status": batch_job.status,
+                "request_counts": _as_request_counts(getattr(batch_job, 'request_counts', None)),
+            }
+
+        if len(chunk_infos) == 1:
+            submission_results = [_submit_chunk(chunk_infos[0])]
+        else:
+            parallel_jobs = int(config.get('openai_batch_parallel_jobs', min(len(chunk_infos), 4)))
+            parallel_jobs = max(1, parallel_jobs)
+            submission_results = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=parallel_jobs) as executor:
+                futures = {executor.submit(_submit_chunk, info): info for info in chunk_infos}
+                for future in concurrent.futures.as_completed(futures):
+                    submission_results.append(future.result())
+
+        submission_results.sort(key=lambda item: item['chunk']['index'])
+        config['openai_batch_job_ids'] = [entry['job_id'] for entry in submission_results]
+
+        client = OpenAI(api_key=api_key)
         poll_interval = max(2, int(config.get('openai_batch_poll_interval', 5)))
         ongoing_statuses = {'validating', 'queued', 'in_progress', 'processing', 'finalizing'}
 
-        def _as_request_counts(mapping: Any) -> Dict[str, int]:
-            if mapping is None:
-                return {}
-            if isinstance(mapping, dict):
-                return mapping
-            if hasattr(mapping, "model_dump"):
-                try:
-                    return mapping.model_dump()
-                except Exception:
-                    pass
-            extracted: Dict[str, int] = {}
-            for attr in ("completed", "succeeded", "failed", "expired", "processing", "total"):
-                if hasattr(mapping, attr):
-                    value = getattr(mapping, attr)
-                    if isinstance(value, int):
-                        extracted[attr] = value
-            return extracted
-        while batch_job.status in ongoing_statuses:
-            request_counts = _as_request_counts(getattr(batch_job, 'request_counts', None))
-            completed = request_counts.get('completed') or request_counts.get('succeeded') or 0
-            total = request_counts.get('total', total_requests)
-            status_message = f"OpenAI batch status: {batch_job.status} ({completed}/{total} requests completed)"
+        disable_chunk_pbars = config.get('disable_tqdm', False)
+        chunk_progress: Dict[str, Dict[str, Any]] = {}
+        if not disable_chunk_pbars and submission_results:
+            for idx, job_info in enumerate(submission_results, start=1):
+                total_requests_for_chunk = max(1, job_info['chunk']['requests'])
+                bar = tqdm(
+                    total=total_requests_for_chunk,
+                    desc=f"Chunk {job_info['chunk']['index']:03d} submitted",
+                    unit="req",
+                    position=idx,
+                    leave=True,
+                    dynamic_ncols=True,
+                    disable=disable_chunk_pbars,
+                )
+                chunk_progress[job_info['job_id']] = {
+                    'bar': bar,
+                    'last_completed': 0,
+                    'total': total_requests_for_chunk,
+                }
+
+        latest_status_message = "OpenAI batches: submitted"
+        while submission_results:
+            all_finalised = True
+            completed_total = 0
+            status_parts: List[str] = []
+
+            for job_info in submission_results:
+                batch_job = client.batches.retrieve(job_info['job_id'])
+                job_info['batch_job'] = batch_job
+                job_info['status'] = batch_job.status
+                request_counts = _as_request_counts(getattr(batch_job, 'request_counts', None))
+                job_info['request_counts'] = request_counts
+                completed = request_counts.get('completed') or request_counts.get('succeeded') or 0
+                clamped_completed = min(completed, job_info['chunk']['requests'])
+                completed_total += clamped_completed
+
+                progress_info = chunk_progress.get(job_info['job_id'])
+                if progress_info:
+                    delta = clamped_completed - progress_info['last_completed']
+                    if delta > 0:
+                        progress_info['bar'].update(delta)
+                        progress_info['last_completed'] = clamped_completed
+                    status_label = batch_job.status.replace('_', ' ')
+                    progress_info['bar'].set_description(f"Chunk {job_info['chunk']['index']:03d} {status_label}")
+
+                status_parts.append(f"{job_info['job_id'][:8]}:{batch_job.status}")
+                if batch_job.status in ongoing_statuses:
+                    all_finalised = False
+
+            latest_status_message = f"OpenAI batches: {', '.join(status_parts)}"
             if self.progress_callback:
-                self.progress_callback(min(completed, total_requests), total_requests, status_message)
-            self.logger.debug("[BATCH] %s", status_message)
+                self.progress_callback(min(completed_total, total_requests), total_requests, latest_status_message)
+
+            if all_finalised:
+                break
+
             time.sleep(poll_interval)
-            batch_job = client.batches.retrieve(batch_job.id)
+
+        for job_info in submission_results:
+            progress_info = chunk_progress.get(job_info['job_id'])
+            if not progress_info:
+                continue
+            remaining = progress_info['total'] - progress_info['last_completed']
+            if remaining > 0:
+                progress_info['bar'].update(remaining)
+                progress_info['last_completed'] = progress_info['total']
+            final_label = (job_info.get('status') or 'unknown').replace('_', ' ')
+            progress_info['bar'].set_description(f"Chunk {job_info['chunk']['index']:03d} {final_label}")
+            progress_info['bar'].close()
 
         if self.progress_callback:
-            self.progress_callback(total_requests, total_requests, f"OpenAI batch status: {batch_job.status}")
+            self.progress_callback(total_requests, total_requests, latest_status_message)
 
-        if batch_job.status != 'completed':
-            error_message = f"OpenAI batch job {batch_job.id} finished with status '{batch_job.status}'"
-            self.logger.error("[BATCH] %s", error_message)
-            if getattr(batch_job, 'error_file_id', None):
-                error_response = client.files.content(batch_job.error_file_id)
-                error_path = batch_dir / f"openai_batch_errors_{timestamp}.jsonl"
-                if hasattr(error_response, 'content'):
-                    error_path.write_bytes(error_response.content)
+        failed_jobs: List[Dict[str, Any]] = []
+        failed_records: List[Dict[str, Optional[str]]] = []
+        if submission_results:
+            for job_info in submission_results:
+                if job_info.get('status') == 'completed':
+                    continue
+
+                batch_job = job_info.get('batch_job')
+                error_file_path: Optional[Path] = None
+                error_file_id = getattr(batch_job, 'error_file_id', None) if batch_job else None
+                if error_file_id:
+                    error_path = batch_dir / f"openai_batch_errors_{timestamp}_chunk{job_info['chunk']['index']:03d}.jsonl"
+                    try:
+                        error_response = client.files.content(error_file_id)
+                        if hasattr(error_response, 'content'):
+                            error_path.write_bytes(error_response.content)
+                        else:
+                            error_path.write_bytes(error_response.read())
+                        error_file_path = error_path
+                        self.logger.error("[BATCH] Error details for job %s saved to %s", job_info['job_id'], error_path)
+                    except Exception as exc:
+                        self.logger.warning("[BATCH] Unable to fetch error file %s: %s", error_file_id, exc)
+
+                error_detail = None
+                if batch_job:
+                    error_detail = _stringify_error_detail(getattr(batch_job, 'error', None))
+                    if not error_detail:
+                        error_detail = _stringify_error_detail(getattr(batch_job, 'errors', None))
+                    if not error_detail:
+                        error_detail = _stringify_error_detail(getattr(batch_job, 'last_error', None))
+                if not error_detail and job_info.get('request_counts'):
+                    error_detail = f"request_counts={job_info['request_counts']}"
+
+                job_info['error_detail'] = error_detail
+                job_info['error_file_path'] = str(error_file_path) if error_file_path else None
+                failed_jobs.append(job_info)
+
+                chunk_idx = job_info['chunk']['index']
+                status_label = job_info.get('status') or 'failed'
+                if error_detail:
+                    self.logger.error(
+                        "[BATCH] Chunk %03d (job %s) finished with status '%s': %s",
+                        chunk_idx,
+                        job_info['job_id'],
+                        status_label,
+                        error_detail,
+                    )
                 else:
-                    error_path.write_bytes(error_response.read())
-                self.logger.error("[BATCH] Error details saved to %s", error_path)
-            raise RuntimeError(error_message)
+                    self.logger.error(
+                        "[BATCH] Chunk %03d (job %s) finished with status '%s'.",
+                        chunk_idx,
+                        job_info['job_id'],
+                        status_label,
+                    )
 
-        job_created_at = getattr(batch_job, 'created_at', None) or getattr(batch_job, 'created', None)
-        job_started_at = getattr(batch_job, 'started_at', None)
-        job_completed_at = getattr(batch_job, 'completed_at', None) or getattr(batch_job, 'finished_at', None)
-        final_request_counts = _as_request_counts(getattr(batch_job, 'request_counts', None))
+                progress_info = chunk_progress.get(job_info['job_id'])
+                if progress_info:
+                    progress_info['bar'].set_description(f"Chunk {chunk_idx:03d} {status_label}")
 
-        def _extract_from_collection(value: Any) -> Optional[str]:
-            if not value:
-                return None
-            if isinstance(value, str):
-                return value
-            if isinstance(value, dict):
-                for key in ('id', 'file_id', 'output_file_id'):
-                    candidate = value.get(key)
-                    if candidate:
-                        return candidate
-                for key in ('output_files', 'files', 'data', 'items'):
-                    if key in value:
-                        nested = value.get(key)
-                        result = _extract_from_collection(nested)
-                        if result:
-                            return result
-                return None
-            if isinstance(value, (list, tuple, set)):
-                for item in value:
-                    result = _extract_from_collection(item)
-                    if result:
-                        return result
-            return None
-
-        def _extract_output_file_id(job: Any) -> Optional[str]:
-            if job is None:
-                return None
-            if hasattr(job, 'output_file_id') and getattr(job, 'output_file_id'):
-                return getattr(job, 'output_file_id')
-            if hasattr(job, 'output_file') and getattr(job, 'output_file'):
-                candidate = getattr(job, 'output_file')
-                if isinstance(candidate, str):
-                    return candidate
-                if isinstance(candidate, dict):
-                    return candidate.get('id') or candidate.get('file_id')
-
-            candidates_attrs = ('output_file_ids', 'output_files', 'outputs')
-            for attr in candidates_attrs:
-                value = getattr(job, attr, None)
-                result = _extract_from_collection(value)
-                if result:
-                    return result
-
-            if hasattr(job, 'model_dump'):
-                try:
-                    dumped = job.model_dump()
-                    direct = dumped.get('output_file_id') or dumped.get('output_file')
-                    if direct:
-                        return direct
-                    return _extract_from_collection(dumped)
-                except Exception:
-                    pass
-            if isinstance(job, dict):
-                direct = (
-                    job.get('output_file_id')
-                    or job.get('output_file')
-                    or job.get('file')
+                failed_records.append(
+                    {
+                        "chunk_index": f"{chunk_idx:03d}",
+                        "job_id": job_info.get('job_id'),
+                        "status": status_label,
+                        "error_detail": error_detail,
+                        "error_file": str(error_file_path) if error_file_path else None,
+                    }
                 )
-                if direct:
-                    return direct
-                return _extract_from_collection(job)
-            return None
 
-        output_file_id = _extract_output_file_id(batch_job)
-        file_manifest: List[Dict[str, Any]] = []
-        if not output_file_id:
-            check_attempts = int(config.get('openai_batch_output_poll_attempts', 10))
-            wait_seconds = float(config.get('openai_batch_output_poll_interval', 3))
-            for attempt in range(check_attempts):
-                time.sleep(wait_seconds)
-                refreshed = client.batches.retrieve(batch_job.id)
-                output_file_id = _extract_output_file_id(refreshed)
-                if output_file_id:
-                    batch_job = refreshed
-                    break
-                self.logger.debug(
-                    "[BATCH] Poll attempt %s/%s still missing output file for job %s (status=%s).",
-                    attempt + 1,
-                    check_attempts,
-                    batch_job.id,
-                    getattr(refreshed, 'status', None)
+        if failed_records:
+            config['openai_batch_failed_jobs'] = failed_records
+            if self.progress_manager:
+                self.progress_manager.show_warning(
+                    "One or more OpenAI batch chunks failed. Check logs for details."
                 )
+
+        output_file_path.write_text("")
+        chunk_output_paths: List[Path] = []
+
+        successful_jobs = [info for info in submission_results if info.get('status') == 'completed']
+        if not successful_jobs:
+            self.logger.error("[BATCH] No OpenAI batch chunks completed successfully; aggregated output will remain empty.")
+
+        for job_info in successful_jobs:
+            batch_job = job_info['batch_job']
+            output_file_id = _extract_output_file_id(batch_job)
             if not output_file_id:
-                files_response = None
-                try:
-                    files_response = client.files.list(limit=100)
-                except Exception as exc:
-                    self.logger.warning("[BATCH] Unable to list files for batch %s: %s", batch_job.id, exc)
-                if files_response and getattr(files_response, 'data', None):
-                    for file_obj in files_response.data:
-                        file_manifest.append({
-                            'id': getattr(file_obj, 'id', None),
-                            'filename': getattr(file_obj, 'filename', None),
-                            'purpose': getattr(file_obj, 'purpose', None),
-                            'bytes': getattr(file_obj, 'bytes', None),
-                            'created_at': getattr(file_obj, 'created_at', None),
-                            'metadata': getattr(file_obj, 'metadata', None),
-                        })
-                    for file_obj in files_response.data:
-                        meta = getattr(file_obj, 'metadata', {}) or {}
-                        if isinstance(meta, dict) and meta.get('batch_id') == batch_job.id:
-                            output_file_id = getattr(file_obj, 'id', None)
-                            if output_file_id:
-                                self.logger.info(
-                                    "[BATCH] Recovered output file %s for job %s via files.list.",
-                                    output_file_id,
-                                    batch_job.id
-                                )
-                                break
-                if not output_file_id:
-                    dumped = None
-                    try:
-                        dumped = batch_job.model_dump() if hasattr(batch_job, 'model_dump') else batch_job
-                    except Exception:
-                        dumped = str(batch_job)
-                    try:
-                        refreshed_dump = refreshed.model_dump() if hasattr(refreshed, 'model_dump') else refreshed
-                    except Exception:
-                        refreshed_dump = str(refreshed)
-                    self.logger.error("[BATCH] Final job state: %s", dumped)
-                    self.logger.error("[BATCH] Last refreshed job state: %s", refreshed_dump)
-                    if file_manifest:
-                        self.logger.error("[BATCH] File manifest (limit 100): %s", file_manifest)
-                    raise RuntimeError(
-                        "OpenAI batch completed but no output_file_id was returned. "
-                        f"Check OpenAI dashboard for job {getattr(batch_job, 'id', '<unknown>')}."
-                    )
+                raise RuntimeError(
+                    f"OpenAI batch job {job_info['job_id']} completed but did not return an output file id."
+                )
+            try:
+                output_response = client.files.content(output_file_id)
+            except NotFoundError:
+                raise RuntimeError(
+                    f"OpenAI returned 404 for output file {output_file_id}. "
+                    f"Check batch job {job_info['job_id']} in the OpenAI dashboard."
+                )
 
-        known_prefixes = ("file_", "batch_", "upload_")
-        if not any(str(output_file_id).startswith(prefix) for prefix in known_prefixes):
-            output_file_id = str(output_file_id).split("/")[-1]
+            chunk_output_path = output_dir / f"openai_batch_output_{timestamp}_chunk{job_info['chunk']['index']:03d}.jsonl"
+            if hasattr(output_response, 'content'):
+                chunk_output_path.write_bytes(output_response.content)
+            else:
+                chunk_output_path.write_bytes(output_response.read())
 
-        try:
-            output_response = client.files.content(output_file_id)
-        except NotFoundError as exc:
-            if not file_manifest:
-                try:
-                    files_response = client.files.list(limit=100)
-                    if files_response and getattr(files_response, 'data', None):
-                        for file_obj in files_response.data:
-                            file_manifest.append({
-                                'id': getattr(file_obj, 'id', None),
-                                'filename': getattr(file_obj, 'filename', None),
-                                'purpose': getattr(file_obj, 'purpose', None),
-                                'bytes': getattr(file_obj, 'bytes', None),
-                                'created_at': getattr(file_obj, 'created_at', None),
-                                'metadata': getattr(file_obj, 'metadata', None),
-                            })
-                except Exception:
-                    pass
-            if file_manifest:
-                self.logger.error("[BATCH] File manifest for job %s: %s", batch_job.id, file_manifest)
-            raise RuntimeError(
-                f"OpenAI returned 404 for output file {output_file_id}. "
-                f"Verify batch {getattr(batch_job, 'id', '<unknown>')} in the OpenAI dashboard."
-            ) from exc
+            with chunk_output_path.open('r', encoding='utf-8') as src, output_file_path.open('a', encoding='utf-8') as dest:
+                shutil.copyfileobj(src, dest)
 
-        if hasattr(output_response, 'content'):
-            output_file_path.write_bytes(output_response.content)
-        else:
-            output_file_path.write_bytes(output_response.read())
-        self.logger.info("[BATCH] Output saved to %s", output_file_path)
+            chunk_output_paths.append(chunk_output_path)
+            job_info['output_file_id'] = output_file_id
+            job_info['output_file_path'] = chunk_output_path
+            self.logger.info(
+                "[BATCH] Output for chunk %s saved to %s",
+                job_info['chunk']['index'],
+                chunk_output_path,
+            )
 
-        row_results: Dict[str, Dict[str, Any]] = {}
-
-        with output_file_path.open('r', encoding='utf-8') as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    payload = json.loads(line)
-                except json.JSONDecodeError:
-                    self.logger.error("[BATCH] Unable to parse output line: %s", line)
-                    continue
-
-                custom_id = payload.get('custom_id')
-                meta = request_metadata.get(custom_id)
-                if not meta:
-                    self.logger.warning("[BATCH] Received result for unknown request %s", custom_id)
-                    continue
-
-                identifier_key = meta['identifier_key']
-                prompt_idx = meta['prompt_index']
-                prompt_key = str(prompt_idx)
-                expected_keys = meta['expected_keys']
-                prefix = meta['prefix']
-
-                row_state = row_results.setdefault(identifier_key, {
-                    'identifier': meta['identifier'],
-                    'row_index': meta['row_index'],
-                    'raw': {},
-                    'cleaned': {},
-                    'status': {},
-                    'merged': {},
-                    'errors': [],
-                    'usage': {},
-                    'response_info': {}
-                })
-
-                error_info = payload.get('error')
-                if error_info:
-                    error_text = error_info.get('message') or str(error_info)
-                    row_state['raw'][prompt_key] = None
-                    row_state['cleaned'][prompt_key] = None
-                    row_state['status'][prompt_key] = 'error'
-                    row_state['errors'].append(error_text)
-                    status_counts['error'] += 1
-                    continue
-
-                response_wrapper = payload.get('response') or {}
-                response_body = response_wrapper.get('body', {})
-                choices = response_body.get('choices', [])
-                message_content = None
-                finish_reason = None
-                if choices:
-                    choice_payload = choices[0] or {}
-                    finish_reason = choice_payload.get('finish_reason')
-                    message_payload = choice_payload.get('message') or {}
-                    message_content = message_payload.get('content')
-                usage_payload = response_body.get('usage') or {}
-                row_state['usage'][prompt_key] = usage_payload
-                row_state['response_info'][prompt_key] = {
-                    'id': response_body.get('id'),
-                    'created': response_body.get('created'),
-                    'request_id': response_wrapper.get('request_id'),
-                    'status_code': response_wrapper.get('status_code'),
-                    'finish_reason': finish_reason,
-                }
-                if isinstance(message_content, list):
-                    fragments: List[str] = []
-                    for part in message_content:
-                        if isinstance(part, dict) and part.get('type') == 'text':
-                            fragments.append(part.get('text', ''))
-                        elif isinstance(part, str):
-                            fragments.append(part)
-                    message_content = "".join(fragments)
-                raw_text = message_content.strip() if isinstance(message_content, str) else None
-                row_state['raw'][prompt_key] = raw_text
-
-                cleaned_json = None
-                if not raw_text:
-                    status_label = 'length_truncated' if finish_reason == 'length' else 'empty_response'
-                    row_state['cleaned'][prompt_key] = None
-                    row_state['status'][prompt_key] = status_label
-                    row_state['errors'].append(
-                        f"Model returned empty content (finish_reason={finish_reason or 'unknown'})."
-                    )
-                    status_counts['cleaning_failed'] += 1
-                    continue
-
-                try:
-                    cleaned_json = clean_json_output(raw_text, expected_keys)
-                except Exception as exc:
-                    self.logger.error("[BATCH] Cleaning failed for %s: %s", custom_id, exc)
-                    cleaned_json = None
-
-                if not cleaned_json:
-                    row_state['cleaned'][prompt_key] = None
-                    row_state['status'][prompt_key] = 'parse_error'
-                    row_state['errors'].append("Unable to parse model response.")
-                    status_counts['cleaning_failed'] += 1
-                    continue
-
-                row_state['cleaned'][prompt_key] = cleaned_json
-                row_state['status'][prompt_key] = 'success'
-                try:
-                    parsed = json.loads(cleaned_json)
-                    if prefix:
-                        parsed = {f"{prefix}_{k}": v for k, v in parsed.items()}
-                    row_state['merged'].update(parsed)
-                    self.last_annotation = parsed
-                    status_counts['success'] += 1
-                except Exception as exc:
-                    row_state['status'][prompt_key] = 'decode_error'
-                    row_state['errors'].append(f"Decode error: {exc}")
-                    status_counts['decode_error'] += 1
+        for job_info in failed_jobs:
+            job_info.setdefault('output_file_id', None)
+            job_info.setdefault('output_file_path', None)
 
         batch_elapsed = time.perf_counter() - start_time
-        job_elapsed_seconds = None
-        if isinstance(job_started_at, (int, float)) and isinstance(job_completed_at, (int, float)):
-            job_elapsed_seconds = job_completed_at - job_started_at
-        elif isinstance(job_created_at, (int, float)) and isinstance(job_completed_at, (int, float)):
-            job_elapsed_seconds = job_completed_at - job_created_at
 
-        if isinstance(job_elapsed_seconds, (int, float)) and job_elapsed_seconds >= 0:
-            per_row_time = job_elapsed_seconds / max(total_rows, 1)
-        else:
+        jobs_metadata: List[Dict[str, Any]] = []
+        weighted_time = 0.0
+        weighted_requests = 0
+        for job_info in submission_results:
+            batch_job = job_info['batch_job']
+            chunk_info = job_info['chunk']
+            job_created_at = getattr(batch_job, 'created_at', None) or getattr(batch_job, 'created', None)
+            job_started_at = getattr(batch_job, 'started_at', None)
+            job_completed_at = getattr(batch_job, 'completed_at', None) or getattr(batch_job, 'finished_at', None)
+            final_request_counts = job_info.get('request_counts', {})
+
             job_elapsed_seconds = None
-            per_row_time = batch_elapsed / max(total_rows, 1)
+            if isinstance(job_started_at, (int, float)) and isinstance(job_completed_at, (int, float)):
+                job_elapsed_seconds = job_completed_at - job_started_at
+            elif isinstance(job_created_at, (int, float)) and isinstance(job_completed_at, (int, float)):
+                job_elapsed_seconds = job_completed_at - job_created_at
 
-        job_metadata = {
-            'job_id': getattr(batch_job, 'id', None),
-            'status': getattr(batch_job, 'status', None),
-            'created_at': job_created_at,
-            'started_at': job_started_at,
-            'completed_at': job_completed_at,
-            'request_counts': final_request_counts,
-            'total_requests': total_requests,
-            'prompt_count': prompt_count,
-            'dataset_rows': total_rows,
-            'batch_elapsed_seconds': batch_elapsed,
-            'job_elapsed_seconds': job_elapsed_seconds,
-            'input_file': str(input_file_path),
-            'output_file': str(output_file_path),
-            'model': model_name,
-            'provider': config.get('provider') or config.get('annotation_provider'),
+            if isinstance(job_elapsed_seconds, (int, float)) and job_elapsed_seconds >= 0:
+                weighted_time += job_elapsed_seconds
+                weighted_requests += max(chunk_info['requests'], 1)
+            else:
+                job_elapsed_seconds = None
+
+            jobs_metadata.append(
+                {
+                    "chunk_index": chunk_info['index'],
+                    "job_id": getattr(batch_job, 'id', None),
+                    "status": getattr(batch_job, 'status', None),
+                    "created_at": job_created_at,
+                    "started_at": job_started_at,
+                    "completed_at": job_completed_at,
+                    "request_counts": final_request_counts,
+                    "total_requests": chunk_info['requests'],
+                    "input_file": str(chunk_info['path']),
+                    "output_file": str(job_info['output_file_path']) if job_info.get('output_file_path') else None,
+                    "output_file_id": job_info.get('output_file_id'),
+                    "job_elapsed_seconds": job_elapsed_seconds,
+                    "model": model_name,
+                    "provider": config.get('provider') or config.get('annotation_provider'),
+                    "error_file": job_info.get('error_file_path'),
+                    "error_detail": job_info.get('error_detail'),
+                }
+            )
+
+        overall_metadata = {
+            "jobs": jobs_metadata,
+            "chunk_count": len(jobs_metadata),
+            "total_requests": total_requests,
+            "dataset_rows": total_rows,
+            "prompt_count": prompt_count,
+            "batch_elapsed_seconds": batch_elapsed,
+            "input_paths": [str(info['path']) for info in chunk_infos],
+            "output_paths": [str(path) for path in chunk_output_paths],
+            "aggregated_output": str(output_file_path),
+            "model": model_name,
+            "provider": config.get('provider') or config.get('annotation_provider'),
+            "failed_jobs": failed_records,
         }
+
         try:
-            metadata_file_path.write_text(json.dumps(job_metadata, ensure_ascii=False, indent=2))
+            metadata_file_path.write_text(json.dumps(overall_metadata, ensure_ascii=False, indent=2))
         except Exception as exc:
             self.logger.warning("[BATCH] Unable to write batch metadata: %s", exc)
 
+        input_file_path = chunk_infos[0]['path']
         config['openai_batch_metadata_path'] = str(metadata_file_path)
         config['openai_batch_input_path'] = str(input_file_path)
+        config['openai_batch_input_paths'] = [str(info['path']) for info in chunk_infos]
         config['openai_batch_output_path'] = str(output_file_path)
-        config['openai_batch_job_id'] = job_metadata.get('job_id')
-        config['openai_batch_status'] = job_metadata.get('status')
-        config['openai_batch_job_elapsed_seconds'] = job_elapsed_seconds
+        config['openai_batch_output_paths'] = [str(path) for path in chunk_output_paths]
+        config['openai_batch_job_id'] = jobs_metadata[0].get('job_id') if jobs_metadata else None
+        config['openai_batch_job_ids'] = [meta.get('job_id') for meta in jobs_metadata]
+        config['openai_batch_status'] = jobs_metadata[0].get('status') if jobs_metadata else None
+        config['openai_batch_statuses'] = [meta.get('status') for meta in jobs_metadata]
+        config['openai_batch_job_elapsed_seconds'] = jobs_metadata[0].get('job_elapsed_seconds') if jobs_metadata else None
         config['openai_batch_total_requests'] = total_requests
+        config['openai_batch_jobs_metadata'] = jobs_metadata
+        config['openai_batch_successful_job_ids'] = [
+            meta.get('job_id') for meta in jobs_metadata if meta.get('status') == 'completed'
+        ]
+        config['openai_batch_chunk_output_paths'] = [str(path) for path in chunk_output_paths]
+        per_row_time = (
+            (weighted_time / weighted_requests) if weighted_requests else batch_elapsed / max(total_rows, 1)
+        )
 
         archive_dir = config.get('openai_batch_archive_dir')
         if archive_dir:
             try:
                 archive_path = Path(archive_dir)
                 archive_path.mkdir(parents=True, exist_ok=True)
-                for src_path in (input_file_path, output_file_path, metadata_file_path):
-                    if src_path.exists():
-                        shutil.copy2(src_path, archive_path / src_path.name)
+                archive_sources = [metadata_file_path, output_file_path] + [info['path'] for info in chunk_infos] + chunk_output_paths
+                for src_path in archive_sources:
+                    path_obj = Path(src_path)
+                    if path_obj.exists():
+                        shutil.copy2(path_obj, archive_path / path_obj.name)
             except Exception as exc:
                 self.logger.warning("[BATCH] Unable to archive batch artifacts to %s: %s", archive_dir, exc)
 

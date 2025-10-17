@@ -1215,7 +1215,7 @@ class AdvancedCLI:
             info_table = Table(show_header=False, box=None, padding=(0, 2))
             info_table.add_row("📚 Version:", "[bright_green]1.0[/bright_green]")
             info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
-            info_table.add_row("🚀 Features:", "[cyan]50+ BERT Models, Multi-LLM (Ollama/OpenAI/Claude), Parallel GPU/CPU, Reinforcement Learning[/cyan]")
+            info_table.add_row("🚀 Features:", "[cyan]50+ BERT Models, 5 LLM Providers (OpenAI/Anthropic/Google/Ollama/Llama.cpp), Parallel GPU/CPU, Reinforcement Learning[/cyan]")
             info_table.add_row("🎯 Capabilities:", "[magenta]Multi-Label Classification, 100+ Languages, SQL/File I/O, Doccano/Label Studio Export[/magenta]")
 
             self.console.print(Panel(
@@ -1491,7 +1491,7 @@ class AdvancedCLI:
             menu_table.add_column()
 
             options = [
-                ("1", "🎨 The Annotator - Zero-Shot LLM Annotation (Ollama/OpenAI/Claude) → Label Studio/Doccano Export"),
+                ("1", "🎨 The Annotator - Zero-Shot LLM Annotation (5 LLM Providers) → Label Studio/Doccano Export"),
                 ("2", "🏭 The Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models"),
                 ("3", "🎮 Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
                 ("4", "🤖 BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
@@ -1530,7 +1530,7 @@ class AdvancedCLI:
             print("\n" + "="*50)
             print("Main Menu")
             print("="*50)
-            print("1. The Annotator - Zero-Shot LLM Annotation (Ollama/OpenAI/Claude) → Export")
+            print("1. The Annotator - Zero-Shot LLM Annotation (5 LLM Providers) → Export")
             print("2. The Annotator Factory - LLM Annotations → Training Data → BERT Models")
             print("3. Training Arena - Train 50+ Models (Multi-Label & Benchmarking)")
             print("4. BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU)")
@@ -2400,7 +2400,7 @@ class AdvancedCLI:
             info_table = Table(show_header=False, box=None, padding=(0, 2))
             info_table.add_row("📚 Version:", "[bright_green]1.0[/bright_green]")
             info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
-            info_table.add_row("🚀 Features:", "[cyan]Ollama/OpenAI/Claude, Prompt Wizard, Auto JSON Repair, 200K Context Support[/cyan]")
+            info_table.add_row("🚀 Features:", "[cyan]5 LLM Providers (OpenAI/Anthropic/Google/Ollama/Llama.cpp), Prompt Wizard, Auto JSON Repair, 200K Context Support[/cyan]")
             info_table.add_row("🎯 Capabilities:", "[magenta]Multi-Label Categories, NER, Hierarchical Schemas, Pydantic Validation[/magenta]")
             info_table.add_row("⚡ Performance:", "[green]Parallel Processing, Incremental Save, Resume, Label Studio/Doccano Export[/green]")
 
@@ -2419,7 +2419,7 @@ class AdvancedCLI:
             print("="*80)
             print("\n📚 Version: 1.0")
             print("👨‍💻 Author: Antoine Lemor")
-            print("🚀 Features: Ollama/OpenAI/Claude, Prompt Wizard, 200K Context, JSON Repair")
+            print("🚀 Features: 5 LLM Providers, Prompt Wizard, 200K Context, JSON Repair")
             print("🎯 Capabilities: Multi-Label Categories, NER, Hierarchical Schemas")
             print("⚡ Performance: Parallel Processing, Incremental Save, Resume Support")
             print("\n  🤖 -> 📝 -> 🧹 -> 🎯 -> 🧠 -> 📊 -> ✨")
@@ -2437,10 +2437,10 @@ class AdvancedCLI:
         # Display personalized mode info
         self._display_section_header(
             "🏭 The Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models",
-            "End-to-end pipeline: Ollama/OpenAI/Claude annotation → Automatic training data conversion → Model training",
+            "End-to-end pipeline: 5 LLM Providers (OpenAI/Anthropic/Google/Ollama/Llama.cpp) → Automatic training data conversion → Model training",
             mode_info={
                 'workflow': 'Data → LLM Annotate (Parallel) → Language Detection → Auto-Convert → Train 50+ Models',
-                'capabilities': ['Multi-LLM Support (Ollama/OpenAI/Claude)', '100+ Languages', 'Multi-Label Classification', 'Reinforcement Learning'],
+                'capabilities': ['5 LLM Providers (OpenAI/Anthropic/Google/Ollama/Llama.cpp)', '100+ Languages', 'Multi-Label Classification', 'Reinforcement Learning'],
                 'input': 'CSV/Excel/JSON/SQL with text column',
                 'output': 'Annotated data + Trained BERT models + Benchmarking metrics + Training summaries',
                 'best_for': 'Complete zero-shot annotation to supervised learning pipeline with automatic optimization'
@@ -5672,10 +5672,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Display personalized mode info
         self._display_section_header(
             "🎨 The Annotator - Zero-Shot LLM Annotation → Label Studio/Doccano Export",
-            "Professional zero-shot annotation with Ollama/OpenAI/Claude, automatic JSON repair, and export to review platforms",
+            "Professional zero-shot annotation with 5 LLM Providers, automatic JSON repair, and export to review platforms",
             mode_info={
                 'workflow': 'Data → Prompt Wizard → LLM Annotate (Parallel) → JSON Repair → Export (Doccano/Label Studio)',
-                'capabilities': ['Ollama/OpenAI/Claude Support', 'Prompt Wizard', '200K Context', 'Multi-Label Categories', 'NER', 'Pydantic Validation'],
+                'capabilities': ['5 LLM Providers (OpenAI/Anthropic/Google/Ollama/Llama.cpp)', 'Prompt Wizard', '200K Context', 'Multi-Label Categories', 'NER', 'Pydantic Validation'],
                 'input': 'Raw text data (CSV/Excel/JSON/SQL)',
                 'output': 'Annotated JSON + Doccano JSONL + Label Studio JSON (API or file)',
                 'best_for': 'Zero-shot annotation with LLMs, human review workflows, data labeling for training'
@@ -5882,13 +5882,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             options_table.add_column("Option", style="cyan", width=8)
             options_table.add_column("Description")
 
-            resume_label = "🔄 Reprendre une session"
+            resume_label = "🔄 Resume a session"
             if not resume_available:
-                resume_label += " [dim](aucune disponible)[/dim]"
+                resume_label += " [dim](none available)[/dim]"
 
-            options_table.add_row("[bold cyan]1[/bold cyan]", "🆕 Lancer une nouvelle session")
+            options_table.add_row("[bold cyan]1[/bold cyan]", "🆕 Start a new session")
             options_table.add_row("[bold cyan]2[/bold cyan]", resume_label)
-            options_table.add_row("[bold cyan]0[/bold cyan]", "⬅️  Retour au menu principal")
+            options_table.add_row("[bold cyan]0[/bold cyan]", "⬅️  Back to main menu")
 
             self.console.print(
                 Panel(
@@ -5902,22 +5902,22 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             if resume_available:
                 valid_choices.append("2")
             choice = Prompt.ask(
-                "[bold yellow]Sélectionner une option[/bold yellow]",
+                "[bold yellow]Select an option[/bold yellow]",
                 choices=valid_choices,
                 default="1",
             )
         else:
             print("\n=== Validation Lab ===")
-            print("1. Lancer une nouvelle session")
+            print("1. Start a new session")
             if resume_available:
-                print("2. Reprendre une session")
+                print("2. Resume a session")
             else:
-                print("2. Reprendre une session (aucune disponible)")
-            print("0. Retour au menu principal")
-            raw_choice = input("Choix: ").strip() or "1"
+                print("2. Resume a session (none available)")
+            print("0. Back to main menu")
+            raw_choice = input("Choice: ").strip() or "1"
             if raw_choice in {"0", "1", "2"}:
                 if raw_choice == "2" and not resume_available:
-                    print("Aucune session disponible pour reprise.")
+                    print("No session available to resume.")
                     raw_choice = "1"
                 choice = raw_choice
             else:
@@ -9665,77 +9665,77 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 ```
 
 ## Before You Dive In
-- Create or pick a workspace folder that contains your data (for example `data/customer_reviews.csv`) and prompts (`prompts/`).
-- Hosted models (OpenAI, Anthropic, Google, etc.) need API keys in environment variables. Local models (Ollama, Llama.cpp) must be running before you start LLMTool.
+- Create or pick a workspace folder that contains your data (for example `data/political_statements.csv` or `data/survey_responses.csv`) and prompts (`prompts/`).
+- **Five LLM providers are supported**: OpenAI, Anthropic, Google, Ollama (local), and Llama.cpp (local). Hosted models need API keys in environment variables. Local models must be running before you start LLMTool.
 - Persistent configuration lives in `~/.llm_tool/`; reusable execution profiles live in `~/.llmtool/profiles/`.
 - The banner at launch tells you which GPUs/CPUs are available, which LLM providers are detected, and how many datasets were found in the current directory.
 
 ## Mode 1 - The Annotator (Zero-Shot Lab)
 **Purpose**: Turn raw text into AI-generated annotations you can export for human review or training.
 
-1. Choose **Smart Annotate**. Provide a session name (e.g. `customer_reviews_20250304_101500`). LLMTool creates matching folders in `annotations_output/` and `logs/`.
-2. Dataset detection proposes text columns (e.g. `review_body`) and ID columns. Confirm or override.
-3. Load prompts: select `prompts/sentiment_prompt.txt`, optionally add prefixes (like `p1_`). If you need help designing a prompt, run the built-in Social Science Prompt Wizard.
-4. Pick a model: `openai:gpt-4o-mini`, `anthropic:claude-3-haiku`, or a local model such as `ollama:llama3.2`. LLMTool validates that the provider is reachable.
+1. Choose **Smart Annotate**. Provide a session name (e.g. `political_statements_20250304_101500`). LLMTool creates matching folders in `annotations_output/` and `logs/`.
+2. Dataset detection proposes text columns (e.g. `statement_text`, `article_content`, `response_text`) and ID columns. Confirm or override.
+3. Load prompts: select `prompts/political_stance_prompt.txt` or `prompts/topic_classification_prompt.txt`, optionally add prefixes (like `p1_`). If you need help designing a prompt, run the built-in Social Science Prompt Wizard.
+4. Pick a model from **5 supported providers**: `openai:gpt-4o-mini`, `anthropic:claude-3-haiku`, `google:gemini-1.5-flash`, or local models like `ollama:llama3.2` or `llama.cpp:mixtral`. LLMTool validates that the provider is reachable.
 5. Configure execution: batch size, retry budget (five JSON repairs max per record), incremental save cadence, and export formats (CSV, JSONL, Label Studio, Doccano).
 6. Start annotation. The live panel shows successes, retries, and skipped rows. Checkpoints are written every few dozen rows so you can resume if the run stops.
 
-**Hard-coded example**  
-Input file: `data/customer_reviews.csv` (`review_id`, `review_body`)  
+**Hard-coded example**
+Input file: `data/political_statements.csv` (`statement_id`, `statement_text`, `speaker`, `party`)
 Output files:
-- `annotations_output/20250304_101500_customer_reviews/data/customer_reviews_annotated.csv`
-- `annotations_output/20250304_101500_customer_reviews/exports/labelstudio/customer_reviews.jsonl`
+- `annotations_output/20250304_101500_political_statements/data/political_statements_annotated.csv`
+- `annotations_output/20250304_101500_political_statements/exports/labelstudio/political_statements.jsonl`
 - `annotations_output/.../prompts/` contains a frozen copy of every prompt used.
 
 ## Mode 2 - The Annotator Factory (Pipeline Orchestrator)
 **Purpose**: Chain annotation, cleaning, language detection, dataset splitting, and training hand-off.
 
-1. Load a dataset (such as `data/support_tickets.parquet`). A quality report checks missing values, language consistency, and existing labels.
+1. Load a dataset (such as `data/survey_responses.parquet` or `data/interview_transcripts.csv`). A quality report checks missing values, language consistency, and existing labels.
 2. The factory can reuse your last Annotator configuration or guide you through a fresh setup.
 3. Once annotation completes, the pipeline normalizes outputs into `text`, `label`, `confidence`, `language_detected`, and optional metadata columns.
 4. Configure training splits (default 80/10/10 stratified) and choose a validation sampling strategy (e.g. confidence-weighted).
 5. The pipeline writes train-ready files to `logs/annotator_factory/<session_id>/train_ready/`, plus a detailed JSON report capturing class balance, language stats, and prompt provenance.
 6. Optional final step: launch the Training Arena immediately using the freshly prepared data.
 
-**Hard-coded example**  
-`logs/annotator_factory/factory_session_20250304_111000/train_ready/support_tickets_train.csv`  
+**Hard-coded example**
+`logs/annotator_factory/factory_session_20250304_111000/train_ready/survey_responses_train.csv`
 `logs/annotator_factory/.../reports/factory_report.json`
 
 ## Mode 3 - Training Arena (Model Benchmarking Studio)
 **Purpose**: Train and compare 50+ transformer models, including multilingual, long-document, and multi-label options.
 
-1. Point to a supervised dataset (for example the `support_tickets_train.csv` produced by the factory).
+1. Point to a supervised dataset (for example the `survey_responses_train.csv` produced by the factory).
 2. Select the text column, label column(s), and optional multi-label or hierarchical fields.
 3. Review automatic diagnostics: token-length histograms, language detection, imbalance warnings. The tool recommends long-document models if >20% of samples exceed 512 tokens.
 4. Choose token strategies (truncation, sliding window, dynamic padding) and multilingual handling (shared model vs per-language training).
 5. Pick candidate architectures such as `bert-base-multilingual-cased`, `xlm-roberta-large`, `longformer-base-4096`, and configure epochs (default 3), reinforcement learning toggles, and batch sizes (auto-adjusted to GPU memory).
 6. Monitor the rich console: per-epoch metrics, live confusion matrices, macro/micro F1, precision and recall. Artifacts (logs, charts, checkpoints) are stored in `logs/training_arena/<session_id>/`.
 
-**Hard-coded example**  
-`logs/training_arena/support_ticket_models/models/xlm-roberta-large-best/` – best-performing checkpoint  
-`logs/training_arena/support_ticket_models/reports/model_rankings.csv` – side-by-side comparison
+**Hard-coded example**
+`logs/training_arena/political_discourse_models/models/xlm-roberta-large-best/` – best-performing checkpoint
+`logs/training_arena/political_discourse_models/reports/model_rankings.csv` – side-by-side comparison
 
 ## Mode 4 - BERT Annotation Studio (Production Inference)
 **Purpose**: Run trained models at scale with GPU/CPU parallelism, confidence scoring, and export options.
 
-1. Choose a checkpoint directory (e.g. `logs/training_arena/support_ticket_models/models/xlm-roberta-large-best/`).
-2. Select a data source: file (`data/new_support_tickets.csv`), PostgreSQL query, or JSONL export.
+1. Choose a checkpoint directory (e.g. `logs/training_arena/political_discourse_models/models/xlm-roberta-large-best/`).
+2. Select a data source: file (`data/new_survey_responses.csv`), PostgreSQL query, or JSONL export.
 3. Configure inference settings: batch size, confidence thresholds, calibration, and export targets (CSV, JSONL, SQL).
 4. Optional extras: deduplicate by ID, normalize languages, persist logits and top-k alternatives.
 5. Results are saved under `logs/annotation_studio/<session_id>/scored/` with an `inference_report.json` summarizing throughput and class distributions.
 
-**Hard-coded example**  
-`logs/annotation_studio/bert_session_20250304_150000/scored/new_support_tickets_predictions.csv`
+**Hard-coded example**
+`logs/annotation_studio/bert_session_20250304_150000/scored/survey_responses_predictions.csv`
 
 ## Mode 5 - Validation Lab (Quality Control Workshop)
 **Purpose**: Audit and compare annotation sources (LLM vs human, double annotation, etc.).
 
 - Draw stratified samples (by class, by confidence intervals) for manual review.
-- Compute agreement metrics: Cohen’s Kappa, accuracy, precision/recall per label.
+- Compute agreement metrics: Cohen's Kappa, accuracy, precision/recall per label.
 - Highlight discrepancies where two annotators or runs disagree on the same `case_id`.
 
-**Hard-coded example**  
-Input: `annotations_output/20250304_101500_customer_reviews/data/customer_reviews_annotated.csv` vs `data/customer_reviews_validated.csv`  
+**Hard-coded example**
+Input: `annotations_output/20250304_101500_political_statements/data/political_statements_annotated.csv` vs `data/political_statements_validated.csv`
 Output: `logs/validation_lab/quality_review_20250304/report/comparison_summary.json`
 
 ## Mode 6 - Resume Center (Sessions & Configuration Vault)
@@ -9743,10 +9743,10 @@ Output: `logs/validation_lab/quality_review_20250304/report/comparison_summary.j
 
 - Displays status (`RUNNING`, `COMPLETED`, `FAILED`), last executed step, key metrics, and timestamps for Annotator, Factory, Training Arena, and BERT Studio sessions.
 - Offers quick actions: resume exactly where you stopped (e.g. relaunch Training Arena at Step 11) or clone configuration into a brand-new session.
-- Stores configuration profiles (e.g. `~/.llmtool/profiles/baseline_sentiment.json`) so you can reload prompts, parameters, and notes without retyping them.
+- Stores configuration profiles (e.g. `~/.llmtool/profiles/political_discourse_config.json`) so you can reload prompts, parameters, and notes without retyping them.
 
-**Hard-coded example**  
-Selecting `factory_session_20250304_111000` reopens the Annotator Factory at the dataset splitting step; choosing `baseline_sentiment` restores the saved configuration for reuse on `data/customer_reviews_march.csv`.
+**Hard-coded example**
+Selecting `factory_session_20250304_111000` reopens the Annotator Factory at the dataset splitting step; choosing `political_discourse_config` restores the saved configuration for reuse on `data/political_statements_new.csv`.
 
 ## Mode 7 - Documentation & Help (You Are Here)
 - Use this screen whenever you need a refresher on workflows, file locations, or troubleshooting steps.

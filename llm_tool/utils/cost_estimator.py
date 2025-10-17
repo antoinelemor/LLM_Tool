@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
+import math
 
 import pandas as pd
 
@@ -85,6 +86,12 @@ class CostEstimate:
 DEFAULT_PROMPT_HEADER = "\n\nText to analyze:\n"
 DEFAULT_OUTPUT_TOKENS_FALLBACK = 0.5  # Fallback ratio of max_tokens when we lack schema info
 TOKENS_PER_JSON_FIELD = 12  # Heuristic for small JSON responses per key
+
+OPENAI_BATCH_MAX_FILE_BYTES = 512 * 1024 * 1024  # 512 MB documented limit
+OPENAI_BATCH_MAX_INPUT_TOKENS = 50_000_000  # documented soft limit for batch submissions
+OPENAI_BATCH_APPROX_BYTES_PER_TOKEN = 4.5  # empirical factor based on JSONL payloads
+OPENAI_BATCH_APPROX_JSON_OVERHEAD_BYTES = 200  # metadata per request (custom_id, method, etc.)
+OPENAI_BATCH_APPROX_TOKEN_OVERHEAD = 32  # safety margin for system tokens
 
 
 def _serialize_token_stats(result: TokenAnalysisResult) -> Dict[str, Any]:
@@ -316,6 +323,56 @@ def estimate_annotation_cost(
     per_request_output_tokens = output_tokens_estimated / request_count if request_count else 0.0
     per_request_cost = total_cost / request_count if request_count else 0.0
 
+    batching_info: Dict[str, Any] = {
+        "request_count": request_count,
+        "approx_input_tokens": int(input_tokens),
+        "approx_tokens_per_request": float(per_request_input_tokens),
+    }
+
+    provider_lower = pricing.provider.lower()
+    if provider_lower == "openai" and request_count:
+        approx_input_bytes = int(
+            input_tokens * OPENAI_BATCH_APPROX_BYTES_PER_TOKEN
+            + request_count * OPENAI_BATCH_APPROX_JSON_OVERHEAD_BYTES
+        )
+        approx_bytes_per_request = approx_input_bytes / request_count if request_count else 0.0
+        batches_by_bytes = (
+            math.ceil(approx_input_bytes / OPENAI_BATCH_MAX_FILE_BYTES)
+            if approx_input_bytes > 0
+            else 1
+        )
+        batches_by_tokens = (
+            math.ceil(input_tokens / OPENAI_BATCH_MAX_INPUT_TOKENS)
+            if input_tokens > 0
+            else 1
+        )
+        recommended_batches = max(1, batches_by_bytes, batches_by_tokens)
+        batching_info.update(
+            {
+                "approx_input_bytes": approx_input_bytes,
+                "approx_bytes_per_request": approx_bytes_per_request,
+                "max_file_bytes": OPENAI_BATCH_MAX_FILE_BYTES,
+                "max_input_tokens": OPENAI_BATCH_MAX_INPUT_TOKENS,
+                "recommended_batches": recommended_batches,
+                "requests_per_batch": math.ceil(request_count / recommended_batches),
+                "limit_bytes_triggered": approx_input_bytes > OPENAI_BATCH_MAX_FILE_BYTES,
+                "limit_tokens_triggered": input_tokens > OPENAI_BATCH_MAX_INPUT_TOKENS,
+            }
+        )
+    else:
+        batching_info.update(
+            {
+                "approx_input_bytes": None,
+                "approx_bytes_per_request": None,
+                "max_file_bytes": None,
+                "max_input_tokens": None,
+                "recommended_batches": 1,
+                "requests_per_batch": request_count,
+                "limit_bytes_triggered": False,
+                "limit_tokens_triggered": False,
+            }
+        )
+
     token_stats_summary = {
         "texts": text_stats.texts_analyzed,
         "min": int(text_stats.token_min),
@@ -462,6 +519,7 @@ def estimate_annotation_cost(
         "input_breakdown": input_breakdown,
         "pricing_extras": pricing_extras,
         "base_pricing": base_pricing,
+        "batching": batching_info,
         "component_token_stats": component_token_stats,
         "component_token_contributions": component_token_contributions,
     }
@@ -596,6 +654,32 @@ def format_cost_estimate_lines(cost_estimate: CostEstimate, *, rich_markup: bool
         if token_stats.get("requires_long_context"):
             token_stats_line += " [long context recommended]" if rich_markup else " [long context recommended]"
 
+    batching_lines: List[str] = []
+    batching = cost_estimate.assumptions.get("batching") or {}
+    if batching:
+        approx_bytes = batching.get("approx_input_bytes")
+        request_count = batching.get("request_count", cost_estimate.request_count)
+        if approx_bytes:
+            approx_mb = approx_bytes / (1024 ** 2)
+            batching_lines.append(
+                f"- Estimated batch payload: {approx_mb:.1f} MB for {int(request_count):,} request(s)"
+            )
+
+        recommended_batches = batching.get("recommended_batches", 1) or 1
+        if recommended_batches > 1:
+            requests_per_batch = batching.get("requests_per_batch") or math.ceil(
+                request_count / recommended_batches
+            )
+            batching_lines.append(
+                f"- Payload exceeds OpenAI limits → split into {recommended_batches} batch job(s)"
+                f" (~{int(requests_per_batch):,} requests/job)."
+            )
+        elif approx_bytes and batching.get("max_file_bytes"):
+            max_mb = batching["max_file_bytes"] / (1024 ** 2)
+            batching_lines.append(
+                f"- Batch payload within OpenAI limit ({max_mb:.0f} MB max/file)."
+            )
+
     lines = [header]
 
     if per_million_input is not None or per_million_completion is not None:
@@ -613,6 +697,9 @@ def format_cost_estimate_lines(cost_estimate: CostEstimate, *, rich_markup: bool
         f"- Output tokens (est.): {cost_estimate.output_tokens_estimated:,} (~${cost_estimate.output_cost:.4f})",
         total_line,
     ])
+
+    if batching_lines:
+        lines.extend(batching_lines)
 
     if token_stats_line:
         lines.append(token_stats_line)

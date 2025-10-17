@@ -46,7 +46,7 @@ BANNERS = {
             "██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║\n"
             "╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝"
         ),
-        'tagline': '🎨 Zero-Shot LLM Annotation → Label Studio/Doccano Export (Ollama/OpenAI/Claude)'
+        'tagline': '🎨 Zero-Shot LLM Annotation → Label Studio/Doccano Export (Ollama/OpenAI)'
     },
     'factory': {
         'color': 'bright_yellow',

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass
 from datetime import datetime
@@ -106,6 +107,67 @@ class ValidationLabController:
         if original_label and original_label.lower().startswith("doccano"):
             return path_obj.name
         return original_label or path_obj.name
+
+    def _clean_label_token(self, label: Any) -> str:
+        token = str(label).strip()
+        # Strip trailing punctuation that often appears in Doccano exports (e.g. "null,")
+        token = token.rstrip(",;: ")
+        return token
+
+    def _normalise_label_value(self, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return self._clean_label_token(value) or None
+
+    def _split_label_dimension_value(self, label: str, known_dimensions: Set[str]) -> Tuple[Optional[str], Optional[str]]:
+        token = self._clean_label_token(label)
+        if not token:
+            return None, None
+
+        # Prefer known dimensions to avoid ambiguous splits.
+        for dimension in sorted(known_dimensions, key=len, reverse=True):
+            prefix = f"{dimension}_"
+            if token.startswith(prefix):
+                value = token[len(prefix) :] or "present"
+                return dimension, self._normalise_label_value(value)
+            if token == dimension:
+                return dimension, "present"
+
+        if ":" in token:
+            dimension, value = token.split(":", 1)
+            return self._clean_label_token(dimension), self._normalise_label_value(value)
+
+        if "_" in token:
+            head, tail = token.split("_", 1)
+            return self._clean_label_token(head), self._normalise_label_value(tail or "present")
+
+        return token, "present"
+
+    def _has_disagreement(self, votes: Dict[str, Optional[str]]) -> bool:
+        normalised = {self._normalise_label_value(value) for value in votes.values()}
+        normalised_without_none = {value for value in normalised if value is not None}
+        if not normalised_without_none:
+            # Everyone abstained; no disagreement to surface.
+            return False
+        if len(normalised_without_none) > 1:
+            return True
+        # At least one annotator lacks a value while others provided one.
+        return None in normalised and len(normalised) > 1
+
+    def _is_probable_model_export(self, path: Path) -> bool:
+        if path.suffix.lower() != ".jsonl":
+            return False
+        try:
+            relative = path.resolve().relative_to(self._validation_data_root.resolve())
+            parts = relative.parts
+        except ValueError:
+            parts = path.resolve().parts
+        if "doccano" not in parts:
+            return False
+        doccano_idx = parts.index("doccano")
+        remaining = parts[doccano_idx + 1 :]
+        # Heuristic: model predictions live under doccano/<provider>/<model>/.../<file>.jsonl
+        return len(remaining) >= 3
 
     # --------------------------------------------------------------------- #
     # Public entrypoint
@@ -282,6 +344,18 @@ class ValidationLabController:
 
     def _display_candidates(self, session_id: str) -> List[ValidationCandidate]:
         candidates = self._collect_validation_candidates()
+        filtered: List[ValidationCandidate] = []
+        for candidate in candidates:
+            if candidate.source == "Training Arena":
+                filtered.append(candidate)
+                continue
+            path = Path(candidate.export_path)
+            if path.suffix.lower() == ".jsonl" and self._is_probable_model_export(path):
+                filtered.append(candidate)
+
+        if filtered:
+            candidates = filtered
+
         if not candidates:
             message = (
                 "\n[yellow]No validation exports detected yet.[/yellow]\n"
@@ -464,10 +538,23 @@ class ValidationLabController:
 
         options = {str(idx): candidate for idx, candidate in enumerate(candidates, 1)}
         choices = list(options.keys()) + ["skip"]
-        selection = self._ask("Select export number for Validation Lab metrics", default="skip", choices=choices)
-        if selection == "skip":
-            return None
-        return options.get(selection)
+        while True:
+            selection = self._ask("Select export number for Validation Lab metrics", default="skip", choices=choices)
+            if selection == "skip":
+                return None
+            chosen = options.get(selection)
+            if not chosen:
+                continue
+            if self._is_probable_model_export(Path(chosen.export_path)):
+                return chosen
+            warning = (
+                "\n[yellow]This export looks like a reviewer file, not model predictions.[/yellow]\n"
+                "Pick a JSONL produced by the model (usually located under a doccano/<provider>/<model>/ directory)."
+            )
+            if RICH_AVAILABLE and self.console:
+                self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
+            else:
+                print(warning.replace("[yellow]", "").replace("[/yellow]", ""))
 
     def _prepare_annotation_bundle(
         self,
@@ -1518,16 +1605,25 @@ class ValidationLabController:
     def _extract_dimension_values(self, record: Dict[str, Any]) -> Dict[str, str]:
         meta = record.get("meta") or {}
         annotation_json = meta.get("annotation_json")
+        dims: Dict[str, str] = {}
         if isinstance(annotation_json, dict):
-            dims: Dict[str, str] = {}
             for key, value in annotation_json.items():
-                if value is None:
+                normalised_value = self._normalise_label_value(value)
+                if normalised_value is None:
                     continue
-                dims[str(key)] = str(value)
-            if dims:
-                return dims
+                dims[str(key)] = normalised_value
+
         labels = record.get("labels", [])
-        return {label: "present" for label in labels}
+        if labels:
+            known_dimensions = set(dims.keys())
+            for label in labels:
+                dimension, value = self._split_label_dimension_value(label, known_dimensions)
+                if dimension is None:
+                    continue
+                known_dimensions.add(dimension)
+                dims[dimension] = value or "present"
+
+        return {dimension: value for dimension, value in dims.items() if value is not None}
 
     def _extract_join_value(self, record: Dict[str, Any], join_key: str) -> Optional[str]:
         if join_key == "text":
@@ -1581,6 +1677,139 @@ class ValidationLabController:
                 manual_paths.append(resolved)
         return manual_paths
 
+    def _export_disagreements(
+        self,
+        consensus: ConsensusBundle,
+        session_dirs: Dict[str, Path],
+        slug: str,
+        timestamp: str,
+    ) -> Optional[Dict[str, Any]]:
+        if len(consensus.annotators) <= 1:
+            return None
+
+        records_by_key, shared_keys = self._build_annotation_index(consensus.annotators, consensus.join_key)
+        if not shared_keys:
+            return None
+
+        annotator_names = [annotator.name for annotator in consensus.annotators]
+        disagreements_jsonl: List[Dict[str, Any]] = []
+        disagreements_csv: List[Dict[str, Any]] = []
+
+        consensus_lookup: Dict[str, Dict[str, Any]] = {}
+        for record in consensus.consensus_records:
+            key = self._extract_join_value(record, consensus.join_key)
+            if key:
+                consensus_lookup[key] = record
+
+        for key in sorted(shared_keys):
+            info = records_by_key[key]
+            annotator_values = info["annotator_values"]
+
+            dimension_votes: Dict[str, Dict[str, Optional[str]]] = defaultdict(dict)
+            for annotator_name, values in annotator_values.items():
+                for dimension, raw_value in values.items():
+                    dimension_votes[dimension][annotator_name] = self._normalise_label_value(raw_value)
+
+            if not dimension_votes:
+                continue
+
+            for dimension in list(dimension_votes.keys()):
+                for annotator_name in annotator_names:
+                    dimension_votes[dimension].setdefault(annotator_name, None)
+
+            disagreement_dimensions = {
+                dimension: votes for dimension, votes in dimension_votes.items() if self._has_disagreement(votes)
+            }
+
+            if not disagreement_dimensions:
+                continue
+
+            base_record = info["base_record"]
+            text = base_record.get("text", "")
+            base_meta = copy.deepcopy(base_record.get("meta", {}))
+
+            consensus_record = consensus_lookup.get(key)
+            consensus_dims = self._extract_dimension_values(consensus_record) if consensus_record else {}
+            consensus_labels = []
+            consensus_meta = {}
+            if consensus_record:
+                consensus_labels = consensus_record.get("label") or consensus_record.get("labels") or []
+                consensus_meta = consensus_record.get("meta") or {}
+
+            jsonl_meta = copy.deepcopy(base_meta)
+            jsonl_meta["disagreement"] = True
+            jsonl_meta["join_key"] = key
+            jsonl_meta["disagreement_dimensions"] = {}
+            jsonl_meta["annotator_votes"] = {}
+            if consensus_labels:
+                jsonl_meta["consensus_labels"] = consensus_labels
+            if consensus_meta:
+                jsonl_meta["consensus_meta"] = consensus_meta
+            if key in consensus.excluded_keys:
+                jsonl_meta["excluded_from_consensus"] = True
+            manual_resolution = consensus.manual_resolutions.get(key) if consensus.manual_resolutions else None
+            if manual_resolution:
+                jsonl_meta["manual_resolution"] = manual_resolution
+
+            for dimension, votes in disagreement_dimensions.items():
+                cleaned_votes = {
+                    annotator: self._normalise_label_value(value)
+                    for annotator, value in votes.items()
+                }
+                jsonl_meta["disagreement_dimensions"][dimension] = cleaned_votes
+                for annotator_name in annotator_names:
+                    jsonl_meta["annotator_votes"].setdefault(annotator_name, {})[dimension] = cleaned_votes.get(
+                        annotator_name
+                    )
+
+                consensus_value = self._normalise_label_value(consensus_dims.get(dimension))
+                for annotator_name in annotator_names:
+                    disagreements_csv.append(
+                        {
+                            "join_key": key,
+                            "dimension": dimension,
+                            "annotator": annotator_name,
+                            "value": cleaned_votes.get(annotator_name) or "",
+                            "consensus": consensus_value or "",
+                            "text": text,
+                        }
+                    )
+
+            disagreements_jsonl.append(
+                {
+                    "id": key,
+                    "text": text,
+                    "label": [],
+                    "meta": jsonl_meta,
+                }
+            )
+
+        if not disagreements_jsonl:
+            return None
+
+        reports_dir = session_dirs["reports"].resolve()
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = reports_dir / f"disagreements_{slug}_{timestamp}.csv"
+        jsonl_path = reports_dir / f"disagreements_{slug}_{timestamp}.jsonl"
+
+        csv_fieldnames = ["join_key", "dimension", "annotator", "value", "consensus", "text"]
+        with csv_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=csv_fieldnames)
+            writer.writeheader()
+            for row in disagreements_csv:
+                writer.writerow(row)
+
+        with jsonl_path.open("w", encoding="utf-8") as handle:
+            for record in disagreements_jsonl:
+                handle.write(json.dumps(record, ensure_ascii=False))
+                handle.write("\n")
+
+        return {
+            "segments": len(disagreements_jsonl),
+            "csv_path": str(csv_path),
+            "jsonl_path": str(jsonl_path),
+        }
+
     def _load_annotation_file(self, path: Path) -> List[Dict[str, Any]]:
         records: List[Dict[str, Any]] = []
         with path.open("r", encoding="utf-8") as handle:
@@ -1617,19 +1846,19 @@ class ValidationLabController:
             for item in labels_field:
                 if isinstance(item, (list, tuple)):
                     if len(item) >= 3:
-                        value = str(item[2]).strip()
+                        value = self._clean_label_token(item[2])
                         if value:
                             labels.append(value)
                 else:
-                    value = str(item).strip()
+                    value = self._clean_label_token(item)
                     if value:
                         labels.append(value)
         elif isinstance(labels_field, str):
-            value = labels_field.strip()
+            value = self._clean_label_token(labels_field)
             if value:
                 labels.append(value)
         elif labels_field is not None:
-            value = str(labels_field).strip()
+            value = self._clean_label_token(labels_field)
             if value:
                 labels.append(value)
         return labels
@@ -2023,6 +2252,9 @@ class ValidationLabController:
                 "consensus_path": str(consensus.consensus_path),
                 "join_key": consensus.join_key,
             }
+            disagreement_exports = self._export_disagreements(consensus, session_dirs, slug, timestamp)
+            if disagreement_exports:
+                stats["disagreements"] = disagreement_exports
 
         self._print_metrics_summary(candidate, manual_path, model_path, report_path, stats)
         self._update_summary_with_metrics(summary, resume_path, candidate, model_path, manual_path, report_path, stats)
@@ -2086,6 +2318,12 @@ class ValidationLabController:
             if exclusions or manual:
                 extra += f" · excluded: {exclusions} · manual_resolutions: {manual}"
             message += extra
+        disagreement_stats = stats.get("disagreements")
+        if disagreement_stats:
+            message += (
+                f"\n[cyan]Disagreements exported:[/cyan] {disagreement_stats['segments']} segment(s)"
+                f" → CSV: {disagreement_stats['csv_path']} · JSONL: {disagreement_stats['jsonl_path']}"
+            )
         if RICH_AVAILABLE and self.console:
             self.console.print(Panel.fit(Text.from_markup(message), border_style="green"))
         else:
@@ -2128,6 +2366,8 @@ class ValidationLabController:
         )
         if stats.get("consensus"):
             metrics_runs[-1]["consensus"] = stats["consensus"]
+        if stats.get("disagreements"):
+            metrics_runs[-1]["disagreements"] = stats["disagreements"]
         summary.bump_updated()
         write_summary(resume_path, summary)
 
