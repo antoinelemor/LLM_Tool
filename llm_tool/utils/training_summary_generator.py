@@ -819,6 +819,38 @@ class TrainingSummaryGenerator:
             self.session_data["errors"] = []
         self.session_data["errors"].append(f"{datetime.now().isoformat()}: {error_msg}")
 
+    def _format_label_for_legend(self, label: Any) -> str:
+        """Format labels so spreadsheet tools keep legend entries in a single column."""
+
+        def flatten_entries(value: Any) -> List[Any]:
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, (list, tuple)):
+                parts: List[Any] = []
+                for item in value:
+                    parts.extend(flatten_entries(item))
+                return parts
+            if isinstance(value, (set, frozenset)):
+                return flatten_entries(sorted(value))
+            if isinstance(value, dict):
+                formatted_items = []
+                for key, val in sorted(value.items(), key=lambda item: str(item[0])):
+                    formatted_items.append(f"{key}={val}")
+                return formatted_items
+            return [value]
+
+        pieces: List[str] = []
+        for part in flatten_entries(label):
+            text = str(part).strip()
+            if text:
+                pieces.append(text)
+
+        if not pieces:
+            return str(label)
+        if len(pieces) == 1:
+            return pieces[0]
+        return " + ".join(pieces)
+
     def _prepare_label_legend(self) -> str:
         """Prepare label legend for CSV headers."""
         legend_lines = []
@@ -828,8 +860,12 @@ class TrainingSummaryGenerator:
             label_dist = self.session_data["dataset_info"]["summary"].get("overall_label_distribution", {})
             if label_dist:
                 legend_lines.append("# LABEL LEGEND:")
-                for idx, label in enumerate(sorted(label_dist.keys()), 1):
-                    legend_lines.append(f"# {idx}. {label}: {label_dist[label]} samples")
+                formatted_entries = [
+                    (self._format_label_for_legend(label), count)
+                    for label, count in label_dist.items()
+                ]
+                for idx, (label_text, count) in enumerate(sorted(formatted_entries, key=lambda item: item[0]), 1):
+                    legend_lines.append(f"# {idx}. {label_text}: {count} samples")
                 legend_lines.append("#")
 
         return "\n".join(legend_lines) if legend_lines else ""

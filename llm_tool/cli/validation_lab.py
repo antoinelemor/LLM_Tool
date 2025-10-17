@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -8,7 +9,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import csv
 import json
 import warnings
-from collections import Counter
+from collections import Counter, defaultdict
+from itertools import combinations
 
 import numpy as np
 
@@ -26,6 +28,7 @@ except ImportError:  # pragma: no cover - rich is optional
 
 try:  # pragma: no cover - heavy dependency optional in tests
     from sklearn.metrics import (
+        cohen_kappa_score,
         hamming_loss,
         jaccard_score,
         precision_recall_fscore_support,
@@ -47,6 +50,29 @@ class ValidationCandidate:
     export_exists: bool
     validation_session_dir: Optional[str]
     updated_at: str
+
+
+@dataclass
+class AnnotatorAnnotations:
+    name: str
+    path: Path
+    records: List[Dict[str, Any]]
+    weight: float = 1.0
+
+
+@dataclass
+class ConsensusBundle:
+    method: str
+    tie_policy: str
+    consensus_path: Path
+    consensus_records: List[Dict[str, Any]]
+    annotators: List[AnnotatorAnnotations]
+    weights: Dict[str, float]
+    agreement_rows: List[Dict[str, Any]]
+    agreement_summary: Dict[str, Any]
+    excluded_keys: List[str]
+    manual_resolutions: Dict[str, Dict[str, str]]
+    join_key: str
 
 
 class ValidationLabController:
@@ -357,17 +383,18 @@ class ValidationLabController:
                 print(warning.replace("[red]", "").replace("[/red]", ""))
             return
 
-        manual_path = self._prompt_manual_file(candidate, validation_workspace, model_path)
-        if not manual_path:
+        consensus_bundle = self._prepare_annotation_bundle(candidate, validation_workspace, model_path)
+        if not consensus_bundle:
             return
 
         self._compute_metrics_for_candidate(
             candidate=candidate,
             model_path=model_path,
-            manual_path=manual_path,
+            manual_path=consensus_bundle.consensus_path,
             session_dirs=session_dirs,
             summary=summary,
             resume_path=resume_path,
+            consensus=consensus_bundle,
         )
 
     def _choose_candidate_for_metrics(self, candidates: List[ValidationCandidate]) -> Optional[ValidationCandidate]:
@@ -386,58 +413,975 @@ class ValidationLabController:
             return None
         return options.get(selection)
 
-    def _prompt_manual_file(
+    def _prepare_annotation_bundle(
         self,
         candidate: ValidationCandidate,
         workspace: Dict[str, Path],
         model_path: Path,
-    ) -> Optional[Path]:
-        manual_candidates = self._collect_manual_jsonl_candidates(model_path, workspace)
-        if manual_candidates:
-            if len(manual_candidates) == 1:
-                return manual_candidates[0]
+    ) -> Optional[ConsensusBundle]:
+        manual_candidates = self._collect_manual_jsonl_candidates(candidate, model_path, workspace)
+        annotators = self._prompt_annotation_sets(candidate, manual_candidates)
+        if not annotators:
+            return None
 
+        if len(annotators) == 1:
+            annotator = annotators[0]
+            weights = {annotator.name: annotator.weight}
+            agreement_rows: List[Dict[str, Any]] = []
+            bundle = ConsensusBundle(
+                method="single_annotator",
+                tie_policy="not_applicable",
+                consensus_path=annotator.path,
+                consensus_records=annotator.records,
+                annotators=annotators,
+                weights=weights,
+                agreement_rows=agreement_rows,
+                agreement_summary={},
+                excluded_keys=[],
+                manual_resolutions={},
+                join_key="auto",
+            )
+            return bundle
+
+        join_key, overlap = self._determine_join_key_for_annotations(annotators)
+        if not join_key:
+            warning = (
+                "\n[yellow]Impossible de trouver un identifiant commun entre les fichiers d'annotation.[/yellow]\n"
+                "Vérifiez que les exports Doccano proviennent du même jeu de données et contiennent les mêmes métadonnées."
+            )
             if RICH_AVAILABLE and self.console:
-                table = Table(title="Validated JSONL candidates", border_style="cyan")
+                self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
+            else:
+                print(warning.replace("[yellow]", "").replace("[/yellow]", ""))
+            return None
+
+        preview_samples = self._collect_annotation_preview_examples(annotators, join_key)
+        method, weights = self._choose_consensus_method(annotators, preview_samples, overlap)
+        if method is None:
+            return None
+
+        if method == "weighted_consensus":
+            weights = self._prompt_annotator_weights(annotators, weights)
+        else:
+            weights = {annotator.name: 1.0 for annotator in annotators}
+
+        aggregation = self._aggregate_annotations(
+            annotators=annotators,
+            join_key=join_key,
+            method=method,
+            weights=weights,
+        )
+        if aggregation is None:
+            return None
+
+        tie_policy, manual_resolutions, excluded_keys = self._resolve_consensus_ties(
+            consensus_map=aggregation["consensus_map"],
+            tie_cases=aggregation["tie_cases"],
+            join_key=join_key,
+            annotators=annotators,
+            records_by_key=aggregation["records_by_key"],
+        )
+        manual_resolutions = {key: dict(value) for key, value in manual_resolutions.items()}
+        excluded_keys = list(dict.fromkeys(excluded_keys))
+        consensus_records = self._finalise_consensus_records(
+            consensus_map=aggregation["consensus_map"],
+            records_by_key=aggregation["records_by_key"],
+            excluded_keys=excluded_keys,
+            manual_resolutions=manual_resolutions,
+            method=method,
+            tie_policy=tie_policy,
+            weights=weights,
+        )
+
+        if not consensus_records:
+            warning = (
+                "\n[yellow]Aucune donnée n'est restée après la résolution des égalités.[/yellow]\n"
+                "Impossible de calculer un jeu de référence commun."
+            )
+            if RICH_AVAILABLE and self.console:
+                self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
+            else:
+                print(warning.replace("[yellow]", "").replace("[/yellow]", ""))
+            return None
+
+        consensus_path = self._write_consensus_file(
+            candidate=candidate,
+            workspace=workspace,
+            method=method,
+            records=consensus_records,
+        )
+
+        agreement_rows, agreement_summary = self._compute_agreement_metrics(
+            annotators=annotators,
+            records_by_key=aggregation["records_by_key"],
+            excluded_keys=excluded_keys,
+        )
+
+        bundle = ConsensusBundle(
+            method=method,
+            tie_policy=tie_policy,
+            consensus_path=consensus_path,
+            consensus_records=consensus_records,
+            annotators=annotators,
+            weights=weights,
+            agreement_rows=agreement_rows,
+            agreement_summary=agreement_summary,
+            excluded_keys=excluded_keys,
+            manual_resolutions=manual_resolutions,
+            join_key=join_key,
+        )
+        return bundle
+
+    def _prompt_annotation_sets(
+        self,
+        candidate: ValidationCandidate,
+        manual_candidates: List[Path],
+    ) -> List[AnnotatorAnnotations]:
+        annotators: List[AnnotatorAnnotations] = []
+        remaining = list(manual_candidates)
+
+        if not remaining:
+            message = (
+                "\n[yellow]Aucun export validé trouvé pour cette session.[/yellow]\n"
+                "Déposez vos JSONL Doccano validés dans le dossier de validation avant de poursuivre."
+            )
+            if RICH_AVAILABLE and self.console:
+                self.console.print(Panel.fit(Text.from_markup(message), border_style="yellow"))
+            else:
+                print(message.replace("[yellow]", "").replace("[/yellow]", ""))
+            return []
+
+        while remaining:
+            if RICH_AVAILABLE and self.console:
+                table = Table(
+                    title=f"Exports annotés disponibles · {candidate.session_name or candidate.session_id}",
+                    border_style="cyan",
+                )
                 table.add_column("#", justify="right", style="cyan", width=4)
-                table.add_column("File", style="white")
-                for idx, path in enumerate(manual_candidates, 1):
-                    table.add_row(str(idx), str(path))
+                table.add_column("Fichier", style="white")
+                table.add_column("Aperçu des labels", style="magenta")
+                for idx, path in enumerate(remaining, 1):
+                    preview = self._summarise_label_preview(path)
+                    table.add_row(str(idx), str(path), preview)
                 self.console.print(table)
             else:
-                print("\nValidated JSONL candidates:")
-                for idx, path in enumerate(manual_candidates, 1):
-                    print(f"  {idx}. {path}")
+                print("\nExports annotés disponibles :")
+                for idx, path in enumerate(remaining, 1):
+                    preview = self._summarise_label_preview(path)
+                    print(f"  {idx}. {path} · {preview}")
 
-            choices = [str(idx) for idx in range(1, len(manual_candidates) + 1)] + ["back"]
-            selection = self._ask("Select validated JSONL to compare", default="1", choices=choices)
-            if selection == "back":
-                return None
-            return manual_candidates[int(selection) - 1]
+            choices = [str(idx) for idx in range(1, len(remaining) + 1)]
+            if annotators:
+                choices.append("done")
+            selection = self._ask(
+                "Sélectionner un fichier d'annotations (ou 'done' pour terminer)",
+                default="done" if annotators else "1",
+                choices=choices,
+            )
+            if selection == "done":
+                break
+            try:
+                index = int(selection) - 1
+            except ValueError:
+                continue
+            if index < 0 or index >= len(remaining):
+                continue
 
-        hint = workspace["doccano"]
-        message = (
-            f"\n[yellow]No validated JSONL found in[/yellow] [white]{hint}[/white].\n"
-            "Export the reviewed annotations from Doccano and copy the JSONL into this folder before computing metrics.\n"
+            path = remaining.pop(index)
+            default_name = f"Annotateur {len(annotators) + 1}"
+            annotator_name = self._ask(
+                f"Nommer l'annotateur pour {path.name}",
+                default=default_name,
+                choices=None,
+            ).strip() or default_name
+            if any(existing.name == annotator_name for existing in annotators):
+                suffix = 2
+                base_name = annotator_name
+                while any(existing.name == annotator_name for existing in annotators):
+                    annotator_name = f"{base_name}_{suffix}"
+                    suffix += 1
+
+            try:
+                records = self._load_annotation_file(path)
+            except Exception as exc:  # pragma: no cover - defensive
+                if self.logger:
+                    self.logger.error("Impossible de charger %s: %s", path, exc)
+                continue
+
+            annotators.append(AnnotatorAnnotations(name=annotator_name, path=path, records=records))
+
+        if not annotators:
+            return []
+        return annotators
+
+    def _summarise_label_preview(self, path: Path, limit: int = 3) -> str:
+        labels: Counter = Counter()
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                for _, raw_line in zip(range(limit), handle):
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    data = json.loads(line)
+                    extracted = self._extract_labels(data)
+                    labels.update(extracted)
+        except Exception:
+            return "prévisualisation indisponible"
+        if not labels:
+            return "0 label"
+        preview = ", ".join(label for label, _ in labels.most_common(limit))
+        return f"{preview}"
+
+    def _determine_join_key_for_annotations(
+        self,
+        annotators: List[AnnotatorAnnotations],
+    ) -> Tuple[str, int]:
+        if not annotators:
+            return "", 0
+
+        priority_keys = [
+            "source_id",
+            "row_id",
+            "meta_id",
+            "transcript_speaker_id+sentence_id",
+            "transcript_sentence_id",
+            "example_id",
+            "id",
+            "text",
+        ]
+
+        key_presence: Dict[str, List[Set[str]]] = defaultdict(list)
+        for annotator in annotators:
+            for key in priority_keys:
+                values: Set[str] = set()
+                for record in annotator.records:
+                    value = self._extract_join_value(record, key)
+                    if value:
+                        values.add(value)
+                if values:
+                    key_presence[key].append(values)
+
+        best_key = ""
+        best_overlap = 0
+        for key in priority_keys:
+            value_sets = key_presence.get(key, [])
+            if len(value_sets) < len(annotators):
+                continue
+            overlap = set.intersection(*value_sets)
+            overlap_size = len(overlap)
+            if overlap_size > best_overlap:
+                best_key = key
+                best_overlap = overlap_size
+
+        if not best_key and key_presence.get("text"):
+            best_key = "text"
+            overlap_sets = key_presence["text"]
+            if len(overlap_sets) == len(annotators):
+                best_overlap = len(set.intersection(*overlap_sets))
+
+        return best_key, best_overlap
+
+    def _collect_annotation_preview_examples(
+        self,
+        annotators: List[AnnotatorAnnotations],
+        join_key: str,
+        limit: int = 3,
+    ) -> List[Dict[str, Any]]:
+        records_by_key, shared_keys = self._build_annotation_index(annotators, join_key)
+        examples: List[Dict[str, Any]] = []
+        for key in list(shared_keys)[:limit]:
+            info = records_by_key[key]
+            text = info["base_record"].get("text", "")
+            snippet = text if len(text) <= 180 else text[:177] + "…"
+            annotator_values = []
+            for annotator in annotators:
+                values = info["annotator_values"].get(annotator.name, {})
+                annotator_values.append({"annotator": annotator.name, "values": values})
+            examples.append({"key": key, "text": snippet, "annotators": annotator_values})
+        return examples
+
+    def _choose_consensus_method(
+        self,
+        annotators: List[AnnotatorAnnotations],
+        preview_samples: List[Dict[str, Any]],
+        overlap: int,
+    ) -> Tuple[Optional[str], Dict[str, float]]:
+        if not annotators:
+            return None, {}
+
+        examples_markup = ""
+        if preview_samples:
+            lines = []
+            for sample in preview_samples:
+                lines.append(f"[bold]{sample['key']}[/bold] · {sample['text']}")
+                for annotator in sample["annotators"]:
+                    formatted = ", ".join(f"{dim}={value}" for dim, value in annotator["values"].items())
+                    lines.append(f"    • {annotator['annotator']}: {formatted or '∅'}")
+                lines.append("")
+            examples_markup = "\n".join(lines).rstrip()
+
+        explanation = (
+            "\n[cyan]Options de consensus pour construire un gold standard[/cyan]\n"
+            "1. [bold]Majorité simple[/bold] – chaque annotateur compte pour 1. On retient, pour chaque dimension, la valeur la plus fréquente.\n"
+            "2. [bold]Consensus pondéré[/bold] – vous attribuez un poids à chaque annotateur ; les voix sont pondérées avant de choisir la valeur.\n"
+            "3. [bold]Méthode probabiliste (Dawid–Skene)[/bold] – on estime automatiquement la fiabilité de chaque annotateur pour inférer l'étiquette réelle.\n"
+            f"\n[dim]Segments communs détectés:[/dim] {overlap:,}"
         )
         if RICH_AVAILABLE and self.console:
-            self.console.print(Panel.fit(Text.from_markup(message), border_style="yellow"))
+            panel = Panel.fit(
+                Text.from_markup(explanation + ("\n\n" + examples_markup if examples_markup else "")),
+                border_style="cyan",
+            )
+            self.console.print(panel)
         else:
-            print(message.replace("[yellow]", "").replace("[/yellow]", "").replace("[white]", "").replace("[/white]", ""))
+            print(
+                explanation.replace("[cyan]", "")
+                .replace("[/cyan]", "")
+                .replace("[bold]", "")
+                .replace("[/bold]", "")
+                .replace("[dim]", "")
+                .replace("[/dim]", "")
+            )
+            if examples_markup:
+                print(examples_markup.replace("[bold]", "").replace("[/bold]", ""))
 
-        manual_input = self._ask("Path to validated JSONL (leave blank to skip)", default="")
-        manual_input = manual_input.strip()
-        if not manual_input:
-            return None
-        manual_path = Path(manual_input).expanduser()
-        if not manual_path.exists():
-            error = f"\n[red]File not found:[/red] {manual_path}"
+        selection = self._ask(
+            "Choisir la méthode (1=Majorité, 2=Pondéré, 3=Dawid-Skene)",
+            default="1",
+            choices=["1", "2", "3"],
+        )
+        default_weights = {annotator.name: 1.0 for annotator in annotators}
+        if selection == "1":
+            return "majority_vote", default_weights
+        if selection == "2":
+            return "weighted_consensus", default_weights
+        if selection == "3":
+            return "dawid_skene", default_weights
+        return None, {}
+
+    def _prompt_annotator_weights(
+        self,
+        annotators: List[AnnotatorAnnotations],
+        initial: Dict[str, float],
+    ) -> Dict[str, float]:
+        weights = dict(initial)
+        for annotator in annotators:
+            while True:
+                raw = self._ask(
+                    f"Poids relatif pour {annotator.name} (>=0)",
+                    default=str(weights.get(annotator.name, 1.0)),
+                    choices=None,
+                ).strip()
+                try:
+                    value = float(raw)
+                    if value < 0:
+                        raise ValueError
+                    weights[annotator.name] = value
+                    annotator.weight = value
+                    break
+                except ValueError:
+                    warning = "[yellow]Valeur invalide, merci de saisir un nombre positif.[/yellow]"
+                    if RICH_AVAILABLE and self.console:
+                        self.console.print(Text.from_markup(warning))
+                    else:
+                        print(warning.replace("[yellow]", "").replace("[/yellow]", ""))
+        if all(weight == 0 for weight in weights.values()):
+            for annotator in annotators:
+                weights[annotator.name] = 1.0
+        return weights
+
+    def _aggregate_annotations(
+        self,
+        annotators: List[AnnotatorAnnotations],
+        join_key: str,
+        method: str,
+        weights: Dict[str, float],
+    ) -> Optional[Dict[str, Any]]:
+        records_by_key, shared_keys = self._build_annotation_index(annotators, join_key)
+        if not shared_keys:
+            warning = (
+                "\n[yellow]Les annotateurs sélectionnés ne partagent aucun segment commun.[/yellow]\n"
+                "Vérifiez que les fichiers proviennent du même export."
+            )
             if RICH_AVAILABLE and self.console:
-                self.console.print(Panel.fit(Text.from_markup(error), border_style="red"))
+                self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
             else:
-                print(error.replace("[red]", "").replace("[/red]", ""))
+                print(warning.replace("[yellow]", "").replace("[/yellow]", ""))
             return None
-        return manual_path.resolve()
+
+        if method == "dawid_skene":
+            return self._aggregate_dawid_skene(annotators, records_by_key, shared_keys)
+        return self._aggregate_majority_or_weighted(annotators, records_by_key, shared_keys, method, weights)
+
+    def _aggregate_majority_or_weighted(
+        self,
+        annotators: List[AnnotatorAnnotations],
+        records_by_key: Dict[str, Dict[str, Any]],
+        shared_keys: Set[str],
+        method: str,
+        weights: Dict[str, float],
+    ) -> Dict[str, Any]:
+        consensus_map: Dict[str, Dict[str, str]] = {}
+        tie_cases: List[Dict[str, Any]] = []
+
+        for key in shared_keys:
+            info = records_by_key[key]
+            consensus: Dict[str, str] = {}
+            dims = set()
+            for annotator in annotators:
+                dims.update(info["annotator_values"].get(annotator.name, {}).keys())
+
+            for dimension in sorted(dims):
+                vote_counter: Dict[str, float] = defaultdict(float)
+                for annotator in annotators:
+                    value = info["annotator_values"].get(annotator.name, {}).get(dimension)
+                    if value is None:
+                        continue
+                    weight = 1.0 if method == "majority_vote" else weights.get(annotator.name, 1.0)
+                    vote_counter[value] += weight
+
+                if not vote_counter:
+                    continue
+
+                items = list(vote_counter.items())
+                items.sort(key=lambda item: (-item[1], item[0]))
+                top_score = items[0][1]
+                tied_values = [value for value, score in items if math.isclose(score, top_score, rel_tol=1e-9, abs_tol=1e-12)]
+
+                if len(tied_values) == 1:
+                    consensus[dimension] = tied_values[0]
+                else:
+                    tie_cases.append(
+                        {
+                            "key": key,
+                            "dimension": dimension,
+                            "options": dict(vote_counter),
+                            "annotator_values": info["annotator_values"],
+                            "text": info["base_record"].get("text", ""),
+                        }
+                    )
+
+            if consensus:
+                consensus_map[key] = consensus
+
+        return {
+            "consensus_map": consensus_map,
+            "tie_cases": tie_cases,
+            "records_by_key": records_by_key,
+            "shared_keys": shared_keys,
+        }
+
+    def _aggregate_dawid_skene(
+        self,
+        annotators: List[AnnotatorAnnotations],
+        records_by_key: Dict[str, Dict[str, Any]],
+        shared_keys: Set[str],
+    ) -> Dict[str, Any]:
+        consensus_map: Dict[str, Dict[str, str]] = {}
+        tie_cases: List[Dict[str, Any]] = []
+
+        # Collect dimensions
+        dimensions: Set[str] = set()
+        for info in records_by_key.values():
+            for annotator_values in info["annotator_values"].values():
+                dimensions.update(annotator_values.keys())
+
+        for dimension in sorted(dimensions):
+            item_values: Dict[str, Dict[str, str]] = {}
+            for key in shared_keys:
+                info = records_by_key[key]
+                per_item: Dict[str, str] = {}
+                for annotator in annotators:
+                    value = info["annotator_values"].get(annotator.name, {}).get(dimension)
+                    if value is not None:
+                        per_item[annotator.name] = value
+                if per_item:
+                    item_values[key] = per_item
+
+            if not item_values:
+                continue
+
+            consensus, posterior = self._run_dawid_skene(item_values, annotators)
+            for key, value in consensus.items():
+                if value is not None:
+                    consensus_map.setdefault(key, {})[dimension] = value
+                else:
+                    probabilities = posterior.get(key, {})
+                    tie_cases.append(
+                        {
+                            "key": key,
+                            "dimension": dimension,
+                            "options": probabilities,
+                            "annotator_values": records_by_key[key]["annotator_values"],
+                            "text": records_by_key[key]["base_record"].get("text", ""),
+                        }
+                    )
+
+        return {
+            "consensus_map": consensus_map,
+            "tie_cases": tie_cases,
+            "records_by_key": records_by_key,
+            "shared_keys": shared_keys,
+        }
+
+    def _resolve_consensus_ties(
+        self,
+        consensus_map: Dict[str, Dict[str, str]],
+        tie_cases: List[Dict[str, Any]],
+        join_key: str,
+        annotators: List[AnnotatorAnnotations],
+        records_by_key: Dict[str, Dict[str, Any]],
+    ) -> Tuple[str, Dict[str, Dict[str, str]], List[str]]:
+        if not tie_cases:
+            return "no_ties", {}, []
+
+        warning = (
+            f"\n[yellow]{len(tie_cases)} segment(s) présentent une égalité parfaite entre annotateurs.[/yellow]\n"
+            "Souhaitez-vous résoudre ces cas manuellement (en choisissant la bonne étiquette) ?\n"
+            "Sinon, les segments concernés seront exclus du jeu de référence."
+        )
+        if RICH_AVAILABLE and self.console:
+            self.console.print(Panel.fit(Text.from_markup(warning), border_style="yellow"))
+        else:
+            print(warning.replace("[yellow]", "").replace("[/yellow]", ""))
+
+        choice = self._ask("Résoudre manuellement les égalités ?", default="y", choices=["y", "n", "Y", "N"])
+        manual_resolutions: Dict[str, Dict[str, str]] = defaultdict(dict)
+        excluded_keys: List[str] = []
+
+        if choice.lower() != "y":
+            for case in tie_cases:
+                key = case["key"]
+                if key in consensus_map:
+                    consensus_map.pop(key, None)
+                excluded_keys.append(key)
+            return "excluded", manual_resolutions, excluded_keys
+
+        for case in tie_cases:
+            key = case["key"]
+            if key in excluded_keys:
+                continue
+            info = records_by_key.get(key)
+            if not info:
+                continue
+
+            header = (
+                f"\n[cyan]Segment {join_key}: {key}[/cyan]\n"
+                f"{info['base_record'].get('text', '')}\n"
+                f"[dim]{case['dimension']}[/dim]"
+            )
+            if RICH_AVAILABLE and self.console:
+                self.console.print(Panel.fit(Text.from_markup(header), border_style="cyan"))
+            else:
+                print(header.replace("[cyan]", "").replace("[/cyan]", "").replace("[dim]", "").replace("[/dim]", ""))
+
+            for annotator in annotators:
+                value = case["annotator_values"].get(annotator.name, {}).get(case["dimension"], "∅")
+                line = f"  • {annotator.name}: {value}"
+                if RICH_AVAILABLE and self.console:
+                    self.console.print(Text(line))
+                else:
+                    print(line)
+
+            options = case["options"]
+            if isinstance(options, dict):
+                option_items = sorted(options.items(), key=lambda item: (-item[1], str(item[0])))
+            else:
+                option_items = sorted(options.items(), key=lambda item: (-item[1], str(item[0])))
+
+            option_map: Dict[str, str] = {}
+            for idx, (value, score) in enumerate(option_items, 1):
+                option_label = f"{value} (score {round(score, 3)})"
+                option_map[str(idx)] = value
+                if RICH_AVAILABLE and self.console:
+                    self.console.print(Text(f"  [{idx}] {option_label}"))
+                else:
+                    print(f"  [{idx}] {option_label}")
+            option_map["exclude"] = "__exclude__"
+            selection = self._ask("Choisir la valeur de consensus ou 'exclude'", default="1", choices=list(option_map.keys()))
+            selected = option_map.get(selection)
+            if selected == "__exclude__":
+                excluded_keys.append(key)
+                consensus_map.pop(key, None)
+            elif selected:
+                consensus_map.setdefault(key, {})[case["dimension"]] = selected
+                manual_resolutions[key][case["dimension"]] = selected
+
+        return "manual_resolution", manual_resolutions, excluded_keys
+
+    def _finalise_consensus_records(
+        self,
+        consensus_map: Dict[str, Dict[str, str]],
+        records_by_key: Dict[str, Dict[str, Any]],
+        excluded_keys: List[str],
+        manual_resolutions: Dict[str, Dict[str, str]],
+        method: str,
+        tie_policy: str,
+        weights: Dict[str, float],
+    ) -> List[Dict[str, Any]]:
+        records: List[Dict[str, Any]] = []
+        excluded_set = set(excluded_keys)
+        for key, consensus in consensus_map.items():
+            if key in excluded_set:
+                continue
+            info = records_by_key.get(key)
+            if not info:
+                continue
+            base_record = info["base_record"]
+            meta = dict(base_record.get("meta", {}))
+            consensus_meta = {
+                "method": method,
+                "tie_policy": tie_policy,
+                "values": consensus,
+                "manual_resolutions": manual_resolutions.get(key, {}),
+                "annotator_weights": weights,
+            }
+            meta["consensus"] = consensus_meta
+
+            labels: List[str] = []
+            dimension_label_map: Dict[str, Dict[str, str]] = info.get("dimension_label_map", {})
+            for dimension, value in consensus.items():
+                label_lookup = dimension_label_map.get(dimension, {})
+                label = label_lookup.get(value, f"{dimension}_{value}")
+                labels.append(label)
+
+            record = {
+                "text": base_record.get("text", ""),
+                "labels": labels,
+                "meta": meta,
+            }
+            records.append(record)
+        return records
+
+    def _write_consensus_file(
+        self,
+        candidate: ValidationCandidate,
+        workspace: Dict[str, Path],
+        method: str,
+        records: List[Dict[str, Any]],
+    ) -> Path:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        slug = self._slugify(candidate.dataset or candidate.session_name or candidate.session_id)
+        gold_dir = (workspace["root"] / "gold").resolve()
+        gold_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"consensus_{method}_{slug}_{timestamp}.jsonl"
+        path = gold_dir / filename
+        with path.open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False))
+                handle.write("\n")
+        return path
+
+    def _compute_agreement_metrics(
+        self,
+        annotators: List[AnnotatorAnnotations],
+        records_by_key: Dict[str, Dict[str, Any]],
+        excluded_keys: List[str],
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        agreement_rows: List[Dict[str, Any]] = []
+        agreement_summary: Dict[str, Any] = {"pairwise_kappa": {}, "krippendorff_alpha": {}}
+
+        valid_keys = [key for key in records_by_key.keys() if key not in set(excluded_keys)]
+        if not valid_keys or len(annotators) < 2:
+            return agreement_rows, agreement_summary
+
+        # Collect dimensions present across valid keys
+        dimensions: Set[str] = set()
+        for key in valid_keys:
+            info = records_by_key[key]
+            for values in info["annotator_values"].values():
+                dimensions.update(values.keys())
+
+        # Pairwise Cohen's kappa
+        for ann_a, ann_b in combinations(annotators, 2):
+            overall_a: List[str] = []
+            overall_b: List[str] = []
+            for dimension in dimensions:
+                ratings_a: List[str] = []
+                ratings_b: List[str] = []
+                for key in valid_keys:
+                    info = records_by_key[key]
+                    value_a = info["annotator_values"].get(ann_a.name, {}).get(dimension)
+                    value_b = info["annotator_values"].get(ann_b.name, {}).get(dimension)
+                    if value_a is None or value_b is None:
+                        continue
+                    ratings_a.append(value_a)
+                    ratings_b.append(value_b)
+                    overall_a.append(value_a)
+                    overall_b.append(value_b)
+                if len(ratings_a) >= 2:
+                    kappa = cohen_kappa_score(ratings_a, ratings_b)
+                    agreement_rows.append(
+                        {
+                            "scope": "agreement",
+                            "segment": f"{ann_a.name}|{ann_b.name}::{dimension}",
+                            "precision": "",
+                            "recall": "",
+                            "f1": "",
+                            "jaccard": "",
+                            "exact_match": "",
+                            "hamming_loss": "",
+                            "support_true": "",
+                            "support_pred": "",
+                            "samples": len(ratings_a),
+                            "match_key": "",
+                            "model_file": "",
+                            "manual_file": "",
+                            "cohen_kappa": round(float(kappa), 6),
+                            "krippendorff_alpha": "",
+                            "consensus_method": "",
+                            "tie_policy": "",
+                            "annotator_weights": "",
+                            "aggregation_notes": "",
+                        }
+                    )
+            if len(overall_a) >= 2:
+                kappa = cohen_kappa_score(overall_a, overall_b)
+                agreement_summary["pairwise_kappa"][f"{ann_a.name}|{ann_b.name}"] = round(float(kappa), 6)
+
+        # Krippendorff's alpha per dimension
+        for dimension in dimensions:
+            data: Dict[str, List[str]] = {}
+            for key in valid_keys:
+                info = records_by_key[key]
+                ratings: List[str] = []
+                for annotator in annotators:
+                    value = info["annotator_values"].get(annotator.name, {}).get(dimension)
+                    ratings.append(value)
+                if any(rating is not None for rating in ratings):
+                    data[key] = ratings
+            alpha = self._compute_krippendorff_alpha_nominal(data)
+            agreement_summary["krippendorff_alpha"][dimension] = round(float(alpha), 6) if not math.isnan(alpha) else ""
+            agreement_rows.append(
+                {
+                    "scope": "agreement",
+                    "segment": f"alpha::{dimension}",
+                    "precision": "",
+                    "recall": "",
+                    "f1": "",
+                    "jaccard": "",
+                    "exact_match": "",
+                    "hamming_loss": "",
+                    "support_true": "",
+                    "support_pred": "",
+                    "samples": len(data),
+                    "match_key": "",
+                    "model_file": "",
+                    "manual_file": "",
+                    "cohen_kappa": "",
+                    "krippendorff_alpha": round(float(alpha), 6) if not math.isnan(alpha) else "",
+                    "consensus_method": "",
+                    "tie_policy": "",
+                    "annotator_weights": "",
+                    "aggregation_notes": "",
+                }
+            )
+
+        return agreement_rows, agreement_summary
+
+    def _compute_krippendorff_alpha_nominal(self, data: Dict[str, List[Optional[str]]]) -> float:
+        if not data:
+            return float("nan")
+
+        category_counts: Counter = Counter()
+        observed_disagreement = 0.0
+        pair_count = 0.0
+
+        for ratings in data.values():
+            present = [rating for rating in ratings if rating is not None]
+            n = len(present)
+            if n <= 1:
+                continue
+            pair_count += n * (n - 1)
+            for rating in present:
+                category_counts[rating] += 1
+            for i in range(n):
+                for j in range(i + 1, n):
+                    if present[i] != present[j]:
+                        observed_disagreement += 2.0
+
+        if pair_count == 0:
+            return float("nan")
+        Do = observed_disagreement / pair_count
+
+        total = sum(category_counts.values())
+        if total <= 1:
+            return float("nan")
+        expected = 0.0
+        for count in category_counts.values():
+            expected += count * (total - count)
+        De = expected / (total * (total - 1))
+        if De == 0:
+            return 1.0
+        return 1.0 - (Do / De)
+
+    def _format_weight_summary(self, weights: Dict[str, float]) -> str:
+        if not weights:
+            return ""
+        parts = [f"{name}:{round(weight, 3)}" for name, weight in sorted(weights.items())]
+        return "; ".join(parts)
+
+    def _build_annotation_index(
+        self,
+        annotators: List[AnnotatorAnnotations],
+        join_key: str,
+    ) -> Tuple[Dict[str, Dict[str, Any]], Set[str]]:
+        records_by_key: Dict[str, Dict[str, Any]] = {}
+        key_sets: List[Set[str]] = []
+        for annotator in annotators:
+            mapping: Dict[str, Dict[str, Any]] = {}
+            keys: Set[str] = set()
+            for record in annotator.records:
+                key_value = self._extract_join_value(record, join_key)
+                if not key_value:
+                    continue
+                if key_value not in mapping:
+                    mapping[key_value] = record
+                    keys.add(key_value)
+            annotator._key_mapping = mapping  # type: ignore[attr-defined]
+            key_sets.append(keys)
+
+        shared_keys = set.intersection(*key_sets) if key_sets else set()
+        for key in shared_keys:
+            base_record: Optional[Dict[str, Any]] = None
+            dimension_label_map: Dict[str, Dict[str, str]] = defaultdict(dict)
+            annotator_values: Dict[str, Dict[str, str]] = {}
+            for annotator in annotators:
+                mapping = getattr(annotator, "_key_mapping", {})
+                record = mapping.get(key)
+                if not record:
+                    continue
+                if base_record is None:
+                    base_record = record
+                dims = self._extract_dimension_values(record)
+                annotator_values[annotator.name] = dims
+                for dimension, value in dims.items():
+                    label_candidate = f"{dimension}_{value}"
+                    label = label_candidate
+                    for existing_label in record.get("labels", []):
+                        if existing_label == label_candidate or existing_label.endswith(f"_{value}"):
+                            label = existing_label
+                            break
+                    dimension_label_map.setdefault(dimension, {})[value] = label
+            if base_record:
+                records_by_key[key] = {
+                    "base_record": base_record,
+                    "dimension_label_map": dimension_label_map,
+                    "annotator_values": annotator_values,
+                }
+        return records_by_key, shared_keys
+
+    def _run_dawid_skene(
+        self,
+        item_values: Dict[str, Dict[str, str]],
+        annotators: List[AnnotatorAnnotations],
+        max_iter: int = 30,
+        tol: float = 1e-4,
+    ) -> Tuple[Dict[str, Optional[str]], Dict[str, Dict[str, float]]]:
+        items = list(item_values.keys())
+        annotator_names = [annotator.name for annotator in annotators]
+        worker_index = {name: idx for idx, name in enumerate(annotator_names)}
+
+        categories = sorted({value for values in item_values.values() for value in values.values()})
+        if not categories:
+            return {}, {}
+        if len(categories) == 1:
+            category = categories[0]
+            return {item: category for item in items}, {item: {category: 1.0} for item in items}
+
+        category_index = {value: idx for idx, value in enumerate(categories)}
+        n_items = len(items)
+        n_workers = len(annotator_names)
+        n_categories = len(categories)
+
+        # Responses per item
+        responses: List[List[Tuple[int, int]]] = [[] for _ in range(n_items)]
+        for item_idx, item in enumerate(items):
+            for annotator_name, value in item_values[item].items():
+                worker = worker_index[annotator_name]
+                cat = category_index[value]
+                responses[item_idx].append((worker, cat))
+
+        gamma = np.full((n_items, n_categories), 1.0 / n_categories)
+        pi = np.full(n_categories, 1.0 / n_categories)
+        confusion = np.full((n_workers, n_categories, n_categories), 1.0 / n_categories)
+
+        for _ in range(max_iter):
+            gamma_prev = gamma.copy()
+            # E-step
+            for item_idx in range(n_items):
+                posterior = pi.copy()
+                for worker, observed_cat in responses[item_idx]:
+                    posterior *= confusion[worker, :, observed_cat]
+                if posterior.sum() == 0.0:
+                    posterior = np.full(n_categories, 1.0 / n_categories)
+                else:
+                    posterior /= posterior.sum()
+                gamma[item_idx] = posterior
+
+            # M-step
+            pi = gamma.sum(axis=0)
+            pi /= pi.sum()
+
+            for worker in range(n_workers):
+                conf = np.zeros((n_categories, n_categories))
+                for item_idx in range(n_items):
+                    observed = [cat for w, cat in responses[item_idx] if w == worker]
+                    if not observed:
+                        continue
+                    for cat in observed:
+                        conf[:, cat] += gamma[item_idx]
+                row_sums = conf.sum(axis=1, keepdims=True)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    conf = np.divide(
+                        conf,
+                        row_sums,
+                        out=np.full_like(conf, 1.0 / n_categories),
+                        where=row_sums > 0,
+                    )
+                confusion[worker] = conf
+
+            if np.max(np.abs(gamma - gamma_prev)) < tol:
+                break
+
+        consensus: Dict[str, Optional[str]] = {}
+        posterior_map: Dict[str, Dict[str, float]] = {}
+        for item_idx, item in enumerate(items):
+            probs = gamma[item_idx]
+            top = probs.max()
+            winners = [categories[idx] for idx, value in enumerate(probs) if math.isclose(value, top, rel_tol=1e-9, abs_tol=1e-12)]
+            consensus[item] = winners[0] if len(winners) == 1 else None
+            posterior_map[item] = {categories[idx]: float(probs[idx]) for idx in range(n_categories)}
+
+        return consensus, posterior_map
+
+    def _extract_dimension_values(self, record: Dict[str, Any]) -> Dict[str, str]:
+        meta = record.get("meta") or {}
+        annotation_json = meta.get("annotation_json")
+        if isinstance(annotation_json, dict):
+            dims: Dict[str, str] = {}
+            for key, value in annotation_json.items():
+                if value is None:
+                    continue
+                dims[str(key)] = str(value)
+            if dims:
+                return dims
+        labels = record.get("labels", [])
+        return {label: "present" for label in labels}
+
+    def _extract_join_value(self, record: Dict[str, Any], join_key: str) -> Optional[str]:
+        if join_key == "text":
+            return self._normalise_text(record.get("text", ""))
+        meta = record.get("meta") or {}
+        value = meta.get(join_key)
+        if value is None:
+            if join_key == "id":
+                fallback = meta.get("example_id") or meta.get("source_id")
+                if fallback is not None:
+                    return str(fallback)
+            return None
+        return str(value)
+
 
     def _collect_manual_jsonl_candidates(
         self,
@@ -631,6 +1575,7 @@ class ValidationLabController:
         session_dirs: Dict[str, Path],
         summary: SessionSummary,
         resume_path: Path,
+        consensus: Optional[ConsensusBundle] = None,
     ) -> None:
         try:
             model_records = self._load_annotation_file(model_path)
@@ -745,6 +1690,12 @@ class ValidationLabController:
                 "match_key": join_key,
                 "model_file": str(model_path),
                 "manual_file": str(manual_path),
+                "cohen_kappa": "",
+                "krippendorff_alpha": "",
+                "consensus_method": "",
+                "tie_policy": "",
+                "annotator_weights": "",
+                "aggregation_notes": "",
             }
         )
         rows.append(
@@ -763,6 +1714,12 @@ class ValidationLabController:
                 "match_key": join_key,
                 "model_file": str(model_path),
                 "manual_file": str(manual_path),
+                "cohen_kappa": "",
+                "krippendorff_alpha": "",
+                "consensus_method": "",
+                "tie_policy": "",
+                "annotator_weights": "",
+                "aggregation_notes": "",
             }
         )
         rows.append(
@@ -781,6 +1738,12 @@ class ValidationLabController:
                 "match_key": join_key,
                 "model_file": str(model_path),
                 "manual_file": str(manual_path),
+                "cohen_kappa": "",
+                "krippendorff_alpha": "",
+                "consensus_method": "",
+                "tie_policy": "",
+                "annotator_weights": "",
+                "aggregation_notes": "",
             }
         )
         rows.append(
@@ -799,6 +1762,12 @@ class ValidationLabController:
                 "match_key": join_key,
                 "model_file": str(model_path),
                 "manual_file": str(manual_path),
+                "cohen_kappa": "",
+                "krippendorff_alpha": "",
+                "consensus_method": "",
+                "tie_policy": "",
+                "annotator_weights": "",
+                "aggregation_notes": "",
             }
         )
 
@@ -819,8 +1788,35 @@ class ValidationLabController:
                     "match_key": join_key,
                     "model_file": str(model_path),
                     "manual_file": str(manual_path),
+                    "cohen_kappa": "",
+                    "krippendorff_alpha": "",
+                    "consensus_method": "",
+                    "tie_policy": "",
+                    "annotator_weights": "",
+                    "aggregation_notes": "",
                 }
             )
+
+        if consensus:
+            weight_summary = self._format_weight_summary(consensus.weights)
+            excluded = len(consensus.excluded_keys)
+            manual_total = sum(len(v) for v in consensus.manual_resolutions.values())
+            aggregation_notes = f"excluded={excluded};manual={manual_total}" if (excluded or manual_total) else ""
+            for row in rows:
+                if row.get("scope") != "agreement":
+                    row["consensus_method"] = consensus.method
+                    row["tie_policy"] = consensus.tie_policy
+                    row["annotator_weights"] = weight_summary
+                    row["aggregation_notes"] = aggregation_notes
+
+        if consensus and consensus.agreement_rows:
+            weight_summary = self._format_weight_summary(consensus.weights)
+            for agreement_row in consensus.agreement_rows:
+                agreement_row.setdefault("consensus_method", consensus.method)
+                agreement_row.setdefault("tie_policy", consensus.tie_policy)
+                agreement_row.setdefault("annotator_weights", weight_summary)
+                agreement_row.setdefault("aggregation_notes", "")
+            rows.extend(consensus.agreement_rows)
 
         self._write_metrics_csv(rows, report_path)
 
@@ -844,6 +1840,17 @@ class ValidationLabController:
             "join_key": join_key,
             "timestamp_iso": timestamp_iso,
         }
+        if consensus:
+            stats["consensus"] = {
+                "method": consensus.method,
+                "tie_policy": consensus.tie_policy,
+                "weights": {name: float(weight) for name, weight in consensus.weights.items()},
+                "excluded_keys": consensus.excluded_keys,
+                "manual_resolutions": consensus.manual_resolutions,
+                "agreement_summary": consensus.agreement_summary,
+                "consensus_path": str(consensus.consensus_path),
+                "join_key": consensus.join_key,
+            }
 
         self._print_metrics_summary(candidate, manual_path, model_path, report_path, stats)
         self._update_summary_with_metrics(summary, resume_path, candidate, model_path, manual_path, report_path, stats)
@@ -864,6 +1871,12 @@ class ValidationLabController:
             "match_key",
             "model_file",
             "manual_file",
+            "cohen_kappa",
+            "krippendorff_alpha",
+            "consensus_method",
+            "tie_policy",
+            "annotator_weights",
+            "aggregation_notes",
         ]
         report_path.parent.mkdir(parents=True, exist_ok=True)
         with report_path.open("w", encoding="utf-8", newline="") as handle:
@@ -888,6 +1901,19 @@ class ValidationLabController:
             f"[cyan]Micro F1:[/cyan] {stats['micro_f1']:.3f}  |  [cyan]Macro F1:[/cyan] {stats['macro_f1']:.3f}  |  [cyan]Weighted F1:[/cyan] {stats['weighted_f1']:.3f}\n"
             f"[cyan]Exact match:[/cyan] {stats['exact_match']:.3f}  |  [cyan]Hamming loss:[/cyan] {stats['hamming_loss']:.3f}"
         )
+        consensus_stats = stats.get("consensus")
+        if consensus_stats:
+            weight_summary = self._format_weight_summary(consensus_stats.get("weights", {}))
+            exclusions = len(consensus_stats.get("excluded_keys", []))
+            manual = sum(len(v) for v in consensus_stats.get("manual_resolutions", {}).values())
+            extra = (
+                f"\n[cyan]Consensus:[/cyan] {consensus_stats.get('method')} · tie={consensus_stats.get('tie_policy')}"
+            )
+            if weight_summary:
+                extra += f" · poids: {weight_summary}"
+            if exclusions or manual:
+                extra += f" · exclus: {exclusions} · résolutions: {manual}"
+            message += extra
         if RICH_AVAILABLE and self.console:
             self.console.print(Panel.fit(Text.from_markup(message), border_style="green"))
         else:
@@ -928,6 +1954,8 @@ class ValidationLabController:
                 "hamming_loss": round(stats["hamming_loss"], 6),
             }
         )
+        if stats.get("consensus"):
+            metrics_runs[-1]["consensus"] = stats["consensus"]
         summary.bump_updated()
         write_summary(resume_path, summary)
 
