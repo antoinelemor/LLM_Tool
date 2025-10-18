@@ -1568,24 +1568,37 @@ class ModelTrainer:
             # CRITICAL: Calculate total training time
             total_training_time = time.time() - training_start_time
 
-            # Aggregate results
+            # Aggregate results - CRITICAL: Handle partial success
+            # Even if some models fail, we should return metrics for successful ones
             if trained_models:
                 # CRITICAL: Convert np.mean results to Python floats to avoid numpy scalar issues
-                avg_f1 = float(np.mean([m.performance_metrics.get('f1_macro', 0) for m in trained_models.values()]))
-                avg_acc = float(np.mean([m.performance_metrics.get('accuracy', 0) for m in trained_models.values()]))
+                # Only average over models that have non-zero metrics (successful training)
+                successful_models = [m for m in trained_models.values()
+                                   if m.performance_metrics.get('f1_macro', 0) > 0
+                                   or m.performance_metrics.get('accuracy', 0) > 0]
 
-                self.logger.info(f"Multi-label training complete!")
-                self.logger.info(f"Models trained: {len(trained_models)}/{len(trained_models)}")
+                if successful_models:
+                    avg_f1 = float(np.mean([m.performance_metrics.get('f1_macro', 0) for m in successful_models]))
+                    avg_acc = float(np.mean([m.performance_metrics.get('accuracy', 0) for m in successful_models]))
+
+                    self.logger.info(f"Multi-label training complete!")
+                    self.logger.info(f"Models trained: {len(successful_models)}/{len(trained_models)} successful")
+                else:
+                    # All models failed but we still have model objects
+                    avg_f1 = 0.0
+                    avg_acc = 0.0
+                    self.logger.warning("All models failed training - returning zero metrics")
 
                 # Extract per-category metrics for detailed reporting (especially for benchmark)
                 category_metrics = {}
                 for model_name, model_info in trained_models.items():
+                    # Include all models, even failed ones (with 0 metrics)
                     category_metrics[model_name] = {
                         'f1_macro': model_info.performance_metrics.get('f1_macro', 0),
                         'accuracy': model_info.performance_metrics.get('accuracy', 0),
                         'precision': model_info.performance_metrics.get('precision', 0),
                         'recall': model_info.performance_metrics.get('recall', 0),
-                        'model_path': model_info.model_path
+                        'model_path': model_info.model_path if hasattr(model_info, 'model_path') else ''
                     }
 
                 # CRITICAL FIX: If single category, return its detailed metrics directly

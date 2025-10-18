@@ -3637,6 +3637,10 @@ def _run_benchmark_mode(
         create_benchmark_dataset,
         compare_model_results
     )
+    from llm_tool.utils.benchmark_helpers import (
+        split_benchmark_by_category,
+        validate_label_sufficiency
+    )
     from llm_tool.trainers.model_trainer import ModelTrainer, TrainingConfig
     from rich.prompt import IntPrompt
     from rich.table import Table
@@ -3644,6 +3648,8 @@ def _run_benchmark_mode(
     import tempfile
     from pathlib import Path
     import json
+    import pandas as pd
+    from datetime import datetime
 
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
     self.console.print("[bold cyan]           🎯 BENCHMARK MODE - Model Comparison                [/bold cyan]")
@@ -4555,26 +4561,59 @@ def _run_benchmark_mode(
         global_completed_epochs = 0
 
         # ============================================================
-        # CRITICAL: Validate and filter insufficient labels BEFORE training
+        # CRITICAL: Use robust preprocessing and validation from benchmark_helpers
         # ============================================================
-        try:
-            benchmark_file, was_filtered = self._validate_and_filter_insufficient_labels(
-                input_file=str(benchmark_file),
-                strategy=bundle.strategy,
-                min_samples=2,
-                auto_remove=False,  # Ask user for confirmation
-                train_by_language=train_by_language  # CRITICAL: Language-aware validation for multilingual
-            )
-            if was_filtered:
-                self.console.print(f"[green]✓ Using filtered benchmark dataset[/green]\n")
-        except ValueError as e:
-            # User cancelled or validation failed
-            self.console.print(f"[red]{e}[/red]")
+        from llm_tool.utils.benchmark_helpers import (
+            validate_label_sufficiency,
+            split_benchmark_by_category,
+            aggregate_benchmark_results
+        )
+
+        # Load and validate the benchmark data
+        import pandas as pd
+        benchmark_data = pd.read_json(benchmark_file, lines=True)
+
+        # Validate label sufficiency with more robust handling
+        self.console.print("[yellow]🔍 Validating benchmark data...[/yellow]")
+        validated_data, validation_report = validate_label_sufficiency(
+            benchmark_data,
+            'labels',
+            min_samples_per_class=3,  # More robust with 3 samples minimum
+            strategy='multi-label'
+        )
+
+        # Display validation report
+        if validation_report['removed_classes']:
+            self.console.print(f"[yellow]⚠️  Removed {len(validation_report['removed_classes'])} insufficient classes:[/yellow]")
+            for removed in validation_report['removed_classes'][:5]:  # Show first 5
+                self.console.print(f"    • {removed['label']}_{removed['class']}: {removed['count']} samples")
+            if len(validation_report['removed_classes']) > 5:
+                self.console.print(f"    ... and {len(validation_report['removed_classes']) - 5} more")
+
+        if validation_report['removed_samples'] > 0:
+            self.console.print(f"[yellow]⚠️  Removed {validation_report['removed_samples']} samples with only insufficient classes[/yellow]")
+
+        self.console.print(f"[green]✓ Validated dataset: {validation_report['final_samples']} samples[/green]")
+
+        # Save validated data
+        validated_benchmark_file = Path(tmpdir) / "benchmark_validated.jsonl"
+        validated_data.to_json(validated_benchmark_file, orient='records', lines=True, force_ascii=False)
+        benchmark_file = validated_benchmark_file
+
+        # Split data by category for independent training
+        category_datasets = split_benchmark_by_category(
+            validated_data,
+            'labels',
+            selected_benchmark_categories
+        )
+
+        self.console.print(f"\n[cyan]📊 Category Distribution:[/cyan]")
+        for category, cat_data in category_datasets.items():
+            self.console.print(f"  • {category}: {len(cat_data)} samples")
+
+        if not category_datasets:
+            self.console.print(f"[red]❌ No valid data after preprocessing[/red]")
             return None
-        except Exception as e:
-            self.logger.warning(f"Label validation failed: {e}")
-            # Continue with original file if validation fails
-            pass
 
         # Run benchmark for each model
         for idx, model_id in enumerate(all_models_to_test, 1):
@@ -4647,40 +4686,86 @@ def _run_benchmark_mode(
                     if benchmark_rl_params.get('reinforced_epochs') is not None:
                         train_params['reinforced_epochs'] = benchmark_rl_params['reinforced_epochs']
 
-                # Train
-                result = trainer.train(train_params)
+                # Train with category-wise approach for robustness
+                category_results = {}
 
-                # NOTE: global_completed_epochs is tracked internally by the trainer via display.global_completed_epochs
-                # Each epoch increments the counter automatically, accounting for all categories and reinforced learning
-                # No manual increment needed here - the next model will receive the updated count via the display object
+                # Train on each category independently
+                for cat_idx, (category, cat_data) in enumerate(category_datasets.items(), 1):
+                    self.console.print(f"\n[cyan]Training on category {cat_idx}/{len(category_datasets)}: {category}[/cyan]")
 
+                    # Save category-specific data
+                    cat_file = Path(tmpdir) / f"benchmark_{category}.jsonl"
+                    cat_data.to_json(cat_file, orient='records', lines=True, force_ascii=False)
+
+                    # Update training params for this category
+                    cat_train_params = train_params.copy()
+                    cat_train_params['input_file'] = str(cat_file)
+                    cat_train_params['output_dir'] = str(model_output_dir / category)
+
+                    try:
+                        # Train on this category
+                        cat_result = trainer.train(cat_train_params)
+                        category_results[category] = cat_result
+
+                        # Display category result
+                        cat_f1 = cat_result.get('f1_macro', cat_result.get('f1', 0))
+                        cat_acc = cat_result.get('accuracy', 0)
+
+                        if cat_f1 > 0 or cat_acc > 0:
+                            self.console.print(f"  ✓ {category}: F1={cat_f1:.3f}, Acc={cat_acc:.3f}")
+                        else:
+                            self.console.print(f"  ✗ {category}: Training failed")
+
+                    except Exception as e:
+                        self.console.print(f"  ✗ {category}: Error - {str(e)}")
+                        category_results[category] = {'error': str(e)}
+
+                # Aggregate results across categories
+                result = aggregate_benchmark_results(category_results, model_id)
+
+                # Store aggregated result
                 benchmark_results[model_id] = result
 
-                # Extract metrics with backward compatibility for different key names
-                f1_score = result.get('f1_macro', result.get('f1', result.get('best_f1_macro', 0)))
-                accuracy = result.get('accuracy', result.get('best_accuracy', 0))
+                # Extract aggregated metrics
+                f1_score = result.get('f1_macro', 0)
+                accuracy = result.get('accuracy', 0)
 
+                # Display overall results
                 self.console.print(f"\n[green]✓ Training Complete[/green]")
-                self.console.print(f"  • Overall F1-Score: [bold green]{f1_score:.3f}[/bold green]")
-                self.console.print(f"  • Overall Accuracy: [bold green]{accuracy:.3f}[/bold green]")
-                if 'training_time' in result:
-                    self.console.print(f"  • Time: [cyan]{result['training_time']:.1f}s[/cyan]")
 
-                # Display per-category scores if available (multi-label benchmark)
-                if 'trained_models' in result and result['trained_models']:
-                    self.console.print(f"\n  [dim]Per-Category Scores:[/dim]")
-                    # Get category details from model trainer
-                    # trained_models is a dict of {model_name: model_path} but we need metrics
-                    # This will be enhanced in the results display section
+                if result.get('successful_categories', 0) > 0:
+                    self.console.print(f"  • Overall F1-Score: [bold green]{f1_score:.3f}[/bold green]")
+                    self.console.print(f"  • Overall Accuracy: [bold green]{accuracy:.3f}[/bold green]")
+
+                    if result.get('partial_success'):
+                        self.console.print(f"  • [yellow]⚠️  Partial success: {result['successful_categories']}/{result['successful_categories'] + result['failed_categories']} categories trained[/yellow]")
+
+                    if 'training_time' in result:
+                        self.console.print(f"  • Time: [cyan]{result['training_time']:.1f}s[/cyan]")
+
+                    # Display per-category details
+                    if result.get('category_details'):
+                        self.console.print(f"\n  [dim]Per-Category Scores:[/dim]")
+                        for cat_detail in result['category_details']:
+                            self.console.print(f"    • {cat_detail['category']}: F1={cat_detail['f1_macro']:.3f}, Acc={cat_detail['accuracy']:.3f}")
+                else:
+                    self.console.print(f"  • [red]All categories failed for this model[/red]")
 
             except Exception as e:
                 self.console.print(f"\n[red]❌ Error during training: {str(e)}[/red]")
-                # Add placeholder result
+                # Add placeholder result with normalized keys
                 benchmark_results[model_id] = {
-                    'best_f1_macro': 0.0,
-                    'accuracy': 0.0,
+                    'f1_macro': 0.0,          # Normalized key for compare_model_results
+                    'accuracy': 0.0,          # Normalized key
+                    'f1_0': 0.0,             # For binary classification
+                    'f1_1': 0.0,             # For binary classification
+                    'precision': 0.0,         # Overall precision
+                    'recall': 0.0,           # Overall recall
                     'training_time': 0,
-                    'error': str(e)
+                    'error': str(e),
+                    # Keep backward compatibility
+                    'best_f1_macro': 0.0,
+                    'best_accuracy': 0.0
                 }
 
     # ======================== STEP 6: Display Results ========================
@@ -8646,6 +8731,7 @@ def _training_studio_make_output_dir(self, prefix: str) -> Path:
     Returns:
         Path to created directory
     """
+    from datetime import datetime
     directory = self.settings.paths.models_dir / f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     directory.mkdir(parents=True, exist_ok=True)
     return directory

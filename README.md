@@ -24,8 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/🤖_GPT--4-supported-00A67E?style=flat-square" alt="GPT-4"/>
-  <img src="https://img.shields.io/badge/🧠_Claude-supported-8A2BE2?style=flat-square" alt="Claude"/>
+  <img src="https://img.shields.io/badge/🤖_GPT--5-supported-00A67E?style=flat-square" alt="GPT-4"/>
   <img src="https://img.shields.io/badge/🦙_Ollama-FREE-FF6B35?style=flat-square" alt="Ollama"/>
   <img src="https://img.shields.io/badge/⚡_BERT-training-FFD700?style=flat-square" alt="BERT"/>
   <img src="https://img.shields.io/badge/🌍_75+_Languages-multilingual-00CED1?style=flat-square" alt="Multilingual"/>

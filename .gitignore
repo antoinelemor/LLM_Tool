@@ -58,9 +58,14 @@ models/
 *.bin
 *.safetensors
 *.gguf
-data/training_data/
-data/annotations/
-data/raw/
+
+# Data directory - ignore all contents but keep the directory
+data/*
+!data/.gitkeep
+
+# Prompts directory - ignore all contents but keep the directory
+prompts/*
+!prompts/.gitkeep
 
 # Logs
 logs/
@@ -83,3 +88,4 @@ Thumbs.db
 
 # Project specific
 paper/results/scripts/extract_results_from_csv.py
+
