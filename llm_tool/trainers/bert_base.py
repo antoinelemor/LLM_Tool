@@ -154,11 +154,12 @@ class TrainingDisplay:
 
         # Class names for display (no truncation - let table handle width)
         if class_names:
-            # Multi-class: use provided class names as-is
+            # Multi-class or binary with distinct values: use provided class names as-is
             # Ensure all class names are strings
             self.class_names = [str(name) for name in class_names]
         elif label_value and num_labels == 2:
-            # Binary with label value: Class 0 = NOT_category, Class 1 = category
+            # Binary with label value but no class names: Class 0 = NOT_category, Class 1 = category
+            # This is for true presence/absence classification
             self.class_names = [f"NOT_{label_value}", str(label_value)]
         else:
             # Default: Class 0, Class 1, etc.

@@ -975,11 +975,19 @@ class MultiLabelTrainer:
             self.logger.info(f"🎯 Multi-class mode: {num_labels} classes - {class_names}")
         else:
             # For binary classification in one-vs-all mode, set proper class names
-            # Using the parsed label_value to create meaningful class names
-            model.num_labels = 2
-            model.class_names = [f"NOT_{label_value}", label_value]
-            if self.verbose:
-                self.logger.info(f"🎯 Binary mode for {label_name}: {model.class_names}")
+            # Check if we have actual distinct values (like _yes/_no) rather than presence/absence
+            if class_names and len(class_names) == 2:
+                # Use the actual class names provided (e.g., ['no', 'yes'])
+                model.num_labels = 2
+                model.class_names = class_names
+                if self.verbose:
+                    self.logger.info(f"🎯 Binary mode for {label_name} with distinct values: {model.class_names}")
+            else:
+                # Fall back to NOT_ pattern for true presence/absence classification
+                model.num_labels = 2
+                model.class_names = [f"NOT_{label_value}", label_value]
+                if self.verbose:
+                    self.logger.info(f"🎯 Binary mode for {label_name}: {model.class_names}")
 
         # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================
         from .model_trainer import get_model_target_languages
