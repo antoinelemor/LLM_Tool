@@ -918,19 +918,22 @@ class ModelTrainer:
             train_dataloader = model_instance.encode(
                 train_texts, train_labels,
                 batch_size=self.config.batch_size,
-                progress_bar=True
+                progress_bar=True,
+                shuffle=True  # Shuffle training data
             )
 
             val_dataloader = model_instance.encode(
                 val_texts, val_labels,
                 batch_size=self.config.batch_size,
-                progress_bar=False
+                progress_bar=False,
+                shuffle=False  # Don't shuffle validation data
             )
 
             test_dataloader = model_instance.encode(
                 test_texts, test_labels,
                 batch_size=self.config.batch_size,
-                progress_bar=False
+                progress_bar=False,
+                shuffle=False  # Don't shuffle test data
             )
 
             # Parse label name to extract key and value for display (if applicable)

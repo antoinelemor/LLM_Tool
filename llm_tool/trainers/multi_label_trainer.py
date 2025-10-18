@@ -1093,8 +1093,8 @@ class MultiLabelTrainer:
             texts_val = [s.text for s in val_samples]
             labels_val = [s.label for s in val_samples]
 
-            train_loader = model.encode(texts_train, labels_train, batch_size=self.config.batch_size, progress_bar=False)
-            val_loader = model.encode(texts_val, labels_val, batch_size=self.config.batch_size, progress_bar=False)
+            train_loader = model.encode(texts_train, labels_train, batch_size=self.config.batch_size, progress_bar=False, shuffle=True)
+            val_loader = model.encode(texts_val, labels_val, batch_size=self.config.batch_size, progress_bar=False, shuffle=False)
 
         # train model with unified run_training method (always includes full logging)
         model_path = os.path.join(self.config.output_dir, model_name)

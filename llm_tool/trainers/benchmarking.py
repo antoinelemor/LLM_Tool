@@ -463,12 +463,14 @@ class BenchmarkRunner:
             train_labels,
             batch_size=self.config.batch_size,
             progress_bar=True,
+            shuffle=True  # Shuffle training data
         )
         test_loader = model.encode(
             test_texts,
             test_labels,
             batch_size=self.config.batch_size,
             progress_bar=True,
+            shuffle=False  # Don't shuffle test data
         )
 
         # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)
@@ -1296,13 +1298,15 @@ class BenchmarkRunner:
                     filtered_train_texts,
                     filtered_train_labels,
                     batch_size=adjusted_batch_size,
-                    progress_bar=False
+                    progress_bar=False,
+                    shuffle=True  # Shuffle training data
                 )
                 test_loader = model.encode(
                     filtered_test_texts,
                     filtered_test_labels,
                     batch_size=adjusted_batch_size,
-                    progress_bar=False
+                    progress_bar=False,
+                    shuffle=False  # Don't shuffle test data
                 )
 
                 # UNIFIED: Use centralized function to set detected languages (SAME AS BENCHMARK)

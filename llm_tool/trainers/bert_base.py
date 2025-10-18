@@ -787,7 +787,8 @@ class BertBase(BertABC):
             labels: List[str | int] | None = None,
             batch_size: int = 32,
             progress_bar: bool = True,
-            add_special_tokens: bool = True
+            add_special_tokens: bool = True,
+            shuffle: bool = False
     ) -> DataLoader:
         """
         Preprocess training, test or prediction data by:
@@ -812,6 +813,9 @@ class BertBase(BertABC):
         add_special_tokens: bool, default=True
             If True, add '[CLS]' and '[SEP]' tokens.
 
+        shuffle: bool, default=False
+            If True, shuffle the data (should be True for training, False for validation/test).
+
         Returns
         -------
         dataloader: torch.utils.data.DataLoader
@@ -835,7 +839,11 @@ class BertBase(BertABC):
         # if label_mapping is not None and progress_bar:
         #     self.logger.info("Label ids mapping: %s", label_mapping)
 
-        sampler = SequentialSampler(dataset)
+        if shuffle:
+            from torch.utils.data import RandomSampler
+            sampler = RandomSampler(dataset)
+        else:
+            sampler = SequentialSampler(dataset)
         dataloader = DataLoader(dataset, sampler=sampler, batch_size=batch_size)
         return dataloader
 
