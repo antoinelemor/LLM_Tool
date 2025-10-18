@@ -59,12 +59,12 @@ models/
 *.safetensors
 *.gguf
 
-# Data directory - ignore all contents but keep the directory
-data/*
+# Data directory - ignore contents but keep the folder via .gitkeep
+data/**
 !data/.gitkeep
 
-# Prompts directory - ignore all contents but keep the directory
-prompts/*
+# Prompts directory - ignore contents but keep the folder via .gitkeep
+prompts/**
 !prompts/.gitkeep
 
 # Logs
@@ -88,4 +88,3 @@ Thumbs.db
 
 # Project specific
 paper/results/scripts/extract_results_from_csv.py
-
