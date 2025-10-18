@@ -1347,6 +1347,13 @@ class ModelTrainer:
             if 'lang' in df.columns:
                 lang_col = df['lang'].values
 
+            # Import language filtering utilities
+            from llm_tool.utils.language_filtering import (
+                filter_languages_with_sufficient_samples,
+                create_training_report,
+                save_filtered_languages_log
+            )
+
             # Filter by language if requested (for per-language training)
             filter_by_language = config.get('filter_by_language')
             if filter_by_language and lang_col is not None:
@@ -1362,6 +1369,53 @@ class ModelTrainer:
                 lang_col = df['lang'].values if 'lang' in df.columns else None
 
                 self.logger.info(f"Filtered data for language {filter_lang}: {len(df)}/{original_count} samples")
+
+            # Apply language filtering for insufficient samples
+            if lang_col is not None and config.get('enable_language_filtering', True):
+                # Check if we need to filter languages with insufficient samples
+                min_samples_per_class = config.get('min_samples_per_class', 2)
+                min_train_samples = config.get('min_train_samples', 1)
+                min_val_samples = config.get('min_val_samples', 1)
+
+                # Convert labels to strings for consistency
+                y_str = [str(label) for label in y]
+
+                # Apply language filtering
+                filtered_texts, filtered_labels, filtered_languages, filtering_report = \
+                    filter_languages_with_sufficient_samples(
+                        texts=X.tolist(),
+                        labels=y_str,
+                        languages=lang_col.tolist() if lang_col is not None else None,
+                        min_samples_per_class=min_samples_per_class,
+                        min_train_samples=min_train_samples,
+                        min_val_samples=min_val_samples
+                    )
+
+                # Log filtering results
+                if filtering_report['filtered']:
+                    self.logger.warning(f"Language filtering applied for {label_column}")
+                    self.logger.warning(f"  - Languages kept: {filtering_report['languages_kept']}")
+                    self.logger.warning(f"  - Languages dropped: {filtering_report['languages_dropped']}")
+                    self.logger.warning(f"  - Samples: {filtering_report['total_samples_before']} → {filtering_report['total_samples_after']}")
+
+                    # Save filtering log
+                    session_id = config.get('session_id', 'default')
+                    output_dir = config.get('output_dir', 'models')
+                    save_filtered_languages_log(
+                        session_id=session_id,
+                        category=label_column,
+                        languages_dropped=filtering_report['languages_dropped'],
+                        drop_reasons=filtering_report['drop_reasons'],
+                        output_dir=output_dir
+                    )
+
+                    # Update data with filtered results
+                    X = np.array(filtered_texts)
+                    y = np.array(filtered_labels)
+                    lang_col = np.array(filtered_languages) if filtered_languages else None
+
+                    # Store filtering report in config for later use
+                    config['language_filtering_report'] = filtering_report
 
             # Extract split ratios from split_config or use defaults
             split_config = config.get('split_config')

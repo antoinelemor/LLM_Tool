@@ -4707,6 +4707,14 @@ def _run_benchmark_mode(
                         cat_result = trainer.train(cat_train_params)
                         category_results[category] = cat_result
 
+                        # Check for language filtering in the result
+                        if 'language_filtering_report' in cat_result:
+                            filtering_report = cat_result['language_filtering_report']
+                            if filtering_report.get('filtered', False):
+                                self.console.print(f"  [yellow]⚠ Language filtering applied for {category}:[/yellow]")
+                                self.console.print(f"    - Kept: {', '.join(filtering_report.get('languages_kept', []))}")
+                                self.console.print(f"    - Dropped: {', '.join(filtering_report.get('languages_dropped', []))}")
+
                         # Display category result
                         cat_f1 = cat_result.get('f1_macro', cat_result.get('f1', 0))
                         cat_acc = cat_result.get('accuracy', 0)
@@ -4722,6 +4730,18 @@ def _run_benchmark_mode(
 
                 # Aggregate results across categories
                 result = aggregate_benchmark_results(category_results, model_id)
+
+                # Collect language filtering reports
+                language_filtering_summary = {}
+                for cat_name, cat_result in category_results.items():
+                    if isinstance(cat_result, dict) and 'language_filtering_report' in cat_result:
+                        filtering_report = cat_result['language_filtering_report']
+                        if filtering_report.get('filtered', False):
+                            language_filtering_summary[cat_name] = filtering_report
+
+                # Add language filtering summary to result if any filtering occurred
+                if language_filtering_summary:
+                    result['language_filtering_summary'] = language_filtering_summary
 
                 # Store aggregated result
                 benchmark_results[model_id] = result
@@ -8644,6 +8664,29 @@ def _training_studio_show_training_result(self, result: Dict[str, Any], bundle: 
 
     self.console.print(table)
 
+    # Display language filtering report if present
+    if 'language_filtering_report' in result:
+        filtering_report = result['language_filtering_report']
+        if filtering_report.get('filtered', False):
+            filter_table = Table(title="Language Filtering Applied", border_style="yellow")
+            filter_table.add_column("Info", style="cyan", width=25)
+            filter_table.add_column("Value", style="white", width=50)
+
+            filter_table.add_row("Languages kept", ', '.join(filtering_report.get('languages_kept', [])))
+            filter_table.add_row("Languages dropped", ', '.join(filtering_report.get('languages_dropped', [])))
+            filter_table.add_row("Samples before filtering", str(filtering_report.get('total_samples_before', 0)))
+            filter_table.add_row("Samples after filtering", str(filtering_report.get('total_samples_after', 0)))
+
+            # Show drop reasons for each language
+            drop_reasons = filtering_report.get('drop_reasons', {})
+            if drop_reasons:
+                for lang, reason in drop_reasons.items():
+                    details = reason.get('details', [])
+                    detail_str = ', '.join([f"{cls}({cnt})" for cls, cnt in details])
+                    filter_table.add_row(f"  {lang} dropped", f"Insufficient: {detail_str}")
+
+            self.console.print(filter_table)
+
     if bundle.strategy == "multi-label":
         metrics = result.get("metrics", {})
         per_label = metrics.get("per_label_results")
@@ -8670,6 +8713,15 @@ def _training_studio_show_benchmark_results(self, report: Dict[str, Any]) -> Non
     if not results:
         self.console.print("[yellow]No benchmark results available.[/yellow]")
         return
+
+    # Check if any language filtering was applied
+    language_filtering_summary = report.get("language_filtering_summary", {})
+    if language_filtering_summary:
+        self.console.print("\n[bold yellow]⚠ Language Filtering Applied During Benchmark[/bold yellow]")
+        for category, filter_info in language_filtering_summary.items():
+            if filter_info.get('filtered', False):
+                self.console.print(f"  • {category}: Dropped languages {', '.join(filter_info.get('languages_dropped', []))}")
+                self.console.print(f"    Kept: {', '.join(filter_info.get('languages_kept', []))}")
 
     table = Table(title="Benchmark results", border_style="green")
     table.add_column("#", style="cyan", width=5)

@@ -142,7 +142,7 @@ def safe_tolist(data: Any, column_name: Optional[str] = None) -> List[Any]:
 class DataSample:
     """Represents a single data sample with metadata."""
     text: str
-    label: Union[str, int]
+    label: Union[str, int, List[str]]  # Added List[str] to support multi-label
     id: Optional[str] = None
     lang: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -373,10 +373,20 @@ class DataLoader:
             if stratify_by_label and stratify_by_lang:
                 # Stratify by both label AND language
                 lang = sample.lang or 'unknown'
-                key = f"{sample.label}_{lang}"
+                # Handle list labels: extract first element or join them
+                if isinstance(sample.label, list):
+                    # For multi-label, use the first label or join them
+                    label_str = sample.label[0] if sample.label else 'unknown'
+                else:
+                    label_str = str(sample.label)
+                key = f"{label_str}_{lang}"
             elif stratify_by_label:
                 # Stratify by label only (CRITICAL: ensures all classes in train AND val)
-                key = str(sample.label)
+                if isinstance(sample.label, list):
+                    # For multi-label, use the first label or join them
+                    key = sample.label[0] if sample.label else 'unknown'
+                else:
+                    key = str(sample.label)
             else:
                 # Stratify by language only
                 key = sample.lang or 'unknown'
@@ -388,13 +398,52 @@ class DataLoader:
         # CRITICAL: Check absolute minimums
         insufficient_classes = {k: v for k, v in key_counts.items() if v < min_total_required}
         if insufficient_classes:
-            error_msg = (
-                f"❌ CRITICAL ERROR: Cannot split dataset - some classes have insufficient samples:\n"
-            )
-            for key, count in insufficient_classes.items():
-                error_msg += f"   • Class '{key}': {count} sample(s) (minimum required: {min_total_required})\n"
-            error_msg += f"\n   Required: at least {min_train_per_class} train + {min_val_per_class} val = {min_total_required} total per class"
-            raise ValueError(error_msg)
+            # Check if we're dealing with language-specific stratification
+            filter_languages = stratify_by_lang or any('_' in k and k.split('_')[-1] in ['de', 'en', 'fr', 'es', 'pt', 'nl'] for k in insufficient_classes.keys())
+
+            if filter_languages:
+                # Filter out insufficient classes instead of failing
+                logging.warning(
+                    f"⚠️  WARNING: Filtering out classes with insufficient samples (< {min_total_required}):"
+                )
+                for key, count in insufficient_classes.items():
+                    logging.warning(f"   • Filtering class '{key}': {count} sample(s)")
+
+                # Filter samples
+                filtered_samples = []
+                filtered_keys = []
+                classes_kept = set()
+
+                for sample, key in zip(samples, stratify_keys):
+                    if key not in insufficient_classes:
+                        filtered_samples.append(sample)
+                        filtered_keys.append(key)
+                        classes_kept.add(key)
+
+                if not filtered_samples:
+                    # If all samples would be filtered, keep the best class
+                    best_class = max(key_counts.items(), key=lambda x: x[1])[0]
+                    logging.warning(f"   → All classes insufficient. Keeping best class: {best_class}")
+                    for sample, key in zip(samples, stratify_keys):
+                        if key == best_class:
+                            filtered_samples.append(sample)
+                            filtered_keys.append(key)
+
+                logging.info(f"   → Continuing with {len(filtered_samples)} samples in {len(classes_kept)} classes")
+
+                # Update samples and stratify_keys
+                samples = filtered_samples
+                stratify_keys = filtered_keys
+                key_counts = Counter(stratify_keys)
+            else:
+                # Original behavior for non-language stratification
+                error_msg = (
+                    f"❌ CRITICAL ERROR: Cannot split dataset - some classes have insufficient samples:\n"
+                )
+                for key, count in insufficient_classes.items():
+                    error_msg += f"   • Class '{key}': {count} sample(s) (minimum required: {min_total_required})\n"
+                error_msg += f"\n   Required: at least {min_train_per_class} train + {min_val_per_class} val = {min_total_required} total per class"
+                raise ValueError(error_msg)
 
         # Check for classes at the critical minimum (exactly min_total_required)
         critical_classes = {k: v for k, v in key_counts.items() if v == min_total_required}
@@ -467,8 +516,14 @@ class DataLoader:
         # Verify minimum guarantees (sanity check)
         if stratify_by_label:
             # Check that each class has minimum in train and val
-            train_labels = Counter([str(s.label) for s in train_samples])
-            val_labels = Counter([str(s.label) for s in val_samples])
+            train_labels = Counter([
+                s.label[0] if isinstance(s.label, list) and s.label else str(s.label)
+                for s in train_samples
+            ])
+            val_labels = Counter([
+                s.label[0] if isinstance(s.label, list) and s.label else str(s.label)
+                for s in val_samples
+            ])
 
             for class_key in key_counts.keys():
                 # Extract just the label part if combined with language

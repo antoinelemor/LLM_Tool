@@ -50,10 +50,12 @@ Antoine Lemor
 
 from __future__ import annotations
 
+import ast
 import csv
 import json
 import os
 import random
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -196,6 +198,31 @@ class BenchmarkRunner:
         torch.manual_seed(self.config.random_state)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(self.config.random_state)
+
+    @staticmethod
+    def _normalize_category_name(name: str) -> str:
+        """Normalize raw category names coming from filesystem folders."""
+        cleaned = (name or "").strip()
+        if not cleaned:
+            return "category"
+
+        cleaned = cleaned.replace("\n", " ").replace("\r", " ")
+
+        if cleaned.startswith("[") and cleaned.endswith("]"):
+            try:
+                parsed = ast.literal_eval(cleaned)
+            except (ValueError, SyntaxError):
+                parsed = None
+            else:
+                if isinstance(parsed, (list, tuple)) and parsed:
+                    cleaned = str(parsed[0])
+                elif isinstance(parsed, str):
+                    cleaned = parsed
+
+        cleaned = cleaned.strip("[]'\" ")
+        cleaned = re.sub(r"\s+", "_", cleaned)
+
+        return cleaned or "category"
 
     # ------------------------------------------------------------------
     # Public API
@@ -370,7 +397,11 @@ class BenchmarkRunner:
         global_completed_epochs: Optional[int] = None,
         global_start_time: Optional[float] = None,
     ) -> Optional[int]:
-        cat_name = category_dir.name
+        raw_cat_name = category_dir.name
+        cat_name = self._normalize_category_name(raw_cat_name)
+        if cat_name != raw_cat_name:
+            self.logger.debug("Sanitized category name '%s' -> '%s'", raw_cat_name, cat_name)
+
         train_files = list((lang_dir / "train").glob("*_train.jsonl"))
         test_files = list((lang_dir / "test").glob("*_test.jsonl"))
 
