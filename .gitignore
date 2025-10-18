@@ -67,6 +67,10 @@ data/**
 prompts/**
 !prompts/.gitkeep
 
+# Validation directory - ignore contents but keep the folder via .gitkeep
+validation/**
+!validation/.gitkeep
+
 # Logs
 logs/
 training_logs/
