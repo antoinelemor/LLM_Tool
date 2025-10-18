@@ -114,6 +114,23 @@ class ValidationLabController:
         token = token.rstrip(",;: ")
         return token
 
+    def _extract_label_list(self, record: Dict[str, Any]) -> List[str]:
+        """
+        Return the raw list of labels emitted by Doccano/LLM exports.
+        Doccano sometimes serialises under `label` (singular) instead of `labels`,
+        so we normalise both entry points.
+        """
+        labels_field = record.get("labels")
+        if labels_field is None:
+            labels_field = record.get("label")
+        if labels_field is None:
+            return []
+        if isinstance(labels_field, str):
+            return [labels_field]
+        if isinstance(labels_field, (list, tuple, set)):
+            return [label for label in labels_field if label is not None]
+        return []
+
     def _normalise_label_value(self, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None
@@ -1333,6 +1350,8 @@ class ValidationLabController:
                 dimensions.update(values.keys())
 
         # Pairwise Cohen's kappa
+        missing_token = "∅"
+
         for ann_a, ann_b in combinations(annotators, 2):
             overall_a: List[str] = []
             overall_b: List[str] = []
@@ -1341,10 +1360,12 @@ class ValidationLabController:
                 ratings_b: List[str] = []
                 for key in valid_keys:
                     info = records_by_key[key]
-                    value_a = info["annotator_values"].get(ann_a.name, {}).get(dimension)
-                    value_b = info["annotator_values"].get(ann_b.name, {}).get(dimension)
-                    if value_a is None or value_b is None:
+                    raw_a = info["annotator_values"].get(ann_a.name, {}).get(dimension)
+                    raw_b = info["annotator_values"].get(ann_b.name, {}).get(dimension)
+                    if raw_a is None and raw_b is None:
                         continue
+                    value_a = raw_a if raw_a is not None else missing_token
+                    value_b = raw_b if raw_b is not None else missing_token
                     ratings_a.append(value_a)
                     ratings_b.append(value_b)
                     overall_a.append(value_a)
@@ -1385,10 +1406,15 @@ class ValidationLabController:
             for key in valid_keys:
                 info = records_by_key[key]
                 ratings: List[str] = []
+                has_value = False
                 for annotator in annotators:
-                    value = info["annotator_values"].get(annotator.name, {}).get(dimension)
-                    ratings.append(value)
-                if any(rating is not None for rating in ratings):
+                    raw_value = info["annotator_values"].get(annotator.name, {}).get(dimension)
+                    if raw_value is None:
+                        ratings.append(missing_token)
+                    else:
+                        ratings.append(raw_value)
+                        has_value = True
+                if has_value:
                     data[key] = ratings
             alpha = self._compute_krippendorff_alpha_nominal(data)
             agreement_summary["krippendorff_alpha"][dimension] = round(float(alpha), 6) if not math.isnan(alpha) else ""
@@ -1498,7 +1524,7 @@ class ValidationLabController:
                 for dimension, value in dims.items():
                     label_candidate = f"{dimension}_{value}"
                     label = label_candidate
-                    for existing_label in record.get("labels", []):
+                    for existing_label in self._extract_label_list(record):
                         if existing_label == label_candidate or existing_label.endswith(f"_{value}"):
                             label = existing_label
                             break
@@ -1603,25 +1629,30 @@ class ValidationLabController:
         return consensus, posterior_map
 
     def _extract_dimension_values(self, record: Dict[str, Any]) -> Dict[str, str]:
+        dims: Dict[str, str] = {}
         meta = record.get("meta") or {}
         annotation_json = meta.get("annotation_json")
-        dims: Dict[str, str] = {}
+        annotation_dimensions: Set[str] = set()
         if isinstance(annotation_json, dict):
-            for key, value in annotation_json.items():
-                normalised_value = self._normalise_label_value(value)
-                if normalised_value is None:
-                    continue
-                dims[str(key)] = normalised_value
+            annotation_dimensions = {str(key) for key in annotation_json.keys()}
 
-        labels = record.get("labels", [])
+        labels = self._extract_label_list(record)
         if labels:
-            known_dimensions = set(dims.keys())
+            known_dimensions = set(annotation_dimensions)
             for label in labels:
                 dimension, value = self._split_label_dimension_value(label, known_dimensions)
                 if dimension is None:
                     continue
                 known_dimensions.add(dimension)
-                dims[dimension] = value or "present"
+                normalised_value = value or "present"
+                dims[dimension] = normalised_value
+
+        if not dims and isinstance(annotation_json, dict):
+            for key, value in annotation_json.items():
+                normalised_value = self._normalise_label_value(value)
+                if normalised_value is None:
+                    continue
+                dims[str(key)] = normalised_value
 
         return {dimension: value for dimension, value in dims.items() if value is not None}
 
@@ -2008,7 +2039,7 @@ class ValidationLabController:
             {
                 label
                 for record in model_records + manual_records
-                for label in record.get("labels", [])
+                for label in self._extract_label_list(record)
                 if label
             }
         )
@@ -2029,8 +2060,8 @@ class ValidationLabController:
         y_pred = np.zeros((samples, len(label_set)), dtype=int)
 
         for row_idx, (human_record, model_record) in enumerate(matched_pairs):
-            true_labels = {label.strip() for label in human_record.get("labels", []) if label.strip()}
-            pred_labels = {label.strip() for label in model_record.get("labels", []) if label.strip()}
+            true_labels = {label.strip() for label in self._extract_label_list(human_record) if label and label.strip()}
+            pred_labels = {label.strip() for label in self._extract_label_list(model_record) if label and label.strip()}
 
             for label in true_labels:
                 idx = label_to_index.get(label)
