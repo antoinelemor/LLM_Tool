@@ -1,17 +1,134 @@
 #!/usr/bin/env python3
 """
-Benchmark Helper Functions
-==========================
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+benchmark_helpers.py
+
+MAIN OBJECTIVE:
+---------------
 Robust utilities for handling benchmark data preprocessing,
-validation, and error recovery.
+validation, and error recovery. Provides helper functions for
+multi-label classification benchmarking, data validation, and
+result aggregation.
+
+Dependencies:
+-------------
+- logging
+- numbers (Number)
+- typing
+- collections (Counter, defaultdict)
+- pandas
+- json
 """
 import logging
-from typing import Dict, List, Tuple, Optional, Any
-from collections import Counter
+from numbers import Number
+from typing import Dict, List, Tuple, Optional, Any, Iterable, Set
+from collections import Counter, defaultdict
 import pandas as pd
 import json
 
 logger = logging.getLogger(__name__)
+
+
+def extract_numeric_metric(
+    result: Any,
+    keys: Iterable[str],
+    nested_fields: Iterable[str] = ('metrics', 'final_metrics', 'best_metrics', 'training_summary'),
+    default: Optional[float] = 0.0
+) -> Optional[float]:
+    """
+    Safely extract a numeric metric from heterogeneous result structures.
+
+    Args:
+        result: Training result (dict, dataclass, etc.)
+        keys: Ordered keys to probe (e.g., ['f1_macro', 'best_f1_macro'])
+        nested_fields: Nested dictionaries to search when top-level fails
+        default: Fallback value when nothing usable is found
+
+    Returns:
+        First numeric value discovered, averaged when necessary, otherwise `default`
+    """
+    key_candidates = list(keys)
+
+    def _normalize(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, Number):
+            return float(value)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            try:
+                return float(stripped)
+            except ValueError:
+                return None
+        if isinstance(value, (list, tuple, set)):
+            numeric = []
+            for item in value:
+                norm = _normalize(item)
+                if norm is not None:
+                    numeric.append(norm)
+            if numeric:
+                return sum(numeric) / len(numeric)
+            return None
+        if isinstance(value, dict):
+            for key in key_candidates:
+                if key in value:
+                    norm = _normalize(value[key])
+                    if norm is not None:
+                        return norm
+            for alias in ('f1_macro', 'macro_f1', 'best_f1_macro', 'accuracy', 'precision', 'recall', 'f1'):
+                if alias in value:
+                    norm = _normalize(value[alias])
+                    if norm is not None:
+                        return norm
+            return None
+        return None
+
+    def _lookup(container: Any) -> Optional[float]:
+        if isinstance(container, dict):
+            for key in key_candidates:
+                if key in container:
+                    norm = _normalize(container[key])
+                    if norm is not None:
+                        return norm
+        else:
+            for key in key_candidates:
+                if hasattr(container, key):
+                    norm = _normalize(getattr(container, key))
+                    if norm is not None:
+                        return norm
+        return None
+
+    value = _lookup(result)
+    if value is not None:
+        return value
+
+    if not isinstance(result, dict) and hasattr(result, '__dict__'):
+        value = _lookup(result.__dict__)
+        if value is not None:
+            return value
+
+    for field in nested_fields:
+        nested = result.get(field) if isinstance(result, dict) else getattr(result, field, None)
+        if nested is None:
+            continue
+        if isinstance(nested, dict):
+            value = _lookup(nested)
+            if value is not None:
+                return value
+        elif isinstance(nested, (list, tuple)):
+            for item in nested:
+                value = _lookup(item)
+                if value is not None:
+                    return value
+
+    return default
 
 
 def validate_label_sufficiency(
@@ -336,6 +453,146 @@ def split_benchmark_by_category(
     return category_datasets
 
 
+def filter_languages_for_category(
+    data: pd.DataFrame,
+    category: str,
+    min_samples_per_class: int = 3,
+    language_column: Optional[str] = None
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Filter a category dataset to keep only languages with sufficient samples per class.
+
+    Args:
+        data: Category-specific DataFrame produced by split_benchmark_by_category
+        category: Category name (e.g. 'prompt_tech_technosolutionism')
+        min_samples_per_class: Minimum samples required per class per language
+        language_column: Optional explicit language column name
+
+    Returns:
+        Tuple of (filtered_dataframe, filtering_report)
+    """
+    report: Dict[str, Any] = {
+        'category': category,
+        'filtered': False,
+        'filtered_all': False,
+        'total_samples_before': int(len(data)),
+        'total_samples_after': int(len(data)),
+        'languages_kept': [],
+        'languages_dropped': [],
+        'drop_reasons': {},
+        'analysis_per_language': {},
+        'min_samples_per_class': min_samples_per_class,
+        'language_column': language_column
+    }
+
+    if data.empty:
+        report['reason'] = 'empty_dataset'
+        return data, report
+
+    lang_col = language_column or ('lang' if 'lang' in data.columns else None)
+    if lang_col is None and 'language' in data.columns:
+        lang_col = 'language'
+
+    if lang_col is None or data[lang_col].dropna().empty:
+        report['reason'] = 'no_language_column'
+        return data, report
+
+    per_language_counts: Dict[str, Counter] = defaultdict(Counter)
+    class_set: Set[str] = set()
+
+    for _, row in data.iterrows():
+        lang_val = row.get(lang_col)
+        if not isinstance(lang_val, str) or not lang_val.strip():
+            continue
+        language = lang_val.strip().upper()
+
+        raw_labels = row.get('labels')
+        label_strings: List[str] = []
+        if isinstance(raw_labels, list):
+            label_strings = [lbl for lbl in raw_labels if isinstance(lbl, str)]
+        elif isinstance(raw_labels, str):
+            label_strings = [raw_labels]
+        elif isinstance(raw_labels, dict):
+            for key, value in raw_labels.items():
+                if isinstance(value, list):
+                    label_strings.extend(f"{key}_{v}" for v in value if isinstance(v, str))
+                elif isinstance(value, str):
+                    label_strings.append(f"{key}_{value}")
+
+        matched_labels = [
+            lbl for lbl in label_strings
+            if isinstance(lbl, str) and lbl.startswith(f"{category}_")
+        ]
+
+        if not matched_labels:
+            continue
+
+        for label in matched_labels:
+            class_value = label[len(category) + 1:]
+            class_set.add(class_value)
+            per_language_counts[language][class_value] += 1
+
+    if not class_set or not per_language_counts:
+        report['reason'] = 'no_matching_labels'
+        return data, report
+
+    languages_kept: Set[str] = set()
+    languages_dropped: Set[str] = set()
+    drop_reasons: Dict[str, Dict[str, int]] = {}
+
+    for language, counts in per_language_counts.items():
+        insufficient = {
+            class_name: counts.get(class_name, 0)
+            for class_name in class_set
+            if counts.get(class_name, 0) < min_samples_per_class
+        }
+        if insufficient:
+            languages_dropped.add(language)
+            drop_reasons[language] = insufficient
+        else:
+            languages_kept.add(language)
+
+    if not languages_kept and languages_dropped:
+        def language_score(item: Tuple[str, Counter]) -> Tuple[int, int]:
+            lang, counts = item
+            min_count = min(counts.get(cls, 0) for cls in class_set)
+            total = sum(counts.get(cls, 0) for cls in class_set)
+            return (min_count, total)
+
+        best_lang, _ = max(per_language_counts.items(), key=language_score)
+        languages_kept.add(best_lang)
+        if best_lang in languages_dropped:
+            languages_dropped.remove(best_lang)
+            drop_reasons.pop(best_lang, None)
+
+    if languages_kept:
+        filtered = data[
+            data[lang_col].apply(
+                lambda val: isinstance(val, str) and val.strip().upper() in languages_kept
+            )
+        ].copy()
+    else:
+        filtered = data.copy()
+
+    report.update({
+        'filtered': bool(languages_dropped),
+        'filtered_all': filtered.empty and bool(per_language_counts),
+        'total_samples_after': int(len(filtered)),
+        'languages_kept': sorted(languages_kept) if languages_kept else [],
+        'languages_dropped': sorted(languages_dropped),
+        'drop_reasons': drop_reasons,
+        'analysis_per_language': {
+            lang: {cls: per_language_counts[lang].get(cls, 0) for cls in class_set}
+            for lang in per_language_counts
+        }
+    })
+
+    if report['filtered_all']:
+        report['reason'] = 'no_language_with_sufficient_samples'
+
+    return filtered, report
+
+
 def aggregate_benchmark_results(
     results_by_category: Dict[str, Dict[str, Any]],
     model_id: str
@@ -350,28 +607,36 @@ def aggregate_benchmark_results(
     Returns:
         Aggregated results with proper error handling
     """
-    successful_results = []
-    failed_categories = []
-    total_training_time = 0
+    successful_results: List[Dict[str, Any]] = []
+    failed_categories: List[str] = []
+    total_training_time = 0.0
 
     for category, result in results_by_category.items():
-        if result and not result.get('error'):
-            # Check if result has valid metrics
-            f1 = result.get('f1_macro', result.get('f1', 0))
-            acc = result.get('accuracy', 0)
+        if not result or result.get('error'):
+            failed_categories.append(category)
+            continue
 
-            if f1 > 0 or acc > 0:
-                successful_results.append({
-                    'category': category,
-                    'f1_macro': f1,
-                    'accuracy': acc,
-                    'precision': result.get('precision', 0),
-                    'recall': result.get('recall', 0),
-                    'training_time': result.get('training_time', 0)
-                })
-                total_training_time += result.get('training_time', 0)
-            else:
-                failed_categories.append(category)
+        f1_macro = extract_numeric_metric(result, ('f1_macro', 'best_f1_macro', 'macro_f1', 'f1'), default=0.0)
+        accuracy = extract_numeric_metric(result, ('accuracy', 'best_accuracy'), default=0.0)
+        precision = extract_numeric_metric(result, ('precision', 'macro_precision', 'best_precision'), default=0.0)
+        recall = extract_numeric_metric(result, ('recall', 'macro_recall', 'best_recall'), default=0.0)
+
+        if f1_macro > 0 or accuracy > 0:
+            training_time = float(result.get('training_time', 0) or 0.0)
+            f1_class_0 = extract_numeric_metric(result, ('f1_0', 'f1_class_0'), default=None)
+            f1_class_1 = extract_numeric_metric(result, ('f1_1', 'f1_class_1'), default=None)
+
+            successful_results.append({
+                'category': category,
+                'f1_macro': f1_macro,
+                'accuracy': accuracy,
+                'precision': precision,
+                'recall': recall,
+                'training_time': training_time,
+                'f1_0': f1_class_0,
+                'f1_1': f1_class_1
+            })
+            total_training_time += training_time
         else:
             failed_categories.append(category)
 
@@ -391,20 +656,20 @@ def aggregate_benchmark_results(
             'successful_categories': len(successful_results),
             'failed_categories': len(failed_categories),
             'category_details': successful_results,
-            'partial_success': len(failed_categories) > 0
+            'partial_success': len(failed_categories) > 0,
+            # Backward compatibility keys expected elsewhere in the codebase
+            'best_f1_macro': avg_f1,
+            'best_accuracy': avg_acc
         }
 
         # Add per-class metrics if available (for binary classification)
-        if any('f1_0' in r for r in [r for c, r in results_by_category.items() if r]):
-            f1_0_values = [r.get('f1_0', 0) for c, r in results_by_category.items()
-                          if r and not r.get('error')]
-            f1_1_values = [r.get('f1_1', 0) for c, r in results_by_category.items()
-                          if r and not r.get('error')]
+        f1_0_values = [r['f1_0'] for r in successful_results if r.get('f1_0') is not None]
+        f1_1_values = [r['f1_1'] for r in successful_results if r.get('f1_1') is not None]
 
-            if f1_0_values:
-                aggregated['f1_0'] = sum(f1_0_values) / len(f1_0_values)
-            if f1_1_values:
-                aggregated['f1_1'] = sum(f1_1_values) / len(f1_1_values)
+        if f1_0_values:
+            aggregated['f1_0'] = sum(f1_0_values) / len(f1_0_values)
+        if f1_1_values:
+            aggregated['f1_1'] = sum(f1_1_values) / len(f1_1_values)
 
         logger.info(f"Benchmark aggregation for {model_id}: "
                    f"{len(successful_results)}/{len(results_by_category)} categories successful")

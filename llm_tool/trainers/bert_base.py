@@ -62,6 +62,7 @@ import csv
 import copy
 import json
 import warnings
+import re
 from typing import List, Tuple, Any, Optional, Dict
 from collections import defaultdict
 from pathlib import Path
@@ -1451,14 +1452,17 @@ class BertBase(BertABC):
         # Determine category name
         # Priority: label_value > label_key > "default"
         if label_value:
-            category_name = label_value
+            category_name = str(label_value)
         elif label_key:
-            category_name = label_key
+            category_name = str(label_key)
         else:
             category_name = "default"
 
         # Clean category name
-        category_name = category_name.replace("/", "_").replace(" ", "_")
+        category_name = category_name.strip()
+        category_name = re.sub(r"\s+", "_", category_name)
+        category_name = re.sub(r"[^0-9A-Za-z_\-]", "", category_name)
+        category_name = category_name or "category"
 
         # Build directory structure based on mode using the resolved session directory
         resolved_base_dir = resolve_metrics_base_dir(metrics_output_dir)

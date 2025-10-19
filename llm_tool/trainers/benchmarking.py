@@ -309,11 +309,21 @@ class BenchmarkRunner:
         logs_root = training_root / self.logs_subdir
         summary_csv = training_root / "models_summary.csv"
 
-        models_output_dir = self.models_root / dataset_name if dataset_name else self.models_root
+        sanitized_dataset_name = None
+        if dataset_name:
+            sanitized_dataset_name = self._normalize_category_name(dataset_name)
+
+        if sanitized_dataset_name:
+            models_output_dir = self.models_root / sanitized_dataset_name
+        elif dataset_name:
+            models_output_dir = self.models_root / dataset_name
+        else:
+            models_output_dir = self.models_root
+
         models_output_dir.mkdir(parents=True, exist_ok=True)
         logs_root.mkdir(parents=True, exist_ok=True)
 
-        human_name = dataset_name or "principal"
+        human_name = sanitized_dataset_name or dataset_name or "principal"
         self.logger.info("\n%s", "=" * 80)
         self.logger.info("Benchmarking dataset: %s", human_name)
         self.logger.info("Data directory: %s", training_root)
@@ -366,7 +376,7 @@ class BenchmarkRunner:
                     category_dir,
                     lang_dir,
                     lang,
-                    dataset_name,
+                    sanitized_dataset_name or dataset_name,
                     logs_root,
                     summary_csv,
                     models_output_dir,

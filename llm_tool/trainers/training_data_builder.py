@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import json
+import ast
 import logging
 from datetime import datetime
 
@@ -661,15 +662,16 @@ class TrainingDatasetBuilder:
                 continue
 
             labels = item.get(label_field)
+            labels = self._coerce_labels_container(labels)
             if labels is None:
                 continue
 
             if isinstance(labels, dict):
                 active_labels = [k for k, v in labels.items() if v]
-            elif isinstance(labels, list):
-                active_labels = [str(v) for v in labels]
+            elif isinstance(labels, (list, tuple, set)):
+                active_labels = [str(v).strip() for v in labels if str(v).strip()]
             else:
-                active_labels = [str(labels)]
+                active_labels = [str(labels).strip()]
 
             if not active_labels:
                 continue
@@ -809,6 +811,36 @@ class TrainingDatasetBuilder:
             return cleaned.upper()
 
         return cleaned.upper()
+
+    @staticmethod
+    def _coerce_labels_container(raw_labels: Any) -> Any:
+        """
+        Normalize label containers that may arrive as JSON strings.
+
+        Accepts lists, dicts, scalars, or stringified representations of lists/dicts.
+        """
+        if isinstance(raw_labels, str):
+            stripped = raw_labels.strip()
+            if not stripped:
+                return []
+
+            if stripped[0] in ("[", "{"):
+                parsed = None
+                for parser in (json.loads, ast.literal_eval):
+                    try:
+                        parsed = parser(stripped)
+                        break
+                    except Exception:
+                        parsed = None
+
+                if isinstance(parsed, (list, tuple, set)):
+                    return list(parsed)
+                if isinstance(parsed, dict):
+                    return parsed
+
+            return [stripped]
+
+        return raw_labels
 
     def _resolve_language_from_mapping(
         self,

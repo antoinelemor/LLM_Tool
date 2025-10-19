@@ -4566,7 +4566,9 @@ def _run_benchmark_mode(
         from llm_tool.utils.benchmark_helpers import (
             validate_label_sufficiency,
             split_benchmark_by_category,
-            aggregate_benchmark_results
+            aggregate_benchmark_results,
+            extract_numeric_metric,
+            filter_languages_for_category
         )
 
         # Load and validate the benchmark data
@@ -4606,6 +4608,41 @@ def _run_benchmark_mode(
             'labels',
             selected_benchmark_categories
         )
+
+        category_language_reports: Dict[str, Dict[str, Any]] = {}
+        skipped_categories: Dict[str, Dict[str, Any]] = {}
+        filtered_category_datasets: Dict[str, pd.DataFrame] = {}
+
+        for category, cat_df in category_datasets.items():
+            filtered_df, lang_report = filter_languages_for_category(
+                cat_df,
+                category,
+                min_samples_per_class=3
+            )
+            category_language_reports[category] = lang_report
+
+            if lang_report.get('filtered'):
+                kept_display = ", ".join(lang_report.get('languages_kept', [])) or "none"
+                dropped_display = ", ".join(
+                    f"{lang} (min counts: {lang_report['drop_reasons'].get(lang, {})})"
+                    for lang in lang_report.get('languages_dropped', [])
+                ) or "none"
+                self.console.print(f"[yellow]⚠️  Language filtering applied for {category}[/yellow]")
+                self.console.print(f"    • Kept: {kept_display}")
+                self.console.print(f"    • Dropped: {dropped_display}")
+
+            if filtered_df.empty:
+                skipped_categories[category] = lang_report
+                self.console.print(f"[red]⏭  Skipping {category}: insufficient language coverage after filtering[/red]")
+                continue
+
+            filtered_category_datasets[category] = filtered_df
+
+        if not filtered_category_datasets:
+            self.console.print("[red]❌ No categories have sufficient multilingual coverage for benchmarking.[/red]")
+            return None
+
+        category_datasets = filtered_category_datasets
 
         self.console.print(f"\n[cyan]📊 Category Distribution:[/cyan]")
         for category, cat_data in category_datasets.items():
@@ -4701,6 +4738,11 @@ def _run_benchmark_mode(
                     cat_train_params = train_params.copy()
                     cat_train_params['input_file'] = str(cat_file)
                     cat_train_params['output_dir'] = str(model_output_dir / category)
+                    lang_report = category_language_reports.get(category, {})
+                    kept_languages = lang_report.get('languages_kept') or []
+                    if kept_languages:
+                        cat_train_params['confirmed_languages'] = kept_languages
+                    cat_train_params['language_filtering_report'] = lang_report
 
                     try:
                         # Train on this category
@@ -4708,16 +4750,25 @@ def _run_benchmark_mode(
                         category_results[category] = cat_result
 
                         # Check for language filtering in the result
-                        if 'language_filtering_report' in cat_result:
-                            filtering_report = cat_result['language_filtering_report']
+                        filtering_report = cat_result.get('language_filtering_report') or lang_report
+                        cat_result['language_filtering_report'] = filtering_report
+                        if filtering_report:
                             if filtering_report.get('filtered', False):
                                 self.console.print(f"  [yellow]⚠ Language filtering applied for {category}:[/yellow]")
                                 self.console.print(f"    - Kept: {', '.join(filtering_report.get('languages_kept', []))}")
                                 self.console.print(f"    - Dropped: {', '.join(filtering_report.get('languages_dropped', []))}")
 
                         # Display category result
-                        cat_f1 = cat_result.get('f1_macro', cat_result.get('f1', 0))
-                        cat_acc = cat_result.get('accuracy', 0)
+                        cat_f1 = extract_numeric_metric(
+                            cat_result,
+                            ('f1_macro', 'best_f1_macro', 'macro_f1', 'f1'),
+                            default=0.0
+                        )
+                        cat_acc = extract_numeric_metric(
+                            cat_result,
+                            ('accuracy', 'best_accuracy'),
+                            default=0.0
+                        )
 
                         if cat_f1 > 0 or cat_acc > 0:
                             self.console.print(f"  ✓ {category}: F1={cat_f1:.3f}, Acc={cat_acc:.3f}")
@@ -4726,7 +4777,17 @@ def _run_benchmark_mode(
 
                     except Exception as e:
                         self.console.print(f"  ✗ {category}: Error - {str(e)}")
-                        category_results[category] = {'error': str(e)}
+                        category_results[category] = {
+                            'error': str(e),
+                            'language_filtering_report': lang_report
+                        }
+                        continue
+
+                for skipped_category, lang_report in skipped_categories.items():
+                    category_results[skipped_category] = {
+                        'error': 'insufficient_language_data',
+                        'language_filtering_report': lang_report
+                    }
 
                 # Aggregate results across categories
                 result = aggregate_benchmark_results(category_results, model_id)
@@ -4747,8 +4808,16 @@ def _run_benchmark_mode(
                 benchmark_results[model_id] = result
 
                 # Extract aggregated metrics
-                f1_score = result.get('f1_macro', 0)
-                accuracy = result.get('accuracy', 0)
+                f1_score = extract_numeric_metric(
+                    result,
+                    ('f1_macro', 'best_f1_macro', 'macro_f1'),
+                    default=0.0
+                )
+                accuracy = extract_numeric_metric(
+                    result,
+                    ('accuracy', 'best_accuracy'),
+                    default=0.0
+                )
 
                 # Display overall results
                 self.console.print(f"\n[green]✓ Training Complete[/green]")
