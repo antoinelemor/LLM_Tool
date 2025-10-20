@@ -42,7 +42,7 @@ import json
 import time
 import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional, Tuple, Union, TYPE_CHECKING
 from dataclasses import dataclass, field
 import warnings
 warnings.filterwarnings('ignore')
@@ -85,7 +85,12 @@ from llm_tool.utils.training_paths import (
 )
 from .multilingual_selector import MultilingualModelSelector
 from ..utils.data_filter_logger import get_filter_logger
+from ..utils.system_resources import detect_resources
 from .data_utils import safe_tolist, safe_convert_labels
+
+
+if TYPE_CHECKING:
+    from ..utils.system_resources import SystemResources
 
 
 __all__ = [
@@ -394,8 +399,13 @@ class ModelTrainer:
     def __init__(self, config: Optional[TrainingConfig] = None):
         """Initialize the model trainer"""
         self.config = config or TrainingConfig()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._config_provided = config is not None
         self.logger = logging.getLogger(__name__)
+        self.resource_recommendations: Dict[str, Any] = {}
+
+        resources = self._try_detect_resources()
+        preferred_device = self._apply_resource_recommendations(resources)
+        self.device = self._select_device(preferred_device)
         self.label_encoder = LabelEncoder()
 
         # Set random seed for reproducibility
@@ -438,6 +448,103 @@ class ModelTrainer:
             "google/long-t5-local-base": LongT5Base,
             "google/long-t5-tglobal-base": LongT5TGlobalBase,
         }
+
+    def _try_detect_resources(self) -> Optional["SystemResources"]:
+        """Safely run system resource detection."""
+        try:
+            return detect_resources()
+        except Exception as exc:
+            self.logger.warning(
+                "System resource detection failed (%s). Falling back to runtime device checks.",
+                exc
+            )
+            return None
+
+    def _apply_resource_recommendations(
+        self,
+        resources: Optional["SystemResources"]
+    ) -> Optional[str]:
+        """
+        Apply resource-based recommendations to training configuration.
+
+        Returns the preferred device type when available.
+        """
+        if resources is None:
+            return None
+
+        try:
+            recommendations = resources.get_recommendation()
+        except Exception as exc:
+            self.logger.warning(
+                "Unable to compute resource recommendations (%s). Using defaults.",
+                exc
+            )
+            return None
+
+        self.resource_recommendations = recommendations
+
+        if not self._config_provided:
+            default_config = TrainingConfig()
+            updates: Dict[str, Any] = {}
+
+            new_batch = recommendations.get('batch_size')
+            if new_batch is not None and self.config.batch_size == default_config.batch_size:
+                self.config.batch_size = new_batch
+                updates['batch_size'] = new_batch
+
+            new_grad_acc = recommendations.get('gradient_accumulation_steps')
+            if new_grad_acc is not None and self.config.gradient_accumulation_steps == default_config.gradient_accumulation_steps:
+                self.config.gradient_accumulation_steps = new_grad_acc
+                updates['gradient_accumulation_steps'] = new_grad_acc
+
+            use_fp16 = recommendations.get('use_fp16')
+            if use_fp16 is not None and self.config.fp16 == default_config.fp16:
+                self.config.fp16 = use_fp16
+                updates['fp16'] = use_fp16
+
+            new_workers = recommendations.get('num_workers')
+            if (
+                new_workers is not None and
+                hasattr(self.config, 'num_workers') and
+                self.config.num_workers == default_config.num_workers
+            ):
+                self.config.num_workers = new_workers
+                updates['num_workers'] = new_workers
+
+            if updates:
+                self.logger.info(
+                    "Applied system resource tuning to training defaults: %s",
+                    updates
+                )
+        else:
+            self.logger.debug(
+                "Custom training configuration provided; skipping automatic tuning of batch settings."
+            )
+
+        return recommendations.get('device')
+
+    def _select_device(self, preferred: Optional[str]) -> torch.device:
+        """Select the optimal torch device using recommendations and runtime checks."""
+        mps_available = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
+
+        if preferred == "cuda" and torch.cuda.is_available():
+            self.logger.info("Using CUDA GPU (from system resource analysis).")
+            return torch.device("cuda")
+
+        if preferred == "mps" and mps_available:
+            self.logger.info("Using Apple Silicon GPU (MPS) from system resource analysis.")
+            return torch.device("mps")
+
+        if torch.cuda.is_available():
+            self.logger.info("Using CUDA GPU (auto-detected).")
+            return torch.device("cuda")
+
+        if mps_available:
+            self.logger.info("Using Apple Silicon GPU (MPS).")
+            return torch.device("mps")
+
+        self.logger.info("No GPU backend detected; defaulting to CPU execution.")
+        return torch.device("cpu")
 
     def _to_label_predictions(self, predictions: Any) -> np.ndarray:
         """Convert model outputs (probabilities/logits) to discrete label ids."""
