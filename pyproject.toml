@@ -231,7 +231,10 @@ llm-tool = "llm_tool.__main__:main"
 llmtool = "llm_tool.__main__:main"
 
 [tool.setuptools]
-packages = ["llm_tool"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["llm_tool*"]
 
 [tool.setuptools.package-data]
 llm_tool = [
