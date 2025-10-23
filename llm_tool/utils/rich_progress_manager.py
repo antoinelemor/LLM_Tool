@@ -19,11 +19,11 @@ Author:
 Antoine Lemor
 """
 
+import os
+import sys
 import time
 import threading
 import json
-import os
-import sys
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
@@ -46,28 +46,81 @@ from rich.live import Live
 from rich import box
 
 
+@dataclass
+class RichUIConfig:
+    """Configuration values that control Rich's live rendering cadence."""
+    profile: str
+    disable_ui: bool
+    refresh_hz: float
+    min_render_interval: float
+    min_progress_interval: float
+
+
+def _env_flag(name: str) -> bool:
+    """Interpret common truthy values from environment variables."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float, *, allow_zero: bool = False) -> float:
+    """Read a float environment variable with validation."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    if value < 0 or (not allow_zero and value == 0):
+        return default
+    return value
+
+
+def _get_rich_ui_config() -> RichUIConfig:
+    """
+    Determine how aggressively Rich should refresh the terminal.
+
+    Profiles:
+        - full: default experience (higher refresh rate)
+        - balanced: moderate refresh for most terminals
+        - safe: conservative refresh for Electron / VS Code
+        - off/disabled: disable Rich entirely
+    """
+    if _env_flag("LLM_TOOL_FORCE_RICH_UI"):
+        profile = "full"
+    else:
+        profile = os.environ.get("LLM_TOOL_RICH_PROFILE", "").strip().lower() or "full"
+
+    disable_requested = _env_flag("LLM_TOOL_DISABLE_RICH_UI") or profile in {"off", "disabled", "none"}
+
+    if disable_requested and not _env_flag("LLM_TOOL_FORCE_RICH_UI"):
+        return RichUIConfig("off", True, 0.0, 0.0, 0.0)
+
+    defaults = {
+        "full": (12.0, 0.08, 0.01),
+        "balanced": (8.0, 0.12, 0.02),
+        "safe": (4.0, 0.25, 0.05),
+    }
+
+    if profile not in defaults:
+        profile = "full"
+
+    refresh_hz, min_render_interval, min_progress_interval = defaults[profile]
+
+    refresh_hz = _env_float("LLM_TOOL_RICH_REFRESH_HZ", refresh_hz)
+    min_render_interval = _env_float("LLM_TOOL_RICH_MIN_RENDER_INTERVAL", min_render_interval, allow_zero=True)
+    min_progress_interval = _env_float("LLM_TOOL_RICH_MIN_PROGRESS_INTERVAL", min_progress_interval, allow_zero=True)
+
+    # Fall back to safe profile when stdout is not a TTY unless user forced full mode
+    if not sys.stdout.isatty() and profile == "full" and not _env_flag("LLM_TOOL_FORCE_RICH_UI"):
+        profile = "safe"
+        refresh_hz, min_render_interval, min_progress_interval = defaults["safe"]
+
+    return RichUIConfig(profile, False, refresh_hz, min_render_interval, min_progress_interval)
+
+
 def _should_disable_rich_ui() -> bool:
-    """
-    Determine whether Rich's live rendering should be disabled.
-
-    VS Code's integrated terminal (Electron) is prone to crashing when
-    Rich updates the screen aggressively. We automatically fall back to
-    simplified console logging in those environments unless explicitly
-    overridden by the user.
-    """
-    if os.environ.get("LLM_TOOL_FORCE_RICH_UI") == "1":
-        return False
-    if os.environ.get("LLM_TOOL_DISABLE_RICH_UI") == "1":
-        return True
-
-    term_program = os.environ.get("TERM_PROGRAM", "").lower()
-    if term_program == "vscode":
-        return True
-
-    if os.environ.get("VSCODE_PID") and os.environ.get("ELECTRON_RUN_AS_NODE"):
-        return True
-
-    return not sys.stdout.isatty()
+    """Utility wrapper to match historical API if other modules import it."""
+    return _get_rich_ui_config().disable_ui or not sys.stdout.isatty()
 
 
 class CompactPercentColumn(ProgressColumn):
@@ -118,7 +171,8 @@ class GlobalProgressTracker:
             epochs_per_model: Number of epochs per model (can be updated per model)
             mode: Training mode (e.g., "training", "benchmark", "multi-label")
         """
-        self.disable_console_ui = _should_disable_rich_ui()
+        self.ui_config = _get_rich_ui_config()
+        self.disable_console_ui = self.ui_config.disable_ui
         self.console = Console(
             force_terminal=not self.disable_console_ui,
             no_color=self.disable_console_ui
@@ -156,6 +210,8 @@ class GlobalProgressTracker:
         self.model_task_id = None
         self.live = None
         self.is_running = False
+        self._last_live_refresh = 0.0
+        self._last_progress_refresh = 0.0
 
     def start(self):
         """Start the global progress tracker."""
@@ -164,13 +220,14 @@ class GlobalProgressTracker:
 
         self.is_running = True
         self.start_time = time.time()
+        self._last_progress_refresh = self.start_time
+        self._last_live_refresh = 0.0
 
         if self.disable_console_ui:
             self.console.print(
-                "[yellow]Rich live dashboard disabled for this session "
-                "(detected VS Code or non-interactive terminal).[/yellow]\n"
-                "[yellow]Falling back to simplified logging. Set "
-                "`LLM_TOOL_FORCE_RICH_UI=1` to override.[/yellow]"
+                "[yellow]Rich dashboard disabled for this session "
+                "(non-interactive terminal detected).[/yellow]\n"
+                "[yellow]Set `LLM_TOOL_FORCE_RICH_UI=1` to override.[/yellow]"
             )
             return
 
@@ -190,7 +247,8 @@ class GlobalProgressTracker:
             TextColumn("•"),
             TimeRemainingColumn(compact=True, elapsed_when_finished=True),
             console=self.console,
-            expand=False
+            expand=False,
+            auto_refresh=False
         )
 
         # Add global task (all models, all epochs)
@@ -218,10 +276,11 @@ class GlobalProgressTracker:
         self.live = Live(
             self._create_panel(),
             console=self.console,
-            refresh_per_second=4,
+            refresh_per_second=self.ui_config.refresh_hz or 4,
             transient=False
         )
         self.live.start()
+        self._last_live_refresh = time.time()
 
     def start_model(self, model_name: str, category: str = "", language: str = "", epochs: int = None):
         """
@@ -252,9 +311,8 @@ class GlobalProgressTracker:
             self.current_epochs = epochs
             self.total_epochs = self.total_epochs - old_epochs + epochs
 
-            if self.progress:
-                # Update global task total
-                self.progress.update(self.global_task_id, total=self.total_epochs)
+            # Update global task total
+            self.progress.update(self.global_task_id, total=self.total_epochs)
         else:
             self.current_epochs = self.default_epochs_per_model
 
@@ -266,20 +324,8 @@ class GlobalProgressTracker:
         # Reset model timer
         self.current_model_start_time = time.time()
 
-        if self.progress:
-            # Update display
-            self._update_display()
-        else:
-            parts = [
-                f"[bold cyan]→ Model {self.current_model_idx}/{self.total_models}[/bold cyan]",
-                self.current_model_name or "Unnamed model",
-            ]
-            if self.current_category:
-                parts.append(f"[{self.current_category}]")
-            if self.current_language:
-                parts.append(f"({self.current_language})")
-            parts.append(f"- {self.current_epochs} epoch(s)")
-            self.console.print(" ".join(parts))
+        # Update display
+        self._update_display()
 
     def update_epoch(self, epoch: int, train_loss: float = 0.0, val_loss: float = 0.0,
                      f1_score: float = 0.0, accuracy: float = 0.0):
@@ -314,6 +360,14 @@ class GlobalProgressTracker:
                 remaining_epochs = self.total_epochs - self.completed_epochs
                 self.estimated_remaining = avg_time_per_epoch * remaining_epochs
 
+        allow_refresh = True
+        now = time.time()
+        if self.ui_config.min_progress_interval > 0:
+            if (now - self._last_progress_refresh) < self.ui_config.min_progress_interval:
+                allow_refresh = False
+            else:
+                self._last_progress_refresh = now
+
         if self.progress:
             # Update progress bars
             self.progress.update(
@@ -330,7 +384,8 @@ class GlobalProgressTracker:
             )
 
             # Update live display
-            self._update_display()
+            if allow_refresh:
+                self._update_display()
         else:
             metric_bits = []
             if train_loss:
@@ -361,14 +416,14 @@ class GlobalProgressTracker:
                 description=f"✅ {self.current_model_name}: Complete"
             )
 
-            self._update_display()
+            self._update_display(force=True)
         else:
             elapsed = 0.0
             if self.current_model_start_time:
                 elapsed = time.time() - self.current_model_start_time
-            model_name = self.current_model_name or f"Model {self.current_model_idx}"
             self.console.print(
-                f"[green]✔[/green] {model_name} complete in {self._format_time(elapsed)}"
+                f"[green]✔[/green] {self.current_model_name or 'Model'} "
+                f"complete in {self._format_time(elapsed)}"
             )
 
     def stop(self):
@@ -376,27 +431,23 @@ class GlobalProgressTracker:
         if not self.is_running:
             return
 
-        if self.progress:
-            # Update final status
+        # Update final status if rich UI is active
+        if self.progress and self.global_task_id is not None:
             self.progress.update(
                 self.global_task_id,
                 completed=self.total_epochs,
                 description=f"✨ COMPLETE: {self.total_models} models trained"
             )
-
-            self._update_display()
-
-            # Stop live display
-            time.sleep(0.5)
-            if self.live:
-                self.live.stop()
-        else:
-            total_time = time.time() - self.start_time if self.start_time else 0.0
+            self._update_display(force=True)
+        elif self.disable_console_ui:
             self.console.print(
-                f"[bold green]Training complete:[/bold green] "
-                f"{self.total_models} model(s) • {self.total_epochs} epoch(s) "
-                f"in {self._format_time(total_time)}"
+                f"[green]✔[/green] Training complete for {self.total_models} model(s)."
             )
+
+        # Stop live display
+        if self.live:
+            time.sleep(0.5)
+            self.live.stop()
 
         self.is_running = False
 
@@ -487,10 +538,19 @@ class GlobalProgressTracker:
             box=box.HEAVY
         )
 
-    def _update_display(self):
+    def _update_display(self, force: bool = False):
         """Update the live display."""
-        if self.live and self.is_running:
-            self.live.update(self._create_panel())
+        if not self.live or not self.is_running:
+            return
+
+        now = time.time()
+        if not force:
+            min_interval = self.ui_config.min_render_interval
+            if min_interval > 0 and (now - self._last_live_refresh) < min_interval:
+                return
+
+        self.live.update(self._create_panel(), refresh=True)
+        self._last_live_refresh = now
 
     def _format_time(self, seconds: float) -> str:
         """Format time in seconds to readable format."""
@@ -536,7 +596,8 @@ class RichProgressManager:
 
     def __init__(self, show_json_every: int = 10, compact_mode: bool = True):
         """Initialize with configuration"""
-        self.disable_console_ui = _should_disable_rich_ui()
+        self.ui_config = _get_rich_ui_config()
+        self.disable_console_ui = self.ui_config.disable_ui
         self.console = Console(
             force_terminal=not self.disable_console_ui,
             no_color=self.disable_console_ui
@@ -551,55 +612,85 @@ class RichProgressManager:
         self.overall_task_id = None
         self.subtask_task_id = None
         self.is_running = False
+        self._last_progress_refresh = 0.0
 
         # Sample tracking
         self.current_sample = None
         self.recent_errors = []
         self.recent_warnings = []
         self.last_json_display = 0
-        self._last_reported_percent = -1
-        self._last_reported_subtask = -1
+        self._last_preview_refresh = 0.0
 
     def start(self):
         """Start the progress display"""
-        if not self.is_running:
-            self.is_running = True
-            self.state.start_time = time.time()
-            self._last_reported_percent = -1
-            self._last_reported_subtask = -1
+        if self.is_running:
+            return
 
-            if self.disable_console_ui:
-                self.console.print(
-                    "[yellow]Rich progress UI disabled for this session "
-                    "(detected VS Code or non-interactive terminal).[/yellow]\n"
-                    "[yellow]Falling back to concise textual updates.[/yellow]"
-                )
+        self.is_running = True
+        self.state.start_time = time.time()
+        self._last_progress_refresh = self.state.start_time
+
+        if self.disable_console_ui:
+            self.console.print(
+                "[yellow]Rich progress UI disabled for this terminal. "
+                "Falling back to textual updates.[/yellow]\n"
+                "[yellow]Export `LLM_TOOL_FORCE_RICH_UI=1` to override.[/yellow]"
+            )
+            return
+
+        # Create single progress bar
+        self.progress = Progress(
+            SpinnerColumn(style="bright_cyan", spinner_name="dots"),
+            TextColumn("[bold]{task.description}"),
+            BarColumn(
+                bar_width=50,
+                complete_style="bright_green",
+                finished_style="green",
+                pulse_style="cyan"
+            ),
+            CompactPercentColumn(),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(compact=True, elapsed_when_finished=True),
+            console=self.console,
+            expand=False,
+            transient=False,
+            auto_refresh=False
+        )
+
+        # Start progress
+        self.progress.start()
+
+        # Task will be created on first update (no "Starting..." bar)
+
+    def _refresh_progress(self, force: bool = False):
+        """Refresh the rich progress bar with throttling."""
+        if not self.progress:
+            return
+
+        now = time.time()
+        if not force and self.ui_config.min_render_interval > 0:
+            if (now - self._last_progress_refresh) < self.ui_config.min_render_interval:
                 return
 
-            # Create single progress bar
-            self.progress = Progress(
-                SpinnerColumn(style="bright_cyan", spinner_name="dots"),
-                TextColumn("[bold]{task.description}"),
-                BarColumn(
-                    bar_width=50,
-                    complete_style="bright_green",
-                    finished_style="green",
-                    pulse_style="cyan"
-                ),
-                CompactPercentColumn(),
-                TextColumn("•"),
-                TimeElapsedColumn(),
-                TextColumn("•"),
-                TimeRemainingColumn(compact=True, elapsed_when_finished=True),
-                console=self.console,
-                expand=False,
-                transient=False
-            )
+        try:
+            self.progress.refresh()
+        except Exception:
+            # Avoid crashing the pipeline if the terminal rejects refreshes
+            return
 
-            # Start progress
-            self.progress.start()
+        self._last_progress_refresh = now
 
-            # Task will be created on first update (no "Starting..." bar)
+    def _log_plain_update(self, phase: str, progress: float, message: str, error: Optional[str] = None):
+        """Fallback textual logging when Rich UI is disabled."""
+        phase_info = self.PHASES.get(phase, {})
+        icon = phase_info.get('icon', '•')
+        label = phase_info.get('label', phase.title())
+        msg = f"{icon} {label}: {progress:.1f}% - {message}"
+        self.console.print(msg)
+        if error:
+            self.console.print(f"[red]⚠ {error}[/red]")
 
     def pause_for_training(self):
         """Pause progress display for training phase"""
@@ -610,6 +701,8 @@ class RichProgressManager:
                     self.overall_task_id,
                     description="⏸ Pausing for training..."
                 )
+
+                self._refresh_progress(force=True)
 
                 time.sleep(0.5)
 
@@ -647,7 +740,8 @@ class RichProgressManager:
                     TimeRemainingColumn(compact=True, elapsed_when_finished=True),
                     console=self.console,
                     expand=False,
-                    transient=False
+                    transient=False,
+                    auto_refresh=False
                 )
 
                 self.progress.start()
@@ -666,6 +760,8 @@ class RichProgressManager:
                     description=f"{self.state.current_phase or 'Progress'}: {self.state.current_message}"
                 )
 
+                self._refresh_progress(force=True)
+
                 del self._paused
 
             except Exception as e:
@@ -674,22 +770,17 @@ class RichProgressManager:
     def stop(self):
         """Stop the display"""
         if self.is_running:
-            total_time = time.time() - self.state.start_time if self.state.start_time else 0.0
             if self.progress and self.overall_task_id is not None:
                 self.progress.update(
                     self.overall_task_id,
                     completed=100,
                     description="✨ Pipeline Complete"
                 )
+                self._refresh_progress(force=True)
 
             if self.progress:
                 time.sleep(0.5)
                 self.progress.stop()
-            elif self.disable_console_ui:
-                self.console.print(
-                    f"[bold green]Pipeline complete[/bold green] "
-                    f"in {self._format_elapsed(total_time)}"
-                )
 
             self.is_running = False
             self.progress = None
@@ -705,6 +796,8 @@ class RichProgressManager:
             if not self.is_running:
                 return
 
+            ui_active = self.progress is not None
+
             # Update state
             self.state.current_phase = phase
             self.state.current_progress = progress
@@ -717,6 +810,9 @@ class RichProgressManager:
 
             # Build description - combine main and subtask info
             desc = f"{icon} {label}: {message}"
+            sample_data = json_sample
+            current = 0
+            total = 0
 
             # Add subtask info directly to main description
             if phase == 'annotation' and subtask:
@@ -734,16 +830,11 @@ class RichProgressManager:
                 sample_data = subtask.get('json_data', json_sample)
                 if sample_data:
                     self.current_sample = sample_data
-                    if (
-                        not self.disable_console_ui
-                        and current > 0
-                        and current % self.show_json_every == 0
-                    ):
+                    if current > 0 and current % self.show_json_every == 0:
                         self.state.json_count += 1
                         self.state.last_json_sample = sample_data
 
-                        # Update preview panel in place
-                        if current - self.last_json_display >= self.show_json_every:
+                        if current - self.last_json_display >= self.show_json_every and ui_active:
                             self._show_json_panel(sample_data)
                             self.last_json_display = current
 
@@ -751,41 +842,17 @@ class RichProgressManager:
             if self.state.error_count > 0:
                 desc += f" [red]({self.state.error_count} errors)[/red]"
 
-            if self.disable_console_ui or not self.progress:
-                percent_int = int(progress)
-                current = subtask.get('current') if subtask else None
-                should_print = percent_int != self._last_reported_percent
-
-                if current is not None and current != self._last_reported_subtask:
-                    should_print = True
-
-                if error:
-                    should_print = True
-
-                if should_print:
-                    parts = [f"{icon} {label}:", message]
-                    if current is not None and subtask:
-                        total = subtask.get('total')
-                        if total:
-                            parts.append(f"[{current}/{total}]")
-
-                    summary = " ".join(filter(None, parts))
-                    self.console.print(summary)
-
-                    if error:
-                        self.console.print(f"[red]{error}[/red]")
-
-                    self._last_reported_percent = percent_int
-                    if current is not None:
-                        self._last_reported_subtask = current
-
-                # Track errors even in fallback mode
-                if error:
-                    self.state.errors.append(error)
-                    self.state.error_count += 1
-                    self.recent_errors.append(error)
-                    if len(self.recent_errors) > 5:
-                        self.recent_errors.pop(0)
+            if not ui_active:
+                self._log_plain_update(phase, progress, message, error)
+                if sample_data and current > 0 and current % self.show_json_every == 0:
+                    try:
+                        preview = json.dumps(sample_data, indent=2, ensure_ascii=False)
+                        if len(preview) > 400:
+                            preview = preview[:400] + "\n  ..."
+                        self.console.print(preview)
+                        self.last_json_display = current
+                    except Exception:
+                        pass
                 return
 
             # Create task on first update if not exists
@@ -804,6 +871,7 @@ class RichProgressManager:
                     completed=overall_complete,
                     description=desc
                 )
+                self._refresh_progress()
 
             # Handle errors
             if error:
@@ -843,12 +911,23 @@ class RichProgressManager:
 
             target_console = self.progress.console if self.progress is not None else self.console
 
+            if self.disable_console_ui:
+                target_console.print(panel)
+                return
+
+            refresh_rate = self.ui_config.refresh_hz or 4
+            now = time.time()
+
             if not hasattr(self, '_preview_live'):
                 from rich.live import Live
-                self._preview_live = Live(panel, console=target_console, refresh_per_second=4)
+                self._preview_live = Live(panel, console=target_console, refresh_per_second=refresh_rate)
                 self._preview_live.start()
+                self._last_preview_refresh = now
             else:
-                self._preview_live.update(panel, refresh=True)
+                min_interval = self.ui_config.min_render_interval
+                if min_interval <= 0 or (now - self._last_preview_refresh) >= min_interval:
+                    self._preview_live.update(panel, refresh=True)
+                    self._last_preview_refresh = now
 
         except Exception:
             pass  # Silently fail to avoid disrupting progress
@@ -856,17 +935,6 @@ class RichProgressManager:
             if hasattr(self, '_preview_live') and getattr(self._preview_live, 'stopped', False):
                 # Live may auto-stop if console errors; reset handler
                 del self._preview_live
-
-    def _format_elapsed(self, seconds: float) -> str:
-        """Format elapsed seconds into a short human readable string."""
-        if seconds < 60:
-            return f"{seconds:.1f}s"
-        if seconds < 3600:
-            minutes, secs = divmod(seconds, 60)
-            return f"{int(minutes)}m {int(secs)}s"
-        hours, remainder = divmod(seconds, 3600)
-        minutes = int(remainder // 60)
-        return f"{int(hours)}h {minutes}m"
 
     def _print_alert_summary(self):
         """Render a consolidated warning/error panel"""

@@ -1702,6 +1702,21 @@ source .venv/bin/activate  # macOS/Linux
 pip install -e .
 ```
 
+### Issue: VS Code integrated terminal freezes or flickers
+**Solution**: LLM Tool now throttles Rich updates automatically inside Electron/VS Code terminals, but you can fine-tune the behaviour:
+
+- `LLM_TOOL_RICH_PROFILE=safe|balanced|full|off` – choose a preset refresh profile (`safe` is default for VS Code).
+- `LLM_TOOL_FORCE_RICH_UI=1` – force the full dashboard even when a conservative profile was auto-selected.
+- `LLM_TOOL_RICH_REFRESH_HZ=<float>` – manually cap refresh rate (e.g. `3` to redraw three times per second).
+- `LLM_TOOL_RICH_MIN_RENDER_INTERVAL=<seconds>` – minimum delay between live updates.
+- `LLM_TOOL_DISABLE_RICH_UI=1` – fall back to plain-text logs (useful for very constrained terminals).
+
+Changes can be exported before launching `llm-tool`, e.g.:
+```bash
+export LLM_TOOL_RICH_PROFILE=balanced
+llm-tool
+```
+
 ### Issue: "CUDA out of memory" during training
 **Solution**: Reduce batch size in Training Arena settings:
 - Try batch size: 8 → 4 → 2
