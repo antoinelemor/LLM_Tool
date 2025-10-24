@@ -24,6 +24,8 @@ import sys
 import time
 import threading
 import json
+import queue
+from contextlib import suppress
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
@@ -598,28 +600,34 @@ class RichProgressManager:
         """Initialize with configuration"""
         self.ui_config = _get_rich_ui_config()
         self.disable_console_ui = self.ui_config.disable_ui
-        self.console = Console(
-            force_terminal=not self.disable_console_ui,
-            no_color=self.disable_console_ui
-        )
+        self.console: Optional[Console] = None
         self.state = ProgressState()
-        self.lock = threading.Lock()
+        self._state_lock = threading.Lock()
         self.show_json_every = show_json_every
         self.compact_mode = compact_mode
 
         # Progress tracking - SINGLE TASK ONLY
-        self.progress = None
-        self.overall_task_id = None
-        self.subtask_task_id = None
+        self.progress: Optional[Progress] = None
+        self.overall_task_id: Optional[str] = None
+        self.subtask_task_id: Optional[str] = None
+        self.live: Optional[Live] = None
+
         self.is_running = False
+        self._paused = False
         self._last_progress_refresh = 0.0
+        self._last_preview_refresh = 0.0
 
         # Sample tracking
         self.current_sample = None
-        self.recent_errors = []
-        self.recent_warnings = []
+        self.recent_errors: List[str] = []
+        self.recent_warnings: List[str] = []
         self.last_json_display = 0
-        self._last_preview_refresh = 0.0
+
+        # Rendering infrastructure (initialised in start)
+        self._event_queue: queue.Queue = queue.Queue(maxsize=4096)
+        self._render_thread: Optional[threading.Thread] = None
+        self._loop_ready = threading.Event()
+        self._queue_overflow_warned = False
 
     def start(self):
         """Start the progress display"""
@@ -629,16 +637,55 @@ class RichProgressManager:
         self.is_running = True
         self.state.start_time = time.time()
         self._last_progress_refresh = self.state.start_time
+        self._queue_overflow_warned = False
+
+        self._event_queue = queue.Queue(maxsize=4096)
+        self._loop_ready.clear()
+
+        self._render_thread = threading.Thread(
+            target=self._render_loop,
+            name="LLMToolRichRenderer",
+            daemon=True
+        )
+        self._render_thread.start()
+        self._loop_ready.wait()
+
+    def _render_loop(self):
+        try:
+            self._initialize_render_objects()
+            self._loop_ready.set()
+            while True:
+                func, args, kwargs = self._event_queue.get()
+                if func is None:
+                    self._event_queue.task_done()
+                    break
+                try:
+                    func(*args, **kwargs)
+                except Exception as exc:  # pragma: no cover - defensive
+                    target = self.console
+                    if target is not None:
+                        with suppress(Exception):
+                            target.print(f"[red]Rich UI error: {exc}[/red]")
+                finally:
+                    self._event_queue.task_done()
+        finally:
+            self._teardown_render_objects()
+            self.is_running = False
+            self._loop_ready.set()
+
+    def _initialize_render_objects(self):
+        self.console = Console(
+            force_terminal=not self.disable_console_ui,
+            no_color=self.disable_console_ui
+        )
 
         if self.disable_console_ui:
-            self.console.print(
-                "[yellow]Rich progress UI disabled for this terminal. "
-                "Falling back to textual updates.[/yellow]\n"
-                "[yellow]Export `LLM_TOOL_FORCE_RICH_UI=1` to override.[/yellow]"
-            )
+            with suppress(Exception):
+                self.console.print(
+                    "[yellow]Rich dashboard running in buffered mode (VS Code detected).[/yellow]"
+                )
             return
 
-        # Create single progress bar
         self.progress = Progress(
             SpinnerColumn(style="bright_cyan", spinner_name="dots"),
             TextColumn("[bold]{task.description}"),
@@ -658,11 +705,50 @@ class RichProgressManager:
             transient=False,
             auto_refresh=False
         )
-
-        # Start progress
         self.progress.start()
+        self.overall_task_id = None
+        self.subtask_task_id = None
 
-        # Task will be created on first update (no "Starting..." bar)
+        self.live = Live(
+            self._create_panel(),
+            console=self.console,
+            refresh_per_second=self.ui_config.refresh_hz or 4,
+            transient=False
+        )
+        self.live.start()
+        self._last_live_refresh = time.time()
+
+    def _teardown_render_objects(self):
+        if self.live is not None:
+            with suppress(Exception):
+                self.live.stop()
+        if self.progress is not None:
+            with suppress(Exception):
+                self.progress.stop()
+        self.live = None
+        self.progress = None
+        self.console = None
+        self.overall_task_id = None
+        self.subtask_task_id = None
+
+    def _call_on_ui_thread(self, func, *args, **kwargs):
+        if not self.is_running:
+            return
+        if threading.current_thread() is self._render_thread:
+            func(*args, **kwargs)
+            return
+        try:
+            self._event_queue.put_nowait((func, args, kwargs))
+        except queue.Full:
+            if not self._queue_overflow_warned:
+                self._queue_overflow_warned = True
+                message = "[red]Rich UI queue full – dropping updates.[/red]"
+                target = self.console
+                if target is not None:
+                    with suppress(Exception):
+                        target.print(message)
+                else:
+                    print(message)
 
     def _refresh_progress(self, force: bool = False):
         """Refresh the rich progress bar with throttling."""
@@ -694,36 +780,45 @@ class RichProgressManager:
 
     def pause_for_training(self):
         """Pause progress display for training phase"""
-        if self.is_running and self.progress:
+        if not self.is_running:
+            return
+
+        def _do_pause():
+            if not self.progress:
+                return
             try:
-                # Update status
                 self.progress.update(
                     self.overall_task_id,
                     description="⏸ Pausing for training..."
                 )
-
                 self._refresh_progress(force=True)
-
                 time.sleep(0.5)
-
-                # Stop and cleanup
                 self.progress.stop()
                 self.progress = None
-
-                print("\n━━━ Progress paused for training phase ━━━\n")
-
+                target_console = self.console or Console()
+                with suppress(Exception):
+                    target_console.print("\n[dim cyan]━━━ Progress paused for training phase ━━━[/dim cyan]\n")
                 self._paused = True
+            except Exception as exc:  # pragma: no cover - defensive
+                with suppress(Exception):
+                    (self.console or Console()).print(f"[yellow]Warning: Could not pause progress cleanly: {exc}[/yellow]")
 
-            except Exception as e:
-                print(f"Warning: Could not pause progress cleanly: {e}")
+        self._call_on_ui_thread(_do_pause)
 
     def resume_after_training(self):
         """Resume progress display after training"""
-        if self.is_running and hasattr(self, '_paused'):
-            try:
-                self.console.print("[dim cyan]━━━ Resuming progress display ━━━[/dim cyan]\n")
+        if not (self.is_running and hasattr(self, '_paused')):
+            return
 
-                # Recreate progress
+        def _do_resume():
+            target_console = self.console or Console()
+            try:
+                with suppress(Exception):
+                    target_console.print("[dim cyan]━━━ Resuming progress display ━━━[/dim cyan]\n")
+
+                if self.progress is not None:
+                    return
+
                 self.progress = Progress(
                     SpinnerColumn(style="bright_cyan", spinner_name="dots"),
                     TextColumn("[bold]{task.description}"),
@@ -745,31 +840,30 @@ class RichProgressManager:
                 )
 
                 self.progress.start()
-
-                # Single task
                 self.overall_task_id = self.progress.add_task(
                     "🚀 Reprise",
                     total=100,
                     completed=max(0.0, min(self.state.current_progress, 100.0))
                 )
-
-                # Refresh current display immediately
                 self.progress.update(
                     self.overall_task_id,
                     completed=max(0.0, min(self.state.current_progress, 100.0)),
                     description=f"{self.state.current_phase or 'Progress'}: {self.state.current_message}"
                 )
-
                 self._refresh_progress(force=True)
-
                 del self._paused
+            except Exception as exc:  # pragma: no cover - defensive
+                with suppress(Exception):
+                    target_console.print(f"[red]Warning: Could not resume progress: {exc}[/red]")
 
-            except Exception as e:
-                self.console.print(f"[red]Warning: Could not resume progress: {e}[/red]")
+        self._call_on_ui_thread(_do_resume)
 
     def stop(self):
         """Stop the display"""
-        if self.is_running:
+        if not self.is_running:
+            return
+
+        def _finalize():
             if self.progress and self.overall_task_id is not None:
                 self.progress.update(
                     self.overall_task_id,
@@ -777,109 +871,143 @@ class RichProgressManager:
                     description="✨ Pipeline Complete"
                 )
                 self._refresh_progress(force=True)
+                time.sleep(0.2)
 
-            if self.progress:
-                time.sleep(0.5)
-                self.progress.stop()
+        self._call_on_ui_thread(_finalize)
 
-            self.is_running = False
-            self.progress = None
-            self.overall_task_id = None
-            self.subtask_task_id = None
+        try:
+            self._event_queue.put_nowait((None, (), {}))
+        except queue.Full:  # pragma: no cover - defensive
+            self._event_queue.put((None, (), {}))
+
+        if self._render_thread:
+            self._render_thread.join(timeout=2.0)
+            self._render_thread = None
+
+        self.is_running = False
+        self.progress = None
+        self.live = None
+        self.overall_task_id = None
+        self.subtask_task_id = None
 
     def update_progress(self, phase: str, progress: float, message: str,
                        subtask: Optional[Dict[str, Any]] = None,
                        json_sample: Optional[Dict] = None,
                        error: Optional[str] = None):
         """Update progress with unified display"""
-        with self.lock:
-            if not self.is_running:
-                return
+        if not self.is_running:
+            return
 
-            ui_active = self.progress is not None
+        preview_payload: Optional[Dict] = None
+        ui_active = False
+        desc = ""
+        clamped_progress = max(0.0, min(progress, 100.0))
+
+        with self._state_lock:
+            # Snapshot UI availability while holding state lock to avoid races
+            ui_active = (not self.disable_console_ui) and (self.progress is not None)
 
             # Update state
             self.state.current_phase = phase
-            self.state.current_progress = progress
+            self.state.current_progress = clamped_progress
             self.state.current_message = message
 
-            # Get phase info
             phase_info = self.PHASES.get(phase, {})
             icon = phase_info.get('icon', '•')
             label = phase_info.get('label', phase.title())
-
-            # Build description - combine main and subtask info
             desc = f"{icon} {label}: {message}"
+
             sample_data = json_sample
             current = 0
             total = 0
 
-            # Add subtask info directly to main description
             if phase == 'annotation' and subtask:
-                current = subtask.get('current', 0)
-                total = subtask.get('total', 100)
-
+                current = int(subtask.get('current', 0))
+                total = int(subtask.get('total', 100))
                 self.state.completed_items = current
                 self.state.total_items = total
 
-                # Append subtask progress to main description
                 if current > 0:
                     desc = f"{icon} {label}: {message} [{current}/{total}]"
 
-                # Handle JSON sample
                 sample_data = subtask.get('json_data', json_sample)
                 if sample_data:
                     self.current_sample = sample_data
-                    if current > 0 and current % self.show_json_every == 0:
+                    should_emit_preview = (
+                        current > 0
+                        and self.show_json_every > 0
+                        and current % self.show_json_every == 0
+                        and (current - self.last_json_display) >= self.show_json_every
+                    )
+                    if should_emit_preview:
                         self.state.json_count += 1
                         self.state.last_json_sample = sample_data
+                        self.last_json_display = current
+                        preview_payload = sample_data
 
-                        if current - self.last_json_display >= self.show_json_every and ui_active:
-                            self._show_json_panel(sample_data)
-                            self.last_json_display = current
-
-            # Add error count if any
             if self.state.error_count > 0:
                 desc += f" [red]({self.state.error_count} errors)[/red]"
 
-            if not ui_active:
-                self._log_plain_update(phase, progress, message, error)
-                if sample_data and current > 0 and current % self.show_json_every == 0:
-                    try:
-                        preview = json.dumps(sample_data, indent=2, ensure_ascii=False)
-                        if len(preview) > 400:
-                            preview = preview[:400] + "\n  ..."
-                        self.console.print(preview)
-                        self.last_json_display = current
-                    except Exception:
-                        pass
-                return
-
-            # Create task on first update if not exists
-            if self.overall_task_id is None:
-                self.overall_task_id = self.progress.add_task(
-                    desc,
-                    total=100,
-                    completed=0
-                )
-
-            # Update overall progress bar (single bar only)
-            if self.overall_task_id is not None:
-                overall_complete = max(0.0, min(progress, 100.0))
-                self.progress.update(
-                    self.overall_task_id,
-                    completed=overall_complete,
-                    description=desc
-                )
-                self._refresh_progress()
-
-            # Handle errors
             if error:
                 self.state.errors.append(error)
                 self.state.error_count += 1
                 self.recent_errors.append(error)
                 if len(self.recent_errors) > 5:
                     self.recent_errors.pop(0)
+
+        if ui_active:
+            self._call_on_ui_thread(
+                self._ui_update_progress,
+                desc,
+                clamped_progress,
+                preview_payload
+            )
+        else:
+            self._call_on_ui_thread(
+                self._ui_plain_progress,
+                phase,
+                clamped_progress,
+                message,
+                error,
+                preview_payload
+            )
+
+    def _ui_update_progress(self, desc: str, progress: float, preview_payload: Optional[Dict]):
+        if not self.progress:
+            return
+
+        if self.overall_task_id is None:
+            self.overall_task_id = self.progress.add_task(
+                desc,
+                total=100,
+                completed=0
+            )
+
+        self.progress.update(
+            self.overall_task_id,
+            completed=max(0.0, min(progress, 100.0)),
+            description=desc
+        )
+        self._refresh_progress()
+
+        if preview_payload:
+            self._show_json_panel(preview_payload)
+
+    def _ui_plain_progress(self, phase: str, progress: float, message: str,
+                           error: Optional[str], preview_payload: Optional[Dict]):
+        self._log_plain_update(phase, progress, message, error)
+
+        if not preview_payload:
+            return
+
+        try:
+            preview = json.dumps(preview_payload, indent=2, ensure_ascii=False)
+            if len(preview) > 400:
+                preview = preview[:400] + "\n  ..."
+            target_console = self.console or Console()
+            target_console.print(preview)
+        except Exception:
+            pass
 
     def _show_json_panel(self, json_data: Dict):
         """Display or refresh the JSON preview panel"""
@@ -910,6 +1038,8 @@ class RichProgressManager:
             )
 
             target_console = self.progress.console if self.progress is not None else self.console
+            if target_console is None:
+                target_console = Console()
 
             if self.disable_console_ui:
                 target_console.print(panel)
@@ -965,6 +1095,8 @@ class RichProgressManager:
         )
 
         target_console = self.progress.console if self.progress is not None else self.console
+        if target_console is None:
+            target_console = Console()
         target_console.print(panel)
 
     def clear_subtask(self, subtask_name: str):
@@ -977,17 +1109,18 @@ class RichProgressManager:
         if item_info:
             error_msg = f"{item_info}: {error}"
 
-        self.state.errors.append(error_msg)
-        self.state.error_count += 1
-        self.recent_errors.append(error_msg)
-        if len(self.recent_errors) > 5:
-            self.recent_errors.pop(0)
+        with self._state_lock:
+            self.state.errors.append(error_msg)
+            self.state.error_count += 1
+            self.recent_errors.append(error_msg)
+            if len(self.recent_errors) > 5:
+                self.recent_errors.pop(0)
 
-        # Display error in panel
-        try:
-            self._print_alert_summary()
-        except:
-            pass  # Silently fail to avoid disrupting progress
+        if self.is_running:
+            self._call_on_ui_thread(self._print_alert_summary)
+        else:  # pragma: no cover - fallback for shutdown edges
+            with suppress(Exception):
+                self._print_alert_summary()
 
     def show_warning(self, warning: str, item_info: Optional[str] = None):
         """Display warning message in a panel without disrupting progress bars"""
@@ -995,39 +1128,53 @@ class RichProgressManager:
         if item_info:
             warning_msg = f"{item_info}: {warning}"
 
-        self.state.warnings.append(warning_msg)
-        self.recent_warnings.append(warning_msg)
-        if len(self.recent_warnings) > 5:
-            self.recent_warnings.pop(0)
+        with self._state_lock:
+            self.state.warnings.append(warning_msg)
+            self.recent_warnings.append(warning_msg)
+            if len(self.recent_warnings) > 5:
+                self.recent_warnings.pop(0)
 
-        # Display warning in panel
-        try:
-            self._print_alert_summary()
-        except:
-            pass  # Silently fail to avoid disrupting progress
+        if self.is_running:
+            self._call_on_ui_thread(self._print_alert_summary)
+        else:  # pragma: no cover - fallback for shutdown edges
+            with suppress(Exception):
+                self._print_alert_summary()
 
     def show_final_stats(self):
         """Show final statistics with samples"""
-        if not self.state.completed_items:
-            return
+        with self._state_lock:
+            if not self.state.completed_items:
+                return
+            snapshot = {
+                "completed_items": self.state.completed_items,
+                "json_count": self.state.json_count,
+                "error_count": self.state.error_count,
+                "warning_count": len(self.state.warnings),
+                "elapsed": time.time() - self.state.start_time,
+                "samples": list(self.state.annotation_samples[-3:]),
+            }
 
-        elapsed = time.time() - self.state.start_time
+        if self.is_running:
+            self._call_on_ui_thread(self._ui_render_final_stats, snapshot)
+        else:  # pragma: no cover - fallback if called post-stop
+            self._ui_render_final_stats(snapshot)
 
-        # Create stats table
+    def _ui_render_final_stats(self, snapshot: Dict[str, Any]):
+        target_console = self.console or Console()
+        target_console.print()
+
         stats = Table.grid(padding=1)
         stats.add_column(style="dim")
         stats.add_column(style="bright_white")
+        stats.add_row("Items processed:", str(snapshot["completed_items"]))
+        stats.add_row("JSON samples:", str(snapshot["json_count"]))
+        if snapshot["error_count"] > 0:
+            stats.add_row("Errors:", f"[red]{snapshot['error_count']}[/red]")
+        if snapshot["warning_count"] > 0:
+            stats.add_row("Warnings:", f"[yellow]{snapshot['warning_count']}[/yellow]")
+        stats.add_row("Total time:", f"{snapshot['elapsed']:.1f}s")
 
-        stats.add_row("Items processed:", str(self.state.completed_items))
-        stats.add_row("JSON samples:", str(self.state.json_count))
-        if self.state.error_count > 0:
-            stats.add_row("Errors:", f"[red]{self.state.error_count}[/red]")
-        if self.state.warnings:
-            stats.add_row("Warnings:", f"[yellow]{len(self.state.warnings)}[/yellow]")
-        stats.add_row("Total time:", f"{elapsed:.1f}s")
-
-        self.console.print()
-        self.console.print(
+        target_console.print(
             Panel(
                 stats,
                 title="[bold yellow]📊 Pipeline Summary[/bold yellow]",
@@ -1036,32 +1183,38 @@ class RichProgressManager:
             )
         )
 
-        # Show annotation samples
-        if self.state.annotation_samples:
-            self.console.print("\n[bold cyan]📝 Sample Annotations:[/bold cyan]")
-            for i, sample in enumerate(self.state.annotation_samples[-3:], 1):
+        samples = snapshot.get("samples") or []
+        if not samples:
+            return
+
+        target_console.print("\n[bold cyan]📝 Sample Annotations:[/bold cyan]")
+        for i, sample in enumerate(samples, 1):
+            try:
                 json_str = json.dumps(sample, indent=2, ensure_ascii=False)
-                lines = json_str.split('\n')
-                if len(lines) > 6:
-                    json_str = '\n'.join(lines[:5]) + '\n  ...\n}'
+            except Exception:
+                json_str = str(sample)
 
-                syntax = Syntax(
-                    json_str,
-                    "json",
-                    theme="monokai",
-                    line_numbers=False,
-                    background_color="default"
-                )
+            lines = json_str.split('\n')
+            if len(lines) > 6:
+                json_str = '\n'.join(lines[:5]) + '\n  ...\n}'
 
-                self.console.print(
-                    Panel(
-                        syntax,
-                        title=f"Sample {i}",
-                        border_style="dim cyan",
-                        expand=False,
-                        width=60
-                    )
+            syntax = Syntax(
+                json_str,
+                "json",
+                theme="monokai",
+                line_numbers=False,
+                background_color="default"
+            )
+
+            target_console.print(
+                Panel(
+                    syntax,
+                    title=f"Sample {i}",
+                    border_style="dim cyan",
+                    expand=False,
+                    width=60
                 )
+            )
 
     def __enter__(self):
         """Context manager entry"""

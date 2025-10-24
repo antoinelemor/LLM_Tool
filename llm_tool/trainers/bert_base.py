@@ -125,6 +125,152 @@ except ImportError:
         return None
 
 
+# ================== Rich Live Update Throttling Configuration ==================
+# Configuration for throttling Rich Live updates to prevent terminal saturation
+# This is critical for preventing VS Code crashes when training on GPU
+
+# Default throttle interval in seconds (0.25 = 4 Hz max)
+DEFAULT_UPDATE_THROTTLE = 0.25
+
+# Read throttle configuration from environment
+# LLM_TOOL_UPDATE_THROTTLE: Min seconds between updates (default: 0.25)
+# LLM_TOOL_DISABLE_LIVE_UPDATE: Set to 'true' to disable live updates completely
+# LLM_TOOL_FORCE_UPDATE_INTERVAL: Force updates every N batches regardless of throttle
+UPDATE_THROTTLE = float(os.environ.get('LLM_TOOL_UPDATE_THROTTLE', str(DEFAULT_UPDATE_THROTTLE)))
+DISABLE_LIVE_UPDATE = os.environ.get('LLM_TOOL_DISABLE_LIVE_UPDATE', '').lower() == 'true'
+FORCE_UPDATE_INTERVAL = int(os.environ.get('LLM_TOOL_FORCE_UPDATE_INTERVAL', '0'))
+
+# Detect if we're running in VS Code terminal (higher risk of crashes)
+IS_VSCODE_TERMINAL = os.environ.get('TERM_PROGRAM', '') == 'vscode'
+if IS_VSCODE_TERMINAL and UPDATE_THROTTLE < 0.5:
+    # Automatically increase throttle for VS Code to be safer
+    UPDATE_THROTTLE = max(UPDATE_THROTTLE, 0.5)
+    print(f"[Info] VS Code terminal detected - increased update throttle to {UPDATE_THROTTLE}s for stability")
+
+
+class ThrottledLiveUpdater:
+    """
+    Throttles Rich Live updates to prevent terminal saturation.
+
+    This class wraps a Rich Live object and limits the frequency of updates
+    to prevent crashes in terminals that can't handle high-frequency refreshes,
+    particularly VS Code's integrated terminal when training on GPU.
+
+    Attributes:
+        live: The Rich Live object to wrap
+        min_interval: Minimum seconds between updates (default from UPDATE_THROTTLE)
+        batch_interval: Update every N batches regardless of time (0 = disabled)
+        disabled: If True, no updates are performed
+        last_update: Timestamp of last update
+        batch_count: Counter for batch-based updates
+        pending_update: Stores the last panel if an update was skipped
+        force_next: Force the next update regardless of throttling
+    """
+
+    def __init__(self, live, min_interval=None, batch_interval=None, disabled=None):
+        """
+        Initialize the throttled updater.
+
+        Args:
+            live: Rich Live object to wrap
+            min_interval: Min seconds between updates (default: UPDATE_THROTTLE)
+            batch_interval: Update every N batches (default: FORCE_UPDATE_INTERVAL)
+            disabled: Disable all updates (default: DISABLE_LIVE_UPDATE)
+        """
+        self.live = live
+        self.min_interval = min_interval if min_interval is not None else UPDATE_THROTTLE
+        self.batch_interval = batch_interval if batch_interval is not None else FORCE_UPDATE_INTERVAL
+        self.disabled = disabled if disabled is not None else DISABLE_LIVE_UPDATE
+
+        self.last_update = 0
+        self.batch_count = 0
+        self.pending_update = None
+        self.force_next = False
+
+        # Statistics for debugging
+        self.updates_performed = 0
+        self.updates_skipped = 0
+
+    def update(self, panel, force=False, is_batch=False):
+        """
+        Update the live display with throttling.
+
+        Args:
+            panel: The panel to display
+            force: Force this update regardless of throttling (for important events)
+            is_batch: True if this is a per-batch update (enables batch counting)
+
+        Returns:
+            bool: True if update was performed, False if skipped
+        """
+        # If updates are disabled, skip everything
+        if self.disabled and not force:
+            self.updates_skipped += 1
+            return False
+
+        # Increment batch counter if this is a batch update
+        if is_batch:
+            self.batch_count += 1
+
+        # Check if we should force this update
+        should_update = force or self.force_next
+
+        # Check time-based throttling
+        if not should_update:
+            now = time.time()
+            time_elapsed = now - self.last_update
+            should_update = time_elapsed >= self.min_interval
+
+        # Check batch-based forcing
+        if not should_update and self.batch_interval > 0 and is_batch:
+            should_update = self.batch_count % self.batch_interval == 0
+
+        # Perform or skip the update
+        if should_update:
+            self.live.update(panel)
+            self.last_update = time.time()
+            self.force_next = False
+            self.pending_update = None
+            self.updates_performed += 1
+            return True
+        else:
+            # Store pending update to show later
+            self.pending_update = panel
+            self.updates_skipped += 1
+            return False
+
+    def force_next_update(self):
+        """Mark the next update to be forced regardless of throttling."""
+        self.force_next = True
+
+    def flush_pending(self):
+        """Force display of any pending update."""
+        if self.pending_update is not None:
+            self.live.update(self.pending_update)
+            self.pending_update = None
+            self.last_update = time.time()
+            self.updates_performed += 1
+
+    def get_stats(self):
+        """Get statistics about throttling performance."""
+        total = self.updates_performed + self.updates_skipped
+        if total == 0:
+            return "No updates yet"
+
+        skip_rate = (self.updates_skipped / total) * 100
+        return (f"Updates: {self.updates_performed} performed, "
+                f"{self.updates_skipped} skipped ({skip_rate:.1f}% throttled)")
+
+    def __enter__(self):
+        """Context manager entry - delegate to wrapped Live object."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - flush pending updates."""
+        self.flush_pending()
+        # Note: The actual Live object's __exit__ is called by the with statement
+
+
 class TrainingDisplay:
     """Rich Live Display for training progress with all metrics."""
 
@@ -1816,6 +1962,9 @@ class BertBase(BertABC):
         # Start Live display - this will remain fixed and update in place
         # Use transient=True to clear the display when context exits (prevents stacking)
         with Live(display.create_panel(), refresh_per_second=4, transient=True) as live:
+            # Wrap the live object with throttling to prevent terminal saturation
+            throttled_live = ThrottledLiveUpdater(live)
+
             for i_epoch in range(n_epochs):
                 epoch_start_time = time.time()
 
@@ -1824,7 +1973,8 @@ class BertBase(BertABC):
                 display.current_phase = "Training"
                 display.train_total = len(train_dataloader)
                 display.train_progress = 0
-                live.update(display.create_panel())
+                # Force update at epoch start (important milestone)
+                throttled_live.update(display.create_panel(), force=True)
 
                 t0 = time.time()
                 total_train_loss = 0.0
@@ -1873,7 +2023,10 @@ class BertBase(BertABC):
                     display.train_loss = loss.item()
                     display.epoch_time = time.time() - epoch_start_time  # Update elapsed time
                     display.total_time = time.time() - training_start_time
-                    live.update(display.create_panel())
+                    # Throttled update for each batch (this is the critical path for GPU training)
+                    # Force update on last batch to ensure final state is shown
+                    is_last_batch = (step == len(train_dataloader) - 1)
+                    throttled_live.update(display.create_panel(), force=is_last_batch, is_batch=True)
 
                 # After training loop - calculate average loss
                 avg_train_loss = total_train_loss / len(train_dataloader)
@@ -1885,7 +2038,8 @@ class BertBase(BertABC):
                 display.current_phase = "Validation"
                 display.val_total = len(test_dataloader)
                 display.val_progress = 0
-                live.update(display.create_panel())
+                # Force update for phase transition (Training -> Validation)
+                throttled_live.update(display.create_panel(), force=True)
 
                 # =============== Validation after this epoch ===============
                 t0 = time.time()
@@ -1918,7 +2072,10 @@ class BertBase(BertABC):
                     display.val_loss = loss.item()
                     display.epoch_time = time.time() - epoch_start_time  # Update elapsed time
                     display.total_time = time.time() - training_start_time
-                    live.update(display.create_panel())
+                    # Throttled update for validation batches
+                    # Force update on last batch to ensure final state is shown
+                    is_last_batch = (step == len(test_dataloader) - 1)
+                    throttled_live.update(display.create_panel(), force=is_last_batch, is_batch=True)
 
                 # After validation loop
                 logits_complete = np.concatenate(logits_complete, axis=0)
@@ -1928,7 +2085,8 @@ class BertBase(BertABC):
                 # Update display with final validation metrics
                 display.val_loss = avg_val_loss
                 display.val_time = time.time() - t0
-                live.update(display.create_panel())
+                # Force update to show final validation metrics
+                throttled_live.update(display.create_panel(), force=True)
 
                 preds = np.argmax(logits_complete, axis=1).flatten()
 
@@ -2009,7 +2167,8 @@ class BertBase(BertABC):
                 display.f1_scores = f1_scores
                 display.f1_macro = macro_f1
                 display.support = supports
-                live.update(display.create_panel())
+                # Update with calculated metrics
+                throttled_live.update(display.create_panel(), force=True)
 
                 # Initialize language_metrics (will be populated if tracking languages)
                 language_metrics = {}
@@ -2098,7 +2257,8 @@ class BertBase(BertABC):
                         std_f1 = np.std(f1_class1_values)
                         display.language_variance = (std_f1 / mean_f1) if mean_f1 > 0 else 0
 
-                    live.update(display.create_panel())
+                    # Update with calculated metrics
+                    throttled_live.update(display.create_panel(), force=True)
 
                     # Store language metrics for this epoch
                     averages: Optional[Dict[str, float]] = None
@@ -2260,13 +2420,15 @@ class BertBase(BertABC):
                     display.best_f1 = macro_f1
                     display.best_epoch = i_epoch + 1
                     display.combined_metric = combined_metric
-                    live.update(display.create_panel())
-                    # Remove old best model folder if it exists
-                    if best_model_path is not None:
-                        try:
-                            shutil.rmtree(best_model_path)
-                        except OSError:
-                            pass
+                    # Update with calculated metrics
+                    throttled_live.update(display.create_panel(), force=True)
+
+                # Remove old best model folder if it exists
+                if best_model_path is not None:
+                    try:
+                        shutil.rmtree(best_model_path)
+                    except OSError:
+                        pass
 
                     best_metric_val = combined_metric
                     best_combined_metric_value = combined_metric
@@ -2517,7 +2679,8 @@ class BertBase(BertABC):
 
                 else:
                     # No new best model this epoch, but still update display to show current epoch timing
-                    live.update(display.create_panel())
+                    # Update with calculated metrics
+                    throttled_live.update(display.create_panel(), force=True)
 
                 # Epoch summary removed - Rich Live display is sufficient
                 # (keeping print() was pushing the Rich table down on every epoch)
@@ -2525,7 +2688,8 @@ class BertBase(BertABC):
             # End of normal training (after all epochs) - display final summary
             display.current_phase = "Training Complete"
             display.total_time = time.time() - training_start_time
-            live.update(display.create_panel())
+            # Final update at the end of all epochs
+            throttled_live.update(display.create_panel(), force=True)
 
             # Save language performance history if available
             if track_languages and language_performance_history and best_model_path:
@@ -2771,7 +2935,8 @@ class BertBase(BertABC):
                     display.val_total = 0
 
                     # IMMEDIATELY update display to show transition (prevents panel stacking)
-                    live.update(display.create_panel(), refresh=True)
+                    throttled_live.update(display.create_panel(), force=True)
+                    throttled_live.flush_pending()  # Ensure update is immediately visible
                     time.sleep(0.2)  # Brief pause for clean visual transition
 
                     # Prepare reinforced training setup
@@ -2912,7 +3077,8 @@ class BertBase(BertABC):
                         display.current_phase = f"🔥 Reinforced Epoch {epoch + 1}/{n_epochs_reinforced}"
                         display.train_total = len(new_train_dataloader)
                         display.train_progress = 0
-                        live.update(display.create_panel())  # ✅ INLINE update - same context
+                        # Update with calculated metrics
+                        throttled_live.update(display.create_panel(), force=True)  # ✅ INLINE update - same context
 
                         # Training phase
                         t0 = time.time()
@@ -2948,7 +3114,8 @@ class BertBase(BertABC):
                             display.train_loss = loss.item()
                             display.epoch_time = time.time() - epoch_start_time
                             display.total_time = time.time() - reinforced_start_time
-                            live.update(display.create_panel())  # ✅ INLINE update
+                            # Update with calculated metrics
+                            throttled_live.update(display.create_panel(), force=True)  # ✅ INLINE update
 
                         avg_train_loss = running_loss / len(new_train_dataloader)
                         display.train_loss = avg_train_loss
@@ -2956,7 +3123,8 @@ class BertBase(BertABC):
                         display.current_phase = "Validation (Reinforced)"
                         display.val_total = len(test_dataloader)
                         display.val_progress = 0
-                        live.update(display.create_panel())  # ✅ INLINE update
+                        # Update with calculated metrics
+                        throttled_live.update(display.create_panel(), force=True)  # ✅ INLINE update
 
                         # Validation phase
                         model.eval()
@@ -2988,7 +3156,8 @@ class BertBase(BertABC):
                             display.val_loss = val_loss.item()
                             display.epoch_time = time.time() - epoch_start_time
                             display.total_time = time.time() - reinforced_start_time
-                            live.update(display.create_panel())  # ✅ INLINE update
+                            # Update with calculated metrics
+                            throttled_live.update(display.create_panel(), force=True)  # ✅ INLINE update
 
                         avg_val_loss = total_val_loss / len(test_dataloader)
                         logits_complete = np.concatenate(logits_complete, axis=0)
@@ -3099,7 +3268,8 @@ class BertBase(BertABC):
                             # Update display with language metrics
                             display.language_metrics = language_metrics
 
-                        live.update(display.create_panel())  # ✅ INLINE update with all metrics
+                        # Update with calculated metrics
+                        throttled_live.update(display.create_panel(), force=True)  # ✅ INLINE update with all metrics
 
                         # Write epoch metrics to CSV
                         current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -3359,7 +3529,8 @@ class BertBase(BertABC):
 
                                 # Show in display instead of logger (to avoid breaking Rich Live)
                                 display.current_phase = f"🔥 NEW BEST! Metric: {current_metric:.4f}"
-                                live.update(display.create_panel())
+                                # Update with calculated metrics
+                                throttled_live.update(display.create_panel(), force=True)
 
                     # Finalize reinforced model path
                     if best_model_path and best_model_path.endswith("_reinforced_temp"):
@@ -3376,7 +3547,9 @@ class BertBase(BertABC):
                     display.current_phase = "✅ Training Complete (Reinforced)"
                     display.train_progress = 0
                     display.val_progress = 0
-                    live.update(display.create_panel(), refresh=True)
+                    # Final update after reinforced training
+                    throttled_live.update(display.create_panel(), force=True)
+                    throttled_live.flush_pending()  # Ensure update is immediately visible
                     time.sleep(0.15)  # Brief pause for visual clarity
 
             if track_languages and language_performance_history and best_model_path:

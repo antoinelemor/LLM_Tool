@@ -92,3 +92,4 @@ Thumbs.db
 
 # Project specific
 paper/results/scripts/extract_results_from_csv.py
+docs/RICH_THROTTLING.md
