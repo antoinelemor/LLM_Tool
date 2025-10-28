@@ -134,9 +134,13 @@ except ImportError:
 # Default throttle interval in seconds (0.25 = 4 Hz max)
 DEFAULT_UPDATE_THROTTLE = 0.25
 # When we auto-detect an Electron / VS Code terminal we fall back to a much slower cadence
-DEFAULT_VSCODE_UPDATE_THROTTLE = 60.0  # once per minute unless the user overrides
-DEFAULT_VSCODE_MIN_THROTTLE = 2.0      # never spam updates faster than this inside VS Code
+DEFAULT_VSCODE_UPDATE_THROTTLE = 30.0   # once every 30s unless the user overrides
+DEFAULT_VSCODE_MIN_THROTTLE = 2.0       # never spam updates faster than this inside VS Code
 DEFAULT_TERMINAL_CLEAR_INTERVAL = 600.0  # seconds; periodic screen clear to keep buffers bounded
+DEFAULT_TERMINAL_CLEAR_UPDATES = 0       # disabled by default (time based only)
+DEFAULT_VSCODE_CLEAR_INTERVAL = 120.0    # sweep VS Code scrollback roughly every 2 minutes
+DEFAULT_VSCODE_MIN_CLEAR_INTERVAL = 60.0 # but never less than once per minute unless overridden
+DEFAULT_VSCODE_CLEAR_UPDATES = 4         # also rotate after a handful of Live frames in VS Code
 
 
 def _env_flag(name: str) -> bool:
@@ -195,6 +199,9 @@ TERMINAL_CLEAR_INTERVAL = _env_float(
 )
 if TERMINAL_CLEAR_INTERVAL <= 0:
     TERMINAL_CLEAR_INTERVAL = None
+TERMINAL_CLEAR_UPDATE_LIMIT = _env_int("LLM_TOOL_TERMINAL_CLEAR_UPDATES", DEFAULT_TERMINAL_CLEAR_UPDATES)
+if TERMINAL_CLEAR_UPDATE_LIMIT <= 0:
+    TERMINAL_CLEAR_UPDATE_LIMIT = 0
 
 # Detect if we're running in VS Code terminal (higher risk of crashes)
 IS_VSCODE_TERMINAL = _running_inside_vscode_terminal()
@@ -217,15 +224,103 @@ if IS_VSCODE_TERMINAL:
                 f"using {UPDATE_THROTTLE:.1f}s minimum interval.[/yellow]"
             )
 
+    # Aggressive buffer rotation for VS Code to avoid scrollback explosions
+    recommended_clear_interval = max(
+        DEFAULT_VSCODE_MIN_CLEAR_INTERVAL,
+        (UPDATE_THROTTLE if UPDATE_THROTTLE > 0 else DEFAULT_VSCODE_CLEAR_INTERVAL) * 4,
+    )
+    vscode_clear_interval = _env_float(
+        "LLM_TOOL_VSCODE_CLEAR_INTERVAL",
+        recommended_clear_interval,
+        allow_zero=True,
+    )
+    if vscode_clear_interval and vscode_clear_interval < DEFAULT_VSCODE_MIN_CLEAR_INTERVAL:
+        # Respect lower overrides but never go negative; allow zero to disable
+        vscode_clear_interval = max(vscode_clear_interval, 0.0)
+    if vscode_clear_interval == 0:
+        vscode_clear_interval = None
+
+    vscode_clear_updates = _env_int("LLM_TOOL_VSCODE_CLEAR_UPDATES", DEFAULT_VSCODE_CLEAR_UPDATES)
+    if vscode_clear_updates <= 0:
+        vscode_clear_updates = 0
+
+    if vscode_clear_interval is not None:
+        if TERMINAL_CLEAR_INTERVAL is None or TERMINAL_CLEAR_INTERVAL > vscode_clear_interval:
+            TERMINAL_CLEAR_INTERVAL = vscode_clear_interval
+    elif TERMINAL_CLEAR_INTERVAL is None:
+        # If everything else disabled we still want a sane default
+        TERMINAL_CLEAR_INTERVAL = recommended_clear_interval
+
+    if TERMINAL_CLEAR_UPDATE_LIMIT <= 0 and vscode_clear_updates > 0:
+        TERMINAL_CLEAR_UPDATE_LIMIT = vscode_clear_updates
+
+    if console.is_terminal:
+        if TERMINAL_CLEAR_INTERVAL:
+            console.log(
+                f"[cyan]VS Code buffer rotation active – clearing live surface every {TERMINAL_CLEAR_INTERVAL:.0f}s"
+                f"{' or ' + str(TERMINAL_CLEAR_UPDATE_LIMIT) + ' updates' if TERMINAL_CLEAR_UPDATE_LIMIT else ''}."
+                "[/cyan]"
+            )
+        elif TERMINAL_CLEAR_UPDATE_LIMIT:
+            console.log(
+                f"[cyan]VS Code buffer rotation active – clearing live surface every "
+                f"{TERMINAL_CLEAR_UPDATE_LIMIT} updates.[/cyan]"
+            )
+
 
 # Configure Live rendering strategy based on Rich version support
 _live_signature = inspect.signature(Live.__init__)
 LIVE_BASE_KWARGS = {"transient": True}
-_manual_refresh_rate = 1 / 60  # ~1 refresh per minute if auto refresh is enabled internally
+_manual_refresh_rate = 1 / 30  # ~1 refresh every 30 seconds
 if "auto_refresh" in _live_signature.parameters:
     LIVE_BASE_KWARGS.update({"auto_refresh": False, "refresh_per_second": _manual_refresh_rate})
 else:
     LIVE_BASE_KWARGS.update({"refresh_per_second": _manual_refresh_rate})
+
+
+def _clear_terminal_buffer(console_obj) -> bool:
+    """
+    Best-effort clearing of the active terminal surface and scrollback.
+
+    Returns
+    -------
+    bool
+        True when at least one clearing strategy executed without raising.
+    """
+    cleared = False
+
+    # Send erase commands via Rich's control API (supported terminals will comply)
+    for target in ("scroll", "screen"):
+        try:
+            console_obj.control(Control("erase", target))
+            cleared = True
+        except Exception:
+            pass
+
+    try:
+        console_obj.clear()
+        cleared = True
+    except Exception:
+        pass
+
+    # Ensure cursor returns to origin so the next Live frame repaints from the top
+    try:
+        console_obj.control(Control("home"))
+        cleared = True
+    except Exception:
+        pass
+
+    # Fallback: raw ANSI sequence to wipe scrollback and screen for stubborn terminals (e.g. VS Code)
+    try:
+        stream = getattr(console_obj, "file", None)
+        if stream is not None:
+            stream.write("\033[3J\033[2J\033[H")
+            stream.flush()
+            cleared = True
+    except Exception:
+        pass
+
+    return cleared
 
 
 class ThrottledLiveUpdater:
@@ -245,9 +340,19 @@ class ThrottledLiveUpdater:
         batch_count: Counter for batch-based updates
         pending_update: Stores the last panel if an update was skipped
         force_next: Force the next update regardless of throttling
+        auto_clear_interval: Seconds between automatic clears (if configured)
+        auto_clear_updates: Max number of frames before forcing a clear (if configured)
     """
 
-    def __init__(self, live, min_interval=None, batch_interval=None, disabled=None, auto_clear_interval=None):
+    def __init__(
+        self,
+        live,
+        min_interval=None,
+        batch_interval=None,
+        disabled=None,
+        auto_clear_interval=None,
+        auto_clear_updates=None,
+    ):
         """
         Initialize the throttled updater.
 
@@ -256,6 +361,8 @@ class ThrottledLiveUpdater:
             min_interval: Min seconds between updates (default: UPDATE_THROTTLE)
             batch_interval: Update every N batches (default: FORCE_UPDATE_INTERVAL)
             disabled: Disable all updates (default: DISABLE_LIVE_UPDATE)
+            auto_clear_interval: Override for time-based clearing cadence (seconds)
+            auto_clear_updates: Override for update-count based clearing cadence
         """
         self.live = live
         self.min_interval = min_interval if min_interval is not None else UPDATE_THROTTLE
@@ -267,6 +374,14 @@ class ThrottledLiveUpdater:
         else:
             self.auto_clear_interval = TERMINAL_CLEAR_INTERVAL
 
+        if auto_clear_updates is not None:
+            self.auto_clear_updates = auto_clear_updates if auto_clear_updates > 0 else None
+        else:
+            self.auto_clear_updates = (
+                TERMINAL_CLEAR_UPDATE_LIMIT if TERMINAL_CLEAR_UPDATE_LIMIT > 0 else None
+            )
+
+        self._updates_since_clear = 0
         self.last_update = 0.0
         self.batch_count = 0
         self.pending_update = None
@@ -321,11 +436,12 @@ class ThrottledLiveUpdater:
         # Perform or skip the update
         if should_update:
             self._apply_terminal_housekeeping(now)
-            self.live.update(panel)
+            self.live.update(panel, refresh=True)
             self.last_update = now
             self.force_next = False
             self.pending_update = None
             self.updates_performed += 1
+            self._updates_since_clear += 1
             self._record_interval(now)
             return True
         else:
@@ -343,10 +459,12 @@ class ThrottledLiveUpdater:
         if self.pending_update is not None:
             now = time.time()
             self._apply_terminal_housekeeping(now)
-            self.live.update(self.pending_update)
+            self.live.update(self.pending_update, refresh=True)
             self.pending_update = None
             self.last_update = now
             self.updates_performed += 1
+            self.force_next = False
+            self._updates_since_clear += 1
             self._record_interval(now)
 
     def get_stats(self):
@@ -369,10 +487,12 @@ class ThrottledLiveUpdater:
 
         if self.auto_clear_interval:
             parts.append(f"auto_clear={self.auto_clear_interval:.0f}s")
-            if self.clear_operations:
-                parts.append(f"clears={self.clear_operations}")
-            if self.housekeeping_failures:
-                parts.append(f"clear_failures={self.housekeeping_failures}")
+        if self.auto_clear_updates:
+            parts.append(f"auto_clear_updates={self.auto_clear_updates}")
+        if self.clear_operations:
+            parts.append(f"clears={self.clear_operations}")
+        if self.housekeeping_failures:
+            parts.append(f"clear_failures={self.housekeeping_failures}")
 
         return ", ".join(parts)
 
@@ -385,27 +505,35 @@ class ThrottledLiveUpdater:
         self.flush_pending()
         # Note: The actual Live object's __exit__ is called by the with statement
 
-    def _apply_terminal_housekeeping(self, now: float) -> None:
+    def _apply_terminal_housekeeping(self, now: float) -> bool:
         """Occasionally clear the terminal buffer to avoid unbounded growth."""
-        if not self.auto_clear_interval:
-            return
+        if not self.auto_clear_interval and not self.auto_clear_updates:
+            return False
+
         console_obj = getattr(self.live, "console", None)
         if not console_obj or not getattr(console_obj, "is_terminal", False):
-            return
-        if (now - self.last_clear_time) < self.auto_clear_interval:
-            return
+            return False
 
-        try:
-            console_obj.control(Control("erase", "scroll"))
-            console_obj.control(Control("erase", "screen"))
-            console_obj.control(Control("home"))
+        due_by_time = False
+        if self.auto_clear_interval:
+            due_by_time = (now - self.last_clear_time) >= self.auto_clear_interval
+
+        due_by_updates = False
+        if self.auto_clear_updates:
+            due_by_updates = self._updates_since_clear >= self.auto_clear_updates
+
+        if not (due_by_time or due_by_updates):
+            return False
+
+        cleared = _clear_terminal_buffer(console_obj)
+        if cleared:
             self.clear_operations += 1
-        except Exception:
-            # If the terminal rejects the escape sequence don't spam retries
+            self._updates_since_clear = 0
+        else:
             self.housekeeping_failures += 1
-        finally:
-            # Avoid repeatedly attempting to clear in a tight loop when an error occurs
-            self.last_clear_time = now
+
+        self.last_clear_time = now
+        return cleared
 
     def _record_interval(self, now: float) -> None:
         """Track observed intervals between rendered frames for telemetry."""
@@ -2105,6 +2233,7 @@ class BertBase(BertABC):
         live_stats_summary = None
         live_stats_min_interval = UPDATE_THROTTLE
         live_stats_clear_interval = TERMINAL_CLEAR_INTERVAL
+        live_stats_clear_updates = TERMINAL_CLEAR_UPDATE_LIMIT if TERMINAL_CLEAR_UPDATE_LIMIT else None
 
         # Start Live display - this will remain fixed and update in place
         # Use transient=True to clear the display when context exits (prevents stacking)
@@ -3710,11 +3839,14 @@ class BertBase(BertABC):
             live_stats_summary = throttled_live.get_stats()
             live_stats_min_interval = throttled_live.min_interval
             live_stats_clear_interval = throttled_live.auto_clear_interval
+            live_stats_clear_updates = throttled_live.auto_clear_updates
 
         if live_stats_summary:
             clear_suffix = ""
             if live_stats_clear_interval:
                 clear_suffix = f", auto_clear={int(live_stats_clear_interval)}s"
+            if live_stats_clear_updates:
+                clear_suffix += f", auto_clear_updates={live_stats_clear_updates}"
             self.logger.info(
                 "Rich live updates summary (min_interval=%.1fs%s): %s",
                 live_stats_min_interval,
