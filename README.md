@@ -1710,6 +1710,10 @@ pip install -e .
 - `LLM_TOOL_RICH_REFRESH_HZ=<float>` – manually cap refresh rate (e.g. `3` to redraw three times per second).
 - `LLM_TOOL_RICH_MIN_RENDER_INTERVAL=<seconds>` – minimum delay between live updates.
 - `LLM_TOOL_DISABLE_RICH_UI=1` – fall back to plain-text logs (useful for very constrained terminals).
+- `LLM_TOOL_UPDATE_THROTTLE=<seconds>` – global minimum delay between training dashboard refreshes (overrides auto-detection).
+- `LLM_TOOL_VSCODE_SAFE_THROTTLE=<seconds>` – cadence used when VS Code is detected (defaults to 60 s to keep Electron stable).
+- `LLM_TOOL_VSCODE_MIN_THROTTLE=<seconds>` – lowest refresh interval allowed inside VS Code when you force a faster rate.
+- `LLM_TOOL_TERMINAL_CLEAR_INTERVAL=<seconds>` – periodically clear the integrated terminal scrollback (set to `0` to disable).
 
 Changes can be exported before launching `llm-tool`, e.g.:
 ```bash
