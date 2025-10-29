@@ -383,6 +383,8 @@ class MetadataManager:
             config["onevsall_keys"] = bundle.metadata.get('onevsall_keys', [])
             config["key_strategies"] = bundle.metadata.get('key_strategies', {})
             config["files_per_key"] = bundle.metadata.get('files_per_key', {})
+            config["all_keys_values"] = bundle.metadata.get('all_keys_values', {})
+            config["value_counts_by_key"] = bundle.metadata.get('value_counts_by_key', {})
 
         return config
 

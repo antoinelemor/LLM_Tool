@@ -2422,6 +2422,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         # df already loaded above for language detection
 
         all_keys_values = {}  # {key: set_of_unique_values}
+        value_counts_by_key = {}  # {key: {value: occurrence_count}}
         total_samples = 0
         malformed_count = 0
 
@@ -2449,13 +2450,20 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 for key, value in annotation_dict.items():
                     if key not in all_keys_values:
                         all_keys_values[key] = set()
+                    if key not in value_counts_by_key:
+                        value_counts_by_key[key] = {}
+                    counts_for_key = value_counts_by_key[key]
 
                     if isinstance(value, list):
                         for v in value:
                             if v is not None and v != '':
-                                all_keys_values[key].add(str(v))
+                                v_str = str(v)
+                                all_keys_values[key].add(v_str)
+                                counts_for_key[v_str] = counts_for_key.get(v_str, 0) + 1
                     elif value is not None and value != '':
-                        all_keys_values[key].add(str(value))
+                        v_str = str(value)
+                        all_keys_values[key].add(v_str)
+                        counts_for_key[v_str] = counts_for_key.get(v_str, 0) + 1
 
             except (json.JSONDecodeError, AttributeError, TypeError, ValueError, SyntaxError) as e:
                 malformed_count += 1
@@ -2579,6 +2587,12 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                         )
 
                     self.console.print(values_table)
+
+                    # Capture counts for later metadata usage
+                    value_counts_by_key[key] = {
+                        val: int(value_counts.get(val, 0))
+                        for val in values_set
+                    }
 
                     # Ask if user wants to exclude any values for this key
                     exclude_for_key = Confirm.ask(
@@ -3199,22 +3213,41 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[dim]Optional: Select ID and language columns if available in your dataset.[/dim]\n")
 
+        # Determine the dataset path for optional re-load / ID heuristics
+        data_path_obj: Optional[Path] = None
+        local_data_path = locals().get('data_path')
+        if isinstance(local_data_path, (str, Path)):
+            data_path_obj = Path(local_data_path)
+        elif isinstance(analysis.get('data_path'), (str, Path)):
+            data_path_obj = Path(analysis['data_path'])
+        elif 'selection' in locals() and isinstance(selection, dict) and selection.get('data_path'):
+            data_path_obj = Path(selection['data_path'])
+        elif 'bundle' in locals():
+            bundle_obj = locals()['bundle']
+            primary_file = getattr(bundle_obj, "primary_file", None)
+            if primary_file:
+                data_path_obj = Path(primary_file)
+
         # Use modernized ID selection - load dataframe if needed
         try:
             if not isinstance(df, pd.DataFrame):
                 # Need to load dataframe for ID detection
-                if data_path.suffix.lower() == '.csv':
-                    df = pd.read_csv(data_path, nrows=1000)
-                elif data_path.suffix.lower() == '.json':
-                    df = pd.read_json(data_path, lines=False, nrows=1000)
-                elif data_path.suffix.lower() == '.jsonl':
-                    df = pd.read_json(data_path, lines=True, nrows=1000)
-                elif data_path.suffix.lower() in ['.xlsx', '.xls']:
-                    df = pd.read_excel(data_path, nrows=1000)
-                elif data_path.suffix.lower() == '.parquet':
-                    df = pd.read_parquet(data_path).head(1000)
+                if not data_path_obj:
+                    raise ValueError("Dataset path unavailable for ID analysis")
+
+                suffix = data_path_obj.suffix.lower()
+                if suffix == '.csv':
+                    df = pd.read_csv(data_path_obj, nrows=1000)
+                elif suffix == '.json':
+                    df = pd.read_json(data_path_obj, lines=False, nrows=1000)
+                elif suffix == '.jsonl':
+                    df = pd.read_json(data_path_obj, lines=True, nrows=1000)
+                elif suffix in ['.xlsx', '.xls']:
+                    df = pd.read_excel(data_path_obj, nrows=1000)
+                elif suffix == '.parquet':
+                    df = pd.read_parquet(data_path_obj).head(1000)
                 else:
-                    df = pd.read_csv(data_path, nrows=1000)
+                    df = pd.read_csv(data_path_obj, nrows=1000)
 
             # Use new unified ID selection
             id_column = DataDetector.display_and_select_id_column(
@@ -3222,12 +3255,11 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 df,
                 text_column=text_column,
                 step_label="Identifier Column (Optional)",
-                data_path=data_path
+                data_path=data_path_obj
             )
         except Exception as e:
-            self.logger.warning(f"Could not detect ID columns: {e}")
-            self.console.print(f"[yellow]⚠ Could not analyze ID columns[/yellow]")
-            self.console.print("[dim]An automatic ID will be generated[/dim]")
+            self.logger.debug("Skipping automatic ID detection: %s", e)
+            self.console.print("[dim yellow]ℹ Unable to auto-suggest an ID column; continuing without one.[/dim]")
             id_column = None
 
         # Language column handling - check if already processed in Step 5
@@ -3276,6 +3308,14 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             if bundle:
                 bundle.metadata['training_approach'] = 'one-vs-all'
                 bundle.metadata['original_strategy'] = 'single-label'
+                bundle.metadata['all_keys_values'] = {
+                    key: sorted(list(values))
+                    for key, values in all_keys_values.items()
+                }
+                bundle.metadata['value_counts_by_key'] = {
+                    key: {val: int(count) for val, count in counts.items()}
+                    for key, counts in value_counts_by_key.items()
+                }
         else:
             # Standard mode (can be multi-class, hybrid, or custom)
             # Pass key_strategies if available (from hybrid/custom mode)
@@ -3308,6 +3348,14 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 bundle.metadata['categories'] = keys_to_train
             elif 'annotation_keys' in locals() and annotation_keys:
                 bundle.metadata['categories'] = annotation_keys
+            bundle.metadata['all_keys_values'] = {
+                key: sorted(list(values))
+                for key, values in all_keys_values.items()
+            }
+            bundle.metadata['value_counts_by_key'] = {
+                key: {val: int(count) for val, count in counts.items()}
+                for key, counts in value_counts_by_key.items()
+            }
             # Store source file and annotation column for benchmark mode
             bundle.metadata['source_file'] = str(csv_path)
             bundle.metadata['annotation_column'] = annotation_column
@@ -8166,13 +8214,24 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         # One-vs-all keys: N models per key (1 per class/category in that key)
         num_multiclass_models = len(multiclass_keys)
         num_onevsall_models = 0
+        value_counts_by_key_meta = bundle.metadata.get('value_counts_by_key', {})
+        all_keys_values_meta = bundle.metadata.get('all_keys_values', {})
+
         if onevsall_keys:
-            # Count total categories across all one-vs-all keys
             for key in onevsall_keys:
-                if key in bundle.training_files:
-                    # Each one-vs-all key creates multiple binary models
-                    # TODO: This is approximate - actual count depends on number of categories per key
-                    num_onevsall_models += 1  # Placeholder - needs refinement
+                counts_for_key = value_counts_by_key_meta.get(key)
+                if counts_for_key:
+                    label_count = sum(1 for _value, count in counts_for_key.items() if count is None or count > 0)
+                    if label_count == 0:
+                        label_count = len(all_keys_values_meta.get(key, []))
+                else:
+                    label_count = len(all_keys_values_meta.get(key, []))
+
+                if label_count == 0:
+                    self.logger.warning(f"[GLOBAL] No value statistics found for one-vs-all key '{key}'. Defaulting to 1 model.")
+                    label_count = 1
+
+                num_onevsall_models += label_count
 
         # If per-language training, multiply by number of languages
         num_languages = int(len(languages)) if languages else 1
@@ -9799,6 +9858,19 @@ def _reconstruct_bundle_from_metadata(self, metadata: Dict[str, Any]) -> Optiona
         bundle.metadata['onevsall_keys'] = dataset_config.get('onevsall_keys', [])
         bundle.metadata['key_strategies'] = dataset_config.get('key_strategies', {})
         bundle.metadata['files_per_key'] = dataset_config.get('files_per_key', {})
+        raw_all_keys_values = dataset_config.get('all_keys_values', {})
+        if raw_all_keys_values:
+            bundle.metadata['all_keys_values'] = {
+                key: {str(v) for v in values} if isinstance(values, (list, tuple, set)) else set()
+                for key, values in raw_all_keys_values.items()
+            }
+        else:
+            bundle.metadata['all_keys_values'] = {}
+        raw_value_counts = dataset_config.get('value_counts_by_key', {})
+        bundle.metadata['value_counts_by_key'] = {
+            key: {val: int(count) for val, count in (counts or {}).items()}
+            for key, counts in raw_value_counts.items()
+        }
 
         # Split configuration
         if split_config:
@@ -11318,6 +11390,7 @@ def integrate_training_arena_in_annotator_factory(
         return value_str if value_str else None
 
     all_keys_values = {}  # {key: set_of_unique_values}
+    value_counts_by_key = {}  # {key: {value: occurrence_count}}
     total_samples = 0
     malformed_count = 0
 
@@ -11345,16 +11418,21 @@ def integrate_training_arena_in_annotator_factory(
             for key, value in annotation_dict.items():
                 if key not in all_keys_values:
                     all_keys_values[key] = set()
+                if key not in value_counts_by_key:
+                    value_counts_by_key[key] = {}
+                counts_for_key = value_counts_by_key[key]
 
                 if isinstance(value, list):
                     for v in value:
                         normalized = _normalize_preview_value(v)
                         if normalized:
                             all_keys_values[key].add(normalized)
+                            counts_for_key[normalized] = counts_for_key.get(normalized, 0) + 1
                 else:
                     normalized = _normalize_preview_value(value)
                     if normalized:
                         all_keys_values[key].add(normalized)
+                        counts_for_key[normalized] = counts_for_key.get(normalized, 0) + 1
 
         except (json.JSONDecodeError, AttributeError, TypeError, ValueError, SyntaxError) as e:
             malformed_count += 1
@@ -11497,6 +11575,12 @@ def integrate_training_arena_in_annotator_factory(
 
                 console.print(values_table)
 
+                # Capture counts for metadata/analytics
+                value_counts_by_key[key] = {
+                    val: int(value_counts.get(val, 0))
+                    for val in values_set
+                }
+
                 # Ask if user wants to exclude any values for this key
                 exclude_for_key = Confirm.ask(
                     f"[bold yellow]Exclude any values from '{key}'?[/bold yellow]",
@@ -11603,6 +11687,7 @@ def integrate_training_arena_in_annotator_factory(
 
                 # Recalculate all_keys_values with filtered data
                 all_keys_values = {}
+                value_counts_by_key = {}
                 total_samples = 0
                 malformed_count = 0
 
@@ -11628,13 +11713,20 @@ def integrate_training_arena_in_annotator_factory(
                         for key, value in annotation_dict.items():
                             if key not in all_keys_values:
                                 all_keys_values[key] = set()
+                            if key not in value_counts_by_key:
+                                value_counts_by_key[key] = {}
+                            counts_for_key = value_counts_by_key[key]
 
                             if isinstance(value, list):
                                 for v in value:
                                     if v is not None and v != '':
-                                        all_keys_values[key].add(str(v))
+                                        v_str = str(v)
+                                        all_keys_values[key].add(v_str)
+                                        counts_for_key[v_str] = counts_for_key.get(v_str, 0) + 1
                             elif value is not None and value != '':
-                                all_keys_values[key].add(str(value))
+                                v_str = str(value)
+                                all_keys_values[key].add(v_str)
+                                counts_for_key[v_str] = counts_for_key.get(v_str, 0) + 1
 
                     except (json.JSONDecodeError, AttributeError, TypeError, ValueError, SyntaxError) as e:
                         malformed_count += 1
@@ -12116,6 +12208,8 @@ def integrate_training_arena_in_annotator_factory(
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     console.print("[dim]Optional: Select ID and language columns if available in your dataset.[/dim]\n")
 
+    data_path = Path(csv_path) if 'csv_path' in locals() else Path(selection['data_path'])
+
     # Use modernized ID selection - load dataframe if needed
     try:
         if not isinstance(df, pd.DataFrame):
@@ -12228,6 +12322,14 @@ def integrate_training_arena_in_annotator_factory(
         # Store source file and annotation column for benchmark mode
         bundle.metadata['source_file'] = str(csv_path)
         bundle.metadata['annotation_column'] = selected_annotation_column
+        bundle.metadata['all_keys_values'] = {
+            key: sorted(list(values))
+            for key, values in all_keys_values.items()
+        }
+        bundle.metadata['value_counts_by_key'] = {
+            key: {val: int(count) for val, count in counts.items()}
+            for key, counts in value_counts_by_key.items()
+        }
         # Store split configuration if it exists
         if 'split_config' in locals() and split_config:
             bundle.metadata['split_config'] = split_config

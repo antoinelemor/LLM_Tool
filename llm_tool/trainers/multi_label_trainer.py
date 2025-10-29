@@ -1714,20 +1714,13 @@ class MultiLabelTrainer:
             self.logger.warning("No training jobs were generated after preprocessing. Skipping training.")
             return {}
 
-        if global_total_models is not None and global_total_models != actual_total_models:
-            if self.verbose:
-                self.logger.info(
-                    f"[GLOBAL] Adjusting total models from {global_total_models} to actual count {actual_total_models}"
-                )
-
-        total_models = actual_total_models
-        global_total_models = actual_total_models
+        effective_total_models = global_total_models if global_total_models is not None else actual_total_models
 
         if global_start_time is None:
             global_start_time = time.time()
 
-        expected_total_epochs = total_models * self.config.n_epochs
-        if global_total_epochs is None or global_total_epochs != expected_total_epochs:
+        expected_total_epochs = effective_total_models * self.config.n_epochs
+        if global_total_epochs is None:
             global_total_epochs = expected_total_epochs
 
         if global_completed_epochs is None:
@@ -1735,8 +1728,10 @@ class MultiLabelTrainer:
         else:
             global_completed_epochs = min(global_completed_epochs, global_total_epochs)
 
-        if global_current_model is None:
+        if global_current_model is None or global_current_model <= 0:
             global_current_model = 1
+
+        base_model_index = global_current_model - 1
 
         # Calculate global_max_epochs if not provided
         # This accounts for potential reinforced learning epochs
@@ -1748,7 +1743,7 @@ class MultiLabelTrainer:
                 else getattr(self.config, "n_epochs_reinforced", 0) or 0
             )
 
-        expected_max_epochs = total_models * (self.config.n_epochs + extra_reinforced_epochs)
+        expected_max_epochs = effective_total_models * (self.config.n_epochs + extra_reinforced_epochs)
         if global_max_epochs is None or global_max_epochs < expected_max_epochs:
             global_max_epochs = expected_max_epochs
 
@@ -1760,6 +1755,7 @@ class MultiLabelTrainer:
             with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
                 futures = []
                 for idx, job in enumerate(training_jobs, 1):
+                    model_position = base_model_index + idx
                     future = executor.submit(
                         self.train_single_model,
                         job['label_name'],
@@ -1769,8 +1765,8 @@ class MultiLabelTrainer:
                         session_id=job.get('session_id'),
                         is_benchmark=job.get('is_benchmark', False),
                         model_name_for_logging=job.get('model_name_for_logging'),
-                        global_total_models=global_total_models,
-                        global_current_model=global_current_model if len(training_jobs) == 1 else idx,
+                        global_total_models=effective_total_models,
+                        global_current_model=model_position,
                         global_total_epochs=global_total_epochs,
                         global_completed_epochs=0,  # Can't track in parallel
                         global_start_time=global_start_time,
@@ -1793,8 +1789,7 @@ class MultiLabelTrainer:
         else:
             # sequential training
             for idx, job in enumerate(tqdm(training_jobs, desc="Training models", leave=False, disable=True), 1):
-                # In benchmark mode with single job, use global_current_model; otherwise use idx
-                current_model_idx = global_current_model if len(training_jobs) == 1 else idx
+                current_model_idx = base_model_index + idx
 
                 model_info = self.train_single_model(
                     job['label_name'],
@@ -1804,7 +1799,7 @@ class MultiLabelTrainer:
                     session_id=job.get('session_id'),
                     is_benchmark=job.get('is_benchmark', False),
                     model_name_for_logging=job.get('model_name_for_logging'),
-                    global_total_models=global_total_models,
+                    global_total_models=effective_total_models,
                     global_current_model=current_model_idx,
                     global_total_epochs=global_total_epochs,
                     global_completed_epochs=global_completed_epochs,
