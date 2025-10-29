@@ -1806,6 +1806,11 @@ class BertBase(BertABC):
 
         # CRITICAL DEBUG: Log all parameter types at entry to run_training
         self.logger.debug("=" * 80)
+
+        # Track total epochs executed (normal training + optional reinforced phase)
+        normal_epochs_planned = self._safe_int(n_epochs, 0) if n_epochs is not None else 0
+        num_train_epochs = normal_epochs_planned
+        reinforced_triggered = False
         self.logger.debug("run_training ENTRY - Parameter type check:")
         self.logger.debug(f"  n_epochs: type={type(n_epochs)}, value={n_epochs}")
         self.logger.debug(f"  lr: type={type(lr)}, value={lr}")
@@ -3054,6 +3059,12 @@ class BertBase(BertABC):
                             for p, s in zip(precision_values_for_acc, support_values_for_acc)
                         ) / denom
 
+                # Ensure we have a meaningful epoch count even when no best epoch was recorded
+                reinforced_epochs_count = self._safe_int(n_epochs_reinforced, 0) if reinforced_triggered and n_epochs_reinforced is not None else 0
+                num_train_epochs = normal_epochs_planned + reinforced_epochs_count
+                if num_train_epochs <= 0:
+                    num_train_epochs = normal_epochs_planned or reinforced_epochs_count or 0
+
                 epoch_value = best_epoch_index if best_epoch_index is not None else num_train_epochs
 
                 final_metrics_block = None
@@ -3105,7 +3116,6 @@ class BertBase(BertABC):
             if not hasattr(self, '_reinforced_already_triggered'):
                 self._reinforced_already_triggered = False
 
-            reinforced_triggered = False
             # Reinforcement learning now supports both binary and multi-class
             if best_scores is not None and reinforced_learning and n_epochs_reinforced > 0 and not self._reinforced_already_triggered:
                 # Extract metrics from best_scores
