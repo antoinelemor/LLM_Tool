@@ -62,6 +62,11 @@ models/
 # Data directory - ignore contents but keep the folder via .gitkeep
 data/**
 !data/.gitkeep
+# Always track curated datasets stored in data/set/ and data/sets/
+!data/set/
+!data/set/**
+!data/sets/
+!data/sets/**
 
 # Prompts directory - ignore contents but keep the folder via .gitkeep
 prompts/**
