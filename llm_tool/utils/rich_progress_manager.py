@@ -629,6 +629,81 @@ class RichProgressManager:
         self._loop_ready = threading.Event()
         self._queue_overflow_warned = False
 
+    def _create_panel(self) -> Panel:
+        """Compose the Rich dashboard panel summarising current progress state."""
+        with self._state_lock:
+            phase = self.state.current_phase or "progress"
+            progress_pct = max(0.0, min(self.state.current_progress, 100.0))
+            message = self.state.current_message or ""
+            completed = self.state.completed_items
+            total = self.state.total_items
+            error_count = self.state.error_count
+            warning_count = len(self.state.warnings)
+            elapsed = time.time() - self.state.start_time if self.state.start_time else 0.0
+
+        phase_meta = self.PHASES.get(phase, {'icon': '•', 'label': phase.title()})
+        header = Text(
+            f"{phase_meta['icon']} {phase_meta['label']}: {message or 'Processing…'}",
+            style="bold cyan"
+        )
+
+        stats_table = Table.grid(padding=(0, 1))
+        stats_table.add_column(style="dim", justify="right")
+        stats_table.add_column()
+        stats_table.add_row("Progress:", f"{progress_pct:6.1f}%")
+        if total:
+            stats_table.add_row("Items:", f"{completed}/{total}")
+        stats_table.add_row("Errors:", str(error_count))
+        stats_table.add_row("Warnings:", str(warning_count))
+        if elapsed:
+            stats_table.add_row("Elapsed:", self._format_duration(elapsed))
+
+        alerts_panel: Optional[Panel] = None
+        if self.recent_errors or self.recent_warnings:
+            alerts_table = Table.grid(padding=(0, 1))
+            alerts_table.add_column(width=2, justify="center")
+            alerts_table.add_column()
+            for warn in self.recent_warnings[-3:]:
+                alerts_table.add_row("[yellow]⚠[/yellow]", warn)
+            for err in self.recent_errors[-3:]:
+                alerts_table.add_row("[red]✖[/red]", err)
+            alerts_panel = Panel(
+                alerts_table,
+                title="[bold yellow]Alerts[/bold yellow]",
+                border_style="yellow",
+                expand=False
+            )
+
+        from rich.console import Group
+        renderables: List[Any] = [header]
+        if self.progress is not None:
+            renderables.append(self.progress)
+        renderables.append(Text())
+        renderables.append(stats_table)
+        if alerts_panel is not None:
+            renderables.append(Text())
+            renderables.append(alerts_panel)
+
+        return Panel(
+            Group(*renderables),
+            title="📊 Annotation Progress",
+            border_style="bright_cyan",
+            box=box.HEAVY
+        )
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        """Format elapsed seconds into a human-readable string."""
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        if seconds < 3600:
+            minutes = int(seconds // 60)
+            remaining = int(seconds % 60)
+            return f"{minutes}m {remaining}s"
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        return f"{hours}h {minutes}m"
+
     def start(self):
         """Start the progress display"""
         if self.is_running:

@@ -139,6 +139,15 @@ OPENAI_MODEL_PRICING: Dict[str, ModelPricing] = {
         completion_cost_per_1k=0.0006,
         last_updated="2024-07-01",
     ),
+    "gpt-4.1-2025-04-14": ModelPricing(
+        model="gpt-4.1-2025-04-14",
+        provider="openai",
+        prompt_cost_per_1k=0.001,   # $1.00 per 1M input tokens
+        completion_cost_per_1k=0.004,  # $4.00 per 1M output tokens
+        last_updated="2025-04-14",
+        batch_prompt_cost_per_1k=0.001,
+        batch_completion_cost_per_1k=0.004,
+    ),
     "gpt-5-2025-08-07": ModelPricing(
         model="gpt-5-2025-08-07",
         provider="openai",

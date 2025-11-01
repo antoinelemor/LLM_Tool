@@ -1148,7 +1148,7 @@ class LLMAnnotator:
                 or model_lower.startswith('o3-')
                 or model_lower.startswith('o4-')
             )
-            is_2025_model = any(token in model_lower for token in ['2025', 'gpt-5', 'gpt5'])
+            is_2025_model = any(token in model_lower for token in ['2025', 'gpt-5', 'gpt5']) and not model_lower.startswith('gpt-4.1')
             default_max_tokens = 2000 if (is_o_series or is_2025_model) else 1000
             max_tokens = config.get('max_tokens', default_max_tokens)
             if is_o_series or is_2025_model:
@@ -1231,7 +1231,11 @@ class LLMAnnotator:
                         self.logger.debug("[BATCH] Schema build failed for retry prompt %s: %s", prompt_index, exc)
 
                 local_retry_config = dict(retry_model_config)
-                previous_info = local_row_state['response_info'].get(prompt_key) or {}
+                prompt_key = str(prompt_index)
+                if 'response_info' not in local_row_state or not isinstance(local_row_state['response_info'], dict):
+                    local_row_state['response_info'] = {}
+                response_info_map = local_row_state['response_info']
+                previous_info = response_info_map.get(prompt_key) or {}
                 if previous_info.get('finish_reason') == 'length':
                     length_retry_cap = config.get(
                         'openai_batch_length_retry_tokens',
@@ -1254,13 +1258,18 @@ class LLMAnnotator:
                     local_row_state['errors'].append(f"Sequential retry failed for prompt {prompt_index}: {exc}")
                     continue
 
-                prompt_key = str(prompt_index)
                 previous_status = local_row_state['status'].get(prompt_key)
 
                 if cleaned_json:
                     local_row_state['raw'][prompt_key] = cleaned_json
                     local_row_state['cleaned'][prompt_key] = cleaned_json
                     local_row_state['status'][prompt_key] = 'success'
+                    response_info_map[prompt_key] = {
+                        'status_code': None,
+                        'finish_reason': 'retry_success',
+                        'request_id': None,
+                        'sequential_retry': True,
+                    }
                     try:
                         parsed = json.loads(cleaned_json)
                         if prefix:
@@ -1300,6 +1309,11 @@ class LLMAnnotator:
             identifier_value = row[identifier_column]
             identifier_key = str(identifier_value)
             text_payload = compose_text(row)
+
+            if identifier_key not in row_lookup:
+                row_dict = row.to_dict()
+                row_dict['row_index'] = row_index
+                row_lookup[identifier_key] = row_dict
 
             for prompt_idx, prompt_cfg in enumerate(prompts, 1):
                 prompt_payload = prompt_cfg.get('prompt')
@@ -1724,6 +1738,138 @@ class LLMAnnotator:
             job_info.setdefault('output_file_path', None)
 
         batch_elapsed = time.perf_counter() - start_time
+
+        parsed_records = 0
+        parsing_errors = 0
+        if output_file_path.exists():
+            with output_file_path.open('r', encoding='utf-8') as aggregated_handle:
+                for line_number, raw_line in enumerate(aggregated_handle, 1):
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except Exception as exc:  # pragma: no cover - defensive
+                        parsing_errors += 1
+                        self.logger.debug("[BATCH] Skipping malformed JSONL line %s: %s", line_number, exc)
+                        continue
+
+                    custom_id = record.get('custom_id')
+                    if not custom_id:
+                        continue
+                    meta = request_metadata.get(custom_id)
+                    if not meta:
+                        self.logger.debug("[BATCH] No metadata found for custom_id=%s", custom_id)
+                        continue
+
+                    identifier_key = meta['identifier_key']
+                    prompt_idx = meta['prompt_index']
+                    prompt_key = str(prompt_idx)
+                    prefix = meta.get('prefix') or ''
+                    expected_keys = meta.get('expected_keys') or []
+
+                    row_state = row_results.get(identifier_key)
+                    if row_state is None:
+                        row_dict = row_lookup.get(identifier_key, {})
+                        row_state = {
+                            'identifier': meta['identifier'],
+                            'row_index': row_dict.get('row_index', meta.get('row_index')),
+                            'raw': {},
+                            'cleaned': {},
+                            'status': {},
+                            'merged': {},
+                            'errors': [],
+                            'usage': {},
+                            'response_info': {}
+                        }
+                        row_results[identifier_key] = row_state
+
+                    if row_state.get('row_index') is None:
+                        row_dict = row_lookup.get(identifier_key)
+                        if row_dict:
+                            row_state['row_index'] = row_dict.get('row_index', meta.get('row_index'))
+                        else:
+                            row_state['row_index'] = meta.get('row_index')
+
+                    response_payload = record.get('response') or {}
+                    error_payload = record.get('error')
+                    if error_payload:
+                        status_counts['error'] += 1
+                        row_state['status'][prompt_key] = 'error'
+                        row_state['errors'].append(_stringify_error_detail(error_payload))
+                        row_state['usage'][prompt_key] = {}
+                        row_state['response_info'][prompt_key] = {
+                            'status_code': response_payload.get('status_code'),
+                            'finish_reason': None,
+                            'request_id': response_payload.get('request_id'),
+                            'batch_error': True,
+                        }
+                        continue
+
+                    body = response_payload.get('body') or {}
+                    choices = body.get('choices') or []
+                    message_content = None
+                    if choices:
+                        message = choices[0].get('message') or {}
+                        message_content = message.get('content')
+
+                    if not message_content:
+                        status_counts['error'] += 1
+                        row_state['status'][prompt_key] = 'error'
+                        row_state['errors'].append(f"No content returned for prompt {prompt_idx}")
+                        row_state['usage'][prompt_key] = body.get('usage') or response_payload.get('usage') or {}
+                        row_state['response_info'][prompt_key] = {
+                            'status_code': response_payload.get('status_code'),
+                            'finish_reason': choices[0].get('finish_reason') if choices else None,
+                            'request_id': response_payload.get('request_id'),
+                        }
+                        continue
+
+                    cleaned_json = message_content.strip()
+                    if expected_keys:
+                        try:
+                            cleaned_candidate = clean_json_output(cleaned_json, expected_keys)
+                            if cleaned_candidate:
+                                cleaned_json = cleaned_candidate
+                        except Exception as exc:  # pragma: no cover - defensive
+                            self.logger.debug("[BATCH] clean_json_output failed for prompt %s: %s", prompt_idx, exc)
+
+                    if not cleaned_json:
+                        status_counts['cleaning_failed'] += 1
+                        row_state['status'][prompt_key] = 'parse_error'
+                        row_state['errors'].append(f"Unable to parse model response for prompt {prompt_idx}")
+                        continue
+
+                    row_state['raw'][prompt_key] = cleaned_json
+                    row_state['cleaned'][prompt_key] = cleaned_json
+                    row_state['status'][prompt_key] = 'success'
+                    usage_payload = body.get('usage') or response_payload.get('usage') or {}
+                    row_state['usage'][prompt_key] = usage_payload
+                    finish_reason = choices[0].get('finish_reason') if choices else None
+                    row_state['response_info'][prompt_key] = {
+                        'status_code': response_payload.get('status_code'),
+                        'finish_reason': finish_reason,
+                        'request_id': response_payload.get('request_id'),
+                    }
+
+                    try:
+                        parsed = json.loads(cleaned_json)
+                        if prefix:
+                            parsed = {f"{prefix}_{k}": v for k, v in parsed.items()}
+                        row_state.setdefault('merged', {}).update(parsed)
+                        self.last_annotation = parsed
+                        status_counts['success'] += 1
+                    except Exception as exc:
+                        row_state['status'][prompt_key] = 'decode_error'
+                        row_state['errors'].append(f"Decode error for prompt {prompt_idx}: {exc}")
+                        status_counts['decode_error'] += 1
+                        continue
+
+                    parsed_records += 1
+
+        if parsing_errors:
+            self.logger.debug("[BATCH] Encountered %s parsing error(s) while reading OpenAI batch output.", parsing_errors)
+        self.logger.info("[BATCH] Parsed %s response record(s) from OpenAI batch output.", parsed_records)
 
         jobs_metadata: List[Dict[str, Any]] = []
         weighted_time = 0.0
@@ -2572,14 +2718,17 @@ class LLMAnnotator:
                 except Exception:
                     usage_summary[key] = 0.0
 
+        row_success_count = int(annotated_rows)
+
         summary: Dict[str, Any] = {
             'total_processed': total,
             'successful': success,
             'errors': errors,
-            'success_rate': (success / total * 100) if total > 0 else 0,
+            'success_rate': (row_success_count / total * 100) if total > 0 else 0,
             'annotated_rows': int(annotated_rows),
             'total_annotated': int(annotated_rows),
-            'success_count': success,
+            'success_count': row_success_count,
+            'prompt_success_count': success,
             'error_count': errors,
             'annotation_column': annotation_column,
             'output_file': config.get('output_path'),

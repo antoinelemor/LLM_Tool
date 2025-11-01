@@ -39,7 +39,7 @@ Antoine Lemor
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple, Set
+from typing import Optional, Dict, Any, List, Tuple, Set, Iterable
 from datetime import datetime
 import pandas as pd
 from rich.console import Console
@@ -64,6 +64,7 @@ from llm_tool.utils.training_paths import (
 )
 from llm_tool.utils.data_detector import DataDetector
 from llm_tool.utils.session_summary import collect_summaries_for_mode, read_summary
+from llm_tool.utils.data_filter_logger import get_filter_logger
 
 # Constants
 HAS_RICH = True
@@ -645,20 +646,56 @@ def _training_studio_confirm_and_execute(
             training_result['models_trained'] = list(trained_models_map.keys())
             training_result['trained_model_paths'] = trained_models_map
 
+        stage_summary = training_result.get('stage_summary', {}) if training_result else {}
+        status = 'completed'
+        if stage_summary:
+            for stage_info in stage_summary.values():
+                if not isinstance(stage_info, dict):
+                    continue
+                if stage_info.get('failed_models') or stage_info.get('errors_recorded'):
+                    status = 'completed_with_errors'
+                    break
+
+        models_trained_list = training_result.get('models_trained', []) if training_result else []
+        if not isinstance(models_trained_list, list):
+            if isinstance(models_trained_list, (set, tuple)):
+                models_trained_list = list(models_trained_list)
+            elif isinstance(models_trained_list, dict):
+                models_trained_list = list(models_trained_list.keys())
+            elif models_trained_list:
+                models_trained_list = [str(models_trained_list)]
+            else:
+                models_trained_list = []
+        metrics_block = training_result.get('metrics', {}) if training_result else {}
+        models_trained_count = training_result.get('models_trained_count') if training_result else None
+        if not isinstance(models_trained_count, int):
+            models_trained_count = len(models_trained_list)
+
+        execution_status = {
+            'status': status,
+            'completed_at': datetime.now().isoformat(),
+            'models_trained': models_trained_list,
+            'models_trained_count': models_trained_count,
+            'total_expected_models': training_result.get('total_expected_models') if training_result else None,
+            'best_model': training_result.get('best_model') if training_result else None,
+            'best_f1': training_result.get('best_f1') if training_result else None,
+            'best_f1_macro': training_result.get('best_f1_macro') if training_result else None,
+            'average_accuracy': metrics_block.get('average_accuracy'),
+            'average_f1_macro': metrics_block.get('average_f1_macro'),
+            'trained_model_paths': trained_models_map,
+            'stage_summary': stage_summary,
+            'stage_models': training_result.get('stage_models') if training_result else None,
+            'onevsall_value_map': training_result.get('onevsall_value_map') if training_result else None,
+            'onevsall_label_info': training_result.get('onevsall_label_info') if training_result else None,
+            'training_approach': training_result.get('training_approach') if training_result else None,
+            'training_time_seconds': training_result.get('training_time') if training_result else None,
+        }
+
         # Update POST-TRAINING metadata with COMPLETE information
         if save_metadata and metadata_path:
             try:
                 # Merge runtime params into model_config for complete save
                 final_model_config = {**model_config, **runtime_params}
-
-                execution_status = {
-                    'status': 'completed',
-                    'completed_at': datetime.now().isoformat(),
-                    'models_trained': training_result.get('models_trained', []) if training_result else [],
-                    'best_model': training_result.get('best_model') if training_result else None,
-                    'best_f1': training_result.get('best_f1') if training_result else None,
-                    'trained_model_paths': trained_models_map
-                }
 
                 # Update both execution_status AND model_config with runtime params
                 self._update_training_metadata(
@@ -678,7 +715,11 @@ def _training_studio_confirm_and_execute(
                     'training_result': training_result,
                     'runtime_params': runtime_params,
                     'models_trained': training_result.get('models_trained', []) if training_result else [],
+                    'models_trained_count': models_trained_count,
                     'trained_model_paths': trained_models_map,
+                    'execution_status': execution_status,
+                    'stage_summary': stage_summary,
+                    'onevsall_label_info': training_result.get('onevsall_label_info', {}) if training_result else {},
                 }
                 self._log_training_data_distributions(bundle, training_context=training_context)
             except Exception as e:
@@ -6137,6 +6178,10 @@ def _validate_and_filter_insufficient_labels(
     if not input_path.exists():
         return str(input_file), False
 
+    # Only JSON/JSONL files are supported for automated insufficiency checks
+    if input_path.suffix.lower() not in {'.jsonl', '.json'}:
+        return str(input_file), False
+
     # Read dataset and count labels
     # CRITICAL: When train_by_language=True, count per language-label combination
     label_counter = Counter()
@@ -6675,6 +6720,13 @@ def _collect_quick_mode_parameters(
     Returns dict with keys: model_name, reinforced_learning, epochs
     Returns None if user cancels
     """
+    training_approach = bundle.metadata.get('training_approach') if hasattr(bundle, 'metadata') else None
+    onevsall_keys = []
+    if hasattr(bundle, 'metadata') and bundle.metadata:
+        onevsall_keys = bundle.metadata.get('onevsall_keys', []) or []
+
+    stage_models: Dict[str, Dict[str, Any]] = {}
+
     from rich.prompt import Prompt, IntPrompt, Confirm
     from llm_tool.utils.model_display import get_recommended_models, display_all_models
     from rich.table import Table
@@ -6973,6 +7025,216 @@ def _collect_quick_mode_parameters(
 
     # Import model utilities
     from llm_tool.utils.model_display import get_recommended_models, MODEL_METADATA
+
+    def _prompt_model_choice_for_stage(
+        lang: str,
+        stage_label: str,
+        recommended_models: Optional[List[str]],
+        default_model: str,
+    ) -> str:
+        """Interactive prompt to pick a model for a specific language/stage."""
+        recommended_models = recommended_models or []
+        if recommended_models:
+            self.console.print(f"[bold cyan]🎯 Top 10 Recommended Models for {lang} ({stage_label} stage):[/bold cyan]\n")
+
+            models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+            models_table.add_column("#", style="yellow", width=3)
+            models_table.add_column("Model ID", style="cyan", width=45)
+            models_table.add_column("Languages", style="green", width=15)
+            models_table.add_column("Max Tokens", style="blue", width=11)
+            models_table.add_column("Size", style="magenta", width=10)
+            models_table.add_column("Description", style="white", width=45)
+
+            for idx, model_id in enumerate(recommended_models[:10], 1):
+                meta = MODEL_METADATA.get(model_id, {})
+                from llm_tool.utils.model_display import format_language_display
+                langs = format_language_display(meta.get('languages', ['?']), max_width=15)
+                max_len = str(meta.get('max_length', '?'))
+                size = meta.get('size', '?')
+                desc = meta.get('description', '')[:43]
+                models_table.add_row(str(idx), model_id, langs, max_len, size, desc)
+
+            self.console.print(models_table)
+
+        prompt_label = f"\n[bold yellow]Model for {lang} ({stage_label})[/bold yellow]"
+        while True:
+            self.console.print(f"\n[dim]Selection options for {lang} ({stage_label}):[/dim]")
+            self.console.print("[dim]  • Enter [cyan]1-10[/cyan] to select from the recommendations above[/dim]")
+            self.console.print("[dim]  • Enter [cyan]'info X'[/cyan] (e.g., 'info 1') to see model details[/dim]")
+            self.console.print(f"[dim]  • Enter [cyan]'all'[/cyan] to view all {len(MODEL_METADATA)} models[/dim]")
+            self.console.print("[dim]  • Or enter any HuggingFace model ID directly[/dim]")
+
+            model_input = Prompt.ask(prompt_label, default=default_model).strip()
+            lower_input = model_input.lower()
+
+            if lower_input.startswith('info '):
+                info_target = model_input[5:].strip()
+                if info_target.isdigit():
+                    info_idx = int(info_target) - 1
+                    if recommended_models and 0 <= info_idx < len(recommended_models):
+                        self._display_model_details(recommended_models[info_idx], MODEL_METADATA)
+                    else:
+                        self.console.print(f"[red]Invalid model number: {info_target}[/red]")
+                else:
+                    self._display_model_details(info_target, MODEL_METADATA)
+                continue
+
+            if lower_input == 'all':
+                self.console.print(f"\n[bold cyan]📚 ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
+                all_models_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+                all_models_table.add_column("#", style="yellow", width=4)
+                all_models_table.add_column("Model ID", style="cyan", width=40)
+                all_models_table.add_column("Languages", style="green", width=15)
+                all_models_table.add_column("Max Tokens", style="blue", width=11)
+                all_models_table.add_column("Size", style="magenta", width=10)
+                all_models_table.add_column("Description", style="white", width=50)
+
+                all_model_ids = list(MODEL_METADATA.keys())
+                sorted_model_ids: List[str] = []
+                for mid in recommended_models:
+                    if mid in all_model_ids and mid not in sorted_model_ids:
+                        sorted_model_ids.append(mid)
+                for mid in all_model_ids:
+                    if mid not in sorted_model_ids:
+                        sorted_model_ids.append(mid)
+
+                from llm_tool.utils.model_display import format_language_display
+                for idx, model_id in enumerate(sorted_model_ids, 1):
+                    meta = MODEL_METADATA.get(model_id, {})
+                    langs = format_language_display(meta.get('languages', ['?']), max_width=15)
+                    max_len = str(meta.get('max_length', '?'))
+                    size = meta.get('size', '?')
+                    desc = meta.get('description', '')[:48]
+                    style = "bold green" if model_id in recommended_models[:10] else "white"
+                    all_models_table.add_row(
+                        f"[{style}]{idx}[/{style}]",
+                        f"[{style}]{model_id}[/{style}]",
+                        langs,
+                        max_len,
+                        size,
+                        desc
+                    )
+
+                self.console.print(all_models_table)
+                self.console.print(f"\n[dim]💡 Green rows are part of your top recommendations for {lang}[/dim]")
+                continue
+
+            if model_input.isdigit() and recommended_models:
+                idx = int(model_input) - 1
+                if 0 <= idx < len(recommended_models):
+                    selected = recommended_models[idx]
+                    self.console.print(f"[green]✓ Selected for {lang}: {selected}[/green]")
+                    return selected
+                self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
+                return default_model
+
+            if model_input:
+                return model_input
+            return default_model
+
+    def _prompt_global_model_choice_for_stage(
+        stage_label: str,
+        recommended_models: Optional[List[str]],
+        default_model: str,
+    ) -> str:
+        """Prompt for a single global model selection (non per-language)."""
+        recommended_models = recommended_models or []
+        if recommended_models:
+            self.console.print(f"[bold cyan]🎯 Top 10 Recommended Models ({stage_label} stage):[/bold cyan]\n")
+
+            models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED)
+            models_table.add_column("#", style="yellow", width=3)
+            models_table.add_column("Model ID", style="cyan", width=45)
+            models_table.add_column("Languages", style="green", width=15)
+            models_table.add_column("Max Tokens", style="blue", width=11)
+            models_table.add_column("Size", style="magenta", width=10)
+            models_table.add_column("Description", style="white", width=45)
+
+            from llm_tool.utils.model_display import format_language_display
+            for idx, model_id in enumerate(recommended_models[:10], 1):
+                meta = MODEL_METADATA.get(model_id, {})
+                langs = format_language_display(meta.get('languages', ['?']), max_width=15)
+                max_len = str(meta.get('max_length', '?'))
+                size = meta.get('size', '?')
+                desc = meta.get('description', '')[:43]
+                models_table.add_row(str(idx), model_id, langs, max_len, size, desc)
+
+            self.console.print(models_table)
+
+        prompt_label = f"\n[bold yellow]Model selection for {stage_label} stage[/bold yellow]"
+        while True:
+            self.console.print("\n[dim]Selection options:[/dim]")
+            self.console.print("[dim]  • Enter [cyan]1-10[/cyan] to pick from recommendations[/dim]")
+            self.console.print("[dim]  • Enter [cyan]'info X'[/cyan] to see model details[/dim]")
+            self.console.print(f"[dim]  • Enter [cyan]'all'[/cyan] to browse the full catalog ({len(MODEL_METADATA)} models)[/dim]")
+            self.console.print("[dim]  • Or provide any HuggingFace model ID[/dim]")
+
+            model_input = Prompt.ask(prompt_label, default=default_model).strip()
+            lower_input = model_input.lower()
+
+            if lower_input.startswith('info '):
+                info_target = model_input[5:].strip()
+                if info_target.isdigit():
+                    info_idx = int(info_target) - 1
+                    if recommended_models and 0 <= info_idx < len(recommended_models):
+                        self._display_model_details(recommended_models[info_idx], MODEL_METADATA)
+                    else:
+                        self.console.print(f"[red]Invalid model number: {info_target}[/red]")
+                else:
+                    self._display_model_details(info_target, MODEL_METADATA)
+                continue
+
+            if lower_input == 'all':
+                self.console.print(f"\n[bold cyan]📚 ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
+                all_models_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED)
+                all_models_table.add_column("#", style="yellow", width=4)
+                all_models_table.add_column("Model ID", style="cyan", width=40)
+                all_models_table.add_column("Languages", style="green", width=15)
+                all_models_table.add_column("Max Tokens", style="blue", width=11)
+                all_models_table.add_column("Size", style="magenta", width=10)
+                all_models_table.add_column("Description", style="white", width=50)
+
+                all_model_ids = list(MODEL_METADATA.keys())
+                sorted_model_ids: List[str] = []
+                for mid in recommended_models:
+                    if mid in all_model_ids and mid not in sorted_model_ids:
+                        sorted_model_ids.append(mid)
+                for mid in all_model_ids:
+                    if mid not in sorted_model_ids:
+                        sorted_model_ids.append(mid)
+
+                from llm_tool.utils.model_display import format_language_display
+                for idx, model_id in enumerate(sorted_model_ids, 1):
+                    meta = MODEL_METADATA.get(model_id, {})
+                    langs = format_language_display(meta.get('languages', ['?']), max_width=15)
+                    max_len = str(meta.get('max_length', '?'))
+                    size = meta.get('size', '?')
+                    desc = meta.get('description', '')[:48]
+                    style = "bold green" if model_id in recommended_models[:10] else "white"
+                    all_models_table.add_row(
+                        f"[{style}]{idx}[/{style}]",
+                        f"[{style}]{model_id}[/{style}]",
+                        langs,
+                        max_len,
+                        size,
+                        desc
+                    )
+
+                self.console.print(all_models_table)
+                continue
+
+            if model_input.isdigit() and recommended_models:
+                idx = int(model_input) - 1
+                if 0 <= idx < len(recommended_models):
+                    selected = recommended_models[idx]
+                    self.console.print(f"[green]✓ Selected model: {selected}[/green]")
+                    return selected
+                self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
+                return default_model
+
+            if model_input:
+                return model_input
+            return default_model
 
     # ASK ABOUT BENCHMARK MODE
     self.console.print("[bold]🎯 Benchmark Mode[/bold]")
@@ -7364,6 +7626,88 @@ def _collect_quick_mode_parameters(
         # Display full model details after selection
         self._display_model_details(model_name, MODEL_METADATA)
 
+    # Capture stage-specific model selection for multi-class stage
+    stage_models['multi_class'] = {
+        'model_name': model_name,
+        'models_by_language': dict(models_by_language) if models_by_language else None,
+        'train_by_language': bool(models_by_language)
+    }
+
+    binary_stage_required = training_approach in ('hybrid', 'custom') and bool(onevsall_keys)
+    onevsall_model_name = None
+    onevsall_models_by_language: Optional[Dict[str, str]] = None
+
+    if binary_stage_required:
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print("[bold cyan]           ⚖️ Hybrid Stage: One-vs-all Binary Model Selection[/bold cyan]")
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+        reuse_for_binary = Confirm.ask(
+            "[bold yellow]Reuse the same model selection for one-vs-all binary classifiers?[/bold yellow]",
+            default=True
+        )
+
+        if reuse_for_binary:
+            onevsall_model_name = model_name
+            if models_by_language:
+                onevsall_models_by_language = dict(models_by_language)
+        else:
+            if train_by_language and models_by_language:
+                onevsall_models_by_language = {}
+                for lang in sorted(languages):
+                    self.console.print(f"\n[bold yellow]{'─'*60}[/bold yellow]")
+                    self.console.print(f"[bold yellow]🧪 Selecting binary model for {lang} (one-vs-all stage)[/bold yellow]")
+                    self.console.print(f"[bold yellow]{'─'*60}[/bold yellow]\n")
+
+                    lang_recommended = get_recommended_models(
+                        languages={lang},
+                        avg_text_length=text_length_avg,
+                        requires_long_model=prefers_long_models,
+                        top_n=10
+                    )
+
+                    default_model = models_by_language.get(lang) if models_by_language else None
+                    if not default_model:
+                        if lang == 'FR':
+                            default_model = 'camembert-base'
+                        elif lang == 'EN':
+                            default_model = 'bert-base-uncased'
+                        else:
+                            default_model = 'xlm-roberta-base'
+
+                    selected_model = self._prompt_model_choice_for_stage(
+                        lang=lang,
+                        stage_label="one-vs-all",
+                        recommended_models=lang_recommended,
+                        default_model=default_model
+                    )
+                    onevsall_models_by_language[lang] = selected_model
+
+                onevsall_model_name = list(onevsall_models_by_language.values())[0]
+            else:
+                # Single model scenario
+                languages_for_recommendation = languages if languages else {'MULTI'}
+                binary_recommended = get_recommended_models(
+                    languages=languages_for_recommendation,
+                    avg_text_length=text_length_avg,
+                    requires_long_model=prefers_long_models,
+                    top_n=10
+                )
+
+                default_binary_model = model_name
+                onevsall_model_name = self._prompt_global_model_choice_for_stage(
+                    stage_label="one-vs-all",
+                    recommended_models=binary_recommended,
+                    default_model=default_binary_model
+                )
+                onevsall_models_by_language = None
+
+        stage_models['one_vs_all'] = {
+            'model_name': onevsall_model_name or model_name,
+            'models_by_language': dict(onevsall_models_by_language) if onevsall_models_by_language else None,
+            'train_by_language': bool(onevsall_models_by_language)
+        }
+
     # Reinforced learning
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
     rl_step_label = resolve_step_label("reinforced_learning", "STEP 4", context=step_context)
@@ -7589,7 +7933,107 @@ def _collect_quick_mode_parameters(
         result['models_by_language'] = models_by_language
         result['train_by_language'] = True
 
+    if stage_models:
+        result['stage_models'] = stage_models
+
     return result
+
+def _compute_stage_summary(
+    trained_model_records: List[Dict[str, Any]],
+    results_per_key: Dict[str, Dict[str, Any]],
+    total_multiclass_models: int,
+    total_onevsall_models: int,
+    multiclass_needs_language_training: bool,
+    binary_train_by_language: bool,
+    stage_models: Optional[Dict[str, Dict[str, Any]]] = None,
+    languages: Optional[Iterable[str]] = None,
+    total_training_time: float = 0.0,
+    avg_accuracy: float = 0.0,
+    avg_f1_macro: float = 0.0,
+) -> Tuple[Dict[str, Dict[str, Any]], int]:
+    """
+    Aggregate per-stage metrics for hybrid/custom training runs.
+
+    Returns
+    -------
+    stage_summary : dict
+        Summary keyed by stage identifier (multi_class / one_vs_all / overall)
+    total_expected_models : int
+        Total number of models expected across stages.
+    """
+    stage_models = stage_models or {}
+    languages_list = sorted({str(lang).upper() for lang in languages}) if languages else None
+
+    def _canonical_stage(name: str) -> str:
+        if name == 'multi-class':
+            return 'multi_class'
+        if name == 'one-vs-all':
+            return 'one_vs_all'
+        return (name or 'unknown').replace('-', '_')
+
+    stage_counts: Dict[str, int] = {}
+    stage_f1_sum: Dict[str, float] = {}
+    stage_acc_sum: Dict[str, float] = {}
+    stage_best_f1: Dict[str, float] = {}
+    stage_best_acc: Dict[str, float] = {}
+
+    for record in trained_model_records:
+        stage_key = _canonical_stage(record.get('stage', 'unknown'))
+        stage_counts[stage_key] = stage_counts.get(stage_key, 0) + 1
+        f1_val = float(record.get('f1', 0.0) or 0.0)
+        acc_val = float(record.get('accuracy', 0.0) or 0.0)
+        stage_f1_sum[stage_key] = stage_f1_sum.get(stage_key, 0.0) + f1_val
+        stage_acc_sum[stage_key] = stage_acc_sum.get(stage_key, 0.0) + acc_val
+        stage_best_f1[stage_key] = max(stage_best_f1.get(stage_key, 0.0), f1_val)
+        stage_best_acc[stage_key] = max(stage_best_acc.get(stage_key, 0.0), acc_val)
+
+    error_counts = {'multi_class': 0, 'one_vs_all': 0}
+    for bucket in results_per_key.values():
+        multi_result = bucket.get('multi_class')
+        if isinstance(multi_result, dict) and multi_result.get('error'):
+            error_counts['multi_class'] += 1
+        one_vs_all_bucket = bucket.get('one_vs_all', {})
+        if isinstance(one_vs_all_bucket, dict):
+            for label_result in one_vs_all_bucket.values():
+                if isinstance(label_result, dict) and label_result.get('error'):
+                    error_counts['one_vs_all'] += 1
+
+    expected_map = {
+        'multi_class': int(total_multiclass_models),
+        'one_vs_all': int(total_onevsall_models),
+    }
+
+    stage_summary: Dict[str, Dict[str, Any]] = {}
+    for stage_key, expected in expected_map.items():
+        trained = stage_counts.get(stage_key, 0)
+        average_f1 = stage_f1_sum.get(stage_key, 0.0) / trained if trained else 0.0
+        average_acc = stage_acc_sum.get(stage_key, 0.0) / trained if trained else 0.0
+        stage_summary[stage_key] = {
+            'expected_models': expected,
+            'trained_models': trained,
+            'failed_models': max(expected - trained, 0),
+            'errors_recorded': error_counts.get(stage_key, 0),
+            'average_f1_macro': average_f1,
+            'average_accuracy': average_acc,
+            'best_f1_macro': stage_best_f1.get(stage_key, 0.0),
+            'best_accuracy': stage_best_acc.get(stage_key, 0.0),
+            'train_by_language': bool(multiclass_needs_language_training) if stage_key == 'multi_class' else bool(binary_train_by_language),
+            'model_selection': stage_models.get(stage_key),
+        }
+
+    total_expected = int(total_multiclass_models + total_onevsall_models)
+    stage_summary['overall'] = {
+        'expected_models': total_expected,
+        'trained_models': sum(stage_counts.values()),
+        'failed_models': max(total_expected - sum(stage_counts.values()), 0),
+        'average_f1_macro': avg_f1_macro,
+        'average_accuracy': avg_accuracy,
+        'total_training_time_sec': total_training_time,
+        'languages': languages_list,
+    }
+
+    return stage_summary, total_expected
+
 
 def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: Dict[str, Any], quick_params: Optional[Dict[str, Any]] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -7639,6 +8083,8 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             fallback_metrics_dir = get_training_metrics_dir(session_id) / "normal_training"
             self.console.print(f"[dim]Training metrics will be saved to: {fallback_metrics_dir}[/dim]\n")
 
+    stage_models: Dict[str, Dict[str, Any]] = {}
+
     # Use parameters from quick_params (already collected before config summary)
     if quick_params:
         # CRITICAL: Debug log to capture exact type of models_by_language from quick_params
@@ -7647,11 +8093,43 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             self.logger.debug(f"models_by_language type in quick_params: {type(quick_params['models_by_language'])}")
             self.logger.debug(f"models_by_language value in quick_params: {quick_params['models_by_language']}")
 
-        model_name = quick_params['model_name']
+        base_model_name = quick_params['model_name']
         epochs = quick_params['epochs']
         enable_reinforced_learning = quick_params['reinforced_learning']
-        models_by_language = quick_params.get('models_by_language', None)
-        train_by_language_flag = quick_params.get('train_by_language', False)
+        stage_models_config = quick_params.get('stage_models') or {}
+        if isinstance(stage_models_config, dict):
+            stage_models = dict(stage_models_config)
+        multiclass_stage_config = stage_models_config.get('multi_class') or {}
+        binary_stage_config = stage_models_config.get('one_vs_all') or {}
+
+        model_name = multiclass_stage_config.get('model_name') or base_model_name
+        models_by_language = multiclass_stage_config.get('models_by_language')
+        if models_by_language is None:
+            models_by_language = quick_params.get('models_by_language')
+        elif isinstance(models_by_language, dict):
+            models_by_language = dict(models_by_language)
+
+        train_by_language_flag = multiclass_stage_config.get('train_by_language')
+        if train_by_language_flag is None:
+            train_by_language_flag = bool(models_by_language) if models_by_language else quick_params.get('train_by_language', False)
+        else:
+            train_by_language_flag = bool(train_by_language_flag)
+
+        binary_model_name = binary_stage_config.get('model_name') or model_name
+        binary_models_by_language = binary_stage_config.get('models_by_language')
+        if isinstance(binary_models_by_language, dict):
+            binary_models_by_language = dict(binary_models_by_language)
+        else:
+            binary_models_by_language = None
+        if binary_models_by_language is None and train_by_language_flag and models_by_language:
+            binary_models_by_language = dict(models_by_language)
+
+        binary_train_by_language = binary_stage_config.get('train_by_language')
+        if binary_train_by_language is None:
+            binary_train_by_language = bool(binary_models_by_language) or bool(quick_params.get('train_by_language', False))
+        else:
+            binary_train_by_language = bool(binary_train_by_language)
+
         manual_rl_epochs = quick_params.get('manual_rl_epochs', None)
         rl_f1_threshold = quick_params.get('rl_f1_threshold', 0.70)
     else:
@@ -7661,6 +8139,35 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         enable_reinforced_learning = model_config.get('use_reinforcement', False)
         models_by_language = None
         train_by_language_flag = False
+        stage_models_config = {}
+        multiclass_stage_config = {}
+        binary_stage_config = {}
+        stage_models = {}
+        binary_model_name = model_name
+        binary_models_by_language = None
+        binary_train_by_language = train_by_language_flag
+        manual_rl_epochs = None
+        rl_f1_threshold = 0.70
+
+    mc_models_map: Optional[Dict[str, Any]] = dict(models_by_language) if isinstance(models_by_language, dict) else None
+    binary_models_map: Optional[Dict[str, Any]] = dict(binary_models_by_language) if isinstance(binary_models_by_language, dict) else None
+
+    if 'multi_class' not in stage_models and model_name:
+        stage_models['multi_class'] = {
+            'model_name': model_name,
+            'models_by_language': mc_models_map,
+            'train_by_language': bool(train_by_language_flag),
+        }
+
+    if 'one_vs_all' not in stage_models and binary_model_name:
+        stage_models['one_vs_all'] = {
+            'model_name': binary_model_name,
+            'models_by_language': binary_models_map,
+            'train_by_language': bool(binary_train_by_language),
+        }
+        binary_model_name = model_name
+        binary_models_by_language = None
+        binary_train_by_language = train_by_language_flag
         manual_rl_epochs = None
         rl_f1_threshold = 0.70
 
@@ -7857,6 +8364,9 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             self.console.print(f"[dim]The model '{model_name}' is language-specific, so separate models will be trained for each language:[/dim]")
             for lang in sorted(languages):
                 self.console.print(f"  • {lang.upper()}")
+
+    multiclass_models_by_language = dict(models_by_language) if models_by_language else None
+    multiclass_needs_language_training = bool(needs_language_training)
 
     trainer = ModelTrainer(config=training_config)
 
@@ -8233,14 +8743,22 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
                 num_onevsall_models += label_count
 
-        # If per-language training, multiply by number of languages
         num_languages = int(len(languages)) if languages else 1
-        if needs_language_training and num_languages > 1:
-            global_total_models = (num_multiclass_models + num_onevsall_models) * num_languages
-            self.logger.info(f"[EPOCH CALC] Hybrid/custom + per-language: ({num_multiclass_models} + {num_onevsall_models}) × {num_languages} languages = {global_total_models} total models")
-        else:
-            global_total_models = num_multiclass_models + num_onevsall_models
-            self.logger.info(f"[EPOCH CALC] Hybrid/custom + multilingual: {num_multiclass_models} + {num_onevsall_models} = {global_total_models} total models")
+        if num_languages <= 0:
+            num_languages = 1
+
+        multiclass_multiplier = num_languages if multiclass_needs_language_training and num_languages > 1 else 1
+        onevsall_multiplier = num_languages if binary_train_by_language and num_languages > 1 else 1
+
+        total_multiclass_models = num_multiclass_models * multiclass_multiplier
+        total_onevsall_models = num_onevsall_models * onevsall_multiplier
+        global_total_models = total_multiclass_models + total_onevsall_models
+
+        self.logger.info(
+            f"[EPOCH CALC] Hybrid/custom model counts "
+            f"(multiclass ×{multiclass_multiplier}, one-vs-all ×{onevsall_multiplier}) -> "
+            f"{total_multiclass_models} + {total_onevsall_models} = {global_total_models}"
+        )
 
         global_total_epochs = global_total_models * epochs
 
@@ -8254,9 +8772,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         self.logger.info("="*80)
         self.logger.info("GLOBAL EPOCHS CALCULATION DEBUG")
         self.logger.info(f"  Training mode: hybrid/custom")
-        self.logger.info(f"  Language training: {'per-language' if needs_language_training else 'multilingual'}")
-        self.logger.info(f"  Multiclass keys: {num_multiclass_models}")
-        self.logger.info(f"  One-vs-all keys: {num_onevsall_models}")
+        self.logger.info(f"  Multiclass per-language: {multiclass_needs_language_training}")
+        self.logger.info(f"  One-vs-all per-language: {binary_train_by_language}")
+        self.logger.info(f"  Multiclass keys: {num_multiclass_models} (×{multiclass_multiplier} => {total_multiclass_models})")
+        self.logger.info(f"  One-vs-all keys: {num_onevsall_models} (×{onevsall_multiplier} => {total_onevsall_models})")
         self.logger.info(f"  Number of languages: {num_languages}")
         self.logger.info(f"  Languages: {sorted(languages) if languages else 'N/A'}")
         self.logger.info(f"  Base epochs per model: {epochs}")
@@ -8268,11 +8787,230 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
         global_completed_epochs = 0
 
-        results_per_key = {}
+        results_per_key: Dict[str, Dict[str, Any]] = {}
+        trained_models_map: Dict[str, str] = {}
+        trained_model_records: List[Dict[str, Any]] = []
+        current_model_index = 0
+        total_training_time = 0.0
+
+        def _register_model_metrics(base_identifier: str, stage: str, owning_key: str, result_dict: Dict[str, Any]) -> int:
+            """Collect trained model metadata from a trainer result."""
+            models_added = 0
+            if not isinstance(result_dict, dict):
+                return models_added
+
+            language_results = result_dict.get('language_results')
+            if isinstance(language_results, dict) and language_results:
+                for lang_code, lang_info in language_results.items():
+                    if not isinstance(lang_info, dict) or lang_info.get('error'):
+                        continue
+                    identifier = f"{base_identifier}@{str(lang_code).upper()}"
+                    model_path = lang_info.get('model_path') or ''
+                    trained_models_map[identifier] = model_path
+                    trained_model_records.append({
+                        'id': identifier,
+                        'stage': stage,
+                        'key': owning_key,
+                        'language': str(lang_code).upper(),
+                        'model_name': lang_info.get('model') or result_dict.get('best_model'),
+                        'f1': float(lang_info.get('f1_macro', 0.0) or 0.0),
+                        'accuracy': float(lang_info.get('accuracy', 0.0) or 0.0),
+                        'model_path': model_path,
+                        'class_names': result_dict.get('class_names')
+                    })
+                    models_added += 1
+            elif isinstance(result_dict.get('trained_models'), dict):
+                for suffix, model_path in result_dict['trained_models'].items():
+                    if not model_path:
+                        continue
+                    identifier = f"{base_identifier}:{suffix}"
+                    trained_models_map[identifier] = str(model_path)
+                    metrics = result_dict.get('metrics', {})
+                    trained_model_records.append({
+                        'id': identifier,
+                        'stage': stage,
+                        'key': owning_key,
+                        'language': None,
+                        'model_name': result_dict.get('best_model'),
+                        'f1': float(metrics.get('f1_macro', 0.0) or 0.0),
+                        'accuracy': float(metrics.get('accuracy', 0.0) or 0.0),
+                        'model_path': str(model_path),
+                        'class_names': result_dict.get('class_names')
+                    })
+                    models_added += 1
+            else:
+                if result_dict.get('error'):
+                    return models_added
+                identifier = base_identifier
+                model_path = result_dict.get('model_path') or ''
+                metrics = result_dict.get('metrics', {})
+                trained_models_map[identifier] = model_path
+                trained_model_records.append({
+                    'id': identifier,
+                    'stage': stage,
+                    'key': owning_key,
+                    'language': None,
+                    'model_name': result_dict.get('best_model'),
+                    'f1': float(result_dict.get('best_f1_macro', metrics.get('f1_macro', 0.0)) or 0.0),
+                    'accuracy': float(result_dict.get('accuracy', metrics.get('accuracy', 0.0)) or 0.0),
+                    'model_path': model_path,
+                    'class_names': result_dict.get('class_names')
+                })
+                models_added += 1
+            return models_added
+
+        def _create_onevsall_binary_datasets(
+            source_path: Path,
+            target_keys: Optional[List[str]] = None,
+            filter_logger_factory=get_filter_logger,
+        ) -> Tuple[Dict[str, Path], Dict[str, Set[str]], Dict[str, Dict[str, Any]]]:
+            """Generate binary datasets (CSV) for each one-vs-all label."""
+            import json
+            import csv
+            import tempfile
+
+            allowed_keys: Optional[Set[str]] = set(target_keys) if target_keys else None
+            records: List[Dict[str, Any]] = []
+            all_labels: Set[str] = set()
+
+            with open(source_path, 'r', encoding='utf-8') as src_file:
+                for line in src_file:
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    records.append(record)
+                    labels_field = record.get('labels', [])
+                    if isinstance(labels_field, dict):
+                        all_labels.update(str(label) for label in labels_field.keys())
+                    elif isinstance(labels_field, list):
+                        all_labels.update(str(label) for label in labels_field)
+
+            if not records or not all_labels:
+                return {}, {}, {}
+
+            def _label_allowed(label: str) -> bool:
+                if not allowed_keys:
+                    return True
+                for key in allowed_keys:
+                    if label.startswith(f"{key}_"):
+                        return True
+                return False
+
+            labels_to_build = [label for label in sorted(all_labels) if _label_allowed(label)]
+            if not labels_to_build:
+                return {}, {}, {}
+
+            temp_dir = Path(tempfile.mkdtemp(prefix="onevsall_"))
+            filter_logger = filter_logger_factory(session_id=getattr(self, 'current_session_id', None))
+            location = "advanced_cli.hybrid_onevsall_binary_dataset_creation"
+
+            category_files: Dict[str, Path] = {}
+            key_value_map: Dict[str, Set[str]] = {}
+            label_display_map: Dict[str, Dict[str, Any]] = {}
+
+            for label_name in labels_to_build:
+                if '_' in label_name:
+                    key_prefix, raw_value = label_name.split('_', 1)
+                else:
+                    key_prefix, raw_value = label_name, label_name
+                key_value_map.setdefault(key_prefix, set()).add(raw_value)
+
+                csv_path = temp_dir / f"binary_{label_name}.csv"
+                filtered_empty_texts: List[Dict[str, Any]] = []
+                filtered_invalid_texts: List[Dict[str, Any]] = []
+                written_count = 0
+                positive_count = 0
+
+                positive_label_display = f"{label_name} IS"
+                negative_label_display = f"{label_name} IS NOT"
+
+                with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    fieldnames = ['text', 'label', 'language']
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer.writeheader()
+
+                    for idx, record in enumerate(records):
+                        labels_field = record.get('labels', [])
+                        if isinstance(labels_field, dict):
+                            label_raw = labels_field.get(label_name, 0)
+                            if isinstance(label_raw, (int, float)):
+                                is_positive = label_raw > 0
+                            else:
+                                is_positive = str(label_raw).lower() in {'1', 'true', 'yes'}
+                        elif isinstance(labels_field, list):
+                            is_positive = label_name in labels_field
+                        else:
+                            is_positive = False
+
+                        text_raw = record.get('text', '')
+                        if not isinstance(text_raw, str):
+                            filtered_invalid_texts.append({
+                                'index': idx,
+                                'type': type(text_raw).__name__,
+                                'value': str(text_raw)[:100] if text_raw else 'None'
+                            })
+                            text_raw = str(text_raw) if text_raw else ''
+
+                        if not text_raw.strip():
+                            filtered_empty_texts.append({
+                                'index': idx,
+                                'id': record.get('id', 'unknown'),
+                                'text_length': len(text_raw)
+                            })
+                            continue
+
+                        lang_raw = record.get('lang', record.get('language', ''))
+                        if not isinstance(lang_raw, str):
+                            lang_raw = str(lang_raw) if lang_raw else ''
+
+                        label_value = 1 if is_positive else 0
+                        if is_positive:
+                            positive_count += 1
+
+                        writer.writerow({
+                            'text': text_raw.strip(),
+                            'label': label_value,
+                            'language': lang_raw
+                        })
+                        written_count += 1
+
+                if filtered_empty_texts:
+                    filter_logger.log_filtered_batch(
+                        items=[f"Record {f['index']} (id: {f['id']})" for f in filtered_empty_texts],
+                        reason="empty_text",
+                        location=f"{location}.{label_name}",
+                        indices=[f['index'] for f in filtered_empty_texts]
+                    )
+
+                if filtered_invalid_texts:
+                    filter_logger.log_filtered_batch(
+                        items=[f"Record {f['index']}: {f['type']}" for f in filtered_invalid_texts],
+                        reason="invalid_text_type",
+                        location=f"{location}.{label_name}",
+                        indices=[f['index'] for f in filtered_invalid_texts]
+                    )
+
+                category_files[label_name] = csv_path
+                negative_count = written_count - positive_count
+                label_display_map[label_name] = {
+                    'positive_label': positive_label_display,
+                    'negative_label': negative_label_display,
+                    'positive_count': positive_count,
+                    'negative_count': negative_count,
+                    'total_samples': written_count,
+                }
+                self.console.print(
+                    f"[dim]  Created binary dataset for: {label_name} "
+                    f"({written_count} samples | positives: {positive_count} | negatives: {negative_count})[/dim]"
+                )
+
+            return category_files, key_value_map, label_display_map
 
         # Train multi-class keys (one model per key)
         key_files = {k: v for k, v in bundle.training_files.items() if k in multiclass_keys}
-        for idx, (key_name, key_file_path) in enumerate(key_files.items(), 1):
+        for key_name in sorted(key_files.keys()):
+            key_file_path = key_files[key_name]
             self.console.print(f"\n[bold]Training multi-class model for '{key_name}'[/bold] ({key_file_path.name})")
 
             # CRITICAL: Validate each multiclass file before training
@@ -8307,7 +9045,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
                 # Global progress tracking
                 'global_total_models': global_total_models,
-                'global_current_model': idx,
+                'global_current_model': current_model_index + 1,
                 'global_total_epochs': global_total_epochs,
                 'global_max_epochs': global_max_epochs,
                 'global_completed_epochs': global_completed_epochs,
@@ -8316,32 +9054,54 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 'confirmed_languages': list(languages) if languages else None,
             }
 
+            # Merge reinforced learning hyperparameters and other shared extras
+            for extra_key, extra_value in extra_config.items():
+                if extra_key not in key_config:
+                    key_config[extra_key] = extra_value
+
             if models_by_language:
                 key_config["models_by_language"] = models_by_language
 
             try:
                 key_result = trainer.train(key_config)
+                models_learned = _register_model_metrics(base_identifier=key_name, stage='multi-class', owning_key=key_name, result_dict=key_result)
+                increment = models_learned if models_learned > 0 else 1
+                current_model_index += increment
                 # Update global completed epochs
                 global_completed_epochs = key_result.get('global_completed_epochs', global_completed_epochs)
-                results_per_key[key_name] = key_result
+                total_training_time += float(key_result.get('training_time', 0.0) or 0.0)
+                key_bucket = results_per_key.setdefault(key_name, {})
+                key_bucket['multi_class'] = key_result
                 self.console.print(f"[green]✓ Completed {key_name}: Accuracy={key_result.get('accuracy', 0):.4f}, F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
             except Exception as exc:
                 self.console.print(f"[red]✗ Failed to train {key_name}: {exc}[/red]")
                 self.logger.exception(f"Training failed for {key_name}", exc_info=exc)
-                results_per_key[key_name] = {'error': str(exc)}
+                key_bucket = results_per_key.setdefault(key_name, {})
+                key_bucket['multi_class'] = {'error': str(exc)}
+                current_model_index += 1
 
-        # Train one-vs-all keys (using MultiLabelTrainer with multiclass_groups detection)
+        onevsall_results: Dict[str, Dict[str, Any]] = {}
+        onevsall_key_value_map: Dict[str, Set[str]] = {}
+        onevsall_label_display_map: Dict[str, Dict[str, Any]] = {}
+
+        # Switch active model selections to the one-vs-all stage
+        models_by_language = binary_models_by_language
+        needs_language_training = bool(binary_train_by_language)
+        train_by_language_flag = bool(binary_train_by_language)
+        model_name = binary_model_name
+
+        # Train one-vs-all keys (binary models per label)
         if onevsall_keys and 'onevsall_multilabel' in bundle.training_files:
-            onevsall_file = bundle.training_files['onevsall_multilabel']
+            onevsall_file = Path(bundle.training_files['onevsall_multilabel'])
             self.console.print(f"\n[bold yellow]Training one-vs-all models for {len(onevsall_keys)} keys[/bold yellow]")
 
-            # CRITICAL: Validate one-vs-all file before training
+            # Validate one-vs-all file before splitting into binaries
             try:
                 validated_file, was_filtered = self._validate_and_filter_insufficient_labels(
                     input_file=str(onevsall_file),
-                    strategy='multi-label',  # One-vs-all uses multi-label strategy
+                    strategy='multi-label',
                     min_samples=2,
-                    auto_remove=True,  # Auto-remove since user already confirmed for main file
+                    auto_remove=True,
                     train_by_language=needs_language_training
                 )
                 if was_filtered:
@@ -8350,74 +9110,200 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             except ValueError as e:
                 self.console.print(f"[red]✗ Failed to validate one-vs-all file: {e}[/red]")
                 self.logger.error(f"Validation failed for one-vs-all: {e}")
-                # Continue without one-vs-all training
                 onevsall_file = None
 
-            if onevsall_file:
-                # Use multi-label trainer for one-vs-all
-                onevsall_config = {
-                    'input_file': str(onevsall_file),
-                    'model_name': model_name,
-                    'num_epochs': epochs,
-                    'output_dir': str(output_dir / "onevsall"),
-                    'text_column': bundle.text_column,
-                    'label_column': bundle.label_column,
-                    'training_strategy': 'multi-label',  # CRITICAL: Use multi-label trainer
-                    'training_approach': 'one-vs-all',  # CRITICAL: Explicitly mark as one-vs-all to prevent multiclass detection
-                    'multiclass_groups': None,  # Force one-vs-all
-                    'reinforced_learning': enable_reinforced_learning,
-                    'confirmed_languages': list(languages) if languages else None,
-                    'train_by_language': needs_language_training,
-                    'session_id': session_id,
-                    'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
-                    # Global progress tracking
-                    'global_total_models': global_total_models,
-                    'global_current_model': len(multiclass_keys) + 1,
-                    'global_total_epochs': global_total_epochs,
-                    'global_max_epochs': global_max_epochs,
-                    'global_completed_epochs': global_completed_epochs,
-                    'global_start_time': global_start_time
-                }
+            if onevsall_file and onevsall_file.exists():
+                binary_category_files, key_value_map, label_display_map = _create_onevsall_binary_datasets(onevsall_file, target_keys=onevsall_keys)
+                onevsall_key_value_map = key_value_map
+                onevsall_label_display_map = label_display_map
 
-                if models_by_language:
-                    onevsall_config["models_by_language"] = models_by_language
+                if not binary_category_files:
+                    self.console.print("[yellow]⚠️  No binary datasets generated for one-vs-all keys[/yellow]")
+                else:
+                    self.console.print(f"[dim]  Generated {len(binary_category_files)} binary datasets for one-vs-all training[/dim]")
 
-                try:
-                    onevsall_result = trainer.train(onevsall_config)
-                    # Update global completed epochs
-                    global_completed_epochs = onevsall_result.get('global_completed_epochs', global_completed_epochs)
-                    results_per_key['onevsall_combined'] = onevsall_result
-                    self.console.print(f"[green]✓ Completed one-vs-all models[/green]")
-                except Exception as exc:
-                    self.console.print(f"[red]✗ Failed to train one-vs-all models: {exc}[/red]")
-                    self.logger.exception(f"One-vs-all training failed", exc_info=exc)
-                    results_per_key['onevsall_combined'] = {'error': str(exc)}
+                    for label_name in sorted(binary_category_files.keys()):
+                        dataset_path = Path(binary_category_files[label_name])
+                        if '_' in label_name:
+                            key_prefix, raw_value = label_name.split('_', 1)
+                        else:
+                            key_prefix, raw_value = label_name, label_name
+
+                        per_key_bucket = results_per_key.setdefault(key_prefix, {})
+                        onevsall_bucket = per_key_bucket.setdefault('one_vs_all', {})
+                        display_info = onevsall_label_display_map.get(label_name, {})
+
+                        self.console.print(f"\n[cyan]Training binary model for: {label_name}[/cyan]")
+
+                        try:
+                            validated_file, was_filtered = self._validate_and_filter_insufficient_labels(
+                                input_file=str(dataset_path),
+                                strategy='single-label',
+                                min_samples=2,
+                                auto_remove=True,
+                                train_by_language=needs_language_training
+                            )
+                            if was_filtered:
+                                dataset_path = Path(validated_file)
+                                self.console.print(f"[green]✓ Using filtered dataset for {label_name}[/green]")
+                        except ValueError as e:
+                            self.console.print(f"[red]✗ Failed to validate binary dataset for {label_name}: {e}[/red]")
+                            self.logger.error(f"Validation failed for binary dataset {label_name}: {e}")
+                            onevsall_bucket[raw_value] = {'error': str(e)}
+                            current_model_index += 1
+                            continue
+
+                        label_config = {
+                            'input_file': str(dataset_path),
+                            'model_name': model_name,
+                            'num_epochs': epochs,
+                            'output_dir': str(output_dir / "onevsall"),
+                            'text_column': bundle.text_column or 'text',
+                            'label_column': 'label',
+                            'training_strategy': 'single-label',
+                            'category_name': label_name,
+                            'reinforced_learning': enable_reinforced_learning,
+                            'session_id': session_id,
+                            'split_config': bundle.metadata.get('split_config') if hasattr(bundle, 'metadata') else None,
+                            'global_total_models': global_total_models,
+                            'global_current_model': current_model_index + 1,
+                            'global_total_epochs': global_total_epochs,
+                            'global_max_epochs': global_max_epochs,
+                            'global_completed_epochs': global_completed_epochs,
+                            'global_start_time': global_start_time,
+                            'train_by_language': needs_language_training,
+                            'confirmed_languages': list(languages) if languages else None,
+                        }
+
+                        if display_info:
+                            negative_display = display_info.get('negative_label')
+                            positive_display = display_info.get('positive_label')
+                            if negative_display and positive_display:
+                                label_config['class_names_override'] = [negative_display, positive_display]
+                                label_config['onevsall_display_labels'] = {
+                                    'positive': positive_display,
+                                    'negative': negative_display
+                                }
+                            label_config['onevsall_sample_counts'] = {
+                                'positive': display_info.get('positive_count'),
+                                'negative': display_info.get('negative_count'),
+                                'total': display_info.get('total_samples')
+                            }
+
+                        if models_by_language:
+                            label_config["models_by_language"] = models_by_language
+
+                        # Merge reinforced learning parameters and shared extras
+                        for extra_key, extra_value in extra_config.items():
+                            if extra_key not in label_config:
+                                label_config[extra_key] = extra_value
+
+                        try:
+                            label_result = trainer.train(label_config)
+                            models_learned = _register_model_metrics(
+                                base_identifier=label_name,
+                                stage='one-vs-all',
+                                owning_key=key_prefix,
+                                result_dict=label_result
+                            )
+                            increment = models_learned if models_learned > 0 else 1
+                            current_model_index += increment
+                            global_completed_epochs = label_result.get('global_completed_epochs', global_completed_epochs)
+                            total_training_time += float(label_result.get('training_time', 0.0) or 0.0)
+                            onevsall_bucket[raw_value] = label_result
+                            onevsall_results[label_name] = label_result
+                            if display_info:
+                                label_result['class_names'] = [
+                                    display_info.get('negative_label'),
+                                    display_info.get('positive_label')
+                                ]
+                                label_result['sample_counts'] = {
+                                    'positive': display_info.get('positive_count'),
+                                    'negative': display_info.get('negative_count'),
+                                    'total': display_info.get('total_samples')
+                                }
+                            self.console.print(f"[green]✓ Completed {label_name}: Accuracy={label_result.get('accuracy', 0):.4f}, F1={label_result.get('best_f1_macro', 0):.4f}[/green]")
+                        except Exception as exc:
+                            self.console.print(f"[red]✗ Failed to train {label_name}: {exc}[/red]")
+                            self.logger.exception(f"Training failed for {label_name}", exc_info=exc)
+                            onevsall_bucket[raw_value] = {'error': str(exc)}
+                            current_model_index += 1
+            else:
+                self.console.print("[yellow]⚠️  Skipping one-vs-all training: dataset missing[/yellow]")
 
         # Aggregate results
-        successful_results = [r for r in results_per_key.values() if 'error' not in r]
-        if successful_results:
-            avg_accuracy = sum(r.get('accuracy', 0) for r in successful_results) / len(successful_results)
-            avg_f1 = sum(r.get('best_f1_macro', 0) for r in successful_results) / len(successful_results)
+        successful_records = [rec for rec in trained_model_records if rec['f1'] > 0 or rec['accuracy'] > 0]
+        avg_accuracy = sum(rec['accuracy'] for rec in successful_records) / len(successful_records) if successful_records else 0.0
+        avg_f1 = sum(rec['f1'] for rec in successful_records) / len(successful_records) if successful_records else 0.0
 
-            result = {
-                'best_model': model_name,
-                'accuracy': avg_accuracy,
-                'best_f1_macro': avg_f1,
-                'model_path': str(output_dir),
-                'training_time': sum(r.get('training_time', 0) for r in successful_results),
-                'models_trained': len(successful_results),
-                'training_approach': training_approach_from_metadata,
-                'per_key_results': results_per_key
-            }
-        else:
+        if not trained_model_records:
             self.console.print("[red]All trainings failed[/red]")
             return {
                 'runtime_params': runtime_params,
                 'models_trained': [],
                 'best_model': None,
                 'best_f1': None,
+                'best_f1_macro': None,
                 'error': 'All trainings failed'
             }
+
+        best_record = max(trained_model_records, key=lambda rec: rec['f1'])
+        best_model_identifier = best_record['id']
+        best_model_path = trained_models_map.get(best_model_identifier, '')
+
+        per_model_metrics = {
+            rec['id']: {
+                'stage': rec['stage'],
+                'key': rec['key'],
+                'language': rec.get('language'),
+                'model_name': rec.get('model_name'),
+                'f1_macro': rec['f1'],
+                'accuracy': rec['accuracy'],
+                'model_path': rec['model_path'],
+                'class_names': rec.get('class_names')
+            }
+            for rec in trained_model_records
+        }
+
+        result = {
+            'best_model': best_model_identifier,
+            'accuracy': avg_accuracy,
+            'best_f1_macro': best_record['f1'],
+            'best_f1': best_record['f1'],
+            'model_path': best_model_path,
+            'training_time': total_training_time,
+            'models_trained': list(trained_models_map.keys()),
+            'models_trained_count': len(trained_models_map),
+            'training_approach': training_approach_from_metadata,
+            'per_key_results': results_per_key,
+            'onevsall_results': onevsall_results,
+            'onevsall_value_map': {k: sorted(v) for k, v in onevsall_key_value_map.items()},
+            'onevsall_label_info': onevsall_label_display_map,
+            'trained_models': trained_models_map,
+            'trained_model_paths': trained_models_map,
+            'metrics': {
+                'average_accuracy': avg_accuracy,
+                'average_f1_macro': avg_f1,
+                'per_model': per_model_metrics
+            }
+        }
+
+        stage_summary, total_expected_models = _compute_stage_summary(
+            trained_model_records=trained_model_records,
+            results_per_key=results_per_key,
+            total_multiclass_models=total_multiclass_models,
+            total_onevsall_models=total_onevsall_models,
+            multiclass_needs_language_training=multiclass_needs_language_training,
+            binary_train_by_language=binary_train_by_language,
+            stage_models=stage_models,
+            languages=languages,
+            total_training_time=total_training_time,
+            avg_accuracy=avg_accuracy,
+            avg_f1_macro=avg_f1,
+        )
+
+        result['stage_summary'] = stage_summary
+        result['total_expected_models'] = total_expected_models
     elif training_approach_from_metadata == 'multi-class' and hasattr(bundle, 'training_files') and bundle.training_files:
         # Multi-class training with multiple keys: train ONE model PER KEY
         # Extract the key files (exclude 'multilabel' key)
@@ -8498,9 +9384,18 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     'confirmed_languages': list(languages) if languages else None,
                 }
 
+                # Merge reinforced learning hyperparameters and other extras
+                for extra_key, extra_value in extra_config.items():
+                    # Avoid overwriting core routing fields already set in key_config
+                    if extra_key not in key_config:
+                        key_config[extra_key] = extra_value
+
                 # Add models_by_language if user selected per-language models
                 if models_by_language:
                     key_config["models_by_language"] = models_by_language
+
+                if enable_reinforced_learning and manual_rl_epochs is not None:
+                    key_config["reinforced_epochs"] = int(manual_rl_epochs)
 
                 try:
                     key_result = trainer.train(key_config)
@@ -8713,11 +9608,51 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     self._training_studio_show_training_result(result, bundle, title="Quick training results")
 
     # Return complete training info for metadata save
+    trained_models_output = result.get('trained_models')
+    raw_models_trained = result.get('models_trained')
+
+    if isinstance(trained_models_output, dict):
+        trained_models_output = dict(trained_models_output)
+    else:
+        trained_models_output = {}
+
+    if isinstance(raw_models_trained, list):
+        models_trained_list = raw_models_trained
+    elif isinstance(raw_models_trained, (set, tuple)):
+        models_trained_list = list(raw_models_trained)
+    elif isinstance(raw_models_trained, dict):
+        models_trained_list = list(raw_models_trained.keys())
+    elif trained_models_output:
+        models_trained_list = list(trained_models_output.keys())
+    elif raw_models_trained:
+        models_trained_list = [str(raw_models_trained)]
+    elif model_name:
+        models_trained_list = [model_name]
+    else:
+        models_trained_list = []
+
     return {
         'runtime_params': runtime_params,
-        'models_trained': [model_name],
+        'models_trained': models_trained_list,
+        'models_trained_count': len(models_trained_list),
+        'trained_models': trained_models_output,
+        'trained_model_paths': trained_models_output,
         'best_model': result.get('best_model'),
-        'best_f1': result.get('best_f1') or result.get('f1_macro')
+        'best_f1': result.get('best_f1') or result.get('best_f1_macro') or result.get('f1_macro'),
+        'best_f1_macro': result.get('best_f1_macro'),
+        'accuracy': result.get('accuracy'),
+        'model_path': result.get('model_path'),
+        'training_time': result.get('training_time'),
+        'metrics': result.get('metrics'),
+        'per_key_results': result.get('per_key_results'),
+        'onevsall_results': result.get('onevsall_results'),
+        'onevsall_value_map': result.get('onevsall_value_map'),
+        'onevsall_label_info': result.get('onevsall_label_info'),
+        'training_approach': result.get('training_approach'),
+        'stage_summary': result.get('stage_summary'),
+        'stage_models': result.get('stage_models'),
+        'total_expected_models': result.get('total_expected_models'),
+        'error': result.get('error')
     }
 
 def _training_studio_resolve_multilabel_dataset(self, bundle: TrainingDataBundle) -> Optional[Tuple[Path, Optional[List[str]]]]:

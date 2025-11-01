@@ -153,7 +153,10 @@ class OpenAIClient(BaseAPIClient):
             model_name_lower.startswith('o4-')
         )
         # Recent models with different parameter handling (2025+ models, GPT-5 variants)
-        is_2025_model = any(x in model_name_lower for x in ['2025', 'gpt-5', 'gpt5'])
+        is_2025_model = (
+            any(x in model_name_lower for x in ['2025', 'gpt-5', 'gpt5'])
+            and not model_name_lower.startswith('gpt-4.1')
+        )
 
         try:
             # Build base arguments

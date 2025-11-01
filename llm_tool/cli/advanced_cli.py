@@ -250,6 +250,7 @@ MODEL_DESCRIPTIONS = {
     'gpt-4-turbo': 'OpenAI GPT-4 Turbo - Large multimodal model, optimized for chat/completions',
     'gpt-4': 'OpenAI GPT-4 - Advanced reasoning, multimodal capabilities',
     'gpt-3.5-turbo': 'OpenAI GPT-3.5 Turbo - Fast, cost-effective for most tasks',
+    'gpt-4.1-2025-04-14': 'OpenAI GPT-4.1 (2025-04-14) - Smartest non-reasoning model with 1M context, tool calling, and streaming support',
     'gpt-5': 'OpenAI GPT-5 - Latest flagship model (2025)',
     'gpt-5-2025-08-07': 'OpenAI GPT-5 (2025-08-07) - Flagship general-purpose model with enhanced reasoning and 200K context',
     'gpt-5-mini-2025-08-07': 'OpenAI GPT-5 Mini (2025-08-07) - Balanced GPT-5 variant, optimized for cost and quick iteration',
@@ -396,6 +397,19 @@ class LLMDetector:
     def detect_openai_models() -> List[ModelInfo]:
         """List available OpenAI models"""
         models = [
+            ModelInfo(
+                "gpt-4.1-2025-04-14",
+                "openai",
+                context_length=1_047_576,
+                requires_api_key=True,
+                prompt_cost_per_1k=0.001,
+                completion_cost_per_1k=0.004,
+                supports_json=True,
+                supports_streaming=True,
+                max_tokens=32768,
+                batch_prompt_cost_per_1k=0.001,
+                batch_completion_cost_per_1k=0.004,
+            ),
             ModelInfo(
                 "gpt-5-2025-08-07",
                 "openai",
@@ -4202,7 +4216,7 @@ class AdvancedCLI:
 
             # Check if user selected custom OpenAI option
             if openai_llms and choice == custom_openai_option_idx:
-                self.console.print("\n[dim]Examples: gpt-3.5-turbo, gpt-5-2025-08-07, gpt-5-mini-2025-08-07, gpt-5-nano-2025-08-07, o1, o1-mini, o3-mini[/dim]")
+                self.console.print("\n[dim]Examples: gpt-3.5-turbo, gpt-4.1-2025-04-14, gpt-5-2025-08-07, gpt-5-mini-2025-08-07, gpt-5-nano-2025-08-07, o1, o1-mini, o3-mini[/dim]")
                 custom_model = Prompt.ask("Enter OpenAI model name")
 
                 # Create a ModelInfo for the custom model with estimated parameters

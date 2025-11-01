@@ -3072,14 +3072,45 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
         # Display statistics if available
         total_annotated = annotation_results.get('total_annotated', 0)
+        status_breakdown = annotation_results.get('status_breakdown')
+        if isinstance(status_breakdown, dict):
+            total_prompt_events = sum(
+                int(value)
+                for value in status_breakdown.values()
+                if isinstance(value, (int, float))
+            )
+        else:
+            status_breakdown = {}
+            total_prompt_events = 0
+
+        prompt_success_count = annotation_results.get('prompt_success_count')
+        if isinstance(prompt_success_count, (int, float)):
+            prompt_success_count = int(prompt_success_count)
+        else:
+            prompt_success_count = None
+
         if total_annotated:
             cli.console.print(f"\n[bold cyan]📊 Statistics:[/bold cyan]")
             cli.console.print(f"   Rows annotated: {total_annotated:,}")
 
             success_count = annotation_results.get('success_count', 0)
-            if success_count:
+            if isinstance(success_count, (int, float)) and success_count:
                 success_rate = (success_count / total_annotated * 100)
                 cli.console.print(f"   Success rate: {success_rate:.1f}%")
+
+            if (
+                prompt_success_count is not None
+                and total_prompt_events
+                and (
+                    total_prompt_events != total_annotated
+                    or prompt_success_count != success_count
+                )
+            ):
+                prompt_success_rate = (prompt_success_count / total_prompt_events) * 100
+                cli.console.print(
+                    f"   Prompt success rate: {prompt_success_rate:.1f}% "
+                    f"({prompt_success_count:,}/{total_prompt_events:,})"
+                )
 
             mean_time = annotation_results.get('mean_inference_time')
             if isinstance(mean_time, (int, float)):
@@ -3141,6 +3172,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                 "output_file": output_file,
                 "total_annotated": total_annotated,
                 "success_count": annotation_results.get('success_count'),
+                "prompt_success_count": prompt_success_count,
+                "prompt_status_breakdown": status_breakdown,
             },
         )
 
@@ -4770,14 +4803,45 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
         # Display statistics if available
         total_annotated = annotation_results.get('total_annotated', 0)
+        status_breakdown = annotation_results.get('status_breakdown')
+        if isinstance(status_breakdown, dict):
+            total_prompt_events = sum(
+                int(value)
+                for value in status_breakdown.values()
+                if isinstance(value, (int, float))
+            )
+        else:
+            status_breakdown = {}
+            total_prompt_events = 0
+
+        prompt_success_count = annotation_results.get('prompt_success_count')
+        if isinstance(prompt_success_count, (int, float)):
+            prompt_success_count = int(prompt_success_count)
+        else:
+            prompt_success_count = None
+
         if total_annotated:
             cli.console.print(f"\n[bold cyan]📊 Statistics:[/bold cyan]")
             cli.console.print(f"   Rows annotated: {total_annotated:,}")
 
             success_count = annotation_results.get('success_count', 0)
-            if success_count:
+            if isinstance(success_count, (int, float)) and success_count:
                 success_rate = (success_count / total_annotated * 100)
                 cli.console.print(f"   Success rate: {success_rate:.1f}%")
+
+            if (
+                prompt_success_count is not None
+                and total_prompt_events
+                and (
+                    total_prompt_events != total_annotated
+                    or prompt_success_count != success_count
+                )
+            ):
+                prompt_success_rate = (prompt_success_count / total_prompt_events) * 100
+                cli.console.print(
+                    f"   Prompt success rate: {prompt_success_rate:.1f}% "
+                    f"({prompt_success_count:,}/{total_prompt_events:,})"
+                )
 
             mean_time = annotation_results.get('mean_inference_time')
             if isinstance(mean_time, (int, float)):
@@ -4813,6 +4877,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 "output_file": output_file,
                 "total_annotated": total_annotated,
                 "success_count": annotation_results.get('success_count'),
+                "prompt_success_count": prompt_success_count,
+                "prompt_status_breakdown": status_breakdown,
             },
         )
 
@@ -5706,14 +5772,45 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
             cli.console.print(f"   [dim]Annotations-only CSV:[/dim] {annotations_only_path}")
 
         total_annotated = annotation_results.get('total_annotated', 0)
+        status_breakdown = annotation_results.get('status_breakdown')
+        if isinstance(status_breakdown, dict):
+            total_prompt_events = sum(
+                int(value)
+                for value in status_breakdown.values()
+                if isinstance(value, (int, float))
+            )
+        else:
+            status_breakdown = {}
+            total_prompt_events = 0
+
+        prompt_success_count = annotation_results.get('prompt_success_count')
+        if isinstance(prompt_success_count, (int, float)):
+            prompt_success_count = int(prompt_success_count)
+        else:
+            prompt_success_count = None
+
         if total_annotated:
             cli.console.print(f"\n[bold cyan]📊 Statistics:[/bold cyan]")
             cli.console.print(f"   Rows annotated: {total_annotated:,}")
 
             success_count = annotation_results.get('success_count', 0)
-            if success_count:
+            if isinstance(success_count, (int, float)) and success_count:
                 success_rate = (success_count / total_annotated * 100)
                 cli.console.print(f"   Success rate: {success_rate:.1f}%")
+
+            if (
+                prompt_success_count is not None
+                and total_prompt_events
+                and (
+                    total_prompt_events != total_annotated
+                    or prompt_success_count != success_count
+                )
+            ):
+                prompt_success_rate = (prompt_success_count / total_prompt_events) * 100
+                cli.console.print(
+                    f"   Prompt success rate: {prompt_success_rate:.1f}% "
+                    f"({prompt_success_count:,}/{total_prompt_events:,})"
+                )
 
         # ============================================================
         # INTELLIGENT TRAINING WORKFLOW (Post-Annotation)

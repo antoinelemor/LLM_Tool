@@ -2186,8 +2186,15 @@ class BertBase(BertABC):
         best_epoch_index = None  # Epoch number of the best model
         language_performance_history = []  # Store language metrics for each epoch
         self.language_metrics_history = []
+        manual_reinforced_epochs = None
         if reinforced_epochs is not None:
-            n_epochs_reinforced = reinforced_epochs
+            try:
+                manual_reinforced_epochs = max(1, int(reinforced_epochs))
+            except (TypeError, ValueError):
+                manual_reinforced_epochs = 1
+            n_epochs_reinforced = manual_reinforced_epochs
+        else:
+            n_epochs_reinforced = None
 
         # =============== Normal Training Loop ===============
         training_start_time = time.time()  # Initialize the timer
@@ -2704,12 +2711,14 @@ class BertBase(BertABC):
                     # Update with calculated metrics
                     throttled_live.update(display.create_panel(), force=True)
 
-                # Remove old best model folder if it exists
-                if best_model_path is not None:
-                    try:
-                        shutil.rmtree(best_model_path)
-                    except OSError:
-                        pass
+                    previous_best_path = best_model_path
+
+                    # Remove old best model folder if it exists
+                    if previous_best_path is not None:
+                        try:
+                            shutil.rmtree(previous_best_path)
+                        except OSError:
+                            pass
 
                     best_metric_val = combined_metric
                     best_combined_metric_value = combined_metric
@@ -2721,10 +2730,10 @@ class BertBase(BertABC):
                     best_scores = precision_recall_fscore_support(test_labels, preds)
 
                     # Save language metrics from best epoch (if available)
+                    language_averages_for_best = None
                     if track_languages and 'language_metrics' in locals():
                         best_language_metrics = copy.deepcopy(language_metrics)
 
-                        language_averages_for_best = None
                         if language_performance_history:
                             for record in reversed(language_performance_history):
                                 if record.get('epoch') == i_epoch + 1:
@@ -2734,7 +2743,27 @@ class BertBase(BertABC):
                             language_averages_for_best = self._compute_language_averages(language_metrics)
                         best_language_averages = copy.deepcopy(language_averages_for_best)
                     else:
-                        language_averages_for_best = None
+                        best_language_metrics = None
+                        best_language_averages = None
+
+                    # Build detailed metrics payload for metadata/logging
+                    final_metrics_block = self._build_final_metrics_block(
+                        combined_metric=combined_metric,
+                        macro_f1=macro_f1,
+                        accuracy=accuracy,
+                        epoch=i_epoch + 1,
+                        train_loss=avg_train_loss,
+                        val_loss=avg_val_loss,
+                        precisions=precisions,
+                        recalls=recalls,
+                        f1_scores=f1_scores,
+                        supports=supports,
+                        label_names=label_names,
+                        language_metrics=language_metrics if track_languages else None,
+                        language_averages=language_averages_for_best,
+                    )
+                    if final_metrics_block:
+                        best_final_metrics_block = copy.deepcopy(final_metrics_block)
 
                     if save_model_as is not None:
                         # Save the new best model in session-organized directory
@@ -2786,24 +2815,8 @@ class BertBase(BertABC):
                             "training_phase": "normal",
                             "timestamp": datetime.datetime.now().isoformat()
                         }
-                        final_metrics_block = self._build_final_metrics_block(
-                            combined_metric=combined_metric,
-                            macro_f1=macro_f1,
-                            accuracy=accuracy,
-                            epoch=i_epoch + 1,
-                            train_loss=avg_train_loss,
-                            val_loss=avg_val_loss,
-                            precisions=precisions,
-                            recalls=recalls,
-                            f1_scores=f1_scores,
-                            supports=supports,
-                            label_names=label_names,
-                            language_metrics=language_metrics if track_languages else None,
-                            language_averages=language_averages_for_best,
-                        )
                         if final_metrics_block:
                             training_metadata["final_metrics"] = final_metrics_block
-                            best_final_metrics_block = copy.deepcopy(final_metrics_block)
                         with open(metadata_file, 'w', encoding='utf-8') as f:
                             json.dump(training_metadata, f, indent=2, ensure_ascii=False)
                     else:
@@ -3117,7 +3130,7 @@ class BertBase(BertABC):
                 self._reinforced_already_triggered = False
 
             # Reinforcement learning now supports both binary and multi-class
-            if best_scores is not None and reinforced_learning and n_epochs_reinforced > 0 and not self._reinforced_already_triggered:
+            if best_scores is not None and reinforced_learning and not self._reinforced_already_triggered:
                 # Extract metrics from best_scores
                 best_precision = best_scores[0]  # (precision_0, precision_1, ...)
                 best_recall = best_scores[1]     # (recall_0, recall_1, ...)
@@ -3199,18 +3212,12 @@ class BertBase(BertABC):
                     reinforced_triggered = True
                     self._reinforced_already_triggered = True  # Mark as triggered to prevent re-triggering
 
-                    # Update global total epochs to account for additional reinforced learning epochs
-                    if self.global_total_epochs is not None:
-                        self.global_total_epochs += n_epochs_reinforced
-                        display.global_total_epochs = self.global_total_epochs
-
                     # ========== INLINE REINFORCED TRAINING (ROBUST SOLUTION) ==========
                     # Instead of calling separate function, run reinforced training INLINE
                     # within the SAME Live context to ensure display updates properly
 
                     # Switch display to reinforced mode
                     display.is_reinforced = True
-                    display.n_epochs = n_epochs_reinforced
                     display.current_epoch = 0
                     display.current_phase = "🔥 Starting Reinforced Training"
 
@@ -3240,6 +3247,7 @@ class BertBase(BertABC):
                         "epoch",
                         "train_loss",
                         "val_loss",
+                        "combined_score",   # Weighted combined metric (mirrors normal training CSV)
                         "accuracy",         # Overall accuracy
                     ]
 
@@ -3306,14 +3314,15 @@ class BertBase(BertABC):
                     from .reinforced_params import get_reinforced_params, should_use_advanced_techniques
 
                     model_name_for_params = self.__class__.__name__
+                    trigger_metric = worst_f1 if num_labels > 2 else best_f1_1
                     reinforced_params = get_reinforced_params(
                         model_name_for_params,
-                        worst_f1 if num_labels > 2 else best_f1_1,
+                        trigger_metric,
                         lr,
                         num_classes=num_labels,
                         class_f1_scores=list(best_f1_scores) if num_labels > 2 else None
                     )
-                    advanced_techniques = should_use_advanced_techniques(worst_f1 if num_labels > 2 else best_f1_1)
+                    advanced_techniques = should_use_advanced_techniques(trigger_metric)
 
                     new_lr = reinforced_params['learning_rate']
 
@@ -3330,11 +3339,27 @@ class BertBase(BertABC):
                             # Fallback: uniform weights
                             weight_tensor = torch.ones(num_labels, dtype=torch.float)
 
-                    if 'n_epochs' in reinforced_params:
-                        # Use manual reinforced_epochs if provided, otherwise use auto-calculated
-                        if reinforced_epochs is None:
-                            n_epochs_reinforced = reinforced_params['n_epochs']
-                        display.n_epochs = n_epochs_reinforced
+                    if manual_reinforced_epochs is not None:
+                        n_epochs_reinforced = manual_reinforced_epochs
+                        reinforced_params['n_epochs'] = manual_reinforced_epochs
+                    elif 'n_epochs' in reinforced_params:
+                        n_epochs_reinforced = reinforced_params['n_epochs']
+                    else:
+                        n_epochs_reinforced = n_epochs_reinforced or 1
+
+                    try:
+                        n_epochs_reinforced = int(n_epochs_reinforced)
+                    except (TypeError, ValueError):
+                        n_epochs_reinforced = 1
+                    if n_epochs_reinforced <= 0:
+                        n_epochs_reinforced = 1
+
+                    display.n_epochs = n_epochs_reinforced
+
+                    # Update global total epochs now that reinforced epochs are known
+                    if self.global_total_epochs is not None:
+                        self.global_total_epochs += n_epochs_reinforced
+                        display.global_total_epochs = self.global_total_epochs
 
                     # Load best model as starting point (suppress logs to avoid interfering with Rich display)
                     if best_model_path is not None:
@@ -3562,6 +3587,11 @@ class BertBase(BertABC):
                         resolved_label_key = label_key or category_name or ""
                         resolved_label_value = label_value or label_key or category_name or ""
 
+                        if num_labels == 2:
+                            combined_metric_for_row = (1 - f1_class_1_weight) * f1_0 + f1_class_1_weight * f1_1
+                        else:
+                            combined_metric_for_row = macro_f1
+
                         reinforced_row = [
                             self.model_name if hasattr(self, 'model_name') else self.__class__.__name__,
                             resolved_label_key,
@@ -3571,6 +3601,7 @@ class BertBase(BertABC):
                             epoch + 1,
                             avg_train_loss,
                             avg_val_loss,
+                            combined_metric_for_row,
                             accuracy,
                         ]
 
@@ -3623,6 +3654,7 @@ class BertBase(BertABC):
                                 'val_loss': avg_val_loss,
                                 'accuracy': accuracy,
                                 'f1_macro': macro_f1,
+                                'combined_score': combined_metric_for_row,
                                 'global_completed_epochs': display.global_completed_epochs if global_total_models is not None else None
                             }
                             # Add per-class F1 scores
@@ -3641,11 +3673,7 @@ class BertBase(BertABC):
                                 self.logger.warning(f"Progress callback failed (reinforced): {e}")
 
                         # Check if this is a new best model
-                        if num_labels == 2:
-                            combined_metric = (1 - f1_class_1_weight) * f1_0 + f1_class_1_weight * f1_1
-                        else:
-                            # Multi-class: use macro_f1 directly
-                            combined_metric = macro_f1
+                        combined_metric = combined_metric_for_row
 
                         if best_model_criteria == "combined":
                             current_metric = combined_metric

@@ -334,6 +334,7 @@ class TrainingResult:
     validation_loss: float
     training_history: List[Dict]
     model_path: str
+    class_names: Optional[List[str]] = None
 
 
 def filter_data_by_language(df: pd.DataFrame, target_languages: List[str],
@@ -1195,11 +1196,14 @@ class ModelTrainer:
                 # Get detailed classification report
                 classes = getattr(self.label_encoder, "classes_", None)
                 label_ids = list(range(len(classes))) if classes is not None else []
+                target_names_override = None
+                if class_names_for_display and label_ids and len(class_names_for_display) == len(label_ids):
+                    target_names_override = [str(name) for name in class_names_for_display]
                 report = classification_report(
                     test_labels,
                     test_predictions,
                     labels=label_ids if label_ids else None,
-                    target_names=[str(c) for c in classes] if classes is not None else None,
+                    target_names=target_names_override or ([str(c) for c in classes] if classes is not None else None),
                     output_dict=True,
                     zero_division=0
                 )
@@ -1254,6 +1258,9 @@ class ModelTrainer:
                 training_history=[],  # TODO: Extract from training logs
                 model_path=best_model_path if best_model_path else str(output_dir)  # CRITICAL: Use actual saved model path
             )
+
+            if class_names_for_display:
+                result.class_names = [str(name) for name in class_names_for_display]
 
             self.logger.info(f"Model {model_name} - Accuracy: {accuracy:.4f}, F1: {f1_macro:.4f}")
 
@@ -1945,6 +1952,20 @@ class ModelTrainer:
                                     "Using fallback placeholder."
                                 )
                                 class_names_lang.append(f"Class {len(class_names_lang)}")
+                    override_names = config.get('class_names_override')
+                    if override_names and isinstance(override_names, (list, tuple)) and len(override_names) >= len(unique_labels_lang):
+                        mapped_override = []
+                        for old_label in unique_labels_lang:
+                            if isinstance(old_label, (int, np.integer)) and 0 <= old_label < len(override_names):
+                                mapped_override.append(str(override_names[int(old_label)]))
+                            else:
+                                fallback_name = (
+                                    class_names_lang[unique_labels_lang.index(old_label)]
+                                    if class_names_lang and unique_labels_lang.index(old_label) < len(class_names_lang)
+                                    else f"Class {len(mapped_override)}"
+                                )
+                                mapped_override.append(fallback_name)
+                        class_names_lang = mapped_override
                     num_labels_lang = len(class_names_lang) if class_names_lang is not None else len(unique_labels_lang)
                     self.logger.info(f"  • {lang_code} has {num_labels_lang} unique label(s): {list(range(num_labels_lang))}")
                     if class_names_lang:
@@ -2049,7 +2070,8 @@ class ModelTrainer:
                     reinforced_epochs=config.get('reinforced_epochs'),
                     rl_f1_threshold=config.get('rl_f1_threshold', 0.7),
                     rl_oversample_factor=config.get('rl_oversample_factor', 2.0),
-                    rl_class_weight_factor=config.get('rl_class_weight_factor', 2.0)
+                    rl_class_weight_factor=config.get('rl_class_weight_factor', 2.0),
+                    class_names_override=config.get('class_names_override')
                 )
 
         # Return results (handle both single-model and per-language cases)
@@ -2074,6 +2096,7 @@ class ModelTrainer:
                     'accuracy': results.best_accuracy,
                     'model_path': results.model_path,
                     'training_time': results.training_time,
+                    'class_names': getattr(results, 'class_names', None),
                     'metrics': {
                         'f1_macro': results.best_f1_macro,
                         'f1_weighted': results.best_f1_weighted,
@@ -2095,6 +2118,7 @@ class ModelTrainer:
                     'accuracy': results.get('accuracy', 0.0),
                     'model_path': results.get('model_path', ''),
                     'training_time': results.get('training_time', 0),
+                    'class_names': results.get('class_names'),
                     'metrics': results
                 }
 

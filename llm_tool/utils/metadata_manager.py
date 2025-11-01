@@ -285,7 +285,17 @@ class MetadataManager:
                     "current_model": execution_status.get("current_model"),
                     "current_epoch": execution_status.get("current_epoch"),
                     "best_model": execution_status.get("best_model"),
+                    "best_f1": execution_status.get("best_f1"),
+                    "best_f1_macro": execution_status.get("best_f1_macro"),
+                    "average_f1_macro": execution_status.get("average_f1_macro"),
+                    "average_accuracy": execution_status.get("average_accuracy"),
                     "models_trained": execution_status.get("models_trained"),
+                    "models_trained_count": execution_status.get("models_trained_count"),
+                    "total_expected_models": execution_status.get("total_expected_models"),
+                    "stage_summary": execution_status.get("stage_summary"),
+                    "stage_models": execution_status.get("stage_models"),
+                    "onevsall_value_map": execution_status.get("onevsall_value_map"),
+                    "onevsall_label_info": execution_status.get("onevsall_label_info"),
                 },
             )
             merge_summary(session_dir / "resume.json", summary)
@@ -299,6 +309,8 @@ class MetadataManager:
             return "Training completed"
         if status_normalized == "failed":
             return "Training failed"
+        if status_normalized == "completed_with_errors":
+            return "Training completed (warnings)"
         current_model = execution_status.get("current_model")
         current_epoch = execution_status.get("current_epoch")
         if current_model and current_epoch:
@@ -499,12 +511,36 @@ class MetadataManager:
 
         # Merge quick params if available
         if quick_params:
+            stage_models = quick_params.get('stage_models') or {}
+            multi_stage = stage_models.get('multi_class') or {}
+            binary_stage = stage_models.get('one_vs_all') or {}
+            mc_models_by_language = multi_stage.get('models_by_language')
+            if mc_models_by_language is None:
+                mc_models_by_language = quick_params.get('models_by_language', {})
+            binary_models_by_language = binary_stage.get('models_by_language')
+            train_by_language = multi_stage.get('train_by_language')
+            if train_by_language is None:
+                train_by_language = bool(mc_models_by_language)
+
             config.update({
                 "quick_model_name": quick_params.get('model_name'),
                 "quick_epochs": quick_params.get('epochs'),
-                "models_by_language": quick_params.get('models_by_language', {}),
-                "train_by_language": bool(quick_params.get('models_by_language'))
+                "models_by_language": mc_models_by_language or {},
+                "train_by_language": bool(train_by_language),
+                "stage_models": stage_models,
+                "binary_models_by_language": binary_models_by_language or {},
+                "binary_train_by_language": bool(binary_stage.get('train_by_language', False)),
             })
+
+            manual_rl_epochs = quick_params.get('manual_rl_epochs')
+            if manual_rl_epochs is not None:
+                try:
+                    manual_rl_epochs = int(manual_rl_epochs)
+                except (TypeError, ValueError):
+                    manual_rl_epochs = None
+            if quick_params.get('reinforced_learning') and manual_rl_epochs is not None:
+                config["reinforced_epochs"] = manual_rl_epochs
+                config["manual_rl_epochs"] = manual_rl_epochs
 
         # Merge runtime params if available
         if runtime_params:
@@ -515,6 +551,9 @@ class MetadataManager:
         config.setdefault("selected_models", [])
         config.setdefault("benchmark_models", [])
         config.setdefault("models_by_language", {})
+        config.setdefault("stage_models", {})
+        config.setdefault("binary_models_by_language", {})
+        config.setdefault("binary_train_by_language", False)
 
         return config
 
