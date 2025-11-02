@@ -240,12 +240,11 @@ def main():
     print("VERIFICATION SUMMARY")
     print("=" * 70)
 
-    passed = sum(1 for _, result in results if result)
-    total = len([r for r in results if r[0] != "Optional Dependencies"])
+    non_optional_results = [r for r in results if r[0] != "Optional Dependencies"]
+    passed = sum(1 for _, result in non_optional_results if result)
+    total = len(non_optional_results)
 
-    for name, result in results:
-        if name == "Optional Dependencies":
-            continue  # Skip optional in summary
+    for name, result in non_optional_results:
         status = "✓ PASS" if result else "✗ FAIL"
         print(f"  {status:8s} {name}")
 
