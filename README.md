@@ -1,20 +1,6 @@
 <div align="center">
 
-```
-╔════════════════════════════════════════════════════════════════════════════════════════════╗
-║                                                                                            ║
-║              ██╗     ██╗     ███╗   ███╗    ████████╗ ██████╗  ██████╗ ██╗                 ║
-║              ██║     ██║     ████╗ ████║    ╚══██╔══╝██╔═══██╗██╔═══██╗██║                 ║
-║              ██║     ██║     ██╔████╔██║       ██║   ██║   ██║██║   ██║██║                 ║
-║              ██║     ██║     ██║╚██╔╝██║       ██║   ██║   ██║██║   ██║██║                 ║
-║              ███████╗███████╗██║ ╚═╝ ██║       ██║   ╚██████╔╝╚██████╔╝███████╗            ║
-║              ╚══════╝╚══════╝╚═╝     ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝            ║
-║                                                                                            ║
-║                       🤖 AI-Powered Annotation & ML Training Pipeline                      ║
-║                                                                                            ║
-║                                                                                            ║
-╚════════════════════════════════════════════════════════════════════════════════════════════╝
-```
+<img src="img/LLM_Tool.png" alt="LLM Tool banner" width="720">
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.9+"/>
@@ -204,6 +190,11 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
 ## ✨ Features
 
 ### 🎨 **The Annotator** - Zero-Shot LLM Annotation
+
+<p align="center">
+  <img src="img/The_annotator.png" alt="The Annotator feature overview" width="720">
+</p>
+
 - Annotate datasets using OpenAI (GPT-4, o1, o3), Claude, Gemini, or local Ollama/LlamaCPP models
 - Multi-prompt fusion with JSON validation and auto-repair (5-retry mechanism)
 - Parallel processing with incremental saves and resume capability
@@ -211,6 +202,11 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
 - Statistical sample size calculation (95% confidence intervals)
 
 ### 🏭 **The Annotator Factory** - End-to-End Pipeline
+
+<p align="center">
+  <img src="img/Annotator_factory.png" alt="The Annotator Factory feature overview" width="720">
+</p>
+
 - LLM annotation → Training data preparation → Model fine-tuning (one-click workflow)
 - Automatic language detection (96%+ accuracy with lingua)
 - Smart class balancing and stratified splitting
@@ -218,6 +214,11 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
 - Guided Deploy & Annotate stage hands trained checkpoints to BERT Annotation Studio with session metadata stored under `logs/annotator_factory/<session>/model_annotation/`
 
 ### 🎮 **Training Arena** - Model Training & Benchmarking
+
+<p align="center">
+  <img src="img/Training_arena.png" alt="Training Arena feature overview" width="720">
+</p>
+
 - Train 70+ pre-trained models: BERT, RoBERTa, DeBERTa, ELECTRA, ALBERT, XLM-RoBERTa, CamemBERT, etc.
 - Automatic model selection based on detected languages
 - Multi-label classification with reinforcement learning
@@ -226,11 +227,21 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
 - Live metrics tracking (F1, accuracy, precision, recall, confusion matrix)
 
 ### 🤖 **BERT Annotation Studio** - Production Inference
+
+<p align="center">
+  <img src="img/Bert_annotation.png" alt="BERT Annotation Studio feature overview" width="720">
+</p>
+
 - High-throughput parallel inference (GPU/CPU)
 - Batch processing with progress tracking
 - Export annotations in multiple formats
 
 ### 🔍 **Validation Lab** - Quality Assurance
+
+<p align="center">
+  <img src="img/Validation_lab.png" alt="Validation Lab feature overview" width="720">
+</p>
+
 - Annotation quality scoring
 - Inter-annotator agreement (Cohen's Kappa)
 - Stratified sampling for review
@@ -660,6 +671,10 @@ LLM Tool has **5 specialized modes** for different stages of your research workf
 
 ### Mode 1: The Annotator
 
+<p align="center">
+  <img src="img/The_annotator.png" alt="Mode 1 – The Annotator interface" width="720">
+</p>
+
 **🎨 Zero-Shot Annotation with Large Language Models**
 
 **What it does**: Uses AI (GPT, Claude, or local Ollama models) to automatically annotate your text data based on a schema you define.
@@ -850,6 +865,10 @@ Select export [1/2/3/4/5] (5): 5
 
 ### Mode 2: The Annotator Factory
 
+<p align="center">
+  <img src="img/Annotator_factory.png" alt="Mode 2 – The Annotator Factory flow" width="720">
+</p>
+
 **🏭 Complete Pipeline: LLM Annotation → Training → Deployment**
 
 **What it does**: Combines The Annotator, Training Arena, and BERT Annotation Studio into one seamless workflow. You provide raw data, it fabricates training corpora, benchmarks multiple checkpoints, and can immediately deploy the winner on any dataset.
@@ -966,6 +985,10 @@ Launch BERT Annotation Studio now? [y/n] (y): y
 ---
 
 ### Mode 3: Training Arena
+
+<p align="center">
+  <img src="img/Training_arena.png" alt="Mode 3 – Training Arena dashboard" width="720">
+</p>
 
 **🎮 Train & Benchmark Custom BERT Models (You Provide Labeled Data)**
 
@@ -1173,6 +1196,10 @@ Actual hate     147      18
 
 ### Mode 4: BERT Annotation Studio
 
+<p align="center">
+  <img src="img/Bert_annotation.png" alt="Mode 4 – BERT Annotation Studio interface" width="720">
+</p>
+
 **🤖 High-Throughput Inference with Your Trained Models**
 
 **What it does**: Uses your trained BERT models to annotate large datasets at scale (thousands per hour).
@@ -1248,6 +1275,10 @@ Export to: data/new_tweets_classified.csv
 ---
 
 ### Mode 5: Validation Lab
+
+<p align="center">
+  <img src="img/Validation_lab.png" alt="Mode 5 – Validation Lab workspace" width="720">
+</p>
 
 **🔍 Quality Assurance & Inter-Annotator Agreement**
 
