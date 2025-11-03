@@ -91,5 +91,7 @@ credentials.json
 Thumbs.db
 
 # Project specific
-paper/results/scripts/extract_results_from_csv.py
+extract_results_from_csv.py
 docs/RICH_THROTTLING.md
+paper/
+
