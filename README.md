@@ -51,7 +51,7 @@ As a social science researcher, you might have:
 **LLM Tool makes state-of-the-art AI accessible through a simple, interactive interface:**
 
 - ✅ **No Coding Required** — Beautiful, interactive command-line interface guides you through every step
-- ✅ **Start with AI, End with Your Own Models** — Use GPT/Claude to annotate initial data, then train custom models that you own
+- ✅ **Start with AI, End with Your Own Models** — Use GPT to annotate initial data, then train custom models that you own
 - ✅ **100% Local Option** — Works entirely on your computer with Ollama (no cloud APIs, no costs, no data sharing)
 - ✅ **Research-Oriented** — Built for social science workflows: inter-annotator agreement, stratified sampling, quality metrics
 - ✅ **Multilingual from Day One** — Automatic language detection and 75+ language support
@@ -160,7 +160,7 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
                 ▼
 ┌──────────────────────────────────────────────┐
 │ 2. LLM-driven annotation of the source corpus│
-│    • Cloud (GPT/Claude/Gemini) or local LLMs │
+│    • Cloud (GPT) or local LLMs │
 │    • JSON repair, confidence scoring, resume │
 └───────────────┬──────────────────────────────┘
                 │ high quality annotated dataset
@@ -195,7 +195,7 @@ Your Labeled Data → Train Multiple Models → Benchmark Performance → Deploy
   <img src="img/The_annotator.png" alt="The Annotator feature overview" width="720">
 </p>
 
-- Annotate datasets using OpenAI (GPT-4, o1, o3), Claude, Gemini, or local Ollama/LlamaCPP models
+- Annotate datasets using OpenAI 
 - Multi-prompt fusion with JSON validation and auto-repair (5-retry mechanism)
 - Parallel processing with incremental saves and resume capability
 - Export to Label Studio/Doccano for human review
@@ -484,8 +484,6 @@ llm-tool
 - Pandas/NumPy for data handling
 
 **Optional Dependencies** (with `[all]`):
-- Anthropic SDK (Claude)
-- Google GenAI SDK (Gemini)
 - Label Studio SDK (annotation platform)
 - MLOps tools (MLflow, Weights & Biases)
 
@@ -540,14 +538,10 @@ llm-tool
 
 Navigate to **Resume Center → API Key Configuration** and add your keys:
 - OpenAI API Key (for GPT-4, o1, o3 models)
-- Anthropic API Key (for Claude models)
-- Google API Key (for Gemini models)
 
 **OR** use environment variables:
 ```bash
 export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
-export GOOGLE_API_KEY="..."
 ```
 
 ### 2. Launch the Interactive CLI
@@ -677,7 +671,7 @@ LLM Tool has **5 specialized modes** for different stages of your research workf
 
 **🎨 Zero-Shot Annotation with Large Language Models**
 
-**What it does**: Uses AI (GPT, Claude, or local Ollama models) to automatically annotate your text data based on a schema you define.
+**What it does**: Uses AI (GPT, or local Ollama models) to automatically annotate your text data based on a schema you define.
 
 **Perfect for**:
 - Creating initial training data from scratch
@@ -779,8 +773,6 @@ Emotion categories:
 ├─────┼────────────────────┼──────────────┼───────────────┤
 │ 1   │ Ollama (Local)     │ FREE         │ 100% Private  │
 │ 2   │ OpenAI (GPT-4)     │ ~$0.01/doc   │ Cloud-based   │
-│ 3   │ Anthropic (Claude) │ ~$0.008/doc  │ Cloud-based   │
-│ 4   │ Google (Gemini)    │ ~$0.001/doc  │ Cloud-based   │
 ╰─────┴────────────────────┴──────────────┴───────────────╯
 
 Select provider [1/2/3/4] (1): 1
@@ -1515,8 +1507,6 @@ Keep these directories under version control (where appropriate) to guarantee re
 LLM providers available in Mode 1 and 2:
 
 - **OpenAI** – GPT-4, GPT-4o, o1, o3 family via `openai` SDK.
-- **Anthropic** – Claude 3.x models via `anthropic` SDK.
-- **Google** – Gemini 1.5 Pro/Flash via `google-generativeai`.
 - **Ollama** – Local inference (`ollama pull llama3.2`, `gemma2`, etc.).
 - **Llama.cpp** – Direct GPU/CPU inference using `llama-cpp-python`.
 
@@ -1528,7 +1518,7 @@ Each provider can be pinned per profile; the CLI tracks preferred models and war
 
 **LLM annotation engines (Mode 1/2)**:
 
-- GPT-4(o/o1/o3), Claude 3.5 Sonnet/Haiku, Gemini 1.5 Pro/Flash.
+- Open AI models
 - Local choices: Llama 3.3/3.2, Gemma 2, Mistral, Mixtral, Phi 3, Command-R, etc.
 - JSON validation ensures outputs conform to structured schema regardless of provider.
 
@@ -1565,7 +1555,7 @@ Trained checkpoints are standard Hugging Face directories and can be pushed to p
 A: No. The interactive CLI guides you through every step with menus and prompts. However, if you want to automate workflows, you can use LLM Tool programmatically (see `examples/`).
 
 **Q: Is this free to use?**
-A: The software is free (MIT license). Using Ollama (local LLMs) is also free. Cloud APIs (OpenAI, Claude) have costs (~$0.001-$0.01 per document).
+A: The software is free (MIT license). Using Ollama (local LLMs) is also free. Cloud APIs (OpenAI) have costs (~$0.001-$0.01 per document).
 
 **Q: Can I use this offline?**
 A: Yes, with Ollama. Everything runs on your computer: no internet, no data sharing.
@@ -1601,7 +1591,7 @@ A: Yes. Mode 1 exports to **Doccano** and **Label Studio** formats, which are po
 **Q: Where is my data stored?**
 A: Locally on your computer in the `data/` directory. If you use Ollama, everything stays on your machine.
 
-**Q: If I use OpenAI/Claude, where does my data go?**
+**Q: If I use OpenAI, where does my data go?**
 A: Data is sent to their APIs for processing. Check their privacy policies. For sensitive data, use Ollama (100% local).
 
 **Q: Can I delete my data?**
@@ -1625,7 +1615,7 @@ A: Yes! Common workflow:
 **Q: What if my categories change mid-project?**
 A: You'll need to re-annotate. Save your prompts/schemas (Mode 6 - Profile Manager) for reproducibility.
 
-**Q: Can I fine-tune GPT or Claude?**
+**Q: Can I fine-tune GPT ?**
 A: No, but you can fine-tune BERT/RoBERTa/DeBERTa models (Mode 3), which you fully own and can deploy anywhere.
 
 ---
@@ -1837,7 +1827,7 @@ If you use LLM Tool in your research, please cite:
 > Lemor, A., Dinan, S., & Gilbert, J. (2025). LLM Tool: A Hybrid Pipeline for Automated Large-Scale Text Annotation Using Local Language Models and BERT Classifiers (Version 1.0.0) [Computer software]. https://github.com/YOUR-USERNAME/LLM_Tool
 
 **Methodology description for papers:**
-> "Text classification was performed using LLM Tool (Lemor et al., 2025), an open-source hybrid pipeline for LLM-assisted annotation and BERT model training. Documents were initially annotated using local LLMs (e.g., Ollama Llama 3.2) or cloud models (GPT‑4/Claude) following a custom annotation schema. A stratified subset of N documents was manually validated (Cohen's Kappa = X.XX). The final classifier was trained using the [model name] transformer architecture and achieved an F1 score of X.XX on held-out test data."
+> "Text classification was performed using LLM Tool (Lemor et al., 2025), an open-source hybrid pipeline for LLM-assisted annotation and BERT model training. Documents were initially annotated using local LLMs (e.g., Ollama Llama 3.2) or cloud models (GPT‑4) following a custom annotation schema. A stratified subset of N documents was manually validated (Cohen's Kappa = X.XX). The final classifier was trained using the [model name] transformer architecture and achieved an F1 score of X.XX on held-out test data."
 
 ---
 
@@ -1896,7 +1886,7 @@ Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Traditional annotation is broken.** Manually labeling thousands of documents takes months and costs thousands of dollars. Hiring annotators requires extensive training and quality control. Off-the-shelf solutions lack flexibility for custom research questions.
 
-**LLM Tool changes this.** It combines the power of large language models (GPT, Claude, local Ollama) with the precision of fine-tuned BERT models, giving researchers:
+**LLM Tool changes this.** It combines the power of large language models (GPT, local Ollama) with the precision of fine-tuned BERT models, giving researchers:
 
 - ✅ **Speed**: Annotate 1,000 documents in minutes, not weeks
 - ✅ **Cost**: Use free local models (Ollama) or affordable cloud APIs
