@@ -39,7 +39,7 @@
     <a href="https://github.com/user-attachments/assets/9c83473d-1d06-4ff8-8d2b-e53fdcdde67f">Download the MP4</a>.
   </video>
   <br/>
-  <em>🎥 Complete LLM Tool installation walkthrough.</em>
+  <p align="center"><em>LLM Tool installation walkthrough.</em></p>
 </p>
 
 ---
