@@ -23,5 +23,9 @@
             "source.organizeImports": "explicit"
         },
         "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "terminal.integrated.env.osx": {
+        "ZDOTDIR": "${workspaceFolder}/.vscode/zsh",
+        "WORKSPACE_VENV": "${workspaceFolder}/.venv"
     }
 }
