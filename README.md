@@ -28,12 +28,11 @@
 ---
 
 <p align="center">
-  <video width="720" controls poster="img/LLM_Tool.png">
-    <source src="img/LLM_TOOL.mp4" type="video/mp4">
-    Your browser does not support the video. <a href="img/LLM_TOOL.mp4">Download the video</a>.
-  </video>
+  <a href="img/LLM_TOOL.mp4">
+    <img src="img/LLM_Tool.png" alt="Watch the installation video" width="720">
+  </a>
   <br/>
-  <em>🎥 Complete LLM Tool installation in few minutes.</em>
+  <em>🎥 Click the image to watch the full installation walkthrough (MP4).</em>
 </p>
 
 ---
