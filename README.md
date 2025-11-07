@@ -25,8 +25,6 @@
 
 </div>
 
----
-
 <p align="center">
   <video
     src="https://github.com/user-attachments/assets/9c83473d-1d06-4ff8-8d2b-e53fdcdde67f"
@@ -38,8 +36,6 @@
     Your browser does not support embedded videos.
     <a href="https://github.com/user-attachments/assets/9c83473d-1d06-4ff8-8d2b-e53fdcdde67f">Download the MP4</a>.
   </video>
-  <br/>
-  <p align="center"><em>LLM Tool installation walkthrough.</em></p>
 </p>
 
 ---
