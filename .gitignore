@@ -93,8 +93,11 @@ credentials.json
 
 # OS
 .DS_Store
+**/.DS_Store
 Thumbs.db
 
 # Project specific
 paper/results/scripts/extract_results_from_csv.py
+extract_results_from_csv.py
 docs/RICH_THROTTLING.md
+paper/

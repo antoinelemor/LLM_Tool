@@ -39,6 +39,11 @@ Antoine Lemor
 import sys
 import importlib.util
 
+try:
+    from importlib import metadata as importlib_metadata
+except ImportError:  # pragma: no cover - Python <3.8 fallback
+    import importlib_metadata  # type: ignore
+
 
 def check_python_version():
     """Check if Python version meets requirements."""
@@ -53,6 +58,45 @@ def check_python_version():
         return False
 
 
+def _candidate_distribution_names(module):
+    """Yield possible distribution names for a module (best-effort)."""
+    names = [
+        getattr(module, "__package__", None),
+        getattr(module, "__name__", None),
+    ]
+
+    module_name = getattr(module, "__name__", "")
+    if module_name:
+        names.append(module_name.split(".")[0])
+
+    seen = set()
+    for name in filter(None, names):
+        variants = {name}
+        if "." in name:
+            variants.add(name.replace(".", "-"))
+        if "_" in name:
+            variants.add(name.replace("_", "-"))
+        for variant in variants:
+            if variant and variant not in seen:
+                seen.add(variant)
+                yield variant
+
+
+def _resolve_module_version(module):
+    """Return the best-effort version string for a module."""
+    for name in _candidate_distribution_names(module):
+        try:
+            return importlib_metadata.version(name)
+        except importlib_metadata.PackageNotFoundError:
+            continue
+
+    version = getattr(module, "__version__", None)
+    if version and version != "unknown":
+        return version
+
+    return "unknown"
+
+
 def check_module(module_name, display_name=None, optional=False):
     """Check if a module is installed."""
     if display_name is None:
@@ -62,7 +106,7 @@ def check_module(module_name, display_name=None, optional=False):
         spec = importlib.util.find_spec(module_name)
         if spec is not None:
             module = importlib.import_module(module_name)
-            version = getattr(module, "__version__", "unknown")
+            version = _resolve_module_version(module)
             status = "✓" if not optional else "✓"
             print(f"  {status} {display_name:30s} version {version}")
             return True
@@ -240,12 +284,11 @@ def main():
     print("VERIFICATION SUMMARY")
     print("=" * 70)
 
-    passed = sum(1 for _, result in results if result)
-    total = len([r for r in results if r[0] != "Optional Dependencies"])
+    non_optional_results = [r for r in results if r[0] != "Optional Dependencies"]
+    passed = sum(1 for _, result in non_optional_results if result)
+    total = len(non_optional_results)
 
-    for name, result in results:
-        if name == "Optional Dependencies":
-            continue  # Skip optional in summary
+    for name, result in non_optional_results:
         status = "✓ PASS" if result else "✗ FAIL"
         print(f"  {status:8s} {name}")
 
