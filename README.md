@@ -28,11 +28,18 @@
 ---
 
 <p align="center">
-  <a href="img/LLM_TOOL.mp4">
-    <img src="img/LLM_Tool.png" alt="Watch the installation video" width="720">
-  </a>
+  <video
+    src="https://github.com/antoinelemor/LLM_Tool/raw/main/img/LLM_TOOL.mp4"
+    width="720"
+    controls
+    muted
+    playsinline
+    poster="img/LLM_Tool.png">
+    Your browser does not support embedded videos.
+    <a href="https://github.com/antoinelemor/LLM_Tool/raw/main/img/LLM_TOOL.mp4">Download the MP4</a>.
+  </video>
   <br/>
-  <em>🎥 Click the image to watch the full installation walkthrough (MP4).</em>
+  <em>🎥 Complete LLM Tool installation walkthrough.</em>
 </p>
 
 ---
