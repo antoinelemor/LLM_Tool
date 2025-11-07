@@ -25,7 +25,20 @@
         "editor.defaultFormatter": "ms-python.black-formatter"
     },
     "terminal.integrated.env.osx": {
-        "ZDOTDIR": "${workspaceFolder}/.vscode/zsh",
-        "WORKSPACE_VENV": "${workspaceFolder}/.venv"
-    }
+        "LLM_TOOL_VENV": "${workspaceFolder}/.venv",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}",
+        "PYTHONHOME": ""
+    },
+    "terminal.integrated.profiles.osx": {
+        "LLM Tool (venv)": {
+            "path": "/bin/zsh",
+            "args": [
+                "-l",
+                "-c",
+                "if [ -f \"$LLM_TOOL_VENV/bin/activate\" ]; then source \"$LLM_TOOL_VENV/bin/activate\"; else echo \"[LLM Tool] Missing venv at $LLM_TOOL_VENV\"; fi; exec /bin/zsh -l"
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.osx": "LLM Tool (venv)"
 }
