@@ -332,6 +332,32 @@ def training_studio(self):
 # ------------------------------------------------------------------
 # Training Arena helpers
 # ------------------------------------------------------------------
+def _set_onevsall_storage_root(self, root: Optional[Path]) -> None:
+    """Remember the persistence directory for one-vs-all datasets."""
+    self._persistent_onevsall_root = root
+    self._onevsall_storage_announced = False
+
+
+def _announce_onevsall_storage(self) -> None:
+    """Announce the persistence directory once per session."""
+    root = getattr(self, "_persistent_onevsall_root", None)
+    announced = getattr(self, "_onevsall_storage_announced", False)
+    if root and not announced:
+        self.console.print(f"[dim]One-vs-all binary datasets will be persisted under: {root}[/dim]")
+        self._onevsall_storage_announced = True
+
+
+def _prepare_onevsall_workspace(self, prefix: str = "onevsall") -> Path:
+    """Create a directory for storing one-vs-all intermediate files."""
+    unique_suffix = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:6]}"
+    root = getattr(self, "_persistent_onevsall_root", None)
+    if root:
+        target_dir = root / f"{prefix}_{unique_suffix}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return target_dir
+    return Path(tempfile.mkdtemp(prefix=f"{prefix}_{unique_suffix}_"))
+
+
 def _training_studio_confirm_and_execute(
     self,
     bundle: TrainingDataBundle,
@@ -364,7 +390,12 @@ def _training_studio_confirm_and_execute(
     # STEP 1: Collect mode-specific parameters BEFORE showing config summary
     quick_params = None
     if mode == "quick" and not is_resume:
-        quick_params = self._collect_quick_mode_parameters(bundle, preloaded_config, step_context=step_context)
+        quick_params = self._collect_quick_mode_parameters(
+            bundle,
+            preloaded_config,
+            step_context=step_context,
+            session_id=session_id,
+        )
         if quick_params is None:
             # User cancelled
             self.console.print("[yellow]Training cancelled by user.[/yellow]")
@@ -477,7 +508,12 @@ def _training_studio_confirm_and_execute(
                 # Only re-collect if user wants to modify something
                 if modify_base or modify_rl:
                     self.console.print("\n[cyan]Modifying parameters...[/cyan]\n")
-                    quick_params = self._collect_quick_mode_parameters(bundle, quick_params, step_context=step_context)
+                    quick_params = self._collect_quick_mode_parameters(
+                        bundle,
+                        quick_params,
+                        step_context=step_context,
+                        session_id=session_id,
+                    )
                     if quick_params is None:
                         self.console.print("[yellow]Training cancelled by user.[/yellow]")
                         return
@@ -6714,7 +6750,8 @@ def _collect_quick_mode_parameters(
     self,
     bundle: TrainingDataBundle,
     preloaded_params: Optional[Dict[str, Any]] = None,
-    step_context: str = "arena_quick"
+    step_context: str = "arena_quick",
+    session_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Collect parameters for quick mode training (token strategy, model choice, epochs).
@@ -6728,7 +6765,6 @@ def _collect_quick_mode_parameters(
         onevsall_keys = bundle.metadata.get('onevsall_keys', []) or []
 
     persistent_onevsall_root: Optional[Path] = None
-    onevsall_storage_announced = False
     effective_session_id = session_id or getattr(self, 'current_session_id', None)
     if effective_session_id:
         try:
@@ -6742,21 +6778,7 @@ def _collect_quick_mode_parameters(
             )
             persistent_onevsall_root = None
 
-    def _announce_onevsall_storage() -> None:
-        nonlocal onevsall_storage_announced
-        if persistent_onevsall_root and not onevsall_storage_announced:
-            self.console.print(
-                f"[dim]One-vs-all binary datasets will be persisted under: {persistent_onevsall_root}[/dim]"
-            )
-            onevsall_storage_announced = True
-
-    def _prepare_onevsall_workspace(prefix: str = "onevsall") -> Path:
-        unique_suffix = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:6]}"
-        if persistent_onevsall_root:
-            target_dir = persistent_onevsall_root / f"{prefix}_{unique_suffix}"
-            target_dir.mkdir(parents=True, exist_ok=True)
-            return target_dir
-        return Path(tempfile.mkdtemp(prefix=f"{prefix}_{unique_suffix}_"))
+    self._set_onevsall_storage_root(persistent_onevsall_root)
 
     stage_models: Dict[str, Dict[str, Any]] = {}
 
@@ -8116,6 +8138,19 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             fallback_metrics_dir = get_training_metrics_dir(session_id) / "normal_training"
             self.console.print(f"[dim]Training metrics will be saved to: {fallback_metrics_dir}[/dim]\n")
 
+    if getattr(self, "_persistent_onevsall_root", None) is None and session_id:
+        persistent_root = None
+        try:
+            persistent_root = get_training_data_dir(session_id) / "onevsall_datasets"
+            persistent_root.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.warning(
+                "Could not prepare persistent directory for one-vs-all datasets during quick run (session=%s): %s",
+                session_id,
+                exc,
+            )
+        self._set_onevsall_storage_root(persistent_root)
+
     stage_models: Dict[str, Dict[str, Any]] = {}
 
     # Use parameters from quick_params (already collected before config summary)
@@ -8491,8 +8526,8 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # Create CSV files for each label (persist inside session when available)
             import csv
 
-            binary_output_dir = _prepare_onevsall_workspace()
-            _announce_onevsall_storage()
+            binary_output_dir = self._prepare_onevsall_workspace()
+            self._announce_onevsall_storage()
 
             # Get filter logger for tracking (with session context if available)
             filter_logger = get_filter_logger(session_id=getattr(self, 'current_session_id', None))
@@ -8934,8 +8969,8 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             if not labels_to_build:
                 return {}, {}, {}
 
-            binary_output_dir = _prepare_onevsall_workspace("onevsall_hybrid")
-            _announce_onevsall_storage()
+            binary_output_dir = self._prepare_onevsall_workspace("onevsall_hybrid")
+            self._announce_onevsall_storage()
             filter_logger = filter_logger_factory(session_id=getattr(self, 'current_session_id', None))
             location = "advanced_cli.hybrid_onevsall_binary_dataset_creation"
 
