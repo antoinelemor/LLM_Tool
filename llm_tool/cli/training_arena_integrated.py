@@ -41,6 +41,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple, Set, Iterable
 from datetime import datetime
+from uuid import uuid4
 import pandas as pd
 from rich.console import Console
 from rich.table import Table
@@ -61,6 +62,7 @@ from llm_tool.utils.training_data_utils import TrainingDataSessionManager
 from llm_tool.utils.training_paths import (
     get_training_logs_base,
     get_training_metrics_dir,
+    get_training_data_dir,
 )
 from llm_tool.utils.data_detector import DataDetector
 from llm_tool.utils.session_summary import collect_summaries_for_mode, read_summary
@@ -6725,6 +6727,37 @@ def _collect_quick_mode_parameters(
     if hasattr(bundle, 'metadata') and bundle.metadata:
         onevsall_keys = bundle.metadata.get('onevsall_keys', []) or []
 
+    persistent_onevsall_root: Optional[Path] = None
+    onevsall_storage_announced = False
+    effective_session_id = session_id or getattr(self, 'current_session_id', None)
+    if effective_session_id:
+        try:
+            persistent_onevsall_root = get_training_data_dir(effective_session_id) / "onevsall_datasets"
+            persistent_onevsall_root.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            self.logger.warning(
+                "Could not prepare persistent directory for one-vs-all datasets (session=%s): %s",
+                effective_session_id,
+                exc,
+            )
+            persistent_onevsall_root = None
+
+    def _announce_onevsall_storage() -> None:
+        nonlocal onevsall_storage_announced
+        if persistent_onevsall_root and not onevsall_storage_announced:
+            self.console.print(
+                f"[dim]One-vs-all binary datasets will be persisted under: {persistent_onevsall_root}[/dim]"
+            )
+            onevsall_storage_announced = True
+
+    def _prepare_onevsall_workspace(prefix: str = "onevsall") -> Path:
+        unique_suffix = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:6]}"
+        if persistent_onevsall_root:
+            target_dir = persistent_onevsall_root / f"{prefix}_{unique_suffix}"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            return target_dir
+        return Path(tempfile.mkdtemp(prefix=f"{prefix}_{unique_suffix}_"))
+
     stage_models: Dict[str, Dict[str, Any]] = {}
 
     from rich.prompt import Prompt, IntPrompt, Confirm
@@ -8455,10 +8488,11 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     'error': 'No labels found in JSONL'
                 }
 
-            # Create temporary CSV files for each label
-            import tempfile
+            # Create CSV files for each label (persist inside session when available)
             import csv
-            temp_dir = Path(tempfile.mkdtemp(prefix="onevsall_"))
+
+            binary_output_dir = _prepare_onevsall_workspace()
+            _announce_onevsall_storage()
 
             # Get filter logger for tracking (with session context if available)
             filter_logger = get_filter_logger(session_id=getattr(self, 'current_session_id', None))
@@ -8466,7 +8500,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
             for label_name in sorted(all_labels_set):
                 # Create binary CSV: text + label (0 or 1)
-                csv_path = temp_dir / f"binary_{label_name}.csv"
+                csv_path = binary_output_dir / f"binary_{label_name}.csv"
 
                 # Track filtered items for this label
                 filtered_empty_texts = []
@@ -8867,7 +8901,6 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             """Generate binary datasets (CSV) for each one-vs-all label."""
             import json
             import csv
-            import tempfile
 
             allowed_keys: Optional[Set[str]] = set(target_keys) if target_keys else None
             records: List[Dict[str, Any]] = []
@@ -8901,7 +8934,8 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             if not labels_to_build:
                 return {}, {}, {}
 
-            temp_dir = Path(tempfile.mkdtemp(prefix="onevsall_"))
+            binary_output_dir = _prepare_onevsall_workspace("onevsall_hybrid")
+            _announce_onevsall_storage()
             filter_logger = filter_logger_factory(session_id=getattr(self, 'current_session_id', None))
             location = "advanced_cli.hybrid_onevsall_binary_dataset_creation"
 
@@ -8916,7 +8950,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     key_prefix, raw_value = label_name, label_name
                 key_value_map.setdefault(key_prefix, set()).add(raw_value)
 
-                csv_path = temp_dir / f"binary_{label_name}.csv"
+                csv_path = binary_output_dir / f"binary_{label_name}.csv"
                 filtered_empty_texts: List[Dict[str, Any]] = []
                 filtered_invalid_texts: List[Dict[str, Any]] = []
                 written_count = 0
