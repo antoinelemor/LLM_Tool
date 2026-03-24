@@ -1,0 +1,35 @@
+\begin{table}[h!]
+\centering
+\caption{BERT training validation performance per LLM source and task.}
+\label{tab:training_metrics}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{LLM Source} & \textbf{Task} & \textbf{F1 Macro} & \textbf{F1 Micro} & \textbf{Accuracy} & \textbf{Best Epoch} \\
+\midrule
+Gemma3 & Political Parties & 0.3246 & 0.3975 & 0.6528 & 25 \\
+Gemma3 & Sentiment & 0.4793 & 0.6881 & 0.6876 & 6 \\
+Gemma3 & Specific Themes & 0.3725 & 0.2379 & 0.7350 & 9 \\
+Gemma3 & Policy Themes & 0.3887 & 0.5488 & 0.2235 & 18 \\
+\midrule
+Nemotron & Political Parties & 0.4058 & 0.3541 & 0.7269 & 13 \\
+Nemotron & Sentiment & 0.5732 & 0.6311 & 0.6306 & 5 \\
+Nemotron & Specific Themes & 0.2793 & 0.2520 & 0.9488 & 21 \\
+Nemotron & Policy Themes & 0.4239 & 0.4822 & 0.1459 & 13 \\
+\midrule
+Mixtral & Political Parties & 0.0738 & 0.4212 & 0.7491 & 16 \\
+Mixtral & Sentiment & 0.3521 & 0.7695 & 0.7743 & 6 \\
+Mixtral & Specific Themes & 0.1066 & 0.2598 & 0.8960 & 6 \\
+Mixtral & Policy Themes & 0.1186 & 0.5066 & 0.1716 & 15 \\
+\midrule
+GPT-OSS & Political Parties & 0.6222 & 0.8707 & 0.9661 & 24 \\
+GPT-OSS & Sentiment & 0.7528 & 0.7748 & 0.7753 & 5 \\
+GPT-OSS & Specific Themes & 0.4954 & 0.6006 & 0.9653 & 21 \\
+GPT-OSS & Policy Themes & 0.6193 & 0.7193 & 0.5168 & 24 \\
+\midrule
+GPT-5 & Political Parties & 0.6273 & 0.9340 & 0.9844 & 23 \\
+GPT-5 & Sentiment & 0.7741 & 0.7887 & 0.7882 & 8 \\
+GPT-5 & Specific Themes & 0.7176 & 0.6846 & 0.9757 & 20 \\
+GPT-5 & Policy Themes & 0.6404 & 0.7218 & 0.3948 & 21 \\
+\bottomrule
+\end{tabular}
+\end{table}

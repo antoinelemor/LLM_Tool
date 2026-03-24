@@ -1,0 +1,18 @@
+\begin{table}[h!]
+\centering
+\caption{Inference time comparison: LLM annotation vs. BERT classification.}
+\label{tab:efficiency}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Model} & \textbf{Type} & \textbf{Parameters} & \textbf{Time/sent} & \textbf{Total (38k)} & \textbf{Speedup} \\
+\midrule
+Gemma3 & LLM & 27B & 19.7s & 210.7h & 395$\times$ \\
+Nemotron & LLM & 49B & 79.0s & 843.5h & 1,579$\times$ \\
+Mixtral & LLM & 8$\times$22B & 5.5s & 58.4h & 109$\times$ \\
+GPT-OSS & LLM & 120B & 7.7s & 82.3h & 154$\times$ \\
+GPT-5 & LLM & Proprietary & API & — & — \\
+\midrule
+XLM-RoBERTa & BERT & 278M & 50ms & 32min & 1$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}

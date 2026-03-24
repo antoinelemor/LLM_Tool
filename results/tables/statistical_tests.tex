@@ -1,0 +1,20 @@
+\begin{table}[h!]
+\centering
+\caption{Statistical tests for model comparison.}
+\label{tab:statistical_tests}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Test} & \textbf{Statistic} & \textbf{p-value} & \textbf{Effect Size} \\
+\midrule
+Friedman test & $\chi^2 = 39.57$ & $< 0.0001$ & Kendall's W = 0.275 \\
+Kruskal-Wallis test & H = 25.71 & $< 0.0001$ & $\eta^2 = 0.117$ \\
+\midrule
+\multicolumn{4}{l}{\textit{Significant pairwise comparisons (Wilcoxon with Bonferroni correction)}} \\
+Gemma3 vs. GPT-OSS & — & $0.0068$ & $r = 0.558$ \\
+Gemma3 vs. GPT-5 & — & $0.0320$ & $r = 0.491$ \\
+Nemotron vs. GPT-OSS & — & $< 0.001$ & $r = 0.748$ \\
+Nemotron vs. GPT-5 & — & $0.0113$ & $r = 0.543$ \\
+Mixtral vs. GPT-OSS & — & $0.0088$ & $r = 0.547$ \\
+\bottomrule
+\end{tabular}
+\end{table}
