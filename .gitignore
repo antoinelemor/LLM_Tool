@@ -99,7 +99,8 @@ docs/RICH_THROTTLING.md
 __pycache__/
 *.pyc
 CLAUDE.md
-scripts/
+/scripts/
+!paper/scripts/
 
 # Paper — LaTeX build artifacts
 paper/latex/*.aux
