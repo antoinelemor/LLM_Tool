@@ -380,15 +380,9 @@ Five LLM configurations were selected to span a range of architectures, sizes, a
 
 The selection balances annotation quality with computational feasibility. Mixtral 8$\times$22B completed the corpus fastest (5.5~s per sentence); Nemotron required the most time (79.0~s per sentence). GPT-OSS 120B, a quantized open-source model, achieved an intermediate throughput of 7.7~s per sentence while delivering the strongest local-model performance. These timing differences are consequential at scale: annotating 38,451 sentences took between 2.4 and 8.8 days of continuous local computation.
 
-\subsubsection{Prompt Engineering}
-
-Prompt design affects annotation quality. The prompt template adapts to model capabilities and context limitations. Larger context windows allow detailed definitions and more examples; constrained models receive compressed representations of the essential information.
-
-Each prompt template includes system instructions defining an annotator role and context, the full list of category names with definitions, output specifications enforcing JSON formatting, and positive and negative few-shot examples.\footnote{Examples in Appendix~B.}
-
 \subsubsection{Processing Pipeline}
 
-The annotation pipeline processes documents through multiple stages. Document preprocessing normalizes text, removes artifacts, and handles special characters. Batch construction groups documents within model context limits. Response parsing extracts structured annotations from model outputs. Validation checks schema conformance and value ranges through a dynamically generated Pydantic schema, with up to five retries and JSON repair for structural inconsistencies.
+Each prompt used includes system instructions defining an annotator role and context, the full list of category names with definitions, output specifications enforcing JSON formatting, and positive and negative few-shot examples.\footnote{Examples in Appendix~B.} The annotation pipeline processes documents through multiple stages. Document preprocessing normalizes text, removes artifacts, and handles special characters. Batch construction groups documents within model context limits. Response parsing extracts structured annotations from model outputs. Validation checks schema conformance and value ranges through a dynamically generated Pydantic schema, with up to five retries and JSON repair for structural inconsistencies.
 
 The pipeline logs processing times, error rates, and annotation distributions. This telemetry enables monitoring and optimization. Incremental saving provides resilience against interruptions with automatic resume capabilities.
 
@@ -403,6 +397,7 @@ We report micro-averaged, macro-averaged, and weighted F1 scores. For multilabel
 Statistical significance is assessed through the Friedman test (non-parametric repeated-measures ANOVA) with Kendall’s W as effect size, the Kruskal-Wallis H-test with $\eta^2$, post-hoc pairwise Wilcoxon signed-rank tests with Bonferroni correction, and bootstrap confidence intervals (10,000 resamples, 95\% level).
 
 %% ═══════════════════════════════════════════════════════════════════
+\newpage
 \section{Results}
 
 \subsection{Overall Performance}
@@ -507,7 +502,7 @@ Finally, computational costs remain substantial. Annotating 38,451 sentences req
 
 This article presents LLM Tool, an open-source hybrid pipeline that converts LLM annotations into efficient transformer classifiers for large-scale text analysis. Empirical validation on a bilingual corpus of 38,451 Canadian political texts demonstrates that the approach is effective: BERT classifiers trained on LLM-generated labels reach up to 66.7\% mean Micro F1 across four annotation tasks, with a 110--1,580$\times$ inference speedup over direct LLM annotation.
 
-The systematic comparison of five LLM sources reveals a clear quality hierarchy driven by annotation fidelity rather than model size, and identifies GPT-OSS as a competitive open-source alternative to proprietary APIs. The hybrid architecture addresses three persistent challenges in computational social science: the scalability bottleneck of manual annotation, the opacity and cost of direct LLM classification, and the reproducibility deficit that characterizes much of the existing literature.
+The systematic comparison of five LLM sources shows a clear quality hierarchy driven by annotation fidelity rather than model size, and identifies GPT-OSS as a competitive open-source alternative to proprietary APIs. The hybrid architecture addresses three persistent challenges in computational social science: the scalability bottleneck of manual annotation, the opacity and cost of direct LLM classification, and the reproducibility deficit that characterizes much of the existing literature.
 
 By relocating human expertise from exhaustive labelling to schema design, quality control, and validation, the pipeline preserves methodological rigour while enabling annotation at scales that would be impractical through manual coding alone. The complete codebase, data, and analysis scripts are publicly available to support replication and extension.
 
