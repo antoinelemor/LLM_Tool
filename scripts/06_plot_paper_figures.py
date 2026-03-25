@@ -271,56 +271,73 @@ def plot_efficiency_figure():
     ax1.axhline(y=BERT_TIME, color="#2CA02C", linestyle="--", alpha=0.4, linewidth=1)
     ax1.set_ylim(top=max(all_times) * 3)
 
-    # ── Right: grouped horizontal bar chart for corpus of 38,451 sentences ──
-    # Show total annotation time in days for each model + BERT
-    models_list_r = ann["model"].tolist()
-    all_names_r = [r.short_name for r in ann.itertuples()] + ["XLM-RoBERTa"]
-    all_times_r = ann["mean_inference_time"].tolist() + [BERT_TIME]
-    bar_colors_r = [COLORS.get(m, "#999") for m in models_list_r] + ["#2CA02C"]
+    # ── Right: scaling projection (line chart, log x-axis, linear y in days) ──
+    corpus_sizes = np.array([1_000, 5_000, 10_000, 38_451, 100_000, 500_000])
 
-    corpus_n = 38_451
-    total_days = [t * corpus_n / 86400 for t in all_times_r]
+    # Helper: format days into a readable string
+    def _fmt_days(d):
+        if d < 1 / 24:
+            return f"{d * 24 * 60:.0f} min"
+        if d < 1:
+            return f"{d * 24:.1f} h"
+        if d < 30:
+            return f"{d:.1f} d"
+        if d < 365:
+            return f"{d / 30:.0f} mo"
+        return f"{d / 365:.1f} yr"
 
-    y_r = np.arange(len(all_names_r))
-    bars_r = ax2.barh(y_r, total_days, color=bar_colors_r, edgecolor="white",
-                      height=0.55)
-    ax2.set_xlabel("Total annotation time (days)")
-    ax2.set_title("(b) Total Time for 38,451 Sentences", fontweight="bold",
-                  fontsize=11)
-    ax2.set_yticks(y_r)
-    ax2.set_yticklabels(all_names_r, fontsize=9)
-    ax2.invert_yaxis()
+    # Plot BERT line
+    bert_days = corpus_sizes * BERT_TIME / 86400
+    ax2.plot(corpus_sizes, bert_days, "s-", color="#2CA02C", linewidth=2.5,
+             markersize=6, label="BERT (XLM-RoBERTa)", zorder=10)
 
-    # Annotate each bar with readable time
-    def _fmt_time(days):
-        if days < 1 / 24:
-            return f"{days * 24 * 60:.0f} min"
-        if days < 1:
-            return f"{days * 24:.1f} h"
-        return f"{days:.1f} d"
+    # Plot LLM lines
+    for _, row in ann.iterrows():
+        days = corpus_sizes * row["mean_inference_time"] / 86400
+        ax2.plot(corpus_sizes, days, "o--",
+                 color=COLORS.get(row["model"], "#999"), linewidth=1.5,
+                 markersize=4, label=row["short_name"], alpha=0.85)
 
-    for bar, d in zip(bars_r, total_days):
-        label = _fmt_time(d)
-        # Place label outside bar if bar is short relative to axis
-        ax2.text(bar.get_width() + max(total_days) * 0.02,
-                 bar.get_y() + bar.get_height() / 2,
-                 label, ha="left", va="center", fontsize=9, fontweight="bold")
+    ax2.set_xscale("log")
+    ax2.set_yscale("log")
+    ax2.set_xlabel("Corpus size (sentences)")
+    ax2.set_ylabel("Total time")
+    ax2.set_title("(b) Scaling Projection", fontweight="bold", fontsize=11)
+    ax2.legend(loc="upper left", fontsize=8)
 
-    # Add speedup annotations vs BERT
-    bert_days = total_days[-1]
-    for i, d in enumerate(total_days[:-1]):
-        speedup = d / bert_days
-        ax2.text(bar.get_width() + max(total_days) * 0.02,
-                 y_r[i] + 0.25,
-                 f"{speedup:,.0f}x slower", ha="left", va="top",
-                 fontsize=7, color="#E15759", fontstyle="italic")
+    # Y-axis: custom tick labels in readable units
+    day_ticks = [1/24, 1, 7, 30, 180, 365*2]
+    day_labels = ["1 hour", "1 day", "1 week", "1 month", "6 months", "2 years"]
+    ax2.set_yticks(day_ticks)
+    ax2.set_yticklabels(day_labels, fontsize=8)
+    ax2.set_ylim(bottom=1/48, top=365*3)
 
-    # Reference lines
-    for days, label in [(1, "1 day"), (7, "1 week")]:
-        ax2.axvline(x=days, color="0.6", linestyle=":", alpha=0.5, linewidth=0.8)
-        ax2.text(days, -0.45, label, fontsize=7.5, color="0.5", ha="center")
+    # Reference lines for key thresholds
+    for days, lbl in [(1, "1 day"), (7, "1 week"), (30, "1 month")]:
+        ax2.axhline(y=days, color="0.65", linestyle=":", alpha=0.4, linewidth=0.8)
 
-    ax2.set_xlim(0, max(total_days) * 1.35)
+    # Annotate endpoint values at 500K
+    for _, row in ann.iterrows():
+        end_days = 500_000 * row["mean_inference_time"] / 86400
+        ax2.annotate(
+            _fmt_days(end_days),
+            xy=(500_000, end_days),
+            xytext=(6, 0), textcoords="offset points",
+            fontsize=7, color=COLORS.get(row["model"], "#999"),
+            fontweight="bold", va="center",
+        )
+    bert_end = 500_000 * BERT_TIME / 86400
+    ax2.annotate(
+        _fmt_days(bert_end),
+        xy=(500_000, bert_end),
+        xytext=(6, 0), textcoords="offset points",
+        fontsize=7, color="#2CA02C", fontweight="bold", va="center",
+    )
+
+    # Mark "this study" corpus size
+    ax2.axvline(x=38_451, color="0.5", linestyle="--", alpha=0.35, linewidth=0.8)
+    ax2.text(38_451, ax2.get_ylim()[0] * 1.3, "this study\n(38K)",
+             fontsize=7, color="0.45", ha="center", va="bottom")
 
     fig.tight_layout()
     save_figure(fig, "fig_efficiency")
