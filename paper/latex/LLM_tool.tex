@@ -439,11 +439,11 @@ The hybrid architecture produces its clearest advantage on efficiency. LLM annot
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\textwidth]{../figures/fig_efficiency.png}
-\caption{Computational efficiency. (a)~Per-sentence inference time (log scale). (b)~Total annotation time for 38,451 sentences; reference lines mark one day and one week. BERT completes the same corpus in 32 minutes.}
+\caption{Computational efficiency. (a)~Per-sentence inference time (log scale). (b)~Projected total time by corpus size; the $y$-axis displays human-readable time units and annotations show the projected time at 500\,K sentences. The vertical dashed line marks the corpus used in this study (38\,K). BERT remains below one day even at 500\,K sentences.}
 \label{fig:efficiency}
 \end{figure}
 
-This gap widens at scale (Figure~\ref{fig:efficiency}b). For a corpus of one million sentences, even Mixtral would require two months; Nemotron would need over two years. The trained BERT classifier processes the same corpus in under 14 hours. The hybrid approach converts a one-time annotation investment into a reusable classifier whose cost is amortized across every subsequent run.
+This gap widens at scale (Figure~\ref{fig:efficiency}b). For a corpus of 500,000 sentences, Mixtral and GPT-OSS would each require roughly one month of continuous computation; Nemotron would need over a year. The trained BERT classifier processes the same corpus in under seven hours. The hybrid approach converts a one-time annotation investment into a reusable classifier whose cost is amortized across every subsequent run.
 
 \subsection{Category Prevalence and Classification Performance}
 
