@@ -271,79 +271,56 @@ def plot_efficiency_figure():
     ax1.axhline(y=BERT_TIME, color="#2CA02C", linestyle="--", alpha=0.4, linewidth=1)
     ax1.set_ylim(top=max(all_times) * 3)
 
-    # ── Right: scaling table (readable annotation time at key corpus sizes) ──
-    corpus_sizes = [1_000, 10_000, 38_451, 100_000, 1_000_000]
-    size_labels = ["1K", "10K", "38K\n(this study)", "100K", "1M"]
+    # ── Right: grouped horizontal bar chart for corpus of 38,451 sentences ──
+    # Show total annotation time in days for each model + BERT
+    models_list_r = ann["model"].tolist()
+    all_names_r = [r.short_name for r in ann.itertuples()] + ["XLM-RoBERTa"]
+    all_times_r = ann["mean_inference_time"].tolist() + [BERT_TIME]
+    bar_colors_r = [COLORS.get(m, "#999") for m in models_list_r] + ["#2CA02C"]
 
-    # Build row data: models + BERT
-    row_models = list(ann.itertuples())
-    row_names = [r.short_name for r in row_models] + ["BERT"]
-    row_times = [r.mean_inference_time for r in row_models] + [BERT_TIME]
-    row_colors = [COLORS.get(r.model, "#999") for r in row_models] + ["#2CA02C"]
+    corpus_n = 38_451
+    total_days = [t * corpus_n / 86400 for t in all_times_r]
 
-    # Compute the time matrix
-    def _fmt_time(hours):
-        """Format hours into a human-readable string."""
-        if hours < 1 / 60:
-            return f"{hours * 3600:.0f}s"
-        if hours < 1:
-            return f"{hours * 60:.0f}min"
-        if hours < 24:
-            return f"{hours:.1f}h"
-        days = hours / 24
-        if days < 7:
-            return f"{days:.1f}d"
-        if days < 30:
-            return f"{days / 7:.1f}w"
-        return f"{days / 30:.0f}mo"
+    y_r = np.arange(len(all_names_r))
+    bars_r = ax2.barh(y_r, total_days, color=bar_colors_r, edgecolor="white",
+                      height=0.55)
+    ax2.set_xlabel("Total annotation time (days)")
+    ax2.set_title("(b) Total Time for 38,451 Sentences", fontweight="bold",
+                  fontsize=11)
+    ax2.set_yticks(y_r)
+    ax2.set_yticklabels(all_names_r, fontsize=9)
+    ax2.invert_yaxis()
 
-    ax2.axis("off")
-    ax2.set_title("(b) Projected Annotation Time", fontweight="bold", fontsize=11)
+    # Annotate each bar with readable time
+    def _fmt_time(days):
+        if days < 1 / 24:
+            return f"{days * 24 * 60:.0f} min"
+        if days < 1:
+            return f"{days * 24:.1f} h"
+        return f"{days:.1f} d"
 
-    n_rows = len(row_names)
-    n_cols = len(corpus_sizes)
+    for bar, d in zip(bars_r, total_days):
+        label = _fmt_time(d)
+        # Place label outside bar if bar is short relative to axis
+        ax2.text(bar.get_width() + max(total_days) * 0.02,
+                 bar.get_y() + bar.get_height() / 2,
+                 label, ha="left", va="center", fontsize=9, fontweight="bold")
 
-    table_data = []
-    cell_colors = []
-    for t_per_s, color in zip(row_times, row_colors):
-        row_data = []
-        row_cell_colors = []
-        for s in corpus_sizes:
-            hours = s * t_per_s / 3600
-            row_data.append(_fmt_time(hours))
-            # Color intensity: green < 1h, yellow < 24h, orange < 7d, red >= 7d
-            if hours < 1:
-                row_cell_colors.append("#d4edda")
-            elif hours < 24:
-                row_cell_colors.append("#fff3cd")
-            elif hours < 24 * 7:
-                row_cell_colors.append("#ffe0b2")
-            else:
-                row_cell_colors.append("#f8d7da")
-        table_data.append(row_data)
-        cell_colors.append(row_cell_colors)
+    # Add speedup annotations vs BERT
+    bert_days = total_days[-1]
+    for i, d in enumerate(total_days[:-1]):
+        speedup = d / bert_days
+        ax2.text(bar.get_width() + max(total_days) * 0.02,
+                 y_r[i] + 0.25,
+                 f"{speedup:,.0f}x slower", ha="left", va="top",
+                 fontsize=7, color="#E15759", fontstyle="italic")
 
-    table = ax2.table(
-        cellText=table_data,
-        rowLabels=row_names,
-        colLabels=size_labels,
-        cellColours=cell_colors,
-        rowColours=row_colors,
-        loc="center",
-        cellLoc="center",
-    )
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1.0, 1.6)
+    # Reference lines
+    for days, label in [(1, "1 day"), (7, "1 week")]:
+        ax2.axvline(x=days, color="0.6", linestyle=":", alpha=0.5, linewidth=0.8)
+        ax2.text(days, -0.45, label, fontsize=7.5, color="0.5", ha="center")
 
-    # Style header row
-    for j in range(n_cols):
-        table[0, j].set_text_props(fontweight="bold")
-        table[0, j].set_facecolor("#e8e8e8")
-    # Style row labels
-    for i in range(n_rows):
-        table[i + 1, -1].set_text_props(fontweight="bold", color="white")
-        table[i + 1, -1].set_facecolor(row_colors[i])
+    ax2.set_xlim(0, max(total_days) * 1.35)
 
     fig.tight_layout()
     save_figure(fig, "fig_efficiency")
@@ -410,7 +387,7 @@ def plot_agreement_quality():
                     34, 32, 19, 16, 14, 10, 7, 6]
     y_th = np.arange(len(theme_names))
     norm = plt.Normalize(vmin=0, vmax=max(theme_counts))
-    th_colors = [plt.cm.GnBu(norm(c) * 0.75 + 0.25) for c in theme_counts]
+    th_colors = [plt.cm.Greys(norm(c) * 0.55 + 0.20) for c in theme_counts]
     ax.barh(y_th, theme_counts, color=th_colors, edgecolor="white",
             height=0.75, linewidth=0.5)
     ax.set_yticks(y_th)
