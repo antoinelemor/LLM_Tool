@@ -1,0 +1,22 @@
+\begin{table}[h!]
+\centering
+\caption{BERT fine-tuning hyperparameters.}
+\label{tab:hyperparameters}
+\begin{tabular}{lc}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Base model & xlm-roberta-base \\
+Learning rate & 2e-05 \\
+Batch size & 256 \\
+Max epochs & 25 \\
+Warmup ratio & 0.1 \\
+Weight decay & 0.01 \\
+Optimizer & AdamW \\
+Scheduler & Linear \\
+Max sequence length & 512 \\
+Early stopping patience & 3 \\
+Random seed & 42 \\
+\bottomrule
+\end{tabular}
+\end{table}

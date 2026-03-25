@@ -1,0 +1,18 @@
+{
+  "session_id": "GPT_5_EXTRA_LARGE_20260124_153207",
+  "current_phase": "annotation",
+  "phases_completed": [],
+  "start_time": 1769286822.994881,
+  "end_time": null,
+  "annotation_results": null,
+  "validation_results": null,
+  "training_results": null,
+  "deployment_results": null,
+  "errors": [
+    {
+      "phase": "PipelinePhase.ANNOTATION",
+      "error": "Connection error."
+    }
+  ],
+  "warnings": []
+}
