@@ -1,0 +1,6 @@
+model,display_name,short_name,provider,params,total_annotations,mean_inference_time,success_count,error_count,n_unique_themes_long,n_unique_sentiment_long,n_unique_political_parties_long,n_unique_specific_themes_long
+gemma,Gemma 3 (27B),Gemma3,Ollama,27B,38451,19.73,38451,0,,,,
+nemotron,Nemotron (49B),Nemotron,Ollama,49B,58672,78.97,58672,0,,,,
+mixtral,Mixtral (8×22B),Mixtral,Ollama,8×22B,38451,5.468768474198132,38451,0,98.0,5.0,57.0,8.0
+gpt_oss,GPT-OSS (120B),GPT-OSS,Ollama,120B,38451,7.704521733532032,38451,0,23.0,3.0,11.0,3.0
+gpt5,GPT-5,GPT-5,OpenAI,N/A,38451,,38451,0,,,,

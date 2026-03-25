@@ -1,0 +1,53 @@
+{
+  "session_id": "GPT-OSS_EXTRA_EXTRA_LARGE_20260127_175500",
+  "current_phase": "completed",
+  "phases_completed": [
+    "annotation"
+  ],
+  "start_time": 1769554572.955746,
+  "end_time": 1769860619.794914,
+  "annotation_results": {
+    "total_processed": 38451,
+    "successful": 38451,
+    "errors": 0,
+    "success_rate": 100.0,
+    "annotated_rows": 38451,
+    "total_annotated": 38451,
+    "success_count": 38451,
+    "prompt_success_count": 38451,
+    "error_count": 0,
+    "annotation_column": "annotation",
+    "output_file": "logs/annotator/GPT-OSS_EXTRA_EXTRA_LARGE_20260127_175500/annotated_data/ollama/gpt-oss_120b/extra-extra-large/extra-extra-large_gpt-oss_120b_annotations_20260127_175612.csv",
+    "output_format": "csv",
+    "model": "gpt-oss:120b",
+    "provider": "ollama",
+    "annotation_sample_size": null,
+    "usage_summary": {},
+    "status_breakdown": {
+      "success": 38451,
+      "error": 0,
+      "cleaning_failed": 0,
+      "decode_error": 0
+    },
+    "timestamp": "2026-01-31T06:56:59.779745",
+    "inference_time_column": "annotation_inference_time",
+    "mean_inference_time": 7.704521733532032,
+    "median_inference_time": 7.266359583009034,
+    "total_inference_time": 296246.56517604017,
+    "annotated_subset_path": "logs/annotator/GPT-OSS_EXTRA_EXTRA_LARGE_20260127_175500/annotated_data/ollama/gpt-oss_120b/extra-extra-large/extra-extra-large_gpt-oss_120b_annotations_20260127_175612_annotated_only.csv",
+    "openai_batch_dir": "logs/annotator/GPT-OSS_EXTRA_EXTRA_LARGE_20260127_175500/annotated_data/ollama/gpt-oss_120b/extra-extra-large",
+    "preview_samples": [
+      {
+        "llm_annotation_id": 323,
+        "annotation": "{\"themes_long\":null,\"political_parties_long\":null,\"specific_themes_long\":null,\"sentiment_long\":\"positive\"}",
+        "annotation_inference_time": 7.742602999962401,
+        "annotation_preview": "sentiment_long: positive"
+      }
+    ]
+  },
+  "validation_results": null,
+  "training_results": null,
+  "deployment_results": null,
+  "errors": [],
+  "warnings": []
+}

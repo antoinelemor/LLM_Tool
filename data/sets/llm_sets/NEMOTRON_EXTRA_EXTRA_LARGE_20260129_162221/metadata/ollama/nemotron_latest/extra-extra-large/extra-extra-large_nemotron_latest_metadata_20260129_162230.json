@@ -1,0 +1,18 @@
+{
+  "annotation_session": {
+    "session_id": "annotator_session_20260201_182209_4c86",
+    "timestamp": "20260201_182209",
+    "workflow": "The Annotator - Smart Annotate",
+    "tool_version": "LLMTool v1.0",
+    "status": "running",
+    "parent_session_id": "NEMOTRON_EXTRA_EXTRA_LARGE_20260129_162221"
+  },
+  "data_source": {
+    "file_path": "logs/annotator/NEMOTRON_EXTRA_EXTRA_LARGE_20260129_162221/annotated_data/ollama/nemotron_latest/extra-extra-large/extra-extra-large_nemotron_latest_annotations_20260129_162259.csv",
+    "file_name": "extra-extra-large_nemotron_latest_annotations_20260129_162259.csv",
+    "data_format": "csv",
+    "dataset_name": "extra-extra-large",
+    "text_column": "text",
+    "identifier_column": "id",
+    "identifier_source": "user",
+    "total_rows": 

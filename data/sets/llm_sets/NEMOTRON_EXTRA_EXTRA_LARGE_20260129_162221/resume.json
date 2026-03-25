@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "mode": "annotator",
+  "session_id": "NEMOTRON_EXTRA_EXTRA_LARGE_20260129_162221",
+  "session_name": "NEMOTRON_EXTRA_EXTRA_LARGE_20260129_162221",
+  "status": "active",
+  "created_at": "2026-01-29T16:22:21",
+  "updated_at": "2026-01-29T16:22:59",
+  "last_step": {
+    "key": "advanced_settings",
+    "name": "Review advanced options",
+    "number": 5,
+    "updated_at": "2026-01-29T16:22:59"
+  },
+  "extra": {
+    "total_steps": 7,
+    "completed_steps": 5,
+    "step_status": {
+      "1": "completed",
+      "2": "completed",
+      "3": "completed",
+      "4": "completed",
+      "5": "completed",
+      "6": "pending",
+      "7": "pending"
+    },
+    "mode_label": "ANNOTATOR",
+    "last_step_summary": "Metadata saved: extra-extra-large_nemotron_latest_metadata_20260129_162230.json",
+    "dataset_path": "data/sets/extra-extra-large.csv",
+    "text_column": "text",
+    "identifier_column": "id",
+    "identifier_source": "user",
+    "provider": "ollama",
+    "model": "nemotron:latest",
+    "prompt_count": 1,
+    "metadata_path": "logs/annotator/NEMOTRON_EXTRA_EXTRA_LARGE_20260129_162221/metadata/ollama/nemotron_latest/extra-extra-large/extra-extra-large_nemotron_latest_metadata_20260129_162230.json"
+  }
+}

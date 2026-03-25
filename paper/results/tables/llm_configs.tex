@@ -1,0 +1,16 @@
+\begin{table}[h!]
+\centering
+\caption{LLM configurations used for annotation.}
+\label{tab:llm_configs}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Model} & \textbf{Parameters} & \textbf{Disk Size} & \textbf{Quant.} & \textbf{Context} & \textbf{Provider} & \textbf{Time/sent} \\
+\midrule
+Gemma3 & 27B & 17 GB & Full & 128k & Ollama & 19.7s \\
+Nemotron & 49B & 42 GB & Full & 4k & Ollama & 79.0s \\
+Mixtral & 8×22B & 80 GB & Full & 64k & Ollama & 5.5s \\
+GPT-OSS & 120B & 65 GB & Q8 & 128k & Ollama & 7.7s \\
+GPT-5 & N/A & N/A & N/A & 128k & OpenAI & API \\
+\bottomrule
+\end{tabular}
+\end{table}

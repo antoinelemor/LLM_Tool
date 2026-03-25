@@ -1,0 +1,82 @@
+{
+  "session_id": "GPT-OSS_EXTRA_EXTRA_LARGE_20260127_175500",
+  "model_name": "llm_model",
+  "workflow_name": "The Annotator",
+  "timestamp": "2026-01-31T06:57:00.109940",
+  "annotation_keys": [
+    "themes_long",
+    "political_parties_long",
+    "specific_themes_long",
+    "sentiment_long"
+  ],
+  "metrics": {
+    "total_rows": 38451,
+    "annotated_rows": 38451,
+    "success_count": 38451,
+    "error_count": 0,
+    "value_counts_per_key": {
+      "themes_long": {
+        "rights_liberties_minorities_discrimination": 2791,
+        "international_affairs": 3861,
+        "transportation": 767,
+        "immigration": 813,
+        "education": 809,
+        "labor": 1356,
+        "law_and_crime": 3019,
+        "health": 2517,
+        "social_welfare": 1828,
+        "governments_governance": 10469,
+        "environment": 1887,
+        "energy": 1264,
+        "domestic_commerce": 897,
+        "defense": 380,
+        "macroeconomics": 4004,
+        "housing": 1562,
+        "public_lands": 350,
+        "null,": 111,
+        "culture_nationalism": 833,
+        "foreign_trade": 626,
+        "agriculture": 442,
+        "technology": 599,
+        "[": 1
+      },
+      "political_parties_long": {
+        "LPC": 2237,
+        "CPC": 1729,
+        "NDP": 709,
+        "BQ": 409,
+        "GPC": 63,
+        "null,": 100,
+        "CAQ": 197,
+        "PCQ": 30,
+        "PLQ": 39,
+        "PQ": 37,
+        "QS": 32
+      },
+      "specific_themes_long": {
+        "welfare_state": 1249,
+        "null,": 100,
+        "early_learning_childcare": 159
+      },
+      "sentiment_long": {
+        "positive": 5982,
+        "neutral": 20358,
+        "negative": 12104
+      }
+    },
+    "language_distribution": {
+      "FR": 19242,
+      "EN": 19209
+    },
+    "timing_metrics": {
+      "mean_inference_time": 7.704521733532032,
+      "prompt_success_count": 38451
+    },
+    "status_breakdown": {
+      "success": 38451,
+      "error": 0,
+      "cleaning_failed": 0,
+      "decode_error": 0
+    }
+  }
+}

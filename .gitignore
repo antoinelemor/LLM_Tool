@@ -1,0 +1,117 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Claude Code
+.claude/
+memory.md
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Models and data
+models/
+*.bin
+*.safetensors
+*.gguf
+
+# Data directory - ignore contents but keep the folder
+data/*
+!data/.gitkeep
+!data/sets/
+!data/sets/llm_sets/**
+
+# Prompts directory - ignore contents but keep the folder
+prompts/*
+!prompts/.gitkeep
+
+# Validation directory - ignore contents but keep the folder via .gitkeep
+validation/**
+!validation/.gitkeep
+
+# Logs
+logs/
+training_logs/
+*.log
+
+# Cache
+cache/
+__pycache__/
+
+# API Keys and secrets
+.env
+.env.local
+*.key
+credentials.json
+
+# OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Project specific
+extract_results_from_csv.py
+docs/RICH_THROTTLING.md
+__pycache__/
+*.pyc
+CLAUDE.md
+scripts/
+
+# Paper — LaTeX build artifacts
+paper/latex/*.aux
+paper/latex/*.bbl
+paper/latex/*.bcf
+paper/latex/*.blg
+paper/latex/*.fdb_latexmk
+paper/latex/*.fls
+paper/latex/*.log
+paper/latex/*.out
+paper/latex/*.run.xml
+paper/latex/*.pdf
+paper/latex/*.wordcount
+paper/scripts/__pycache__/
+
