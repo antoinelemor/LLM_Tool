@@ -1,7 +1,40 @@
+#!/usr/bin/env python3
 """
-11 — Generate all LaTeX tables for the paper.
+PROJECT:
+-------
+LLMTool
 
-Outputs .tex files ready for \\input{} in the manuscript.
+TITLE:
+------
+05_generate_latex_tables.py
+
+MAIN OBJECTIVE:
+---------------
+Generate all LaTeX tables for the paper.
+Produces .tex files with booktabs-formatted tables ready for \\input{}
+in the manuscript, including results, configurations, and statistics.
+
+Dependencies:
+-------------
+- json
+- sys
+- pathlib
+- numpy
+- pandas
+
+MAIN FEATURES:
+--------------
+1) Generate main results ranking table
+2) Generate per-task performance table
+3) Generate statistical test results table
+4) Generate LLM configuration and hyperparameter tables
+5) Generate training metrics and corpus statistics tables
+6) Generate efficiency comparison table
+7) Generate LaTeX \\newcommand macros for inline results
+
+Author:
+-------
+Antoine Lemor
 """
 
 import json

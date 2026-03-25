@@ -1,8 +1,40 @@
+#!/usr/bin/env python3
 """
-01 — Clean and prepare benchmark data.
+PROJECT:
+-------
+LLMTool
 
+TITLE:
+------
+01_clean_and_prepare_data.py
+
+MAIN OBJECTIVE:
+---------------
+Clean and prepare benchmark data for paper analysis.
 Reads the raw benchmark CSV, normalizes column names and label formats,
-and outputs a clean dataset ready for analysis.
+extracts annotation statistics and training metrics, and outputs clean
+datasets ready for analysis.
+
+Dependencies:
+-------------
+- ast
+- json
+- sys
+- pathlib
+- numpy
+- pandas
+
+MAIN FEATURES:
+--------------
+1) Parse and normalize label lists from raw annotations
+2) Extract ground-truth consensus labels for all annotation tasks
+3) Extract and align model predictions across five LLM sources
+4) Compute annotation statistics from annotator logs
+5) Extract training metrics from comprehensive summaries
+
+Author:
+-------
+Antoine Lemor
 """
 
 import ast

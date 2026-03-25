@@ -1,10 +1,41 @@
+#!/usr/bin/env python3
 """
-12 — Publication-ready composite figures for the paper.
+PROJECT:
+-------
+LLMTool
 
-1. Combined per-task bars + radar (side by side)
-2. Per-task bars with bootstrap CIs
-3. Computational efficiency (clean single figure)
-4. Agreement quality figure for Methods section
+TITLE:
+------
+06_plot_paper_figures.py
+
+MAIN OBJECTIVE:
+---------------
+Generate publication-ready composite figures for the paper.
+Produces all main manuscript figures with consistent styling suitable
+for top-tier academic journals.
+
+Dependencies:
+-------------
+- sys
+- pathlib
+- itertools
+- matplotlib
+- numpy
+- pandas
+- scipy
+
+MAIN FEATURES:
+--------------
+1) Per-task performance bars with bootstrap CIs and significance brackets
+2) Combined aggregate bars and radar chart
+3) Computational efficiency: inference time bars and scaling table
+4) Ground-truth quality: agreement, distributions, and category breakdowns
+5) Sample size vs F1 relationship scatter and bucket analysis
+6) Cross-lingual and cross-domain robustness comparison
+
+Author:
+-------
+Antoine Lemor
 """
 
 import sys
@@ -240,29 +271,79 @@ def plot_efficiency_figure():
     ax1.axhline(y=BERT_TIME, color="#2CA02C", linestyle="--", alpha=0.4, linewidth=1)
     ax1.set_ylim(top=max(all_times) * 3)
 
-    # ── Right: scaling projection ──
-    corpus_sizes = [1_000, 10_000, 100_000, 1_000_000]
+    # ── Right: scaling table (readable annotation time at key corpus sizes) ──
+    corpus_sizes = [1_000, 10_000, 38_451, 100_000, 1_000_000]
+    size_labels = ["1K", "10K", "38K\n(this study)", "100K", "1M"]
 
-    bert_hours = [s * BERT_TIME / 3600 for s in corpus_sizes]
-    ax2.plot(corpus_sizes, bert_hours, "s-", color="#2CA02C", linewidth=2.5,
-             markersize=8, label="BERT (XLM-RoBERTa)", zorder=10)
+    # Build row data: models + BERT
+    row_models = list(ann.itertuples())
+    row_names = [r.short_name for r in row_models] + ["BERT"]
+    row_times = [r.mean_inference_time for r in row_models] + [BERT_TIME]
+    row_colors = [COLORS.get(r.model, "#999") for r in row_models] + ["#2CA02C"]
 
-    for _, row in ann.iterrows():
-        hours = [s * row["mean_inference_time"] / 3600 for s in corpus_sizes]
-        ax2.plot(corpus_sizes, hours, "o--",
-                 color=COLORS.get(row["model"], "#999"), linewidth=1.5,
-                 markersize=5, label=row["short_name"], alpha=0.85)
+    # Compute the time matrix
+    def _fmt_time(hours):
+        """Format hours into a human-readable string."""
+        if hours < 1 / 60:
+            return f"{hours * 3600:.0f}s"
+        if hours < 1:
+            return f"{hours * 60:.0f}min"
+        if hours < 24:
+            return f"{hours:.1f}h"
+        days = hours / 24
+        if days < 7:
+            return f"{days:.1f}d"
+        if days < 30:
+            return f"{days / 7:.1f}w"
+        return f"{days / 30:.0f}mo"
 
-    ax2.set_xscale("log")
-    ax2.set_yscale("log")
-    ax2.set_xlabel("Corpus size (sentences)")
-    ax2.set_ylabel("Total time (hours)")
-    ax2.set_title("(b) Scaling Projection", fontweight="bold", fontsize=11)
-    ax2.legend(loc="upper left", fontsize=9)
+    ax2.axis("off")
+    ax2.set_title("(b) Projected Annotation Time", fontweight="bold", fontsize=11)
 
-    for hours, label in [(24, "1 day"), (24*7, "1 week"), (24*30, "1 month")]:
-        ax2.axhline(y=hours, color="gray", linestyle=":", alpha=0.35)
-        ax2.text(800, hours * 1.15, label, fontsize=8, color="gray")
+    n_rows = len(row_names)
+    n_cols = len(corpus_sizes)
+
+    table_data = []
+    cell_colors = []
+    for t_per_s, color in zip(row_times, row_colors):
+        row_data = []
+        row_cell_colors = []
+        for s in corpus_sizes:
+            hours = s * t_per_s / 3600
+            row_data.append(_fmt_time(hours))
+            # Color intensity: green < 1h, yellow < 24h, orange < 7d, red >= 7d
+            if hours < 1:
+                row_cell_colors.append("#d4edda")
+            elif hours < 24:
+                row_cell_colors.append("#fff3cd")
+            elif hours < 24 * 7:
+                row_cell_colors.append("#ffe0b2")
+            else:
+                row_cell_colors.append("#f8d7da")
+        table_data.append(row_data)
+        cell_colors.append(row_cell_colors)
+
+    table = ax2.table(
+        cellText=table_data,
+        rowLabels=row_names,
+        colLabels=size_labels,
+        cellColours=cell_colors,
+        rowColours=row_colors,
+        loc="center",
+        cellLoc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1.0, 1.6)
+
+    # Style header row
+    for j in range(n_cols):
+        table[0, j].set_text_props(fontweight="bold")
+        table[0, j].set_facecolor("#e8e8e8")
+    # Style row labels
+    for i in range(n_rows):
+        table[i + 1, -1].set_text_props(fontweight="bold", color="white")
+        table[i + 1, -1].set_facecolor(row_colors[i])
 
     fig.tight_layout()
     save_figure(fig, "fig_efficiency")
@@ -328,9 +409,10 @@ def plot_agreement_quality():
     theme_counts = [226, 180, 156, 137, 106, 76, 66, 59, 56, 47, 43, 39, 36,
                     34, 32, 19, 16, 14, 10, 7, 6]
     y_th = np.arange(len(theme_names))
-    norm = plt.Normalize(vmin=min(theme_counts), vmax=max(theme_counts))
-    th_colors = [plt.cm.Blues(norm(c)) for c in theme_counts]
-    ax.barh(y_th, theme_counts, color=th_colors, edgecolor="white", height=0.75)
+    norm = plt.Normalize(vmin=0, vmax=max(theme_counts))
+    th_colors = [plt.cm.GnBu(norm(c) * 0.75 + 0.25) for c in theme_counts]
+    ax.barh(y_th, theme_counts, color=th_colors, edgecolor="white",
+            height=0.75, linewidth=0.5)
     ax.set_yticks(y_th)
     ax.set_yticklabels(theme_names, fontsize=7.5)
     ax.set_xlabel("Count (test set)")
@@ -338,7 +420,7 @@ def plot_agreement_quality():
                  fontweight="bold", fontsize=10.5)
     ax.invert_yaxis()
     for i, v in enumerate(theme_counts):
-        ax.text(v + 2, i, str(v), va="center", fontsize=7)
+        ax.text(v + 3, i, str(v), va="center", fontsize=7, color="0.3")
 
     # ══ (d) Political Parties + Specific Themes (combined) ══
     ax = axes[1, 1]
@@ -351,9 +433,11 @@ def plot_agreement_quality():
 
     all_labels = parties + [""] + st_labels
     all_counts = pp_counts + [0] + st_counts
-    all_colors = (["#E15759"] * len(parties)
+    norm_pp = plt.Normalize(vmin=0, vmax=max(pp_counts))
+    party_colors = [plt.cm.Greys(norm_pp(c) * 0.50 + 0.30) for c in pp_counts]
+    all_colors = (party_colors
                   + ["white"]
-                  + ["#F28E2B", "#76B7B2", "#59A14F"])
+                  + ["#4E79A7", "#76B7B2", "#B07AA1"])
 
     y_all = np.arange(len(all_labels))
     ax.barh(y_all, all_counts, color=all_colors, edgecolor="white", height=0.6)

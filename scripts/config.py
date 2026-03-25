@@ -1,6 +1,36 @@
+#!/usr/bin/env python3
 """
+PROJECT:
+-------
+LLMTool
+
+TITLE:
+------
+config.py
+
+MAIN OBJECTIVE:
+---------------
 Shared configuration for all paper analysis scripts.
-Paths, model names, color palettes, and style settings.
+Centralizes paths, model definitions, task definitions, color palettes,
+and matplotlib style settings for reproducible figure generation.
+
+Dependencies:
+-------------
+- os
+- pathlib
+- matplotlib
+
+MAIN FEATURES:
+--------------
+1) Project and output path definitions
+2) Model metadata (session IDs, display names, parameters, inference times)
+3) Annotation task definitions (column mappings, types)
+4) Training hyperparameter registry
+5) Color palette and matplotlib publication-quality style configuration
+
+Author:
+-------
+Antoine Lemor
 """
 
 import os

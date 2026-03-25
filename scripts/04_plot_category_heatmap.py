@@ -1,7 +1,38 @@
+#!/usr/bin/env python3
 """
-06 — Per-category F1 heatmaps.
+PROJECT:
+-------
+LLMTool
 
-Heatmap of F1 scores: models (columns) × classes (rows) for each task.
+TITLE:
+------
+04_plot_category_heatmap.py
+
+MAIN OBJECTIVE:
+---------------
+Generate per-category F1 heatmaps for each annotation task.
+Produces heatmap visualizations of F1 scores with models as columns
+and class labels as rows, plus a combined top/bottom class bar chart.
+
+Dependencies:
+-------------
+- sys
+- pathlib
+- matplotlib
+- numpy
+- pandas
+
+MAIN FEATURES:
+--------------
+1) Generate per-task F1 heatmaps (models x classes)
+2) Sort classes by mean F1 for visual clarity
+3) Color-coded cells with RdYlGn colormap
+4) Combined bar chart of top 15 and bottom 5 performing classes
+5) Export figures in PDF and PNG formats
+
+Author:
+-------
+Antoine Lemor
 """
 
 import sys

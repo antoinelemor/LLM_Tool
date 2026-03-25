@@ -1,9 +1,40 @@
+#!/usr/bin/env python3
 """
-02 — Compute benchmark metrics.
+PROJECT:
+-------
+LLMTool
 
-Computes F1, precision, recall (micro, macro, weighted) for each model
-on each annotation task, compared against the consensus ground truth.
-Also computes per-class metrics.
+TITLE:
+------
+02_compute_benchmark_metrics.py
+
+MAIN OBJECTIVE:
+---------------
+Compute benchmark metrics for all LLM-trained BERT classifiers.
+Evaluates F1, precision, recall (micro, macro, weighted) for each model
+on each annotation task against the consensus ground truth.
+Also computes per-class and per-language metrics.
+
+Dependencies:
+-------------
+- json
+- sys
+- pathlib
+- numpy
+- pandas
+- scikit-learn
+
+MAIN FEATURES:
+--------------
+1) Compute multiclass and multilabel classification metrics
+2) Generate overall model-by-task performance matrix
+3) Compute per-class precision, recall, and F1 scores
+4) Aggregate scores across tasks for model ranking
+5) Compute per-language (EN/FR) performance breakdowns
+
+Author:
+-------
+Antoine Lemor
 """
 
 import json

@@ -1,8 +1,41 @@
+#!/usr/bin/env python3
 """
-03 — Statistical tests for model comparison.
+PROJECT:
+-------
+LLMTool
 
-Friedman test, Kruskal-Wallis, post-hoc pairwise Wilcoxon with Bonferroni,
+TITLE:
+------
+03_compute_statistical_tests.py
+
+MAIN OBJECTIVE:
+---------------
+Perform statistical significance tests for model comparison.
+Applies non-parametric tests (Friedman, Kruskal-Wallis) with post-hoc
+pairwise Wilcoxon signed-rank tests and Bonferroni correction, computes
 effect sizes (Kendall's W, eta-squared), and bootstrap confidence intervals.
+
+Dependencies:
+-------------
+- itertools
+- json
+- sys
+- pathlib
+- numpy
+- pandas
+- scipy
+
+MAIN FEATURES:
+--------------
+1) Friedman test with Kendall's W effect size
+2) Kruskal-Wallis H-test with eta-squared
+3) Post-hoc pairwise Wilcoxon signed-rank tests with Bonferroni correction
+4) Bootstrap confidence intervals (10,000 resamples, 95% level)
+5) Per-task and global statistical comparisons
+
+Author:
+-------
+Antoine Lemor
 """
 
 import itertools

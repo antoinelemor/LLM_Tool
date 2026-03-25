@@ -1,7 +1,7 @@
 \documentclass[12pt]{article}
 
 % Include extracted results from CSV files
-\input{results/results_commands.tex}
+\input{../results/results_commands.tex}
 
 % Essential packages
 \usepackage[utf8]{inputenc}
@@ -29,8 +29,8 @@
 
 % Bibliography
 \usepackage[backend=biber,style=authoryear,sorting=nyt]{biblatex}
-\addbibresource{bibliography/library.bib}
-\addbibresource{bibliography/LLM_tool.bib}
+\addbibresource{../bibliography/library.bib}
+\addbibresource{../bibliography/LLM_tool.bib}
 
 % Hyperref setup
 \usepackage[unicode=true,colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
@@ -71,11 +71,10 @@
 \thispagestyle{empty}
 
 % Word count — requires compiling with: pdflatex --shell-escape LLM_tool.tex
-% Disabled on Overleaf (no --shell-escape). Uncomment for local builds.
-%\immediate\write18{texcount -total -merge -q \jobname.tex 2>/dev/null | grep "Words in text" | grep -o '[0-9]*' > \jobname.wordcount}
-%\begin{center}
-%\small\textit{Word count: \input{\jobname.wordcount}}
-%\end{center}
+\immediate\write18{texcount -total -merge -q \jobname.tex 2>/dev/null | grep "Words in text" | grep -o '[0-9]*' > \jobname.wordcount}
+\begin{center}
+\small\textit{Word count: \input{\jobname.wordcount}}
+\end{center}
 
 \begin{abstract}
 \noindent
@@ -267,7 +266,7 @@ A subset of 1,549 sentences was manually annotated by four researchers with expe
 
 The textual data are diverse. The parliamentary component comprises House of Commons debates, including legislative discussions, question periods, and members’ statements, which are characterized by formal political discourse and specialized vocabulary. The media component consists of Canadian news articles, exposing models to diverse communication styles. This variety allows the hybrid pipeline to be evaluated across multiple registers and contexts.
 
-\input{results/tables/corpus_statistics.tex}
+\input{../results/tables/corpus_statistics.tex}
 
 The corpus is balanced across languages (19,209 English; 19,242 French) and sources (19,202 parliamentary; 19,249 media). The test set mirrors this balance (51\% English, 52\% parliamentary).
 
@@ -279,7 +278,7 @@ Textual data is classified into one of 21 major public policy themes.\footnote{F
 
 The political party dimension covers ten Canadian federal and Quebec provincial parties. Care must be taken, as parties with the same or similar names across levels represent distinct ideological positions. The sentiment dimension distinguishes between positive, neutral, and negative framings.
 
-\input{results/outputs/tables/categories_extracted.tex}
+\input{../results/outputs/tables/categories_extracted.tex}
 
 \subsection{Manual Annotation Process}
 
@@ -289,7 +288,7 @@ Agreement metrics show moderate to substantial consistency across annotators, wi
 
 \begin{figure}[p]
 \centering
-\includegraphics[width=0.92\textwidth]{figures/fig_agreement_quality.png}
+\includegraphics[width=0.92\textwidth]{../figures/fig_agreement_quality.png}
 \vspace{-0.5em}
 \caption{Ground-truth quality and category distributions (N~=~1,549). (a)~Inter-annotator agreement with 95\% CIs. (b)~Sentiment distribution. (c)~Policy themes across 21 CAP categories (993 texts annotated). (d)~Political parties (189 texts) and specific themes (88 texts); 94.3\% of texts have no specific theme, reflecting severe class imbalance.}
 \label{fig:agreement}
@@ -376,7 +375,7 @@ Agreement metrics show moderate to substantial consistency across annotators, wi
 
 Five LLM configurations were selected to span a range of architectures, sizes, and providers. Four models run locally through Ollama; one proprietary model (OpenAI GPT-5) serves as an external benchmark. All local models processed the full corpus of 38,451 sentences with a 100\% success rate and zero annotation errors, which demonstrates the robustness of the JSON validation pipeline.
 
-\input{results/tables/llm_configs.tex}
+\input{../results/tables/llm_configs.tex}
 
 The selection balances annotation quality with computational feasibility. Mixtral 8$\times$22B completed the corpus fastest (5.5~s per sentence); Nemotron required the most time (79.0~s per sentence). GPT-OSS 120B, a quantized open-source model, achieved an intermediate throughput of 7.7~s per sentence while delivering the strongest local-model performance. These timing differences are consequential at scale: annotating 38,451 sentences took between 2.4 and 8.8 days of continuous local computation.
 
@@ -406,7 +405,7 @@ Figure~\ref{fig:per_task_ci} presents Micro F1 scores for each model across the 
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\textwidth]{figures/fig_per_task_ci.png}
+\includegraphics[width=\textwidth]{../figures/fig_per_task_ci.png}
 \caption{Micro F1 by annotation task. Brackets indicate significant pairwise differences (Wilcoxon signed-rank, Bonferroni-corrected; $^{*}p<0.05$, $^{**}p<0.01$, $^{***}p<0.001$). Sentiment is the easiest task; specific themes the hardest.}
 \label{fig:per_task_ci}
 \end{figure}
@@ -415,7 +414,7 @@ The Friedman test confirms that these differences are significant at the global 
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\textwidth]{figures/fig_combined_performance.png}
+\includegraphics[width=\textwidth]{../figures/fig_combined_performance.png}
 \caption{(a)~Aggregate F1 metrics per model. (b)~Multi-metric radar profiles. GPT-5 and GPT-OSS dominate on every axis; the gap is widest on precision.}
 \label{fig:combined_performance}
 \end{figure}
@@ -426,7 +425,7 @@ Figure~\ref{fig:heatmap_themes} displays per-class F1 scores for the 21 policy t
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\textwidth]{figures/heatmap_themes.png}
+\includegraphics[width=\textwidth]{../figures/heatmap_themes.png}
 \caption{Per-class F1 scores for the 21 policy themes. Rows sorted by mean F1 (ascending); test-set support (N) shown for each category. GPT-OSS achieves the highest scores on most categories.}
 \label{fig:heatmap_themes}
 \end{figure}
@@ -439,12 +438,12 @@ The hybrid architecture produces its clearest advantage on efficiency. LLM annot
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\textwidth]{figures/fig_efficiency.png}
-\caption{Computational efficiency. (a)~Per-sentence inference time (log scale); speedup factors shown in red. (b)~Projected total time by corpus size; reference lines mark one day, one week, and one month. BERT remains below one day even at one million sentences.}
+\includegraphics[width=\textwidth]{../figures/fig_efficiency.png}
+\caption{Computational efficiency. (a)~Per-sentence inference time (log scale). (b)~Projected annotation time at key corpus sizes; cells are color-coded from green ($<$1\,h) to red ($\geq$7\,d). BERT processes one million sentences in under 14 hours.}
 \label{fig:efficiency}
 \end{figure}
 
-This gap widens at scale (Figure~\ref{fig:efficiency}b). For a corpus of one million sentences, even Mixtral would require 63 days; Nemotron would need over two years. The trained BERT classifier processes the same corpus in under 14 hours. The hybrid approach converts a one-time annotation investment into a reusable classifier whose cost is amortized across every subsequent run.
+This gap widens at scale (Figure~\ref{fig:efficiency}b). For a corpus of one million sentences, even Mixtral would require two months; Nemotron would need over two years. The trained BERT classifier processes the same corpus in under 14 hours. The hybrid approach converts a one-time annotation investment into a reusable classifier whose cost is amortized across every subsequent run.
 
 \subsection{Category Prevalence and Classification Performance}
 
@@ -452,7 +451,7 @@ Beyond model choice, per-class performance depends on category prevalence in the
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\textwidth]{figures/fig_sample_size_vs_f1.png}
+\includegraphics[width=\textwidth]{../figures/fig_sample_size_vs_f1.png}
 \caption{Effect of category prevalence on classification performance. (a)~Per-class F1 vs.\ test-set support for all model--class pairs; the dashed line shows a log-linear trend. (b)~Mean F1 by support bucket with standard errors.}
 \label{fig:sample_size}
 \end{figure}
@@ -465,7 +464,7 @@ The corpus comprises two languages (English, French) and two sources (parliament
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\textwidth]{figures/fig_language_source.png}
+\includegraphics[width=\textwidth]{../figures/fig_language_source.png}
 \caption{(a)~Performance by language. GPT-5 and GPT-OSS perform slightly better on French. (b)~Performance by source type (sentiment task). Media headlines yield higher F1 than parliamentary debates for all models.}
 \label{fig:lang_source}
 \end{figure}
@@ -515,21 +514,21 @@ By relocating human expertise from exhaustive labelling to schema design, qualit
 \section{Training Details}
 \label{sec:training-details}
 
-\input{results/tables/hyperparameters.tex}
+\input{../results/tables/hyperparameters.tex}
 
-\input{results/tables/training_validation_metrics.tex}
+\input{../results/tables/training_validation_metrics.tex}
 
 Training validation metrics reveal the performance hierarchy before benchmark evaluation. GPT-5-trained classifiers achieve the highest validation F1 across all four tasks (sentiment: 0.774 macro F1; political parties: 0.627; themes: 0.640; specific themes: 0.718). GPT-OSS follows closely. Mixtral shows very low macro F1 on political parties (0.074) and themes (0.119), consistent with its production of non-standard labels during annotation (57 unique party labels instead of 10; 98 theme labels instead of 21). This label noise propagates directly into weaker classifiers.
 
-\input{results/tables/efficiency.tex}
+\input{../results/tables/efficiency.tex}
 
-\input{results/tables/main_results.tex}
+\input{../results/tables/main_results.tex}
 
-\input{results/tables/per_task_results.tex}
+\input{../results/tables/per_task_results.tex}
 
-\input{results/tables/statistical_tests.tex}
+\input{../results/tables/statistical_tests.tex}
 
-\input{results/tables/category_performance.tex}
+\input{../results/tables/category_performance.tex}
 
 \newpage
 \section{Technical Infrastructure and Model Support}
