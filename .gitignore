@@ -1,0 +1,109 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Claude Code
+.claude/
+memory.md
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Models and data
+models/
+*.bin
+*.safetensors
+*.gguf
+
+# Data directory - ignore contents but keep the folder via .gitkeep
+data/**
+!data/.gitkeep
+# Always track curated datasets stored in data/set/ and data/sets/
+!data/set/
+!data/set/**
+!data/sets/
+!data/sets/**
+
+# Prompts directory - ignore contents but keep the folder via .gitkeep
+prompts/**
+!prompts/.gitkeep
+!prompts/prompt_EN_long_v2.txt
+
+# Validation directory - ignore contents but keep the folder via .gitkeep
+validation/**
+!validation/.gitkeep
+
+# Logs
+logs/
+training_logs/
+*.log
+
+# Cache
+cache/
+__pycache__/
+
+# API Keys and secrets
+.env
+.env.local
+*.key
+credentials.json
+
+# OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Project specific
+paper/results/scripts/extract_results_from_csv.py
+extract_results_from_csv.py
+docs/RICH_THROTTLING.md
+paper/
+__pycache__/
+*.pyc
+data/
+CLAUDE.md
+scripts/
