@@ -1,0 +1,13 @@
+PWD /Users/antoine/Documents/GitHub/PAPER_LLM_TOOL/LLM_Tool/paper/latex
+INPUT /usr/local/texlive/2024/texmf.cnf
+INPUT /usr/local/texlive/2024/texmf-dist/web2c/texmf.cnf
+INPUT /usr/local/texlive/2024/texmf-var/web2c/pdftex/pdflatex.fmt
+INPUT /Users/antoine/Documents/GitHub/PAPER_LLM_TOOL/LLM_Tool/paper/latex/LLM_tool.tex
+OUTPUT LLM_tool.log
+INPUT /usr/local/texlive/2024/texmf-dist/tex/latex/base/article.cls
+INPUT /usr/local/texlive/2024/texmf-dist/tex/latex/base/article.cls
+INPUT /usr/local/texlive/2024/texmf-dist/tex/latex/base/size12.clo
+INPUT /usr/local/texlive/2024/texmf-dist/tex/latex/base/size12.clo
+INPUT /usr/local/texlive/2024/texmf-dist/tex/latex/base/size12.clo
+INPUT /usr/local/texlive/2024/texmf-dist/fonts/map/fontname/texfonts.map
+INPUT /usr/local/texlive/2024/texmf-dist/fonts/tfm/public/cm/cmr12.tfm

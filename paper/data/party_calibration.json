@@ -1,0 +1,74 @@
+{
+  "BQ": {
+    "threshold": 0.45,
+    "ci_lower_min": 0.0,
+    "f1": 0.9412,
+    "precision": 0.8889,
+    "recall": 1.0,
+    "support": 16
+  },
+  "CAQ": {
+    "threshold": 0.3,
+    "ci_lower_min": 0.0,
+    "f1": 0.6667,
+    "precision": 1.0,
+    "recall": 0.5,
+    "support": 8
+  },
+  "CPC": {
+    "threshold": 0.7,
+    "ci_lower_min": 0.0,
+    "f1": 0.953,
+    "precision": 0.9342,
+    "recall": 0.9726,
+    "support": 73
+  },
+  "GPC": {
+    "threshold": 0.3,
+    "ci_lower_min": 0.2,
+    "f1": 0.6667,
+    "precision": 0.5714,
+    "recall": 0.8,
+    "support": 5
+  },
+  "LPC": {
+    "threshold": 0.6,
+    "ci_lower_min": 0.0,
+    "f1": 0.8866,
+    "precision": 0.8866,
+    "recall": 0.8866,
+    "support": 97
+  },
+  "NDP": {
+    "threshold": 0.3,
+    "ci_lower_min": 0.3,
+    "f1": 0.8929,
+    "precision": 0.8929,
+    "recall": 0.8929,
+    "support": 28
+  },
+  "PLQ": {
+    "threshold": 0.5,
+    "ci_lower_min": 0.0,
+    "f1": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "support": 8
+  },
+  "PQ": {
+    "threshold": 0.5,
+    "ci_lower_min": 0.0,
+    "f1": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "support": 1
+  },
+  "QS": {
+    "threshold": 0.5,
+    "ci_lower_min": 0.0,
+    "f1": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "support": 1
+  }
+}

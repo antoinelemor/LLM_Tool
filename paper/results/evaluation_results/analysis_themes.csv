@@ -1,0 +1,23 @@
+Theme,Theme Display,Fleiss Kappa,Agreement Level,Support Consensus,Prevalence Pct,Agreement Rate Pct,Annotator Std,Support Shdin,Support Jeremy,Support Jdrouin,Support Benjamincarignan
+theme_indigenous_affairs,Indigenous Affairs,1.0,Almost Perfect,0,0.0,100.0,0.0,0,0,0,0
+theme_labor,Labor,0.853,Almost Perfect,7,2.8112,98.3936,1.2247,7,8,8,5
+theme_housing,Housing,0.8456,Almost Perfect,13,5.2209,97.1888,1.8028,13,10,12,15
+theme_environment,Environment,0.7693,Substantial,12,4.8193,95.9839,1.479,12,11,10,14
+theme_technology,Technology,0.7662,Substantial,3,1.2048,98.7952,0.433,4,3,3,3
+theme_health,Health,0.7264,Substantial,15,6.0241,93.9759,1.0897,15,15,17,14
+theme_immigration,Immigration,0.7102,Substantial,3,1.2048,98.3936,1.118,3,4,2,5
+theme_transportation,Transportation,0.6901,Substantial,6,2.4096,97.5904,1.8028,5,3,8,6
+theme_macroeconomics,Macroeconomics,0.6427,Substantial,28,11.245,88.3534,5.3561,23,22,35,23
+theme_rights_liberties_minorities_discrimination,Rights Liberties Minorities Discrimination,0.6351,Substantial,10,4.0161,95.1807,3.3448,7,7,15,8
+theme_foreign_trade,Foreign Trade,0.6258,Substantial,6,2.4096,97.1888,0.7071,5,5,4,6
+theme_social_welfare,Social Welfare,0.5857,Moderate,10,4.0161,93.9759,4.5,9,6,18,9
+theme_international_affairs,International Affairs,0.5525,Moderate,25,10.0402,85.9438,7.1545,29,23,28,11
+theme_law_and_crime,Law And Crime,0.5457,Moderate,15,6.0241,89.5582,4.5,15,12,24,15
+theme_energy,Energy,0.5238,Moderate,7,2.8112,96.7871,3.0,2,2,8,8
+theme_governments_governance,Governments Governance,0.448,Moderate,40,16.0643,75.9036,10.4403,47,41,37,19
+theme_domestic_commerce,Domestic Commerce,0.4365,Moderate,7,2.8112,94.3775,0.7071,7,8,6,7
+theme_education,Education,0.4215,Moderate,3,1.2048,96.3855,1.479,5,2,6,4
+theme_agriculture,Agriculture,0.3279,Fair,2,0.8032,97.992,1.5811,3,0,1,4
+theme_culture_nationalism,Culture Nationalism,0.3266,Fair,3,1.2048,97.5904,1.5,0,3,3,4
+theme_defense,Defense,0.2755,Fair,3,1.2048,96.3855,3.3541,2,0,9,3
+theme_public_lands,Public Lands,0.2466,Fair,1,0.4016,96.3855,1.0897,5,3,3,2

@@ -1,0 +1,614 @@
+{
+  "config": {
+    "model": "nemotron:latest",
+    "prompt": "prompts/prompt_EN_long_v2.txt",
+    "n_samples": 20,
+    "seed": null,
+    "timestamp": "20260124_111148"
+  },
+  "summary": {
+    "exact_match": 12,
+    "partial_match": 5,
+    "no_match": 3,
+    "avg_jaccard": 0.7333333333333333,
+    "sentiment_match": 15
+  },
+  "results": [
+    {
+      "id": "441333HAN333-12831158",
+      "text": "Va-t-il annoncer qu'il annule ces coupes?",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.0,
+      "overlap": [],
+      "only_llm": [
+        "governments_governance"
+      ],
+      "only_cons": [
+        "macroeconomics"
+      ],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441314HAN314-12747717",
+      "text": "The government is saying that it is going to control them.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance",
+          "macroeconomics"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [
+        "macroeconomics"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441304HAN304-12702741",
+      "text": "Struggling families cannot afford more inflationary spending that drives up their cost of living.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "social_welfare"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": "welfare_state",
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "social_welfare",
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "social_welfare",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "social_welfare",
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441389HAN389-13070319",
+      "text": "Speaker, our government is bringing real tax relief to Canadians.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": null,
+        "sentiment_long": "positive"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "positive"
+    },
+    {
+      "id": "www_theglobeandmail_com_world_article-israelis-and-palestinians-mourn-oct-7-and-a-year-of-death-and__20241005_194350",
+      "text": "The maelstrom of killing that left almost 1,200 Israelis and foreigners dead – and which saw Hamas take some 250 hostages back to Gaza – led inevitably to more violence and death.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs",
+          "law_and_crime"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "international_affairs"
+      ],
+      "only_llm": [
+        "law_and_crime"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "law_and_crime",
+        "international_affairs"
+      ],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_cbc_ca_news_canada_calgary_water-feeder-main-break-update-calgary-northwest-1_7227911_20240608_064430",
+      "text": "Officials are also asking Calgarians to limit their non-essential water use by taking these additional actions:  When asked about possibly invoking mandatory indoor water restrictions, MacKay said that the city is still only asking Calgarians to \"scale back where they can.\"",
+      "llm_raw": {
+        "themes_long": [
+          "environment",
+          "public_lands"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "public_lands"
+      ],
+      "only_llm": [
+        "environment"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "environment",
+        "public_lands"
+      ],
+      "cons_themes": [
+        "public_lands"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441299HAN299-12678379",
+      "text": "Speaker, today, Canadians who filed their taxes electronically on March 15 or before will receive the new Canada carbon rebate amounts.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "environment"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "positive"
+      },
+      "exact_match": false,
+      "jaccard": 0.6666666666666666,
+      "overlap": [
+        "environment",
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [
+        "energy"
+      ],
+      "llm_themes": [
+        "environment",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "environment",
+        "macroeconomics",
+        "energy"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "ici_radio-canada_ca_info_en-direct_1011986_des-coups-de-feu-tires-a-proximite-de-donald-trump_20240916_010354",
+      "text": "Avec les informations de l'Agence France-Presse Un suspect arrêté dans un comté voisinLes policiers du comté voisin de Martin ont trouvé le véhicule dans lequel le suspect avait pris la fuite et ont arrêté le conducteur.",
+      "llm_raw": {
+        "themes_long": [
+          "law_and_crime"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "law_and_crime"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "law_and_crime"
+      ],
+      "cons_themes": [
+        "law_and_crime"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_cbc_ca_news_business_armstrong-bitcoin-trump-1_7409068_20241213_142404",
+      "text": "Cynthia Lummis of Wyoming, a Trump ally, would require all bitcoin held by any federal agency be transferred to the Treasury to be held in a strategic bitcoin reserve.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "technology"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.0,
+      "overlap": [],
+      "only_llm": [
+        "technology",
+        "macroeconomics"
+      ],
+      "only_cons": [
+        "international_affairs"
+      ],
+      "llm_themes": [
+        "technology",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "ici_radio-canada_ca_nouvelle_2107631_altercation-singh-poilievre-questions-president_20240926_201351",
+      "text": "Le chef conservateur avait laissé entendre que Jagmeet Singh gardait le gouvernement Trudeau au pouvoir pour être en mesure de toucher sa pension de député, le traitant d’hypocrite, d’imposteur et de vendu.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": [
+          "CPC",
+          "LPC",
+          "NDP"
+        ],
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441323HAN323-12788971",
+      "text": "Si nous avons un très petit nombre de sociétés exerçant une grande part du contrôle et du pouvoir, je pense que le marché mènera naturellement à ces augmentations de prix.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "domestic_commerce"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "macroeconomics",
+        "domestic_commerce"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "macroeconomics",
+        "domestic_commerce"
+      ],
+      "cons_themes": [
+        "macroeconomics",
+        "domestic_commerce"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441281HAN281-12578989",
+      "text": "Pourquoi le gouvernement a-t-il tant tardé à présenter cette mesure pour qu’elle fasse l’objet d’un débat en bonne et due forme?",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441300HAN300-12681045",
+      "text": "For the first time in these health agreements, we have set these essential tools of measurement to be a key component of our health system.We can then turn to dental care.",
+      "llm_raw": {
+        "themes_long": [
+          "health"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "positive"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "health"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "health"
+      ],
+      "cons_themes": [
+        "health"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_lapresse_ca_actualites_sciences_2024-09-13_vaisseau-starliner_les-astronautes-ont-manque-de-temps-pour-revenir_php_20240913_224358",
+      "text": "Après de longues semaines de tests, l’agence spatiale a finalement fait revenir la capsule de Boeing à vide au début du mois.",
+      "llm_raw": {
+        "themes_long": [
+          "technology"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "technology"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "technology"
+      ],
+      "cons_themes": [
+        "technology"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441333HAN333-12832893",
+      "text": "That is why the Harper government was always in deficit, It was massive financial mismanagement.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "governments_governance"
+        ],
+        "political_parties_long": "CPC",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "macroeconomics"
+      ],
+      "only_llm": [
+        "governments_governance"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441316HAN316-12753134",
+      "text": "Ce que cherchent à faire maintenant le Parti libéral et le NPD, c’est utiliser ce fédéralisme de prédateur pour sortir du sous-sol de l’impopularité.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": [
+          "LPC",
+          "NDP"
+        ],
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441296HAN296-12660782",
+      "text": "Monsieur le Président, j'ai plusieurs pétitions à présenter.La première est une pétition de la Chambre signée par des Canadiens préoccupés par le projet de loi C‑21, qui cible les propriétaires d'armes à feu respectueux des lois.",
+      "llm_raw": {
+        "themes_long": [
+          "law_and_crime"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "law_and_crime"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "law_and_crime"
+      ],
+      "cons_themes": [
+        "law_and_crime"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_theglobeandmail_com_politics_article-carney-lines-up-support-from-more-senior-ministers-top-liberal-brass__20250123_164402",
+      "text": "By that date, they must also submit signatures in support of their bid from 300 registered Liberals, including at least 100 from each of three different provinces or territories.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_ctvnews_ca_politics_house-of-commons-speaker-greg-fergus-survives-vote-calling-for-his-ouster-1_6903685_20240529_074338",
+      "text": "Julian also accused the Official Opposition of disrespecting the institution of Parliament with its repeated efforts to undermine Fergus, who he said did what he was supposed to in having this event cleared by the clerk.",
+      "llm_raw": {},
+      "exact_match": false,
+      "jaccard": 0.0,
+      "overlap": [],
+      "only_llm": [],
+      "only_cons": [
+        "governments_governance"
+      ],
+      "llm_themes": [],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_ctvnews_ca_world_a-plane-crashes-and-bursts-into-flames-while-landing-in-south-korea-killing-179-1_7159513_20241229_173329",
+      "text": "Japanese Prime Minister Shigeru Ishiba said he was “deeply saddened by the loss of many precious lives” in a message released through Tokyo’s Foreign Ministry.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "international_affairs"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "international_affairs"
+      ],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "negative"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+\begin{table}[htbp]
+\centering
+\caption{Pipeline Performance Comparison on Test Set}
+\label{tab:pipeline_comparison}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccccc}
+\toprule
+\textbf{Pipeline} & \textbf{F1$_\mu$} & \textbf{F1$_M$} & \textbf{P$_\mu$} & \textbf{R$_\mu$} & \textbf{Themes F1} & \textbf{Parties F1} & \textbf{Sent. Acc.} & \textbf{Jaccard} \\
+\midrule
+gpt\_4\_1\_large & 0.121 & 0.074 & 0.092 & 0.178 & 0.131 & 0.172 & 0.412 & 0.059 \\
+gpt\_5\_large & 0.116 & 0.080 & 0.091 & 0.161 & 0.122 & 0.170 & 0.452 & 0.055 \\
+gpt\_oss\_large & 0.115 & 0.073 & 0.088 & 0.164 & 0.124 & 0.149 & 0.424 & 0.055 \\
+llama\_large & 0.110 & 0.072 & 0.082 & 0.168 & 0.113 & 0.165 & 0.392 & 0.053 \\
+gemma\_large & 0.108 & 0.060 & 0.082 & 0.158 & 0.109 & 0.160 & 0.408 & 0.053 \\
+nemotron\_large & 0.107 & 0.074 & 0.082 & 0.154 & 0.104 & 0.176 & 0.436 & 0.047 \\
+manual\_manual & 0.095 & 0.038 & 0.078 & 0.120 & 0.110 & 0.000 & 0.420 & 0.044 \\
+llama\_small & 0.045 & 0.006 & 0.043 & 0.048 & 0.014 & 0.000 & 0.548 & 0.020 \\
+gemma\_small & 0.044 & 0.004 & 0.040 & 0.048 & 0.013 & 0.000 & 0.476 & 0.020 \\
+gpt\_4\_1\_small & 0.044 & 0.003 & 0.047 & 0.041 & 0.000 & 0.000 & 0.548 & 0.018 \\
+gpt\_5\_small & 0.043 & 0.003 & 0.045 & 0.041 & 0.000 & 0.000 & 0.548 & 0.019 \\
+nemotron\_small & 0.042 & 0.003 & 0.044 & 0.041 & 0.000 & 0.000 & 0.552 & 0.018 \\
+gpt\_oss\_small & 0.039 & 0.004 & 0.041 & 0.038 & 0.045 & 0.000 & 0.548 & 0.127 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

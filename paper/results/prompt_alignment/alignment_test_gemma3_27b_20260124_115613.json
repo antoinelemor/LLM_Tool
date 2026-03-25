@@ -1,0 +1,660 @@
+{
+  "config": {
+    "model": "gemma3:27b",
+    "prompt": "prompts/prompt_EN_long_v4.txt",
+    "n_samples": 20,
+    "seed": 456,
+    "timestamp": "20260124_115613"
+  },
+  "summary": {
+    "exact_match": 10,
+    "partial_match": 10,
+    "no_match": 0,
+    "avg_jaccard": 0.7791666666666667,
+    "sentiment_match": 17
+  },
+  "results": [
+    {
+      "id": "www_ledevoir_com_politique_canada_833560_milliardaire-comme-seul-candidat-quebec-course-chefferie-plc_20250116_175353",
+      "text": "Son expérience en affaires l’a d’ailleurs conduit à « rencontrer des types comme monsieur Trump », explique-t-il, en référence à l’attitude belliqueuse de celui qui redeviendra officiellement lundi président des États-Unis, Donald Trump, lui aussi milliardaire.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "international_affairs"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "international_affairs"
+      ],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "ici_radio-canada_ca_nouvelle_2102613_kamala-harris-changements-climatiques-strategie_20240907_123403",
+      "text": "La journaliste Dana Bash lui a demandé de clarifier sa position sur la fracturation hydraulique, une technique assez contestée à cause des substances chimiques injectées dans le sol, utilisée pour extraire du gaz naturel ou du pétrole de schiste.",
+      "llm_raw": {
+        "themes_long": [
+          "energy",
+          "environment"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "energy",
+        "environment"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "energy",
+        "environment"
+      ],
+      "cons_themes": [
+        "energy",
+        "environment"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441376HAN376-13020440",
+      "text": "Madame la Présidente, il s'agit d'un débat d'une importance cruciale sur les tarifs douaniers que Trump compte imposer et qui pourraient avoir un effet dévastateur sur les Canadiens.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs",
+          "foreign_trade"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "foreign_trade"
+      ],
+      "only_llm": [
+        "international_affairs"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "foreign_trade",
+        "international_affairs"
+      ],
+      "cons_themes": [
+        "foreign_trade"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441345HAN345-12889575",
+      "text": "That is real incentive to act, and industry and businesses demand it.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "domestic_commerce",
+          "foreign_trade"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "positive"
+      },
+      "exact_match": false,
+      "jaccard": 0.6666666666666666,
+      "overlap": [
+        "domestic_commerce",
+        "macroeconomics"
+      ],
+      "only_llm": [
+        "foreign_trade"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "domestic_commerce",
+        "foreign_trade",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "domestic_commerce",
+        "macroeconomics"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441298HAN298-12671482",
+      "text": "Nous avons un plan pour créer plus d'emplois au pays.",
+      "llm_raw": {
+        "themes_long": [
+          "labor",
+          "macroeconomics"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "labor",
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "labor",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "labor",
+        "macroeconomics"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "positive"
+    },
+    {
+      "id": "441344HAN344-12888260",
+      "text": "Ils ont également muselé les scientifiques pour les empêcher de parler au public des travaux scientifiques qu'ils menaient, surtout en ce qui concerne les changements climatiques.",
+      "llm_raw": {
+        "themes_long": [
+          "environment",
+          "rights_liberties_minorities_discrimination"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.3333333333333333,
+      "overlap": [
+        "environment"
+      ],
+      "only_llm": [
+        "rights_liberties_minorities_discrimination"
+      ],
+      "only_cons": [
+        "education"
+      ],
+      "llm_themes": [
+        "rights_liberties_minorities_discrimination",
+        "environment"
+      ],
+      "cons_themes": [
+        "education",
+        "environment"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441377HAN377-13021785",
+      "text": "Nous veillerons à maintenir d'excellentes relations avec les États‑Unis alors que nous bâtissons un avenir meilleur des deux côtés de la frontière.Nous allons continuer d'obtenir des résultats qui ont de l'importance pour les Canadiens, que l'on pense aux soins dentaires, à l'insuline gratuite ou aux programmes d'alimentation dans les écoles.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs",
+          "health",
+          "social_welfare",
+          "education"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": "early_learning_childcare",
+        "sentiment_long": "positive"
+      },
+      "exact_match": false,
+      "jaccard": 0.75,
+      "overlap": [
+        "health",
+        "international_affairs",
+        "social_welfare"
+      ],
+      "only_llm": [
+        "education"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "education",
+        "health",
+        "international_affairs",
+        "social_welfare"
+      ],
+      "cons_themes": [
+        "health",
+        "international_affairs",
+        "social_welfare"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "positive"
+    },
+    {
+      "id": "441364HAN364-12968298",
+      "text": "Whether fertilizers, oil and gas, grocery retail, banking or real estate, all of those major corporate sectors have been doing very well.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "domestic_commerce"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "domestic_commerce",
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [
+        "energy",
+        "agriculture"
+      ],
+      "llm_themes": [
+        "domestic_commerce",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "agriculture",
+        "domestic_commerce",
+        "energy",
+        "macroeconomics"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "positive"
+    },
+    {
+      "id": "441308HAN308-12718621",
+      "text": "They are accusing Conservatives of doing things that this member himself has done on multiple occasions.That is nothing more than politicking because they are hiding a defund-the-police, anti-police agenda within the ranks of their party.",
+      "llm_raw": {
+        "themes_long": [
+          "law_and_crime",
+          "governments_governance"
+        ],
+        "political_parties_long": "CPC",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "law_and_crime"
+      ],
+      "only_llm": [
+        "governments_governance"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "law_and_crime",
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "law_and_crime"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "ici_radio-canada_ca_info_en-direct_1011614_guerre-hamas-palestiniens-israel-gaza_20241002_194357",
+      "text": "Mercredi, devant les membres du Conseil de sécurité, le secrétaire général de l'ONU, Antonio Guterres, a condamné avec force l'attaque massive aux missiles par l'Iran sur Israël.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "international_affairs"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "international_affairs"
+      ],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_theglobeandmail_com_world_article-new-gaza-ceasefire-talks-begin-in-qatar-aiming-to-head-off-wider-war__20240816_140332",
+      "text": "Israel worries that Hamas will drag out the talks on releasing the remaining hostages indefinitely.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "international_affairs"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "international_affairs"
+      ],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_lapresse_ca_actualites_2024-06-19_depenses-militaires-de-l-otan_stoltenberg-exhorte-le-canada-a-atteindre-l-objectif-fixe_php_20240620_013412",
+      "text": "Les chiffres publiés cette semaine par l’OTAN montrent que le Canada devrait consacrer cette année à la défense 1,37 % de son produit intérieur brut (PIB).",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "defense"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.6666666666666666,
+      "overlap": [
+        "defense",
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [
+        "international_affairs"
+      ],
+      "llm_themes": [
+        "defense",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "defense",
+        "international_affairs",
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_ctvnews_ca_politics_house-of-commons-speaker-greg-fergus-survives-vote-calling-for-his-ouster-1_6903685_20240529_074338",
+      "text": "Julian also accused the Official Opposition of disrespecting the institution of Parliament with its repeated efforts to undermine Fergus, who he said did what he was supposed to in having this event cleared by the clerk.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": "NDP",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "montrealgazette_com_news_local-news_what-to-do-if-you-get-caught-in-a-flood-while-driving_20240718_045352",
+      "text": "Instead, he said these situations are usually co-ordinated by emergency services and insurance companies.",
+      "llm_raw": {
+        "themes_long": [
+          "domestic_commerce"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "domestic_commerce"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "domestic_commerce"
+      ],
+      "cons_themes": [
+        "domestic_commerce"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_tvanouvelles_ca_2024_12_22_vols-annules-et-retardes-il-sera-bientot-plus-facile-dobtenir-une-indemnite_20241223_035352",
+      "text": "«On vient bonifier aussi tout ce qui est un refus d’embarquement, donc on vient élargir le tout, explique le cofondateur de Vol en retard, Jacob Charbonneau.",
+      "llm_raw": {
+        "themes_long": [
+          "transportation",
+          "domestic_commerce"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "transportation"
+      ],
+      "only_llm": [
+        "domestic_commerce"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "domestic_commerce",
+        "transportation"
+      ],
+      "cons_themes": [
+        "transportation"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441352HAN352-12918627",
+      "text": "Comme l'un de mes collègues du comité l'a mentionné à la Chambre, le gouvernement a lui-même proposé plus de 50 amendements, ce qui montre que le projet de loi a été mal rédigé.Ce sont là des facteurs très importants à prendre en compte, car on ne saisit pas l'occasion de protéger la vie privée des Canadiens et d'informer le Commissariat à la protection de la vie privée.",
+      "llm_raw": {
+        "themes_long": [
+          "rights_liberties_minorities_discrimination",
+          "governments_governance",
+          "technology"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.6666666666666666,
+      "overlap": [
+        "rights_liberties_minorities_discrimination",
+        "governments_governance"
+      ],
+      "only_llm": [
+        "technology"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "technology",
+        "rights_liberties_minorities_discrimination",
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "rights_liberties_minorities_discrimination",
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_thestar_com_politics_justin-trudeau-has-to-step-down-former-b-c-premier-christy-clark-says-i-want_article_7e17dd48-34c9-11ef-b755-73c82cfcc448_html_20240628_084402",
+      "text": "The leader is the one that gives direction to his or her cabinet.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441387HAN387-13062703",
+      "text": "The very fact that the government insiders thought that what they were doing was okay or that they could get away with it illustrates how broken things have become under the government.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "montrealgazette_com_opinion_kelly-nick-suzuki-doesnt-have-to-speak-french-caq-ministers-say_20241011_075330",
+      "text": "In short, I’d say a majority of anglophones feel this is a government that is openly hostile to our community.",
+      "llm_raw": {
+        "themes_long": [
+          "rights_liberties_minorities_discrimination",
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "rights_liberties_minorities_discrimination"
+      ],
+      "only_llm": [
+        "governments_governance"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "rights_liberties_minorities_discrimination",
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "rights_liberties_minorities_discrimination"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441366HAN366-12976265",
+      "text": "Speaker, after nine years of the NDP-Liberals, they are not worth the cost of housing, and the majority of young Canadians are pointing to the government's failure to manage the economy as the reason their dreams of home ownership have been dashed.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "housing"
+        ],
+        "political_parties_long": [
+          "NDP",
+          "LPC"
+        ],
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "housing",
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "housing",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "housing",
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    }
+  ]
+}

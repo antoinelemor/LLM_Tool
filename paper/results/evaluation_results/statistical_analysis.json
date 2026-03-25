@@ -1,0 +1,237 @@
+{
+  "ranking_f1_micro": [
+    [
+      "gpt_4_1_large",
+      0.12121212121212122
+    ],
+    [
+      "gpt_5_large",
+      0.11604938271604938
+    ],
+    [
+      "gpt_oss_large",
+      0.11455847255369928
+    ],
+    [
+      "llama_large",
+      0.1104847801578354
+    ],
+    [
+      "gemma_large",
+      0.10785463071512309
+    ],
+    [
+      "nemotron_large",
+      0.10727056019070322
+    ],
+    [
+      "manual_manual",
+      0.0945945945945946
+    ],
+    [
+      "llama_small",
+      0.04530744336569579
+    ],
+    [
+      "gemma_small",
+      0.04375
+    ],
+    [
+      "gpt_4_1_small",
+      0.04363636363636363
+    ],
+    [
+      "gpt_5_small",
+      0.04308797127468582
+    ],
+    [
+      "nemotron_small",
+      0.04240282685512367
+    ],
+    [
+      "gpt_oss_small",
+      0.03942652329749104
+    ]
+  ],
+  "best_pipeline": "gpt_4_1_large",
+  "best_f1_micro": 0.12121212121212122,
+  "ranking_themes_f1": [
+    [
+      "gpt_4_1_large",
+      0.13061224489795917
+    ],
+    [
+      "gpt_oss_large",
+      0.12366737739872069
+    ],
+    [
+      "gpt_5_large",
+      0.12244897959183675
+    ],
+    [
+      "llama_large",
+      0.11262135922330097
+    ],
+    [
+      "manual_manual",
+      0.11031175059952038
+    ],
+    [
+      "gemma_large",
+      0.10878661087866108
+    ],
+    [
+      "nemotron_large",
+      0.1038961038961039
+    ],
+    [
+      "gpt_oss_small",
+      0.04536082474226804
+    ],
+    [
+      "llama_small",
+      0.013559322033898305
+    ],
+    [
+      "gemma_small",
+      0.012618296529968454
+    ],
+    [
+      "gpt_4_1_small",
+      0.0
+    ],
+    [
+      "gpt_5_small",
+      0.0
+    ],
+    [
+      "nemotron_small",
+      0.0
+    ]
+  ],
+  "best_themes_pipeline": "gpt_4_1_large",
+  "ranking_parties_f1": [
+    [
+      "nemotron_large",
+      0.17647058823529413
+    ],
+    [
+      "gpt_4_1_large",
+      0.17204301075268819
+    ],
+    [
+      "gpt_5_large",
+      0.1702127659574468
+    ],
+    [
+      "llama_large",
+      0.16494845360824742
+    ],
+    [
+      "gemma_large",
+      0.16
+    ],
+    [
+      "gpt_oss_large",
+      0.14893617021276595
+    ],
+    [
+      "gemma_small",
+      0.0
+    ],
+    [
+      "gpt_4_1_small",
+      0.0
+    ],
+    [
+      "gpt_5_small",
+      0.0
+    ],
+    [
+      "gpt_oss_small",
+      0.0
+    ],
+    [
+      "llama_small",
+      0.0
+    ],
+    [
+      "manual_manual",
+      0.0
+    ],
+    [
+      "nemotron_small",
+      0.0
+    ]
+  ],
+  "best_parties_pipeline": "nemotron_large",
+  "ranking_sentiment_accuracy": [
+    [
+      "nemotron_small",
+      0.552
+    ],
+    [
+      "gpt_4_1_small",
+      0.548
+    ],
+    [
+      "gpt_5_small",
+      0.548
+    ],
+    [
+      "gpt_oss_small",
+      0.548
+    ],
+    [
+      "llama_small",
+      0.548
+    ],
+    [
+      "gemma_small",
+      0.476
+    ],
+    [
+      "gpt_5_large",
+      0.452
+    ],
+    [
+      "nemotron_large",
+      0.436
+    ],
+    [
+      "gpt_oss_large",
+      0.424
+    ],
+    [
+      "manual_manual",
+      0.42
+    ],
+    [
+      "gpt_4_1_large",
+      0.412
+    ],
+    [
+      "gemma_large",
+      0.408
+    ],
+    [
+      "llama_large",
+      0.392
+    ]
+  ],
+  "best_sentiment_pipeline": "nemotron_small",
+  "llm_avg_f1": {
+    "gemma": 0.07580231535756154,
+    "gpt_4_1": 0.08242424242424243,
+    "gpt_5": 0.0795686769953676,
+    "gpt_oss": 0.07699249792559515,
+    "llama": 0.0778961117617656,
+    "manual": 0.0945945945945946,
+    "nemotron": 0.07483669352291344
+  },
+  "dataset_avg_f1": {
+    "large": 0.11290499125758859,
+    "small": 0.042935188071559986,
+    "manual": 0.0945945945945946
+  }
+}

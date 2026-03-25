@@ -1,0 +1,611 @@
+{
+  "config": {
+    "model": "nemotron:latest",
+    "prompt": "prompts/prompt_EN_long_v2.txt",
+    "n_samples": 20,
+    "seed": null,
+    "timestamp": "20260124_110713"
+  },
+  "summary": {
+    "exact_match": 11,
+    "partial_match": 7,
+    "no_match": 2,
+    "avg_jaccard": 0.7333333333333333,
+    "sentiment_match": 16
+  },
+  "results": [
+    {
+      "id": "ici_radio-canada_ca_nouvelle_2110185_manifestations-palestine-gaza-israel-guerre_20241006_042348",
+      "text": "Ils ont terminé leur route au consulat général d’Israël à Montréal.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "international_affairs"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "international_affairs"
+      ],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_journaldemontreal_com_2024_10_21_jachete-des-maisons-cah-deux-fraudeurs-allegues-devant-le-juge_20241022_015332",
+      "text": "Prise d’un malaise, la femme a dû se retirer momentanément, laissant la place à une autre victime alléguée qui s’est avancée à la barre, tandis que d'autres attendaient leur tour, dans les prochains jours.",
+      "llm_raw": {
+        "themes_long": [
+          "law_and_crime"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "law_and_crime"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "law_and_crime"
+      ],
+      "cons_themes": [
+        "law_and_crime"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_lapresse_ca_actualites_politique_2024-12-16_justin-trudeau-n-a-pas-l-intention-de-partir-dominic-leblanc-herite-des-finances_php_20241217_033333",
+      "text": "Elle a remis sa démission dans une lettre coup-de-poing dans laquelle elle révèle avoir été informée vendredi par le premier ministre qu’elle serait mutée sous peu à un autre poste dans le cadre du remaniement ministériel à venir.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441320HAN320-12773523",
+      "text": "Madame la présidente, à l'heure actuelle, Santé Canada n'examine aucune proposition concernant ces municipalités.",
+      "llm_raw": {
+        "themes_long": [
+          "health",
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "health"
+      ],
+      "only_llm": [
+        "governments_governance"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance",
+        "health"
+      ],
+      "cons_themes": [
+        "health"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_cbc_ca_news_world_trump-republican-convention-2024-day-1-analysis-1_7264049_20240716_010359",
+      "text": "Trump has also described his survival as miraculous.",
+      "llm_raw": {
+        "themes_long": "null",
+        "political_parties_long": "null",
+        "specific_themes_long": "null",
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.0,
+      "overlap": [],
+      "only_llm": [],
+      "only_cons": [
+        "international_affairs"
+      ],
+      "llm_themes": [],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "positive"
+    },
+    {
+      "id": "www_ctvnews_ca_politics_foreign-affairs-minister-melanie-joly-will-not-seek-liberal-leadership-1_7171212_20250110_171329",
+      "text": "Foreign Minister Melanie Joly will not run for Liberal leadership.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance",
+          "international_affairs"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [
+        "international_affairs"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "international_affairs",
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441323HAN323-12786073",
+      "text": "Nous n'avons pas besoin du paternalisme d’Ottawa, qui veut gérer sans expertise, sans légitimité et sans expérience un régime d’assurance-médicaments au Québec.Je ne m’arrête pas de me dire que ce que le Bloc québécois exige du fédéral est simple et que ça tombe sous le sens.",
+      "llm_raw": {
+        "themes_long": [
+          "health",
+          "governments_governance"
+        ],
+        "political_parties_long": "BQ",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.6666666666666666,
+      "overlap": [
+        "governments_governance",
+        "health"
+      ],
+      "only_llm": [],
+      "only_cons": [
+        "social_welfare"
+      ],
+      "llm_themes": [
+        "governments_governance",
+        "health"
+      ],
+      "cons_themes": [
+        "social_welfare",
+        "governments_governance",
+        "health"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441310HAN310-12725473",
+      "text": "Depuis des années, le gouvernement libéral verse des milliards de dollars de l'argent des contribuables à des propagandistes qui claironnent son discours recyclé, ce qui ne rapporte aucun avantage pour le pays, mais remplit les poches des initiés bien connectés.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance",
+          "macroeconomics"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "macroeconomics"
+      ],
+      "only_llm": [
+        "governments_governance"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "macroeconomics",
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441295HAN295-12657240",
+      "text": "C'était un vrai fédéraliste qui croyait à la fois en l'importance qu'Ottawa respecte les compétences du Québec et en la fierté des Québécois.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance",
+          "culture_nationalism"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "positive"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance",
+        "culture_nationalism"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance",
+        "culture_nationalism"
+      ],
+      "cons_themes": [
+        "governments_governance",
+        "culture_nationalism"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441320HAN320-12773054",
+      "text": "Madame la présidente, je tiens à dissiper tout malentendu en disant qu'à titre de ministre de la Santé mentale et des Dépendances, je n'ai pas rencontré de représentants de Fair Price Pharma.",
+      "llm_raw": {
+        "themes_long": [
+          "health"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "health"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "health"
+      ],
+      "cons_themes": [
+        "health"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441320HAN320-12772190",
+      "text": "Obviously, not to name them, this refers to the situation of the two Michaels and the saga around the deputy chair of Huawei.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs",
+          "law_and_crime"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "international_affairs"
+      ],
+      "only_llm": [
+        "law_and_crime"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "law_and_crime",
+        "international_affairs"
+      ],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441278HAN278-12568348",
+      "text": "Il faut que les gens assument leurs responsabilités et, dans ce cas-ci, c'est le gouvernement qui doit intervenir et faire le nécessaire pour soutenir les provinces, le Québec et les territoires.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance",
+          "social_welfare"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": "welfare_state",
+        "sentiment_long": "positive"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [
+        "social_welfare"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance",
+        "social_welfare"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_ledevoir_com_monde_etats-unis_818671_robert-f-kennedy-jr-suspend-course-presidentielle-declare-appui-trump_20240823_204328",
+      "text": "À Chicago, la métaphore la plus parlante est venue du colistier de Kamala Harris, le gouverneur du Minnesota Tim Walz, ancien entraîneur de football américain.",
+      "llm_raw": {
+        "themes_long": "null",
+        "political_parties_long": "null",
+        "specific_themes_long": "null",
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.0,
+      "overlap": [],
+      "only_llm": [],
+      "only_cons": [
+        "international_affairs"
+      ],
+      "llm_themes": [],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441320HAN320-12773647",
+      "text": "Madame la présidente, les Canadiens devraient savoir que Sunshine Earth Labs s'est vu accorder une licence de distributeur en janvier 2023.",
+      "llm_raw": {
+        "themes_long": [
+          "health"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "health"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "health"
+      ],
+      "cons_themes": [
+        "health"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441309HAN309-12723218",
+      "text": "La Coalition pour le droit à l'avortement…",
+      "llm_raw": {
+        "themes_long": [
+          "health",
+          "rights_liberties_minorities_discrimination"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "rights_liberties_minorities_discrimination"
+      ],
+      "only_llm": [
+        "health"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "health",
+        "rights_liberties_minorities_discrimination"
+      ],
+      "cons_themes": [
+        "rights_liberties_minorities_discrimination"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441390HAN390-13072558",
+      "text": "That is contemptuous of the adopted motion that we would all be here today to undertake a democratic scrutiny of the government.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441340HAN340-12870082",
+      "text": "En 2019, 3 millions de tonnes de nourriture ont ainsi trouvé le chemin de la poubelle au Canada.",
+      "llm_raw": {
+        "themes_long": [
+          "agriculture",
+          "environment"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "agriculture",
+        "environment"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "agriculture",
+        "environment"
+      ],
+      "cons_themes": [
+        "agriculture",
+        "environment"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441286HAN286-12606604",
+      "text": "Je soupçonne que l'on trouverait même des gouvernements néo-démocrates qui ont octroyé des contrats à Deloitte et Touche, que ce soit bien clair.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": "NDP",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "atlantic_ctvnews_ca_n-b-liberals-will-form-majority-government-holt-to-become-first-female-premier-1_7080761_20241022_011330",
+      "text": "Meanwhile, CTV News also declares Green leader David Coon has been elected in his riding of Fredericton-Lincoln.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": [
+          "GPC"
+        ],
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_ctvnews_ca_politics_liberal-caucus-chairs-meeting-to-talk-trudeau-today-pm-attends-canada-u-s-cabinet-committee-1_7163957_20250103_170328",
+      "text": "Sources confirm to CTV News that the chairs for the party's regional caucus are meeting virtually today at 3 p.m.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+Section,Metric,Value,Fleiss_Kappa,Krippendorff_Alpha,Agreement_Level,Support_Consensus,Pct_Full_Agreement,Model,F1,Support,TP,FP,FN,Annotator
+INTER-ANNOTATOR AGREEMENT PER THEME,,,,,,,,,,,,,,
+Theme Agreement,indigenous_affairs,,1.0,1.0,Almost Perfect,0.0,100.0,,,,,,,
+Theme Agreement,environment,,0.8224,0.8224,Almost Perfect,59.0,97.5,,,,,,,
+Theme Agreement,housing,,0.818,0.818,Almost Perfect,65.0,97.2,,,,,,,
+Theme Agreement,health,,0.7619,0.7619,Substantial,106.0,94.5,,,,,,,
+Theme Agreement,foreign_trade,,0.7266,0.7266,Substantial,38.0,97.7,,,,,,,
+Theme Agreement,immigration,,0.7238,0.7238,Substantial,19.0,98.7,,,,,,,
+Theme Agreement,labor,,0.7225,0.7225,Substantial,57.0,96.5,,,,,,,
+Theme Agreement,transportation,,0.6835,0.6835,Substantial,36.0,97.4,,,,,,,
+Theme Agreement,law_and_crime,,0.6436,0.6436,Substantial,137.0,89.2,,,,,,,
+Theme Agreement,rights_liberties_minorities_discrimination,,0.6217,0.6217,Substantial,49.0,95.5,,,,,,,
+Theme Agreement,energy,,0.6168,0.6168,Substantial,44.0,96.8,,,,,,,
+Theme Agreement,macroeconomics,,0.6115,0.6115,Substantial,156.0,87.9,,,,,,,
+Theme Agreement,education,,0.6065,0.6065,Moderate,21.0,97.7,,,,,,,
+Theme Agreement,international_affairs,,0.6058,0.6058,Moderate,180.0,85.9,,,,,,,
+Theme Agreement,agriculture,,0.5597,0.5597,Moderate,14.0,98.1,,,,,,,
+Theme Agreement,technology,,0.5411,0.5411,Moderate,25.0,96.6,,,,,,,
+Theme Agreement,social_welfare,,0.5126,0.5126,Moderate,62.0,93.4,,,,,,,
+Theme Agreement,defense,,0.4841,0.4841,Moderate,31.0,96.2,,,,,,,
+Theme Agreement,governments_governance,,0.4219,0.4219,Moderate,226.0,76.0,,,,,,,
+Theme Agreement,public_lands,,0.3807,0.3807,Fair,20.0,96.4,,,,,,,
+Theme Agreement,culture_nationalism,,0.3391,0.3391,Fair,23.0,96.1,,,,,,,
+Theme Agreement,domestic_commerce,,0.2679,0.2679,Fair,26.0,94.6,,,,,,,
+,,,,,,,,,,,,,,
+MODEL PERFORMANCE BY AGREEMENT LEVEL (Micro-F1),,,,,,,,,,,,,,
+Model Performance,,,,,Overall,,,GPT-4.1,0.1309,219.0,32.0,238.0,187.0,
+Model Performance,,,,,Almost Perfect,,,GPT-4.1,0.1111,25.0,3.0,26.0,22.0,
+Model Performance,,,,,Substantial,,,GPT-4.1,0.1389,97.0,15.0,104.0,82.0,
+Model Performance,,,,,Moderate,,,GPT-4.1,0.1354,86.0,13.0,93.0,73.0,
+Model Performance,,,,,Fair,,,GPT-4.1,0.0741,11.0,1.0,15.0,10.0,
+Model Performance,,,,,Overall,,,GPT-5,0.1224,219.0,27.0,195.0,192.0,
+Model Performance,,,,,Almost Perfect,,,GPT-5,0.12,25.0,3.0,22.0,22.0,
+Model Performance,,,,,Substantial,,,GPT-5,0.1347,97.0,13.0,83.0,84.0,
+Model Performance,,,,,Moderate,,,GPT-5,0.1111,86.0,10.0,84.0,76.0,
+Model Performance,,,,,Fair,,,GPT-5,0.1111,11.0,1.0,6.0,10.0,
+Model Performance,,,,,Overall,,,GPT-OSS,0.1237,219.0,29.0,221.0,190.0,
+Model Performance,,,,,Almost Perfect,,,GPT-OSS,0.1154,25.0,3.0,24.0,22.0,
+Model Performance,,,,,Substantial,,,GPT-OSS,0.1302,97.0,14.0,104.0,83.0,
+Model Performance,,,,,Moderate,,,GPT-OSS,0.1209,86.0,11.0,85.0,75.0,
+Model Performance,,,,,Fair,,,GPT-OSS,0.1,11.0,1.0,8.0,10.0,
+Model Performance,,,,,Overall,,,Gemma,0.109,219.0,26.0,232.0,193.0,
+Model Performance,,,,,Almost Perfect,,,Gemma,0.1111,25.0,3.0,26.0,22.0,
+Model Performance,,,,,Substantial,,,Gemma,0.1215,97.0,13.0,104.0,84.0,
+Model Performance,,,,,Moderate,,,Gemma,0.1093,86.0,10.0,87.0,76.0,
+Model Performance,,,,,Fair,,,Gemma,0.0,11.0,0.0,15.0,11.0,
+Model Performance,,,,,Overall,,,Llama,0.1126,219.0,29.0,267.0,190.0,
+Model Performance,,,,,Almost Perfect,,,Llama,0.0968,25.0,3.0,34.0,22.0,
+Model Performance,,,,,Substantial,,,Llama,0.1429,97.0,17.0,124.0,80.0,
+Model Performance,,,,,Moderate,,,Llama,0.0847,86.0,8.0,95.0,78.0,
+Model Performance,,,,,Fair,,,Llama,0.0769,11.0,1.0,14.0,10.0,
+Model Performance,,,,,Overall,,,Nemotron,0.1041,219.0,24.0,218.0,195.0,
+Model Performance,,,,,Almost Perfect,,,Nemotron,0.1132,25.0,3.0,25.0,22.0,
+Model Performance,,,,,Substantial,,,Nemotron,0.1095,97.0,11.0,93.0,86.0,
+Model Performance,,,,,Moderate,,,Nemotron,0.0973,86.0,9.0,90.0,77.0,
+Model Performance,,,,,Fair,,,Nemotron,0.0909,11.0,1.0,10.0,10.0,
+Model Performance,,,,,Overall,,,Manual,0.1103,219.0,23.0,175.0,196.0,
+Model Performance,,,,,Almost Perfect,,,Manual,0.0851,25.0,2.0,20.0,23.0,
+Model Performance,,,,,Substantial,,,Manual,0.092,97.0,8.0,69.0,89.0,
+Model Performance,,,,,Moderate,,,Manual,0.1413,86.0,13.0,85.0,73.0,
+Model Performance,,,,,Fair,,,Manual,0.0,11.0,0.0,1.0,11.0,
+,,,,,,,,,,,,,,
+HUMAN BASELINE (Annotator vs Consensus),,,,,,,,,,,,,,
+Human Baseline,,,,,Overall,,,,0.8038,1394.0,,,,shdin
+Human Baseline,,,,,Almost Perfect,,,,0.9218,124.0,,,,shdin
+Human Baseline,,,,,Substantial,,,,0.8168,642.0,,,,shdin
+Human Baseline,,,,,Moderate,,,,0.8,559.0,,,,shdin
+Human Baseline,,,,,Fair,,,,0.4882,69.0,,,,shdin
+Human Baseline,,,,,Overall,,,,0.833,1394.0,,,,Jeremy
+Human Baseline,,,,,Almost Perfect,,,,0.9283,124.0,,,,Jeremy
+Human Baseline,,,,,Substantial,,,,0.8169,642.0,,,,Jeremy
+Human Baseline,,,,,Moderate,,,,0.845,559.0,,,,Jeremy
+Human Baseline,,,,,Fair,,,,0.7068,69.0,,,,Jeremy
+Human Baseline,,,,,Overall,,,,0.7548,1394.0,,,,jdrouin
+Human Baseline,,,,,Almost Perfect,,,,0.876,124.0,,,,jdrouin
+Human Baseline,,,,,Substantial,,,,0.802,642.0,,,,jdrouin
+Human Baseline,,,,,Moderate,,,,0.7175,559.0,,,,jdrouin
+Human Baseline,,,,,Fair,,,,0.4746,69.0,,,,jdrouin
+Human Baseline,,,,,Overall,,,,0.7666,1394.0,,,,BenjaminCarignan
+Human Baseline,,,,,Almost Perfect,,,,0.8897,124.0,,,,BenjaminCarignan
+Human Baseline,,,,,Substantial,,,,0.8571,642.0,,,,BenjaminCarignan
+Human Baseline,,,,,Moderate,,,,0.6121,559.0,,,,BenjaminCarignan
+Human Baseline,,,,,Fair,,,,0.6951,69.0,,,,BenjaminCarignan
+Human Baseline,,,,,Overall,,,,0.7896,1394.0,,,,AVERAGE
+Human Baseline,,,,,Almost Perfect,,,,0.904,124.0,,,,AVERAGE
+Human Baseline,,,,,Substantial,,,,0.8232,642.0,,,,AVERAGE
+Human Baseline,,,,,Moderate,,,,0.7436,559.0,,,,AVERAGE
+Human Baseline,,,,,Fair,,,,0.5912,69.0,,,,AVERAGE

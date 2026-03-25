@@ -1,0 +1,8 @@
+model,Best_Annotator_F1,Majority_F1
+gpt_5_large,0.344,0.197
+manual_manual,0.339,0.19
+gpt_4_1_large,0.31,0.194
+nemotron_large,0.302,0.18
+gpt_oss_large,0.3,0.174
+gemma_large,0.293,0.158
+llama_large,0.256,0.142

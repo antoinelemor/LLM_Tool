@@ -1,0 +1,7 @@
+Annotator_1,Annotator_2,Themes_Cohen_Kappa_Avg,Themes_F1_Macro,Sentiment_Agreement,N_Samples
+shdin,Jeremy,0.6658,0.7549,0.7854,1549
+shdin,jdrouin,0.6186,0.7035,0.6858,1549
+shdin,BenjaminCarignan,0.6151,0.6337,0.6184,1549
+Jeremy,jdrouin,0.5826,0.6702,0.7487,1549
+Jeremy,BenjaminCarignan,0.5906,0.6264,0.6866,1549
+jdrouin,BenjaminCarignan,0.5983,0.6438,0.7545,1549

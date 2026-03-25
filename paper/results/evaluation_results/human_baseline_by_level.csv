@@ -1,0 +1,6 @@
+Annotator,Almost_Perfect_F1,Almost_Perfect_Support,Substantial_F1,Substantial_Support,Moderate_F1,Moderate_Support,Fair_F1,Fair_Support,Overall_F1,Overall_Support
+shdin,0.9218,124.0,0.8168,642.0,0.8,559.0,0.4882,69.0,0.8038,1394.0
+Jeremy,0.9283,124.0,0.8169,642.0,0.845,559.0,0.7068,69.0,0.833,1394.0
+jdrouin,0.876,124.0,0.802,642.0,0.7175,559.0,0.4746,69.0,0.7548,1394.0
+BenjaminCarignan,0.8897,124.0,0.8571,642.0,0.6121,559.0,0.6951,69.0,0.7666,1394.0
+AVERAGE,0.904,124.0,0.8232,642.0,0.7436,559.0,0.5912,69.0,0.7896,1394.0

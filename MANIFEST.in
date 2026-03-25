@@ -1,0 +1,30 @@
+# Include the README
+include README.md
+
+# Include the license
+include LICENSE
+
+# Include documentation
+recursive-include docs *.md
+
+# Include data files
+recursive-include llm_tool/data *.json *.jsonl
+
+# Include prompt templates
+recursive-include llm_tool/prompts *.txt *.json
+
+# Include configuration files
+recursive-include llm_tool/configs *.yaml *.json
+
+# Exclude compiled Python files
+global-exclude __pycache__
+global-exclude *.py[co]
+
+# Exclude development and testing files
+exclude .gitignore
+exclude .python-version
+prune tests
+prune .venv
+prune data/training_data
+prune models
+prune logs

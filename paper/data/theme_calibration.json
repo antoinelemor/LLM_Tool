@@ -1,0 +1,170 @@
+{
+  "agriculture": {
+    "threshold": 0.75,
+    "ci_lower_min": 0.0,
+    "f1": 0.8333,
+    "precision": 1.0,
+    "recall": 0.7143,
+    "support": 14
+  },
+  "culture_nationalism": {
+    "threshold": 0.3,
+    "ci_lower_min": 0.5,
+    "f1": 0.5217,
+    "precision": 0.5217,
+    "recall": 0.5217,
+    "support": 23
+  },
+  "defense": {
+    "threshold": 0.7,
+    "ci_lower_min": 0.5,
+    "f1": 0.6071,
+    "precision": 0.68,
+    "recall": 0.5484,
+    "support": 31
+  },
+  "domestic_commerce": {
+    "threshold": 0.7,
+    "ci_lower_min": 0.0,
+    "f1": 0.4444,
+    "precision": 0.5263,
+    "recall": 0.3846,
+    "support": 26
+  },
+  "education": {
+    "threshold": 0.75,
+    "ci_lower_min": 0.0,
+    "f1": 0.7442,
+    "precision": 0.7273,
+    "recall": 0.7619,
+    "support": 21
+  },
+  "energy": {
+    "threshold": 0.6,
+    "ci_lower_min": 0.0,
+    "f1": 0.7885,
+    "precision": 0.6833,
+    "recall": 0.9318,
+    "support": 44
+  },
+  "environment": {
+    "threshold": 0.75,
+    "ci_lower_min": 0.0,
+    "f1": 0.8468,
+    "precision": 0.9038,
+    "recall": 0.7966,
+    "support": 59
+  },
+  "foreign_trade": {
+    "threshold": 0.5,
+    "ci_lower_min": 0.4,
+    "f1": 0.8533,
+    "precision": 0.8649,
+    "recall": 0.8421,
+    "support": 38
+  },
+  "governments_governance": {
+    "threshold": 0.85,
+    "ci_lower_min": 0.0,
+    "f1": 0.5524,
+    "precision": 0.4203,
+    "recall": 0.8053,
+    "support": 226
+  },
+  "health": {
+    "threshold": 0.55,
+    "ci_lower_min": 0.4,
+    "f1": 0.8089,
+    "precision": 0.7647,
+    "recall": 0.8585,
+    "support": 106
+  },
+  "housing": {
+    "threshold": 0.6,
+    "ci_lower_min": 0.4,
+    "f1": 0.8333,
+    "precision": 0.7595,
+    "recall": 0.9231,
+    "support": 65
+  },
+  "immigration": {
+    "threshold": 0.3,
+    "ci_lower_min": 0.5,
+    "f1": 0.6842,
+    "precision": 0.6842,
+    "recall": 0.6842,
+    "support": 19
+  },
+  "international_affairs": {
+    "threshold": 0.6,
+    "ci_lower_min": 0.0,
+    "f1": 0.8028,
+    "precision": 0.6951,
+    "recall": 0.95,
+    "support": 180
+  },
+  "labor": {
+    "threshold": 0.65,
+    "ci_lower_min": 0.0,
+    "f1": 0.7869,
+    "precision": 0.7385,
+    "recall": 0.8421,
+    "support": 57
+  },
+  "law_and_crime": {
+    "threshold": 0.3,
+    "ci_lower_min": 0.5,
+    "f1": 0.766,
+    "precision": 0.7448,
+    "recall": 0.7883,
+    "support": 137
+  },
+  "macroeconomics": {
+    "threshold": 0.65,
+    "ci_lower_min": 0.5,
+    "f1": 0.7389,
+    "precision": 0.652,
+    "recall": 0.8526,
+    "support": 156
+  },
+  "public_lands": {
+    "threshold": 0.55,
+    "ci_lower_min": 0.0,
+    "f1": 0.5085,
+    "precision": 0.3846,
+    "recall": 0.75,
+    "support": 20
+  },
+  "rights_liberties_minorities_discrimination": {
+    "threshold": 0.7,
+    "ci_lower_min": 0.0,
+    "f1": 0.6327,
+    "precision": 0.6327,
+    "recall": 0.6327,
+    "support": 49
+  },
+  "social_welfare": {
+    "threshold": 0.65,
+    "ci_lower_min": 0.0,
+    "f1": 0.6034,
+    "precision": 0.6481,
+    "recall": 0.5645,
+    "support": 62
+  },
+  "technology": {
+    "threshold": 0.55,
+    "ci_lower_min": 0.4,
+    "f1": 0.5143,
+    "precision": 0.4,
+    "recall": 0.72,
+    "support": 25
+  },
+  "transportation": {
+    "threshold": 0.3,
+    "ci_lower_min": 0.5,
+    "f1": 0.7647,
+    "precision": 0.8125,
+    "recall": 0.7222,
+    "support": 36
+  }
+}

@@ -1,0 +1,594 @@
+{
+  "config": {
+    "model": "gpt-oss:120b",
+    "prompt": "prompts/prompt_EN_long_v2.txt",
+    "n_samples": 20
+  },
+  "summary": {
+    "exact_match": 18,
+    "partial_match": 2,
+    "no_match": 0,
+    "avg_jaccard": 0.95,
+    "sentiment_match": 17
+  },
+  "results": [
+    {
+      "id": "www_cbc_ca_news_world_election-britain-labour-landslide-1_7255048_20240705_095351",
+      "text": "The Conservative campaign, meanwhile, was plagued by gaffes.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": "CPC",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_ledevoir_com_politique_canada_822908_petit-guide-survie-gouvernement-trudeau_20241103_164353",
+      "text": "Reste un défi de taille : comment peut-il se dépatouiller dans l’impasse parlementaire qui l’empêche de poursuivre son programme ?",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_lapresse_ca_affaires_2024-12-15_postes-canada_les-activites-reprennent-mardi_php_20241216_095331",
+      "text": "Le syndicat n’a pas immédiatement répondu à une demande de commentaire sur la reprise des activités.",
+      "llm_raw": {
+        "themes_long": [
+          "labor"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "labor"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "labor"
+      ],
+      "cons_themes": [
+        "labor"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_lapresse_ca_affaires_economie_2025-01-07_trump-veut-utiliser-la-force-economique-contre-le-canada_php_20250107_230327",
+      "text": "Justin Trudeau le savait et a démissionné.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "globalnews_ca_news_10897877_canada-post-strike-week-3-workers-demands__20241204_061328",
+      "text": "“Historically, this strike activity or the hours lost to strikes has been actually quite low compared to real periods of militancy in the labor market in the 1970s and early 1980s,” he said.",
+      "llm_raw": {
+        "themes_long": [
+          "labor"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "labor"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "labor"
+      ],
+      "cons_themes": [
+        "labor"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441376HAN376-13020771",
+      "text": "Nous partageons les préoccupations des États‑Unis concernant la concurrence déloyale et les distorsions du marché mondial, y compris la surcapacité causée par les politiques et les pratiques hors marché qui nuisent à nos travailleurs et à nos entreprises.Nous pouvons rassurer nos partenaires américains sur le fait que le Canada ne présentera pas un risque de transbordement ni un vecteur de pratiques commerciales qui nuiraient à notre sécurité économique collective.",
+      "llm_raw": {
+        "themes_long": [
+          "foreign_trade",
+          "macroeconomics"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "positive"
+      },
+      "exact_match": false,
+      "jaccard": 0.3333333333333333,
+      "overlap": [
+        "foreign_trade"
+      ],
+      "only_llm": [
+        "macroeconomics"
+      ],
+      "only_cons": [
+        "international_affairs"
+      ],
+      "llm_themes": [
+        "macroeconomics",
+        "foreign_trade"
+      ],
+      "cons_themes": [
+        "international_affairs",
+        "foreign_trade"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441367HAN367-12979010",
+      "text": "Le plan en matière de logement du chef conservateur consiste à supprimer des projets et des investissements en logement partout au pays.",
+      "llm_raw": {
+        "themes_long": [
+          "housing"
+        ],
+        "political_parties_long": "CPC",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "housing"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "housing"
+      ],
+      "cons_themes": [
+        "housing"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_cbc_ca_news_canada_immigrants-canada-car-insurance-newcomers-1_7241353_20240621_153419",
+      "text": "Emily Kovacs, executive director of the Niagara Folk Arts Multicultural Centre in St.",
+      "llm_raw": {
+        "themes_long": [
+          "culture_nationalism"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "culture_nationalism"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "culture_nationalism"
+      ],
+      "cons_themes": [
+        "culture_nationalism"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "vancouversun_com_news_local-news_surrey-mayor-brenda-locke-fight-city-police-force-over_20240612_022403",
+      "text": "Locke said that beginning in September progress on the transition will be reported at each council meeting where councillors will have a chance to ask questions.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_journaldemontreal_com_2024_07_09_siciliano-et-daigle-en-appel-de-leur-peine_20240709_210328",
+      "text": "Dans le cas de Nicolas Daigle, son avocat Me Michel Lebrun a confirmé au Journal la volonté de son client d’aller aussi en appel.",
+      "llm_raw": {
+        "themes_long": [
+          "law_and_crime"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "law_and_crime"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "law_and_crime"
+      ],
+      "cons_themes": [
+        "law_and_crime"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441384HAN384-13049924",
+      "text": "moved:                                       That, given that,                                                                        (i) Canadians are facing an affordability crisis and need more than temporary relief,                                                                         (ii) the government’s $250 Working Canadians Rebate would exclude many workers and other Canadians who need it the most,                                                                        (iii) the 2021 Conservative Party platform included a one-time GST holiday,                                                                        the House call on the government to:                                                                        (a) permanently remove the GST from essential goods, including home heating, grocery meals, Internet and mobile phone bills, diapers and kids’ clothes;                                                                        (b) expand the rebate to include all adults whose income is under the threshold and did not earn employment income in 2023, so that people like recent graduates trying to enter the workforce, retired seniors, people with disabilities, injured workers, workers on parental leave and long-term sick leave, and others in need are included; and                                                                        (c) pay for that measure by putting in place an excess profit tax targeting the largest and most profitable corporations.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "social_welfare"
+        ],
+        "political_parties_long": "CPC",
+        "specific_themes_long": "welfare_state",
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.6666666666666666,
+      "overlap": [
+        "macroeconomics",
+        "social_welfare"
+      ],
+      "only_llm": [],
+      "only_cons": [
+        "labor"
+      ],
+      "llm_themes": [
+        "macroeconomics",
+        "social_welfare"
+      ],
+      "cons_themes": [
+        "macroeconomics",
+        "social_welfare",
+        "labor"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_journaldemontreal_com_2024_06_29_trois-residences-principales-sur-airbnb-un-proprio-raconte-comment-il-a-pu-facilement-dejouer-les-regles_20240630_083330",
+      "text": "Selon Edgar, le ministère du Tourisme n’est pas plus méticuleux.",
+      "llm_raw": {
+        "themes_long": [
+          "domestic_commerce"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "domestic_commerce"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "domestic_commerce"
+      ],
+      "cons_themes": [
+        "domestic_commerce"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "vancouversun_com_opinion_columnists_clinging-power-finding-new-leader-strategy-bc-political-parties_20250107_083332",
+      "text": "The new premier called a snap election and defeated the NDP.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": "NDP",
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "globalnews_ca_news_10694708_wildfire-hurricane-season-2024-above-average__20240813_100341",
+      "text": "Jenica Atwin, parliamentary secretary to the minister of Indigenous Services, said First Nations communities were disproportionately affected.",
+      "llm_raw": {
+        "themes_long": [
+          "rights_liberties_minorities_discrimination"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "rights_liberties_minorities_discrimination"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "rights_liberties_minorities_discrimination"
+      ],
+      "cons_themes": [
+        "rights_liberties_minorities_discrimination"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_journaldemontreal_com_2024_09_24_northvolt-en-mode-survie-une-saga-de-succes-qui-tourne-en-histoire-dhorreur_20240924_120327",
+      "text": "«Le gouvernement doit être plus transparent et plus exigeant en matière d’évaluation des risques.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "montrealgazette_com_news_local-news_st-denis_20240922_004352",
+      "text": "The street could use a greater mixity to entice local residents, he says — more boulangeries and pâtisseries, fewer Mexican taco restaurants and tattoo parlours.",
+      "llm_raw": {
+        "themes_long": [
+          "housing"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "housing"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "housing"
+      ],
+      "cons_themes": [
+        "housing"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441344HAN344-12887922",
+      "text": "Madame la Présidente, c'est un honneur et un privilège de prendre la parole à la Chambre pour m'adresser aux députés et aux Canadiens, mais je dois d'abord dire que je suis déçu que la ministre des Finances ne soit pas ici pour écouter mon premier discours.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441325HAN325-12798207",
+      "text": "I do believe that there has been a serious commitment to resolving the issue by this government.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "positive"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_cbc_ca_news_canada_calgary_westjet-strike-continues-union-president-1_7251118_20240630_233441",
+      "text": "She urged Ottawa on Sunday to \"make the expectation clear that work must continue throughout binding arbitration.\"",
+      "llm_raw": {
+        "themes_long": [
+          "labor"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "labor"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "labor"
+      ],
+      "cons_themes": [
+        "labor"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "vancouversun_com_opinion_columnists_how-vancouver-landed-2025-web-summit_20240615_124344",
+      "text": "Dan Fumano: Bringing Web Summit, a major tech conference, to B.C. took more than a year of behind-the-scenes work and at least $14 million of public funds.",
+      "llm_raw": {
+        "themes_long": [
+          "technology",
+          "macroeconomics"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "macroeconomics",
+        "technology"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "macroeconomics",
+        "technology"
+      ],
+      "cons_themes": [
+        "macroeconomics",
+        "technology"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    }
+  ]
+}

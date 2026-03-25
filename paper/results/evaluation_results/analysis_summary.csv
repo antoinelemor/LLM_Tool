@@ -1,0 +1,12 @@
+Category,Metric,Value
+Theme Distribution,N Themes - Substantial,9.0
+Theme Distribution,N Themes - Moderate,7.0
+Theme Distribution,N Themes - Almost Perfect,3.0
+Theme Distribution,N Themes - Fair,3.0
+Inter-Annotator Agreement,Mean Fleiss Kappa,0.6123
+Inter-Annotator Agreement,Std Fleiss Kappa,0.1719
+Inter-Annotator Agreement,Min Fleiss Kappa,0.2679
+Inter-Annotator Agreement,Max Fleiss Kappa,1.0
+Human Baseline,Overall F1 (Annotator vs Consensus),0.7896
+Model Performance,Best Model F1 (GPT-4.1),0.1309
+Model Performance,Best Model / Human Baseline Ratio,0.1658

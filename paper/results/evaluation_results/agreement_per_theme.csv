@@ -1,0 +1,23 @@
+Theme,Cohen_Kappa_Avg,Fleiss_Kappa,Krippendorff_Alpha,Agreement_Level,Support_Consensus,Support_Avg_Annotators,Pct_Full_Agreement,Support_shdin,Support_Jeremy,Support_jdrouin,Support_BenjaminCarignan
+indigenous_affairs,1.0,1.0,1.0,Almost Perfect,0,0.0,100.0,0,0,0,0
+environment,0.8229,0.8224,0.8224,Almost Perfect,59,58.5,97.5,58,56,51,69
+housing,0.8195,0.818,0.818,Almost Perfect,65,66.0,97.2,61,57,67,79
+health,0.7613,0.7619,0.7619,Substantial,106,103.5,94.5,95,90,121,108
+foreign_trade,0.7276,0.7266,0.7266,Substantial,38,35.2,97.7,37,33,29,42
+immigration,0.7245,0.7238,0.7238,Substantial,19,19.2,98.7,18,18,20,21
+labor,0.7228,0.7225,0.7225,Substantial,57,53.5,96.5,53,47,70,44
+transportation,0.6799,0.6835,0.6835,Substantial,36,34.8,97.4,37,25,39,38
+law_and_crime,0.6455,0.6436,0.6436,Substantial,137,137.2,89.2,130,117,177,125
+rights_liberties_minorities_discrimination,0.6225,0.6217,0.6217,Substantial,49,51.5,95.5,53,49,64,40
+energy,0.6167,0.6168,0.6168,Substantial,44,36.8,96.8,21,24,43,59
+macroeconomics,0.6161,0.6115,0.6115,Substantial,156,148.5,87.9,126,118,209,141
+education,0.617,0.6065,0.6065,Moderate,21,24.8,97.7,21,15,41,22
+international_affairs,0.5766,0.6058,0.6058,Moderate,180,163.0,85.9,202,176,203,71
+agriculture,0.5703,0.5597,0.5597,Moderate,14,18.0,98.1,15,9,21,27
+technology,0.5431,0.5411,0.5411,Moderate,25,30.0,96.6,27,29,33,31
+social_welfare,0.521,0.5126,0.5126,Moderate,62,60.5,93.4,51,41,99,51
+defense,0.4987,0.4841,0.4841,Moderate,31,32.0,96.2,22,19,60,27
+governments_governance,0.4032,0.4219,0.4219,Moderate,226,205.0,76.0,263,236,230,91
+public_lands,0.3693,0.3807,0.3807,Fair,20,24.8,96.4,17,12,41,29
+culture_nationalism,0.3412,0.3391,0.3391,Fair,23,25.2,96.1,6,22,49,24
+domestic_commerce,0.2607,0.2679,0.2679,Fair,26,31.2,94.6,35,30,18,42

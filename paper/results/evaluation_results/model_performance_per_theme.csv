@@ -1,0 +1,155 @@
+Theme,Model,Fleiss_Kappa,Agreement_Level,TP,FP,FN,Support,Precision,Recall,F1
+agriculture,GPT-4.1,0.5597,Moderate,0,1,2,2,0.0,0.0,0.0
+agriculture,GPT-5,0.5597,Moderate,0,0,2,2,0.0,0.0,0.0
+agriculture,GPT-OSS,0.5597,Moderate,0,0,2,2,0.0,0.0,0.0
+agriculture,Gemma,0.5597,Moderate,0,0,2,2,0.0,0.0,0.0
+agriculture,Llama,0.5597,Moderate,0,3,2,2,0.0,0.0,0.0
+agriculture,Nemotron,0.5597,Moderate,0,0,2,2,0.0,0.0,0.0
+agriculture,Manual,0.5597,Moderate,0,0,2,2,0.0,0.0,0.0
+culture_nationalism,GPT-4.1,0.3391,Fair,1,1,2,3,0.5,0.3333,0.4
+culture_nationalism,GPT-5,0.3391,Fair,1,1,2,3,0.5,0.3333,0.4
+culture_nationalism,GPT-OSS,0.3391,Fair,1,6,2,3,0.1429,0.3333,0.2
+culture_nationalism,Gemma,0.3391,Fair,0,4,3,3,0.0,0.0,0.0
+culture_nationalism,Llama,0.3391,Fair,1,3,2,3,0.25,0.3333,0.2857
+culture_nationalism,Nemotron,0.3391,Fair,1,1,2,3,0.5,0.3333,0.4
+culture_nationalism,Manual,0.3391,Fair,0,0,3,3,0.0,0.0,0.0
+defense,GPT-4.1,0.4841,Moderate,0,4,3,3,0.0,0.0,0.0
+defense,GPT-5,0.4841,Moderate,0,6,3,3,0.0,0.0,0.0
+defense,GPT-OSS,0.4841,Moderate,0,3,3,3,0.0,0.0,0.0
+defense,Gemma,0.4841,Moderate,0,2,3,3,0.0,0.0,0.0
+defense,Llama,0.4841,Moderate,0,6,3,3,0.0,0.0,0.0
+defense,Nemotron,0.4841,Moderate,0,4,3,3,0.0,0.0,0.0
+defense,Manual,0.4841,Moderate,0,3,3,3,0.0,0.0,0.0
+domestic_commerce,GPT-4.1,0.2679,Fair,0,13,7,7,0.0,0.0,0.0
+domestic_commerce,GPT-5,0.2679,Fair,0,3,7,7,0.0,0.0,0.0
+domestic_commerce,GPT-OSS,0.2679,Fair,0,1,7,7,0.0,0.0,0.0
+domestic_commerce,Gemma,0.2679,Fair,0,8,7,7,0.0,0.0,0.0
+domestic_commerce,Llama,0.2679,Fair,0,8,7,7,0.0,0.0,0.0
+domestic_commerce,Nemotron,0.2679,Fair,0,6,7,7,0.0,0.0,0.0
+domestic_commerce,Manual,0.2679,Fair,0,0,7,7,0.0,0.0,0.0
+education,GPT-4.1,0.6065,Moderate,0,7,3,3,0.0,0.0,0.0
+education,GPT-5,0.6065,Moderate,0,5,3,3,0.0,0.0,0.0
+education,GPT-OSS,0.6065,Moderate,0,3,3,3,0.0,0.0,0.0
+education,Gemma,0.6065,Moderate,0,5,3,3,0.0,0.0,0.0
+education,Llama,0.6065,Moderate,0,8,3,3,0.0,0.0,0.0
+education,Nemotron,0.6065,Moderate,0,9,3,3,0.0,0.0,0.0
+education,Manual,0.6065,Moderate,1,3,2,3,0.25,0.3333,0.2857
+energy,GPT-4.1,0.6168,Substantial,1,2,6,7,0.3333,0.1429,0.2
+energy,GPT-5,0.6168,Substantial,1,1,6,7,0.5,0.1429,0.2222
+energy,GPT-OSS,0.6168,Substantial,1,3,6,7,0.25,0.1429,0.1818
+energy,Gemma,0.6168,Substantial,0,3,7,7,0.0,0.0,0.0
+energy,Llama,0.6168,Substantial,0,2,7,7,0.0,0.0,0.0
+energy,Nemotron,0.6168,Substantial,0,4,7,7,0.0,0.0,0.0
+energy,Manual,0.6168,Substantial,1,5,6,7,0.1667,0.1429,0.1538
+environment,GPT-4.1,0.8224,Almost Perfect,1,13,11,12,0.0714,0.0833,0.0769
+environment,GPT-5,0.8224,Almost Perfect,1,10,11,12,0.0909,0.0833,0.087
+environment,GPT-OSS,0.8224,Almost Perfect,1,13,11,12,0.0714,0.0833,0.0769
+environment,Gemma,0.8224,Almost Perfect,1,14,11,12,0.0667,0.0833,0.0741
+environment,Llama,0.8224,Almost Perfect,1,21,11,12,0.0455,0.0833,0.0588
+environment,Nemotron,0.8224,Almost Perfect,1,13,11,12,0.0714,0.0833,0.0769
+environment,Manual,0.8224,Almost Perfect,1,9,11,12,0.1,0.0833,0.0909
+foreign_trade,GPT-4.1,0.7266,Substantial,0,4,6,6,0.0,0.0,0.0
+foreign_trade,GPT-5,0.7266,Substantial,0,3,6,6,0.0,0.0,0.0
+foreign_trade,GPT-OSS,0.7266,Substantial,0,4,6,6,0.0,0.0,0.0
+foreign_trade,Gemma,0.7266,Substantial,0,7,6,6,0.0,0.0,0.0
+foreign_trade,Llama,0.7266,Substantial,0,3,6,6,0.0,0.0,0.0
+foreign_trade,Nemotron,0.7266,Substantial,0,7,6,6,0.0,0.0,0.0
+foreign_trade,Manual,0.7266,Substantial,0,5,6,6,0.0,0.0,0.0
+governments_governance,GPT-4.1,0.4219,Moderate,10,40,30,40,0.2,0.25,0.2222
+governments_governance,GPT-5,0.4219,Moderate,7,45,33,40,0.1346,0.175,0.1522
+governments_governance,GPT-OSS,0.4219,Moderate,7,42,33,40,0.1429,0.175,0.1573
+governments_governance,Gemma,0.4219,Moderate,8,53,32,40,0.1311,0.2,0.1584
+governments_governance,Llama,0.4219,Moderate,7,39,33,40,0.1522,0.175,0.1628
+governments_governance,Nemotron,0.4219,Moderate,6,31,34,40,0.1622,0.15,0.1558
+governments_governance,Manual,0.4219,Moderate,8,53,32,40,0.1311,0.2,0.1584
+health,GPT-4.1,0.7619,Substantial,1,14,14,15,0.0667,0.0667,0.0667
+health,GPT-5,0.7619,Substantial,0,13,15,15,0.0,0.0,0.0
+health,GPT-OSS,0.7619,Substantial,1,13,14,15,0.0714,0.0667,0.069
+health,Gemma,0.7619,Substantial,1,12,14,15,0.0769,0.0667,0.0714
+health,Llama,0.7619,Substantial,1,22,14,15,0.0435,0.0667,0.0526
+health,Nemotron,0.7619,Substantial,0,12,15,15,0.0,0.0,0.0
+health,Manual,0.7619,Substantial,1,15,14,15,0.0625,0.0667,0.0645
+housing,GPT-4.1,0.818,Almost Perfect,2,13,11,13,0.1333,0.1538,0.1429
+housing,GPT-5,0.818,Almost Perfect,2,12,11,13,0.1429,0.1538,0.1481
+housing,GPT-OSS,0.818,Almost Perfect,2,11,11,13,0.1538,0.1538,0.1538
+housing,Gemma,0.818,Almost Perfect,2,12,11,13,0.1429,0.1538,0.1481
+housing,Llama,0.818,Almost Perfect,2,13,11,13,0.1333,0.1538,0.1429
+housing,Nemotron,0.818,Almost Perfect,2,12,11,13,0.1429,0.1538,0.1481
+housing,Manual,0.818,Almost Perfect,1,11,12,13,0.0833,0.0769,0.08
+immigration,GPT-4.1,0.7238,Substantial,0,1,3,3,0.0,0.0,0.0
+immigration,GPT-5,0.7238,Substantial,1,2,2,3,0.3333,0.3333,0.3333
+immigration,GPT-OSS,0.7238,Substantial,1,1,2,3,0.5,0.3333,0.4
+immigration,Gemma,0.7238,Substantial,1,2,2,3,0.3333,0.3333,0.3333
+immigration,Llama,0.7238,Substantial,1,1,2,3,0.5,0.3333,0.4
+immigration,Nemotron,0.7238,Substantial,1,3,2,3,0.25,0.3333,0.2857
+immigration,Manual,0.7238,Substantial,0,0,3,3,0.0,0.0,0.0
+indigenous_affairs,GPT-4.1,1.0,Almost Perfect,0,0,0,0,0.0,0.0,0.0
+indigenous_affairs,GPT-5,1.0,Almost Perfect,0,0,0,0,0.0,0.0,0.0
+indigenous_affairs,GPT-OSS,1.0,Almost Perfect,0,0,0,0,0.0,0.0,0.0
+indigenous_affairs,Gemma,1.0,Almost Perfect,0,0,0,0,0.0,0.0,0.0
+indigenous_affairs,Llama,1.0,Almost Perfect,0,0,0,0,0.0,0.0,0.0
+indigenous_affairs,Nemotron,1.0,Almost Perfect,0,0,0,0,0.0,0.0,0.0
+indigenous_affairs,Manual,1.0,Almost Perfect,0,0,0,0,0.0,0.0,0.0
+international_affairs,GPT-4.1,0.6058,Moderate,1,18,24,25,0.0526,0.04,0.0455
+international_affairs,GPT-5,0.6058,Moderate,3,15,22,25,0.1667,0.12,0.1395
+international_affairs,GPT-OSS,0.6058,Moderate,2,14,23,25,0.125,0.08,0.0976
+international_affairs,Gemma,0.6058,Moderate,1,12,24,25,0.0769,0.04,0.0526
+international_affairs,Llama,0.6058,Moderate,1,18,24,25,0.0526,0.04,0.0455
+international_affairs,Nemotron,0.6058,Moderate,1,19,24,25,0.05,0.04,0.0444
+international_affairs,Manual,0.6058,Moderate,4,22,21,25,0.1538,0.16,0.1569
+labor,GPT-4.1,0.7225,Substantial,0,6,7,7,0.0,0.0,0.0
+labor,GPT-5,0.7225,Substantial,0,6,7,7,0.0,0.0,0.0
+labor,GPT-OSS,0.7225,Substantial,0,6,7,7,0.0,0.0,0.0
+labor,Gemma,0.7225,Substantial,0,9,7,7,0.0,0.0,0.0
+labor,Llama,0.7225,Substantial,0,6,7,7,0.0,0.0,0.0
+labor,Nemotron,0.7225,Substantial,0,6,7,7,0.0,0.0,0.0
+labor,Manual,0.7225,Substantial,0,7,7,7,0.0,0.0,0.0
+law_and_crime,GPT-4.1,0.6436,Substantial,2,21,13,15,0.087,0.1333,0.1053
+law_and_crime,GPT-5,0.6436,Substantial,2,14,13,15,0.125,0.1333,0.129
+law_and_crime,GPT-OSS,0.6436,Substantial,0,15,15,15,0.0,0.0,0.0
+law_and_crime,Gemma,0.6436,Substantial,1,18,14,15,0.0526,0.0667,0.0588
+law_and_crime,Llama,0.6436,Substantial,0,21,15,15,0.0,0.0,0.0
+law_and_crime,Nemotron,0.6436,Substantial,1,17,14,15,0.0556,0.0667,0.0606
+law_and_crime,Manual,0.6436,Substantial,0,11,15,15,0.0,0.0,0.0
+macroeconomics,GPT-4.1,0.6115,Substantial,9,30,19,28,0.2308,0.3214,0.2687
+macroeconomics,GPT-5,0.6115,Substantial,7,25,21,28,0.2188,0.25,0.2333
+macroeconomics,GPT-OSS,0.6115,Substantial,9,32,19,28,0.2195,0.3214,0.2609
+macroeconomics,Gemma,0.6115,Substantial,9,43,19,28,0.1731,0.3214,0.225
+macroeconomics,Llama,0.6115,Substantial,11,45,17,28,0.1964,0.3929,0.2619
+macroeconomics,Nemotron,0.6115,Substantial,8,32,20,28,0.2,0.2857,0.2353
+macroeconomics,Manual,0.6115,Substantial,6,15,22,28,0.2857,0.2143,0.2449
+public_lands,GPT-4.1,0.3807,Fair,0,1,1,1,0.0,0.0,0.0
+public_lands,GPT-5,0.3807,Fair,0,2,1,1,0.0,0.0,0.0
+public_lands,GPT-OSS,0.3807,Fair,0,1,1,1,0.0,0.0,0.0
+public_lands,Gemma,0.3807,Fair,0,3,1,1,0.0,0.0,0.0
+public_lands,Llama,0.3807,Fair,0,3,1,1,0.0,0.0,0.0
+public_lands,Nemotron,0.3807,Fair,0,3,1,1,0.0,0.0,0.0
+public_lands,Manual,0.3807,Fair,0,1,1,1,0.0,0.0,0.0
+rights_liberties_minorities_discrimination,GPT-4.1,0.6217,Substantial,2,18,8,10,0.1,0.2,0.1333
+rights_liberties_minorities_discrimination,GPT-5,0.6217,Substantial,2,12,8,10,0.1429,0.2,0.1667
+rights_liberties_minorities_discrimination,GPT-OSS,0.6217,Substantial,2,23,8,10,0.08,0.2,0.1143
+rights_liberties_minorities_discrimination,Gemma,0.6217,Substantial,1,5,9,10,0.1667,0.1,0.125
+rights_liberties_minorities_discrimination,Llama,0.6217,Substantial,3,16,7,10,0.1579,0.3,0.2069
+rights_liberties_minorities_discrimination,Nemotron,0.6217,Substantial,1,2,9,10,0.3333,0.1,0.1538
+rights_liberties_minorities_discrimination,Manual,0.6217,Substantial,0,6,10,10,0.0,0.0,0.0
+social_welfare,GPT-4.1,0.5126,Moderate,2,18,8,10,0.1,0.2,0.1333
+social_welfare,GPT-5,0.5126,Moderate,0,9,10,10,0.0,0.0,0.0
+social_welfare,GPT-OSS,0.5126,Moderate,2,18,8,10,0.1,0.2,0.1333
+social_welfare,Gemma,0.5126,Moderate,1,12,9,10,0.0769,0.1,0.087
+social_welfare,Llama,0.5126,Moderate,0,18,10,10,0.0,0.0,0.0
+social_welfare,Nemotron,0.5126,Moderate,2,24,8,10,0.0769,0.2,0.1111
+social_welfare,Manual,0.5126,Moderate,0,2,10,10,0.0,0.0,0.0
+technology,GPT-4.1,0.5411,Moderate,0,5,3,3,0.0,0.0,0.0
+technology,GPT-5,0.5411,Moderate,0,4,3,3,0.0,0.0,0.0
+technology,GPT-OSS,0.5411,Moderate,0,5,3,3,0.0,0.0,0.0
+technology,Gemma,0.5411,Moderate,0,3,3,3,0.0,0.0,0.0
+technology,Llama,0.5411,Moderate,0,3,3,3,0.0,0.0,0.0
+technology,Nemotron,0.5411,Moderate,0,3,3,3,0.0,0.0,0.0
+technology,Manual,0.5411,Moderate,0,2,3,3,0.0,0.0,0.0
+transportation,GPT-4.1,0.6835,Substantial,0,8,6,6,0.0,0.0,0.0
+transportation,GPT-5,0.6835,Substantial,0,7,6,6,0.0,0.0,0.0
+transportation,GPT-OSS,0.6835,Substantial,0,7,6,6,0.0,0.0,0.0
+transportation,Gemma,0.6835,Substantial,0,5,6,6,0.0,0.0,0.0
+transportation,Llama,0.6835,Substantial,1,8,5,6,0.1111,0.1667,0.1333
+transportation,Nemotron,0.6835,Substantial,0,10,6,6,0.0,0.0,0.0
+transportation,Manual,0.6835,Substantial,0,5,6,6,0.0,0.0,0.0

@@ -1,0 +1,8 @@
+Pipeline,F1_All,F1_High_Agreement,F1_Medium_Agreement,F1_Low_Agreement,F1_Weighted_by_Kappa
+gpt_4_1_large,0.2131,0.3347,0.5877,0.9036,0.2108
+gpt_5_large,0.2132,0.3657,0.5703,0.9438,0.2117
+gpt_oss_large,0.1945,0.3274,0.5904,0.9317,0.1923
+gemma_large,0.1661,0.3288,0.5622,0.9036,0.1648
+llama_large,0.1584,0.2772,0.5689,0.9157,0.1574
+nemotron_large,0.2059,0.3257,0.6064,0.9237,0.205
+manual_manual,0.2054,0.3703,0.5944,0.9558,0.2038

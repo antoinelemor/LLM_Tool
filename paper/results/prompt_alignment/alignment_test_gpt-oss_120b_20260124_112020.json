@@ -1,0 +1,604 @@
+{
+  "config": {
+    "model": "gpt-oss:120b",
+    "prompt": "prompts/prompt_EN_long_v3.txt",
+    "n_samples": 20,
+    "seed": 123,
+    "timestamp": "20260124_112020"
+  },
+  "summary": {
+    "exact_match": 9,
+    "partial_match": 7,
+    "no_match": 4,
+    "avg_jaccard": 0.6208333333333333,
+    "sentiment_match": 13
+  },
+  "results": [
+    {
+      "id": "441331HAN331-12827062",
+      "text": "Si un député participant en personne désire que la motion soit adoptée ou adoptée avec dissidence ou si un député d'un parti reconnu participant en personne désire demander un vote par appel nominal, je l’invite à se lever et à l’indiquer à la présidence.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_ledevoir_com_societe_821521_il-vous-plait-ne-fermez-pas-porte-demande-chef-spvm_20241010_231353",
+      "text": "L’arrivée de nouveaux joueurs indépendants des grandes organisations criminelles est notamment venue multiplier les menaces.",
+      "llm_raw": {
+        "themes_long": [
+          "law_and_crime"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "law_and_crime"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "law_and_crime"
+      ],
+      "cons_themes": [
+        "law_and_crime"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441274HAN274-12551088",
+      "text": "These are not signs of a healthy, dynamic and competitive marketplace.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.3333333333333333,
+      "overlap": [
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [
+        "domestic_commerce",
+        "foreign_trade"
+      ],
+      "llm_themes": [
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "domestic_commerce",
+        "foreign_trade",
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_lapresse_ca_actualites_politique_2024-09-05_entente-entre-le-npd-et-le-plc_les-mesures-phares-de-l-alliance_php_20240905_115350",
+      "text": "En tout, 15 éléments ont été concrétisés ; 5 autres étaient en cours de réalisation, comme la charte des droits des acheteurs de propriété annoncée dans le budget de 2024.",
+      "llm_raw": {
+        "themes_long": [
+          "housing",
+          "macroeconomics"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "housing",
+        "macroeconomics"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "housing",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "housing",
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441326HAN326-12803355",
+      "text": "Could the Minister of Rural Economic Development and Minister responsible for ACOA share with the House the ways in which broadband infrastructure and a stable connection to the Internet can bolster communities?",
+      "llm_raw": {
+        "themes_long": [
+          "technology",
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "technology"
+      ],
+      "only_llm": [
+        "governments_governance"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "technology",
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "technology"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441346HAN346-12894412",
+      "text": "However, Liberals say it is an erosion of Canadians' rights that is too great to bear.The government is so terrified that documents about its corruption are going to be turned over to the RCMP for the RCMP just to consider.",
+      "llm_raw": {
+        "themes_long": [
+          "rights_liberties_minorities_discrimination",
+          "law_and_crime"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": false,
+      "jaccard": 0.6666666666666666,
+      "overlap": [
+        "law_and_crime",
+        "rights_liberties_minorities_discrimination"
+      ],
+      "only_llm": [],
+      "only_cons": [
+        "governments_governance"
+      ],
+      "llm_themes": [
+        "law_and_crime",
+        "rights_liberties_minorities_discrimination"
+      ],
+      "cons_themes": [
+        "law_and_crime",
+        "rights_liberties_minorities_discrimination",
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_lapresse_ca_actualites_2024-09-20_le-nouveau-gourou-des-cryptos-du-clan-trump-est-quebecois_php_20240920_234353",
+      "text": "Si le goût du luxe ostentatoire de Donald Trump n’est pas étranger à l’univers médiatique de Farokh Sarmad, l’influence du Montréalais dans le monde des cryptomonnaies n’en demeure pas moins enviable.",
+      "llm_raw": {},
+      "exact_match": false,
+      "jaccard": 0.0,
+      "overlap": [],
+      "only_llm": [],
+      "only_cons": [
+        "international_affairs",
+        "technology"
+      ],
+      "llm_themes": [],
+      "cons_themes": [
+        "international_affairs",
+        "technology"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "globalnews_ca_news_10940334_canada-climate-wildfire-severity__20250103_033408",
+      "text": "“The widespread increases, along with limited decreases, in high-burn severity days during 1981 to 2020 indicate the increasingly severe fire situation and more challenging fire season under the changing climate in Canada,” the study read.",
+      "llm_raw": {
+        "themes_long": [
+          "environment"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "environment"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "environment"
+      ],
+      "cons_themes": [
+        "environment"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441323HAN323-12788940",
+      "text": "Malheureusement, les libéraux semblent s'être trop inspirés du gouvernement Harper et n'ont pas pris les mesures qui s'imposaient afin, par exemple, d'éviter que des sommes colossales se retrouvent dans des paradis fiscaux à l'étranger, soient données à des PDG du secteur pétrolier et gazier et à des banques ou soient investies dans le projet TMX.",
+      "llm_raw": {},
+      "exact_match": false,
+      "jaccard": 0.0,
+      "overlap": [],
+      "only_llm": [],
+      "only_cons": [
+        "energy",
+        "macroeconomics"
+      ],
+      "llm_themes": [],
+      "cons_themes": [
+        "energy",
+        "macroeconomics"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "441371HAN371-12994851",
+      "text": "La Russie cherche à semer le désordre et la discorde au Canada et, en fin de compte, à faire en sorte que le Canada échoue et soit faible.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "international_affairs"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "international_affairs"
+      ],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "negative"
+    },
+    {
+      "id": "www_thestar_com_news_world_us-election-day-live-updates-america-votes-for-next-president_article_60fc0b9a-9aad-11ef-9a17-83ca885a5f48_html_20241105_231357",
+      "text": "“I agree with (Musk) every step of the way,” Rogan wrote.",
+      "llm_raw": {
+        "themes_long": null,
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.0,
+      "overlap": [],
+      "only_llm": [],
+      "only_cons": [
+        "international_affairs"
+      ],
+      "llm_themes": [],
+      "cons_themes": [
+        "international_affairs"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "positive"
+    },
+    {
+      "id": "441298HAN298-12670893",
+      "text": "This involves the various regions but was not taken into account when this bill was drafted.",
+      "llm_raw": {
+        "themes_long": [
+          "governments_governance"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "negative"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "governments_governance"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "governments_governance"
+      ],
+      "cons_themes": [
+        "governments_governance"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "negative",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "ici_radio-canada_ca_nouvelle_2098291_tele-quebec-geyser-inondation-archives-degats_20240821_212350",
+      "text": "Le bâtiment accueille aussi un musée de la Maison nationale des patriotes, qui a dans sa collection des œuvres d’art, des documents imprimés et des armes d’époque (Nouvelle fenêtre), notamment.",
+      "llm_raw": {
+        "themes_long": [
+          "culture_nationalism"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "culture_nationalism"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "culture_nationalism"
+      ],
+      "cons_themes": [
+        "culture_nationalism"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "bc_ctvnews_ca_dam-in-chilcotin-river-will-be-overtaken-by-water-within-hours-b-c-officials-1_6989204_20240805_093349",
+      "text": "Officials say the best—and most likely—scenario is that it will take 12 to 24 hours for the water to move past the blockage.",
+      "llm_raw": {
+        "themes_long": [
+          "public_lands"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "public_lands"
+      ],
+      "only_llm": [],
+      "only_cons": [
+        "domestic_commerce"
+      ],
+      "llm_themes": [
+        "public_lands"
+      ],
+      "cons_themes": [
+        "public_lands",
+        "domestic_commerce"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_ledevoir_com_opinion_chroniques_825418_bulletin-ministeriel_20241207_101351",
+      "text": "B– Martine Biron (Relations internationales, Condition féminine) a compris qu’il valait mieux améliorer l’accès à l’avortement que d’inscrire ce droit dans une loi.",
+      "llm_raw": {
+        "themes_long": [
+          "health",
+          "rights_liberties_minorities_discrimination"
+        ],
+        "political_parties_long": "BQ",
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.25,
+      "overlap": [
+        "rights_liberties_minorities_discrimination"
+      ],
+      "only_llm": [
+        "health"
+      ],
+      "only_cons": [
+        "international_affairs",
+        "governments_governance"
+      ],
+      "llm_themes": [
+        "health",
+        "rights_liberties_minorities_discrimination"
+      ],
+      "cons_themes": [
+        "international_affairs",
+        "rights_liberties_minorities_discrimination",
+        "governments_governance"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441288HAN288-12617630",
+      "text": "I note that in Bill C-35 there would be a number of improvements, but one of the pieces is that while funding would be required, there is no particular funding mechanism mentioned.I want to reference that I was honoured to know the amazing Canadian social justice activist and journalist June Callwood.",
+      "llm_raw": {},
+      "exact_match": false,
+      "jaccard": 0.0,
+      "overlap": [],
+      "only_llm": [],
+      "only_cons": [
+        "governments_governance",
+        "social_welfare"
+      ],
+      "llm_themes": [],
+      "cons_themes": [
+        "social_welfare",
+        "governments_governance"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "",
+      "cons_sentiment": "positive"
+    },
+    {
+      "id": "441377HAN377-13021785",
+      "text": "Nous veillerons à maintenir d'excellentes relations avec les États‑Unis alors que nous bâtissons un avenir meilleur des deux côtés de la frontière.Nous allons continuer d'obtenir des résultats qui ont de l'importance pour les Canadiens, que l'on pense aux soins dentaires, à l'insuline gratuite ou aux programmes d'alimentation dans les écoles.",
+      "llm_raw": {
+        "themes_long": [
+          "international_affairs",
+          "health",
+          "social_welfare"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": "welfare_state",
+        "sentiment_long": "positive"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "health",
+        "international_affairs",
+        "social_welfare"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "international_affairs",
+        "health",
+        "social_welfare"
+      ],
+      "cons_themes": [
+        "social_welfare",
+        "health",
+        "international_affairs"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "positive"
+    },
+    {
+      "id": "www_thestar_com_news_gta_i-promise-on-my-mother-s-grave-that-i-will-pay-you-back-anguished-witness_article_84d864fa-4076-11ef-ba47-f33325968b91_html_20240723_225430",
+      "text": "She pressed him, “Are you sure it was a gunshot?”",
+      "llm_raw": {
+        "themes_long": [
+          "law_and_crime"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": true,
+      "jaccard": 1.0,
+      "overlap": [
+        "law_and_crime"
+      ],
+      "only_llm": [],
+      "only_cons": [],
+      "llm_themes": [
+        "law_and_crime"
+      ],
+      "cons_themes": [
+        "law_and_crime"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "www_theglobeandmail_com_politics_article-trudeau-announces-two-month-partial-gst-holiday-250-cheques-for-many__20241121_211333",
+      "text": "Chris Young/The Canadian Press  Christmas trees, kids’ toys and restaurant meals are among the items that Canadians will no longer have to pay sales tax on, Prime Minister Justin Trudeau announced Thursday as he also said his government would send many Canadians $250 cheques in the mail next year.",
+      "llm_raw": {
+        "themes_long": [
+          "macroeconomics",
+          "social_welfare"
+        ],
+        "political_parties_long": "LPC",
+        "specific_themes_long": "welfare_state",
+        "sentiment_long": "positive"
+      },
+      "exact_match": false,
+      "jaccard": 0.5,
+      "overlap": [
+        "macroeconomics"
+      ],
+      "only_llm": [
+        "social_welfare"
+      ],
+      "only_cons": [],
+      "llm_themes": [
+        "social_welfare",
+        "macroeconomics"
+      ],
+      "cons_themes": [
+        "macroeconomics"
+      ],
+      "sentiment_match": false,
+      "llm_sentiment": "positive",
+      "cons_sentiment": "neutral"
+    },
+    {
+      "id": "441299HAN299-12678379",
+      "text": "Speaker, today, Canadians who filed their taxes electronically on March 15 or before will receive the new Canada carbon rebate amounts.",
+      "llm_raw": {
+        "themes_long": [
+          "environment",
+          "energy"
+        ],
+        "political_parties_long": null,
+        "specific_themes_long": null,
+        "sentiment_long": "neutral"
+      },
+      "exact_match": false,
+      "jaccard": 0.6666666666666666,
+      "overlap": [
+        "energy",
+        "environment"
+      ],
+      "only_llm": [],
+      "only_cons": [
+        "macroeconomics"
+      ],
+      "llm_themes": [
+        "energy",
+        "environment"
+      ],
+      "cons_themes": [
+        "energy",
+        "environment",
+        "macroeconomics"
+      ],
+      "sentiment_match": true,
+      "llm_sentiment": "neutral",
+      "cons_sentiment": "neutral"
+    }
+  ]
+}

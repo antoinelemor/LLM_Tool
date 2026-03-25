@@ -1,0 +1,34 @@
+================================================================================,,,,
+COMPREHENSIVE EVALUATION ANALYSIS - EXECUTIVE SUMMARY,,,,
+================================================================================,,,,
+,,,,
+INTER-ANNOTATOR AGREEMENT,,,,
+----------------------------------------,,,,
+Metric,Value,,,
+Mean Fleiss' Kappa,0.589,,,
+Std Fleiss' Kappa,0.201,,,
+Min Kappa,0.247,,,
+Max Kappa,1.000,,,
+,,,,
+THEMES BY AGREEMENT LEVEL,,,,
+----------------------------------------,,,,
+Almost Perfect,3,,,
+Substantial,8,,,
+Moderate,7,,,
+Fair,4,,,
+Slight,0,,,
+,,,,
+HUMAN BASELINE (Annotator vs Consensus),,,,
+----------------------------------------,,,,
+Average F1,0.784,,,
+,,,,
+MODEL PERFORMANCE (Overall Micro-F1),,,,
+----------------------------------------,,,,
+Model,F1,Precision,Recall,% of Human
+GPT-4.1 (L),0.131,0.119,0.146,16.7%
+GPT-OSS (L),0.124,0.116,0.132,15.8%
+GPT-5 (L),0.122,0.122,0.123,15.6%
+Llama (L),0.113,0.098,0.132,14.4%
+Manual,0.110,0.116,0.105,14.1%
+Gemma (L),0.109,0.101,0.119,13.9%
+Nemotron (L),0.104,0.099,0.110,13.3%

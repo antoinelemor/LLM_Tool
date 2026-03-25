@@ -1,0 +1,87 @@
+{
+    "$schema": "https://cdn.statically.io/gh/nguyenngoclongdev/cdn/main/schema/v11/terminal-keeper.json",
+    "theme": "tribe",
+    "active": "LLM TOOL TEST",
+    "activateOnStartup": true,
+    "keepExistingTerminals": false,
+    "sessions": {
+        "default": [
+            {
+                "name": "main",
+                "autoExecuteCommands": true,
+                "icon": "person",
+                "color": "terminal.ansiGreen",
+                "commands": [
+                    "echo hello"
+                ]
+            },
+            [
+                {
+                    "name": "docker:ros",
+                    "commands": [
+                        ""
+                    ]
+                },
+                {
+                    "name": "docker:k8s",
+                    "commands": [
+                        ""
+                    ]
+                }
+            ],
+            [
+                {
+                    "name": "docker:nats",
+                    "commands": [
+                        ""
+                    ]
+                },
+                {
+                    "name": "docker:fleet",
+                    "commands": [
+                        ""
+                    ]
+                }
+            ]
+        ],
+        "LLM TOOL TEST": [
+            {
+                "name": "main",
+                "autoExecuteCommands": true,
+                "icon": "person",
+                "color": "terminal.ansiBlue",
+                "commands": [
+                    "echo 'LLM TOOL TEST main'"
+                ]
+            },
+            [
+                {
+                    "name": "🧪 test 1",
+                    "commands": [
+                        ""
+                    ]
+                },
+                {
+                    "name": "🧪 test 2",
+                    "commands": [
+                        ""
+                    ]
+                }
+            ],
+            [
+                {
+                    "name": "✅ validation 1",
+                    "commands": [
+                        ""
+                    ]
+                },
+                {
+                    "name": "✅ validation 2",
+                    "commands": [
+                        ""
+                    ]
+                }
+            ]
+        ]
+    }
+}

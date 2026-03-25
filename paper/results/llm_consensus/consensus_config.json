@@ -1,0 +1,32 @@
+{
+  "models": [
+    "gemma",
+    "gpt_4_1",
+    "gpt_5",
+    "gpt_oss",
+    "llama",
+    "nemotron"
+  ],
+  "thresholds_per_category": {
+    "themes": 4,
+    "political_parties": 1,
+    "specific_themes": 1,
+    "sentiment": "majority_vote (>=2)"
+  },
+  "f1_per_category": {
+    "themes": 0.7044079515989629,
+    "political_parties": 0.6531791907514451,
+    "specific_themes": 0.056338028169014086
+  },
+  "applied_to": [
+    "annotations_small",
+    "annotations_large",
+    "annotations_extra_large"
+  ],
+  "consensus_keys_added": [
+    "consensus_themes_{suffix}",
+    "consensus_political_parties_{suffix}",
+    "consensus_specific_themes_{suffix}",
+    "consensus_sentiment_{suffix}"
+  ]
+}

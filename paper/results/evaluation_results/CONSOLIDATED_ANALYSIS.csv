@@ -1,0 +1,88 @@
+COMPREHENSIVE MODEL EVALUATION ANALYSIS
+====================================================================================================
+
+SECTION 1: INTER-ANNOTATOR AGREEMENT BY THEME
+--------------------------------------------------
+Theme,Theme Display,Fleiss Kappa,Agreement Level,Support Consensus,Prevalence Pct,Agreement Rate Pct,Annotator Std,Support Shdin,Support Jeremy,Support Jdrouin,Support Benjamincarignan
+theme_indigenous_affairs,Indigenous Affairs,1.0,Almost Perfect,0,0.0,100.0,0.0,0,0,0,0
+theme_labor,Labor,0.853,Almost Perfect,7,2.8112,98.3936,1.2247,7,8,8,5
+theme_housing,Housing,0.8456,Almost Perfect,13,5.2209,97.1888,1.8028,13,10,12,15
+theme_environment,Environment,0.7693,Substantial,12,4.8193,95.9839,1.479,12,11,10,14
+theme_technology,Technology,0.7662,Substantial,3,1.2048,98.7952,0.433,4,3,3,3
+theme_health,Health,0.7264,Substantial,15,6.0241,93.9759,1.0897,15,15,17,14
+theme_immigration,Immigration,0.7102,Substantial,3,1.2048,98.3936,1.118,3,4,2,5
+theme_transportation,Transportation,0.6901,Substantial,6,2.4096,97.5904,1.8028,5,3,8,6
+theme_macroeconomics,Macroeconomics,0.6427,Substantial,28,11.245,88.3534,5.3561,23,22,35,23
+theme_rights_liberties_minorities_discrimination,Rights Liberties Minorities Discrimination,0.6351,Substantial,10,4.0161,95.1807,3.3448,7,7,15,8
+theme_foreign_trade,Foreign Trade,0.6258,Substantial,6,2.4096,97.1888,0.7071,5,5,4,6
+theme_social_welfare,Social Welfare,0.5857,Moderate,10,4.0161,93.9759,4.5,9,6,18,9
+theme_international_affairs,International Affairs,0.5525,Moderate,25,10.0402,85.9438,7.1545,29,23,28,11
+theme_law_and_crime,Law And Crime,0.5457,Moderate,15,6.0241,89.5582,4.5,15,12,24,15
+theme_energy,Energy,0.5238,Moderate,7,2.8112,96.7871,3.0,2,2,8,8
+theme_governments_governance,Governments Governance,0.448,Moderate,40,16.0643,75.9036,10.4403,47,41,37,19
+theme_domestic_commerce,Domestic Commerce,0.4365,Moderate,7,2.8112,94.3775,0.7071,7,8,6,7
+theme_education,Education,0.4215,Moderate,3,1.2048,96.3855,1.479,5,2,6,4
+theme_agriculture,Agriculture,0.3279,Fair,2,0.8032,97.992,1.5811,3,0,1,4
+theme_culture_nationalism,Culture Nationalism,0.3266,Fair,3,1.2048,97.5904,1.5,0,3,3,4
+theme_defense,Defense,0.2755,Fair,3,1.2048,96.3855,3.3541,2,0,9,3
+theme_public_lands,Public Lands,0.2466,Fair,1,0.4016,96.3855,1.0897,5,3,3,2
+
+
+SECTION 2: MODEL PERFORMANCE BY AGREEMENT LEVEL
+--------------------------------------------------
+Model,Almost Perfect F1,Almost Perfect Prec,Almost Perfect Rec,Almost Perfect N,Substantial F1,Substantial Prec,Substantial Rec,Substantial N,Moderate F1,Moderate Prec,Moderate Rec,Moderate N,Fair F1,Fair Prec,Fair Rec,Fair N,Overall F1,Overall Prec,Overall Rec,Overall N
+GPT-4.1 (L),0.098,0.095,0.100,20,0.138,0.123,0.157,83,0.132,0.119,0.150,107,0.118,0.125,0.111,9,0.131,0.119,0.146,219
+GPT-5 (L),0.100,0.100,0.100,20,0.129,0.126,0.133,83,0.123,0.124,0.121,107,0.105,0.100,0.111,9,0.122,0.122,0.123,219
+GPT-OSS (L),0.103,0.105,0.100,20,0.144,0.125,0.169,83,0.112,0.111,0.112,107,0.100,0.091,0.111,9,0.124,0.116,0.132,219
+Gemma (L),0.093,0.087,0.100,20,0.139,0.125,0.157,83,0.096,0.090,0.103,107,0.000,0.000,0.000,9,0.109,0.101,0.119,219
+Llama (L),0.098,0.095,0.100,20,0.164,0.131,0.217,83,0.070,0.066,0.075,107,0.080,0.062,0.111,9,0.113,0.098,0.132,219
+Manual,0.051,0.053,0.050,20,0.108,0.123,0.096,83,0.129,0.127,0.131,107,0.000,0.000,0.000,9,0.110,0.116,0.105,219
+Nemotron (L),0.100,0.100,0.100,20,0.125,0.118,0.133,83,0.088,0.083,0.093,107,0.111,0.111,0.111,9,0.104,0.099,0.110,219
+
+
+SECTION 3: HUMAN BASELINE
+--------------------------------------------------
+annotator,All Themes,Almost Perfect,Fair,Moderate,Substantial
+Annotator 1,0.787,0.95,0.421,0.751,0.841
+Annotator 2,0.811,0.895,0.533,0.796,0.837
+Annotator 3,0.731,0.95,0.4,0.692,0.78
+Annotator 4,0.807,0.9,0.818,0.722,0.877
+
+
+SECTION 4: PER-THEME MODEL F1 (sorted by agreement)
+--------------------------------------------------
+subcategory,Kappa,GPT-4.1 (L),GPT-5 (L),GPT-OSS (L),Gemma (L),Llama (L),Manual,Nemotron (L)
+Indigenous Affairs,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+Labor,0.853,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+Housing,0.846,0.143,0.148,0.154,0.148,0.143,0.08,0.148
+Environment,0.769,0.077,0.087,0.077,0.074,0.059,0.091,0.077
+Technology,0.766,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+Health,0.726,0.067,0.0,0.069,0.071,0.053,0.065,0.0
+Immigration,0.71,0.0,0.333,0.4,0.333,0.4,0.0,0.286
+Transportation,0.69,0.0,0.0,0.0,0.0,0.133,0.0,0.0
+Macroeconomics,0.643,0.269,0.233,0.261,0.225,0.262,0.245,0.235
+Rights Liberties Minorities Discrimination,0.635,0.133,0.167,0.114,0.125,0.207,0.0,0.154
+Foreign Trade,0.626,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+Social Welfare,0.586,0.133,0.0,0.133,0.087,0.0,0.0,0.111
+International Affairs,0.553,0.045,0.14,0.098,0.053,0.045,0.157,0.044
+Law And Crime,0.546,0.105,0.129,0.0,0.059,0.0,0.0,0.061
+Energy,0.524,0.2,0.222,0.182,0.0,0.0,0.154,0.0
+Governments Governance,0.448,0.222,0.152,0.157,0.158,0.163,0.158,0.156
+Domestic Commerce,0.437,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+Education,0.421,0.0,0.0,0.0,0.0,0.0,0.286,0.0
+Agriculture,0.328,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+Culture Nationalism,0.327,0.4,0.4,0.2,0.0,0.286,0.0,0.4
+Defense,0.276,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+Public Lands,0.247,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+
+
+SECTION 5: CORRELATION ANALYSIS
+--------------------------------------------------
+model,pearson_f1_vs_kappa,pearson_p_value,spearman_f1_vs_kappa,spearman_p_value,pearson_f1_vs_support,support_p_value,n_themes
+GPT-4.1 (L),-0.0989,0.6698,0.0385,0.8684,0.4296,0.052,21
+GPT-5 (L),0.0053,0.9818,0.0589,0.7997,0.2258,0.3251,21
+GPT-OSS (L),0.1909,0.4072,0.1629,0.4806,0.2917,0.1995,21
+Gemma (L),0.3571,0.112,0.4138,0.0622,0.4426,0.0445,21
+Llama (L),0.1728,0.4539,0.2918,0.1994,0.2138,0.3521,21
+Nemotron (L),0.0184,0.937,0.1361,0.5565,0.221,0.3358,21
+Manual,-0.0081,0.9722,0.0773,0.7392,0.5218,0.0153,21
