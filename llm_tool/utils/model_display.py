@@ -725,13 +725,13 @@ def display_all_models(
         lang_str = ', '.join(sorted(languages))
         title += f" (filtered for {lang_str})"
 
-    table = Table(title=title, box=box.ROUNDED, show_lines=False, expand=True)
-    table.add_column("#", style="cyan", width=4, no_wrap=True)
-    table.add_column("Model ID", style="white", no_wrap=True)
-    table.add_column("Languages", style="yellow", no_wrap=True)
-    table.add_column("Max Length", style="green", justify="center", no_wrap=True)
-    table.add_column("Size", style="magenta", justify="center", no_wrap=True)
-    table.add_column("Description", style="dim", ratio=1, overflow="fold")
+    table = Table(title=title, box=box.ROUNDED, show_lines=False)
+    table.add_column("#", style="cyan", width=4)
+    table.add_column("Model ID", style="white", width=50)
+    table.add_column("Languages", style="yellow", width=12)
+    table.add_column("Max Length", style="green", width=12, justify="center")
+    table.add_column("Size", style="magenta", width=8, justify="center")
+    table.add_column("Description", style="dim", width=45)
 
     # Add rows
     for idx, (model_id, meta, score) in enumerate(scored_models, 1):

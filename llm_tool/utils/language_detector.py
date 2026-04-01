@@ -543,19 +543,34 @@ class LanguageDetector:
             max_workers = min(max(4, int(cpu_count * 0.75)), 32)
 
         if parallel and len(texts) > 10:
-            from concurrent.futures import ThreadPoolExecutor
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            # Use chunksize to avoid submitting millions of tiny tasks individually
+            chunksize = max(1, len(texts) // (max_workers * 20))
+
+            def _detect_chunk(chunk: List[str]) -> List[Dict[str, Any]]:
+                return [self.detect(t) for t in chunk]
+
+            chunks = [texts[i:i + chunksize] for i in range(0, len(texts), chunksize)]
 
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 if use_progress:
-                    # Force tqdm to write to stderr for better terminal visibility
                     with tqdm(total=len(texts), desc=f"{desc} ({max_workers} workers)", unit="text", leave=True,
                              file=sys.stderr, ncols=100, dynamic_ncols=True) as pbar:
                         results: List[Dict[str, Any]] = []
-                        for result in executor.map(self.detect, texts):
-                            results.append(result)
-                            pbar.update()
+                        futures = {executor.submit(_detect_chunk, chunk): idx for idx, chunk in enumerate(chunks)}
+                        chunk_results: Dict[int, List[Dict[str, Any]]] = {}
+                        for future in as_completed(futures):
+                            idx = futures[future]
+                            chunk_result = future.result()
+                            chunk_results[idx] = chunk_result
+                            pbar.update(len(chunk_result))
+                        for idx in range(len(chunks)):
+                            results.extend(chunk_results[idx])
                 else:
-                    results = list(executor.map(self.detect, texts))
+                    results = []
+                    for chunk_result in executor.map(_detect_chunk, chunks):
+                        results.extend(chunk_result)
         else:
             iterator = texts
             results = []

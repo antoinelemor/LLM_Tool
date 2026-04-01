@@ -867,9 +867,9 @@ class BERTAnnotationStudio:
             if action is None:
                 if self.console:
                     if Table and Panel:
-                        options_table = Table(show_header=False, box=box.ROUNDED if box else None, padding=(0, 2), expand=True)
-                        options_table.add_column("Option", style="cyan", no_wrap=True)
-                        options_table.add_column("Description", style="white", ratio=1, overflow="fold")
+                        options_table = Table(show_header=False, box=box.ROUNDED if box else None, padding=(0, 2))
+                        options_table.add_column("Option", style="cyan", width=8)
+                        options_table.add_column("Description", style="white")
                         options_table.add_row("[bold cyan]1[/bold cyan]", "🆕 Start new session (recommended)")
                         options_table.add_row("[bold cyan]2[/bold cyan]", "🔄 Resume existing session")
                         options_table.add_row("[bold cyan]3[/bold cyan]", "📚 View session history")
@@ -1656,10 +1656,10 @@ class BERTAnnotationStudio:
         population = len(df)
         cochran_n = cochran_sample_size(population)
 
-        tbl = Table(title="Sampling Strategy", box=box.ROUNDED, expand=True)
+        tbl = Table(title="Sampling Strategy", box=box.ROUNDED)
         tbl.add_column("#", style="bold cyan", width=3)
-        tbl.add_column("Mode", style="bold white", no_wrap=True)
-        tbl.add_column("Description", ratio=1, overflow="fold")
+        tbl.add_column("Mode", style="bold white")
+        tbl.add_column("Description")
         tbl.add_row("1", "Fixed size", "Choose a specific number of examples (e.g. 100, 500)")
         tbl.add_row("2", "Random", "Random N with reproducible seed")
         tbl.add_row(
@@ -2177,10 +2177,9 @@ class BERTAnnotationStudio:
             box=box.ROUNDED,
             show_lines=True,
             title_style="bold green",
-            expand=True,
         )
-        summary_tbl.add_column("", style="bold cyan", no_wrap=True)
-        summary_tbl.add_column("", overflow="fold", ratio=1)
+        summary_tbl.add_column("", style="bold cyan", width=24)
+        summary_tbl.add_column("", overflow="fold")
 
         summary_tbl.add_row("Pushed", f"[bold green]{pushed:,}[/bold green] examples")
         if queued:
@@ -2247,14 +2246,14 @@ class BERTAnnotationStudio:
         ordered_models = list(models)
         show_table = len(ordered_models) > 1 and not self._factory_launch_active
         if show_table:
-            summary = Table(title="Selected Models", box=box.ROUNDED, show_lines=False, expand=True)
+            summary = Table(title="Selected Models", box=box.ROUNDED, show_lines=False)
             summary.add_column("#", style="cyan", justify="center", width=4)
-            summary.add_column("Model", style="green", overflow="fold", ratio=2)
-            summary.add_column("Task", style="bright_white", no_wrap=True)
-            summary.add_column("Lang", style="magenta", justify="center", no_wrap=True)
-            summary.add_column("Labels", style="cyan", justify="right", no_wrap=True)
-            summary.add_column("Categories", style="white", overflow="fold", ratio=1)
-            summary.add_column("Macro F1", style="bright_white", justify="right", no_wrap=True)
+            summary.add_column("Model", style="green", overflow="fold")
+            summary.add_column("Task", style="bright_white", overflow="ellipsis")
+            summary.add_column("Lang", style="magenta", justify="center", width=8)
+            summary.add_column("Labels", style="cyan", justify="right", width=6)
+            summary.add_column("Categories", style="white", overflow="fold")
+            summary.add_column("Macro F1", style="bright_white", justify="right", width=10)
 
             for idx, model in enumerate(ordered_models, 1):
                 macro = model['metrics'].get('macro_f1')
@@ -2337,12 +2336,12 @@ class BERTAnnotationStudio:
 
         while True:
             reducers = [entry for entry in plan]
-            reducer_table = Table(box=box.ROUNDED, title="Available Reducers", expand=True)
+            reducer_table = Table(box=box.ROUNDED, title="Available Reducers")
             reducer_table.add_column("#", style="cyan", justify="center", width=4)
-            reducer_table.add_column("Model", style="green", overflow="fold", ratio=1)
-            reducer_table.add_column("Task", style="bright_white", no_wrap=True)
-            reducer_table.add_column("Lang", style="magenta", justify="center", no_wrap=True)
-            reducer_table.add_column("Labels", style="cyan", justify="right", no_wrap=True)
+            reducer_table.add_column("Model", style="green", overflow="fold")
+            reducer_table.add_column("Task", style="bright_white", overflow="ellipsis")
+            reducer_table.add_column("Lang", style="magenta", justify="center", width=8)
+            reducer_table.add_column("Labels", style="cyan", justify="right", width=6)
             for idx, entry in enumerate(reducers, 1):
                 model_info = entry["info"]
                 id2label_pairs = model_info.get("id2label_pairs") or []
@@ -2372,9 +2371,9 @@ class BERTAnnotationStudio:
                 self.console.print("[yellow]Reducer has no label names; skipping.[/yellow]")
                 continue
 
-            label_table = Table(box=box.ROUNDED, title="Reducer Labels", expand=True)
+            label_table = Table(box=box.ROUNDED, title="Reducer Labels")
             label_table.add_column("#", style="cyan", justify="center", width=4)
-            label_table.add_column("Label", style="green", ratio=1, overflow="fold")
+            label_table.add_column("Label", style="green")
             for idx, label in enumerate(labels, 1):
                 label_table.add_row(str(idx), label)
             self._print_table(label_table)
@@ -2401,12 +2400,12 @@ class BERTAnnotationStudio:
                 self.console.print("[yellow]No models are currently available for cascading.[/yellow]")
                 break
 
-            children_table = Table(box=box.ROUNDED, title="Attach Child Models to Positive Slice", expand=True)
+            children_table = Table(box=box.ROUNDED, title="Attach Child Models to Positive Slice")
             children_table.add_column("#", style="cyan", justify="center", width=4)
-            children_table.add_column("Model", style="green", overflow="fold", ratio=2)
-            children_table.add_column("Task", style="bright_white", no_wrap=True)
-            children_table.add_column("Lang", style="magenta", justify="center", no_wrap=True)
-            children_table.add_column("Current scope", style="yellow", overflow="fold", ratio=1)
+            children_table.add_column("Model", style="green", overflow="fold")
+            children_table.add_column("Task", style="bright_white", overflow="ellipsis")
+            children_table.add_column("Lang", style="magenta", justify="center", width=8)
+            children_table.add_column("Current scope", style="yellow", overflow="fold")
             for idx, entry in enumerate(available_children, 1):
                 info = entry["info"]
                 children_table.add_row(
@@ -2606,10 +2605,10 @@ class BERTAnnotationStudio:
             show_lines=True,
             expand=True
         )
-        preview_table.add_column("Model", style="bold cyan", no_wrap=True, overflow="fold")
-        preview_table.add_column("Column Name", style="green", no_wrap=True)
-        preview_table.add_column("Type", style="magenta", no_wrap=True)
-        preview_table.add_column("Description", style="white", overflow="fold", ratio=1)
+        preview_table.add_column("Model", style="bold cyan", width=25, overflow="fold")
+        preview_table.add_column("Column Name", style="green", width=35)
+        preview_table.add_column("Type", style="magenta", width=12)
+        preview_table.add_column("Description", style="white", width=40, overflow="fold")
 
         column_descriptions = {
             "label": ("Categorical", "Predicted class label (text)"),
@@ -2943,17 +2942,17 @@ class BERTAnnotationStudio:
         self.console.print("[dim]Select the model(s) that will be used to annotate your texts.[/dim]")
         self.console.print("[dim]You can chain multiple models: each will add its dedicated columns.[/dim]")
 
-        model_table = Table(title="Available Trained Models", box=box.ROUNDED, show_lines=False, expand=True)
-        model_table.add_column("#", style="cyan", width=4, justify="center", no_wrap=True)
-        model_table.add_column("Model", style="green", overflow="fold", ratio=2)
-        model_table.add_column("Task", style="bright_white", no_wrap=True)
-        model_table.add_column("Langs", style="magenta", no_wrap=True)
-        model_table.add_column("Labels", style="cyan", no_wrap=True, justify="right")
-        model_table.add_column("Categories", style="white", overflow="fold", ratio=1)
-        model_table.add_column("Macro F1", style="bright_white", no_wrap=True, justify="right")
+        model_table = Table(title="Available Trained Models", box=box.ROUNDED, show_lines=False)
+        model_table.add_column("#", style="cyan", width=4, justify="center")
+        model_table.add_column("Model", style="green", overflow="fold")
+        model_table.add_column("Task", style="bright_white", overflow="ellipsis")
+        model_table.add_column("Langs", style="magenta", width=12, overflow="fold")
+        model_table.add_column("Labels", style="cyan", width=6, justify="right")
+        model_table.add_column("Categories", style="white", overflow="fold")
+        model_table.add_column("Macro F1", style="bright_white", width=10, justify="right")
         model_table.add_column("Class F1", style="white", overflow="fold")
         model_table.add_column("Lang F1", style="white", overflow="fold")
-        model_table.add_column("Updated", style="dim", no_wrap=True)
+        model_table.add_column("Updated", style="dim", width=19)
 
         for idx, model_info in enumerate(model_entries, 1):
             macro = model_info['metrics'].get('macro_f1')
@@ -3076,14 +3075,14 @@ class BERTAnnotationStudio:
 
         chosen_models = [model_entries[idx - 1] for idx in selection]
 
-        summary = Table(title="Selected Models", box=box.ROUNDED, show_lines=False, expand=True)
+        summary = Table(title="Selected Models", box=box.ROUNDED, show_lines=False)
         summary.add_column("#", style="cyan", width=4, justify="center")
-        summary.add_column("Model", style="green", overflow="fold", ratio=2)
-        summary.add_column("Task", style="bright_white", no_wrap=True)
-        summary.add_column("Langs", style="magenta", no_wrap=True)
-        summary.add_column("Labels", style="cyan", no_wrap=True, justify="right")
-        summary.add_column("Categories", style="white", overflow="fold", ratio=1)
-        summary.add_column("Macro F1", style="bright_white", no_wrap=True, justify="right")
+        summary.add_column("Model", style="green", overflow="fold")
+        summary.add_column("Task", style="bright_white", overflow="ellipsis")
+        summary.add_column("Langs", style="magenta", width=12, overflow="fold")
+        summary.add_column("Labels", style="cyan", width=6, justify="right")
+        summary.add_column("Categories", style="white", overflow="fold")
+        summary.add_column("Macro F1", style="bright_white", width=10, justify="right")
         summary.add_column("Class F1", style="white", overflow="fold")
         summary.add_column("Lang F1", style="white", overflow="fold")
 
@@ -4294,10 +4293,10 @@ class BERTAnnotationStudio:
                 return None
 
             candidates.sort(key=lambda x: -x[1])
-            table = Table(title="Highly Unique Columns", box=box.ROUNDED, expand=True)
+            table = Table(title="Highly Unique Columns", box=box.ROUNDED)
             table.add_column("#", style="cyan", width=4)
-            table.add_column("Column", style="green", no_wrap=True)
-            table.add_column("Estimated uniqueness", style="magenta", justify="right", no_wrap=True)
+            table.add_column("Column", style="green")
+            table.add_column("Estimated uniqueness", style="magenta", justify="right")
             for idx, (col, ratio) in enumerate(candidates[:20], 1):
                 table.add_row(str(idx), col, f"{ratio*100:.1f}%")
             self._print_table(table)
@@ -4332,9 +4331,9 @@ class BERTAnnotationStudio:
                 ("3", "Generate sequential identifier"),
                 ("4", "Cancel annotation")
             ]
-            menu = Table(box=box.ROUNDED, expand=True)
+            menu = Table(box=box.ROUNDED)
             menu.add_column("#", style="cyan", width=4)
-            menu.add_column("Option", style="green", ratio=1, overflow="fold")
+            menu.add_column("Option", style="green")
             for key, label in options:
                 menu.add_row(key, label)
             self.console.print(menu)
@@ -4464,10 +4463,10 @@ class BERTAnnotationStudio:
         if eligible_index.empty:
             return
 
-        sample_table = Table(title="Upcoming Annotation Examples", box=box.ROUNDED, expand=True)
-        sample_table.add_column("Language", style="cyan", no_wrap=True)
-        sample_table.add_column("Row ID", style="green", no_wrap=True)
-        sample_table.add_column("Excerpt", style="white", overflow="fold", ratio=1)
+        sample_table = Table(title="Upcoming Annotation Examples", box=box.ROUNDED)
+        sample_table.add_column("Language", style="cyan", width=10)
+        sample_table.add_column("Row ID", style="green", width=14)
+        sample_table.add_column("Excerpt", style="white", overflow="fold")
 
         added = 0
         for lang in languages_to_annotate:
@@ -4558,11 +4557,11 @@ class BERTAnnotationStudio:
         gpu_name = resources.gpu.device_names[0] if gpu_available and resources.gpu.device_names else "—"
 
         # Display comprehensive summary
-        summary = Table(title="⚡ Parallelisation Configuration", box=box.ROUNDED, show_lines=True, expand=True)
+        summary = Table(title="⚡ Parallelisation Configuration", box=box.ROUNDED, show_lines=True)
         summary.add_column("#", style="dim", width=3)
-        summary.add_column("Parameter", style="cyan", no_wrap=True)
-        summary.add_column("Value", style="green", no_wrap=True)
-        summary.add_column("Description", style="dim", ratio=1, overflow="fold")
+        summary.add_column("Parameter", style="cyan", width=20)
+        summary.add_column("Value", style="green", width=15)
+        summary.add_column("Description", style="dim", width=50)
 
         summary.add_row("1", "Device mode", device_mode.upper(),
                        "CPU only, GPU only, or both in parallel")
@@ -4597,9 +4596,9 @@ class BERTAnnotationStudio:
 
         # Ask user what they want to do
         self.console.print("\n[bold cyan]What would you like to do?[/bold cyan]")
-        action_table = Table(box=box.SIMPLE, show_header=False, expand=True)
+        action_table = Table(box=box.SIMPLE, show_header=False)
         action_table.add_column("Option", style="cyan", width=4)
-        action_table.add_column("Action", style="white", ratio=1, overflow="fold")
+        action_table.add_column("Action", style="white")
         action_table.add_row("1", "✓ Accept this configuration")
         action_table.add_row("2", "✎ Modify parameters")
         action_table.add_row("3", "← Go back and choose another strategy")
@@ -4706,9 +4705,9 @@ class BERTAnnotationStudio:
 
         self.console.print("\n[cyan]Load the dataset you want to annotate. You can browse local files or connect to a database.[/cyan]\n")
 
-        source_table = Table(box=box.ROUNDED, expand=True)
-        source_table.add_column("#", style="cyan", width=4, no_wrap=True)
-        source_table.add_column("Data Source", style="green", ratio=1, overflow="fold")
+        source_table = Table(box=box.ROUNDED)
+        source_table.add_column("#", style="cyan", width=4)
+        source_table.add_column("Data Source", style="green", width=70)
 
         for idx, choice in enumerate(source_choices, 1):
             source_table.add_row(str(idx), choice)
@@ -4736,14 +4735,14 @@ class BERTAnnotationStudio:
             self.console.print(f"\n[bold cyan]📊 Found {len(detected_datasets)} dataset(s) in {data_dir}:[/bold cyan]\n")
 
             # Create table with dataset preview
-            datasets_table = Table(title="Available Datasets", border_style="cyan", show_header=True, box=box.ROUNDED, expand=True)
-            datasets_table.add_column("#", style="bold yellow", width=4, no_wrap=True)
-            datasets_table.add_column("Filename", style="white", no_wrap=True)
-            datasets_table.add_column("Format", style="green", no_wrap=True)
-            datasets_table.add_column("Size", style="magenta", no_wrap=True)
-            datasets_table.add_column("Rows", style="cyan", no_wrap=True)
-            datasets_table.add_column("Columns", style="blue", no_wrap=True)
-            datasets_table.add_column("Preview", style="dim", overflow="fold", ratio=1)
+            datasets_table = Table(title="Available Datasets", border_style="cyan", show_header=True, box=box.ROUNDED)
+            datasets_table.add_column("#", style="bold yellow", width=4)
+            datasets_table.add_column("Filename", style="white", width=35)
+            datasets_table.add_column("Format", style="green", width=10)
+            datasets_table.add_column("Size", style="magenta", width=12)
+            datasets_table.add_column("Rows", style="cyan", width=10)
+            datasets_table.add_column("Columns", style="blue", width=10)
+            datasets_table.add_column("Preview", style="dim", width=40)
 
             for i, ds in enumerate(detected_datasets[:20], 1):
                 # Format size
@@ -4889,10 +4888,10 @@ class BERTAnnotationStudio:
         """Interactive SQL source selector with connection helper."""
         self.console.print("\n[cyan]Available database types[/cyan]\n")
 
-        db_table = Table(box=box.ROUNDED, expand=True)
+        db_table = Table(box=box.ROUNDED)
         db_table.add_column("#", style="cyan", width=4)
-        db_table.add_column("Database", style="green", no_wrap=True)
-        db_table.add_column("Driver Hint", style="dim", ratio=1, overflow="fold")
+        db_table.add_column("Database", style="green", width=30)
+        db_table.add_column("Driver Hint", style="dim", width=28)
         db_table.add_row("1", "PostgreSQL", "Requires psycopg2 or pg8000")
         db_table.add_row("2", "MySQL / MariaDB", "Requires pymysql or mysqlclient")
         db_table.add_row("3", "SQLite", "Built-in (file path or :memory:)")
@@ -4978,9 +4977,9 @@ class BERTAnnotationStudio:
 
         schema = inspector.default_schema_name
         if schemas and len(schemas) > 1:
-            schema_table = Table(box=box.ROUNDED, expand=True)
+            schema_table = Table(box=box.ROUNDED)
             schema_table.add_column("#", style="cyan", width=4)
-            schema_table.add_column("Schema", style="green", ratio=1, overflow="fold")
+            schema_table.add_column("Schema", style="green", width=30)
             for idx, sch in enumerate(schemas, 1):
                 schema_table.add_row(str(idx), sch)
             self.console.print("\n[cyan]Available schemas[/cyan]")
@@ -5001,9 +5000,9 @@ class BERTAnnotationStudio:
 
         tables = sorted(tables)
 
-        table_table = Table(box=box.ROUNDED, expand=True)
+        table_table = Table(box=box.ROUNDED)
         table_table.add_column("#", style="cyan", width=4)
-        table_table.add_column("Table", style="green", ratio=1, overflow="fold")
+        table_table.add_column("Table", style="green")
         if tables:
             for idx, table_name in enumerate(tables[:50], 1):
                 table_table.add_row(str(idx), table_name)
@@ -5150,14 +5149,13 @@ class BERTAnnotationStudio:
                 title=f"Dataset Overview ({len(column_names)} columns, {total_rows:,} rows)",
                 box=box.ROUNDED,
                 show_lines=False,
-                expand=True,
             )
-            overview_table.add_column("#", style="cyan", width=4, no_wrap=True)
-            overview_table.add_column("Column Name", style="green", no_wrap=True)
-            overview_table.add_column("Type", style="yellow", no_wrap=True)
-            overview_table.add_column("Missing %", style="magenta", justify="right", no_wrap=True)
-            overview_table.add_column("Unique", style="cyan", justify="right", no_wrap=True)
-            overview_table.add_column("Sample Values", style="white", overflow="fold", ratio=1)
+            overview_table.add_column("#", style="cyan", width=4)
+            overview_table.add_column("Column Name", style="green", width=30)
+            overview_table.add_column("Type", style="yellow", width=12)
+            overview_table.add_column("Missing %", style="magenta", justify="right", width=10)
+            overview_table.add_column("Unique", style="cyan", justify="right", width=10)
+            overview_table.add_column("Sample Values", style="white", width=40, overflow="fold")
 
             for idx, col_name in enumerate(column_names, 1):
                 series = df[col_name]
@@ -5265,11 +5263,11 @@ class BERTAnnotationStudio:
 
             id_column = None
             if id_candidates:
-                id_table = Table(title="Candidate ID Columns", box=box.ROUNDED, expand=True)
+                id_table = Table(title="Candidate ID Columns", box=box.ROUNDED)
                 id_table.add_column("#", style="cyan", width=4)
-                id_table.add_column("Column", style="green", no_wrap=True)
-                id_table.add_column("Type", style="yellow", no_wrap=True)
-                id_table.add_column("Unique %", style="cyan", no_wrap=True, justify="right")
+                id_table.add_column("Column", style="green", width=30)
+                id_table.add_column("Type", style="yellow", width=12)
+                id_table.add_column("Unique %", style="cyan", width=10, justify="right")
                 for idx, candidate in enumerate(id_candidates, 1):
                     id_table.add_row(
                         str(idx),
@@ -5359,10 +5357,10 @@ class BERTAnnotationStudio:
         self.console.print("\n[cyan]We need to determine the language(s) of your dataset.[/cyan]")
         self.console.print("[cyan]You can set a single language manually, reuse an existing column, or run auto-detection.[/cyan]\n")
 
-        lang_method_table = Table(title="Language Detection Method", box=box.ROUNDED, expand=True)
+        lang_method_table = Table(title="Language Detection Method", box=box.ROUNDED)
         lang_method_table.add_column("#", style="cyan", width=4)
-        lang_method_table.add_column("Method", style="green", no_wrap=True)
-        lang_method_table.add_column("Description", style="white", overflow="fold", ratio=1)
+        lang_method_table.add_column("Method", style="green", width=35)
+        lang_method_table.add_column("Description", style="white", overflow="fold")
         lang_method_table.add_row("1", "Set language manually", "All rows share the same language (e.g. FR, EN, DE)")
         lang_method_table.add_row("2", "Use an existing column", "Reuse a column that already contains language codes")
         lang_method_table.add_row("3", "Auto-detect", "Detect language for every row (slow on large datasets)")
@@ -5402,10 +5400,10 @@ class BERTAnnotationStudio:
                     candidate_language_columns.append({'name': col, 'counts': counts})
 
             if candidate_language_columns:
-                lang_table = Table(title="Detected Language Columns", box=box.ROUNDED, expand=True)
+                lang_table = Table(title="Detected Language Columns", box=box.ROUNDED)
                 lang_table.add_column("#", style="cyan", width=4)
-                lang_table.add_column("Column", style="green", no_wrap=True)
-                lang_table.add_column("Languages", style="magenta", overflow="fold", ratio=1)
+                lang_table.add_column("Column", style="green", width=30)
+                lang_table.add_column("Languages", style="magenta", overflow="fold")
                 for idx, candidate in enumerate(candidate_language_columns, 1):
                     lang_summary = ", ".join(
                         f"{lang.upper()} ({count})" for lang, count in candidate['counts'].items()
@@ -5731,9 +5729,9 @@ class BERTAnnotationStudio:
 
         self.console.print("\n[cyan]Tune how inference workers run and decide how much of the dataset to annotate.[/cyan]\n")
 
-        resource_table = Table(title="Detected Resources", box=box.ROUNDED, expand=True)
-        resource_table.add_column("Component", style="cyan", no_wrap=True)
-        resource_table.add_column("Details", style="green", overflow="fold", ratio=1)
+        resource_table = Table(title="Detected Resources", box=box.ROUNDED)
+        resource_table.add_column("Component", style="cyan", width=16)
+        resource_table.add_column("Details", style="green", overflow="fold")
         resource_table.add_row("GPU", "Available" if gpu_available else "CPU only")
         if gpu_available:
             resource_table.add_row("GPU Type", ", ".join(resources.gpu.device_names) or resources.gpu.device_type.upper())
@@ -5744,10 +5742,10 @@ class BERTAnnotationStudio:
 
         annotation_config: Dict[str, Any] = {}
         while True:
-            strategy_table = Table(title="Parallelisation Strategies", box=box.ROUNDED, expand=True)
+            strategy_table = Table(title="Parallelisation Strategies", box=box.ROUNDED)
             strategy_table.add_column("#", style="cyan", width=4)
-            strategy_table.add_column("Strategy", style="green", no_wrap=True)
-            strategy_table.add_column("Description", style="magenta", overflow="fold", ratio=1)
+            strategy_table.add_column("Strategy", style="green", width=26)
+            strategy_table.add_column("Description", style="magenta", overflow="fold")
             strategy_table.add_row("1", "Auto (recommended)", "Balance CPU and GPU workers automatically using detected hardware.")
             if gpu_available:
                 strategy_table.add_row("2", "GPU only", "Force workloads onto the GPU for maximum throughput.")
@@ -5824,10 +5822,10 @@ class BERTAnnotationStudio:
         self.console.print(f"[dim]Rows detected: {total_rows:,}[/dim]")
         self.console.print("[dim]Choose how much of the dataset you want to annotate in this run.[/dim]\n")
 
-        coverage_table = Table(box=box.ROUNDED, expand=True)
+        coverage_table = Table(box=box.ROUNDED)
         coverage_table.add_column("#", style="cyan", width=4)
-        coverage_table.add_column("Mode", style="green", no_wrap=True)
-        coverage_table.add_column("When to use it", style="magenta", overflow="fold", ratio=1)
+        coverage_table.add_column("Mode", style="green", width=18)
+        coverage_table.add_column("When to use it", style="magenta", overflow="fold")
         coverage_table.add_row(
             "1",
             "Full dataset",
@@ -5900,10 +5898,10 @@ class BERTAnnotationStudio:
             if write_back_sql:
                 self.console.print(f"[green]✓ New annotation columns will be added directly to '{table_name}' in '{db_name}'.[/green]")
 
-        format_table = Table(box=box.ROUNDED, expand=True)
+        format_table = Table(box=box.ROUNDED)
         format_table.add_column("#", style="cyan", width=4)
-        format_table.add_column("Format", style="green", no_wrap=True)
-        format_table.add_column("When it shines", style="magenta", overflow="fold", ratio=1)
+        format_table.add_column("Format", style="green", width=12)
+        format_table.add_column("When it shines", style="magenta", overflow="fold")
         format_table.add_row("1", "CSV", "Universal compatibility with spreadsheets and BI tools.")
         format_table.add_row("2", "JSONL", "Great for incremental ingestion or downstream ML pipelines.")
         format_table.add_row("3", "Parquet", "Columnar format for large datasets and analytics engines.")
@@ -6108,9 +6106,9 @@ class BERTAnnotationStudio:
                     return True
 
             if self.console:
-                summary_table = Table(title="Annotation Run Summary", box=box.ROUNDED, expand=True)
-                summary_table.add_column("Section", style="cyan", no_wrap=True)
-                summary_table.add_column("Details", style="white", overflow="fold", ratio=1)
+                summary_table = Table(title="Annotation Run Summary", box=box.ROUNDED)
+                summary_table.add_column("Section", style="cyan", width=18)
+                summary_table.add_column("Details", style="white", overflow="fold")
 
                 data_desc = data_source.get("path") or data_source.get("display_name") or data_source.get("type", "dataset")
                 summary_table.add_row("Dataset", str(data_desc))
@@ -6548,11 +6546,7 @@ class BERTAnnotationStudio:
                         probability_column = columns.get("probability")
 
                         # Determine category name from scope or model path
-                        scope = entry.get("scope")
-                        if isinstance(scope, dict):
-                            category_name = scope.get("type", "full")
-                        else:
-                            category_name = scope or entry.get("id") or f"category_{entry_idx}"
+                        category_name = entry.get("scope") or entry.get("id") or f"category_{entry_idx}"
 
                         # Generate chart for this model
                         chart_path = generate_bert_annotation_chart(
