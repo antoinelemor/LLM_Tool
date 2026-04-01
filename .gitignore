@@ -101,6 +101,7 @@ __pycache__/
 CLAUDE.md
 /scripts/
 !paper/scripts/
+guide/
 
 # Paper — LaTeX build artifacts
 paper/latex/*.aux

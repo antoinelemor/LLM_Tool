@@ -315,6 +315,7 @@ class LLMAnnotator:
         self.local_client = None
         self.progress_bar = None
         self.last_annotation = None  # Store last successful annotation for display
+        self.doccano_sync = None  # DoccanoSyncClient, set externally before annotate()
 
     def annotate(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -340,6 +341,10 @@ class LLMAnnotator:
         # Reset counters to avoid leaking state across multiple runs
         global status_counts
         status_counts = {"success": 0, "error": 0, "cleaning_failed": 0, "decode_error": 0}
+
+        # Wire Doccano sync client if provided in config
+        if config.get('doccano_sync_client'):
+            self.doccano_sync = config['doccano_sync_client']
 
         # Validate configuration
         self.logger.info("[ANNOTATOR] Validating config...")
@@ -647,6 +652,17 @@ class LLMAnnotator:
             if config.get('use_sample', False):
                 data_to_annotate = data_to_annotate.sample(n=sample_size, random_state=42)
                 self.logger.info(f"Using sample of {sample_size} rows")
+
+        # Doccano rewrite filter: restrict to matched rows only
+        doccano_rewrite_ids = config.get('doccano_rewrite_ids')
+        if doccano_rewrite_ids is not None:
+            rewrite_set = set(str(x) for x in doccano_rewrite_ids)
+            id_col = config.get('identifier_column', 'identifier')
+            before = len(data_to_annotate)
+            data_to_annotate = data_to_annotate[
+                data_to_annotate[id_col].astype(str).isin(rewrite_set)
+            ].copy()
+            self.logger.info("Doccano rewrite filter: %d -> %d rows", before, len(data_to_annotate))
 
         # Prepare for parallel processing
         use_parallel = config.get('use_parallel', True)
@@ -1201,6 +1217,20 @@ class LLMAnnotator:
                     self.last_annotation = json.loads(final_json) if isinstance(final_json, str) else final_json
                 except:
                     pass
+
+                # Live sync to Doccano
+                if self.doccano_sync:
+                    try:
+                        text_cols = task.get('text_columns', [])
+                        row = task.get('row')
+                        sync_text = str(row[text_cols[0]]) if text_cols and row is not None else str(identifier)
+                        self.doccano_sync.push(
+                            text=sync_text,
+                            annotation=self.last_annotation or {},
+                            meta={"identifier": str(identifier), "inference_time": inference_time}
+                        )
+                    except Exception as sync_err:
+                        self.logger.debug(f"Doccano sync error (queued): {sync_err}")
             else:
                 status_counts['error'] += 1
                 consecutive_row_failures += 1
@@ -1400,6 +1430,14 @@ class LLMAnnotator:
             except:
                 pass
             self.progress_callback(total_tasks, total_tasks, f"Completed annotation of {total_tasks} items")
+
+        # Finalize Doccano sync
+        if self.doccano_sync:
+            sync_stats = self.doccano_sync.stop()
+            if sync_stats.get('remaining_queue', 0) > 0:
+                self.logger.warning(f"Doccano sync: {sync_stats['remaining_queue']} items remain in offline queue")
+            else:
+                self.logger.info(f"Doccano sync: all {sync_stats['pushed']} items pushed successfully")
 
         return full_data
 
@@ -2452,8 +2490,12 @@ class LLMAnnotator:
         log_entries_buffer = []      # Batch log writes
         last_final_payload = None    # For self.last_annotation
 
-        completed_rows = 0
-        progress_interval = max(1, total_rows // 100) if total_rows > 100 else 1
+        if self.progress_callback:
+            self.progress_callback(
+                total_rows,
+                total_rows,
+                f"Consolidating {total_rows} batch results…"
+            )
 
         for identifier_key, custom_ids in per_row_custom_ids.items():
             meta = request_metadata[custom_ids[0]]
@@ -2512,14 +2554,6 @@ class LLMAnnotator:
                     'usage_summary': usage_totals,
                 })
 
-            completed_rows += 1
-            if self.progress_callback and (completed_rows % progress_interval == 0 or completed_rows == total_rows):
-                self.progress_callback(
-                    completed_rows,
-                    total_rows,
-                    f"Annotated {completed_rows}/{total_rows} items via OpenAI batch"
-                )
-
         # Bulk DataFrame assignment (2 calls instead of N*2)
         if annotation_values:
             idx_list = list(annotation_values.keys())
@@ -2564,6 +2598,37 @@ class LLMAnnotator:
             with open(log_path_obj, 'a', encoding='utf-8') as f:
                 for entry in log_entries_buffer:
                     f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+
+        # Push batch results to Doccano if sync is active
+        if self.doccano_sync:
+            doccano_items = []
+            for identifier_key, custom_ids in per_row_custom_ids.items():
+                meta_info = request_metadata[custom_ids[0]]
+                row_state = row_results.get(identifier_key, {})
+                final_payload = row_state.get('merged', {})
+                if not final_payload:
+                    continue
+                row_idx = row_state.get('row_index')
+                if row_idx is not None and row_idx in full_data.index and text_columns:
+                    text_val = str(full_data.loc[row_idx, text_columns[0]])
+                else:
+                    text_val = str(meta_info['identifier'])
+                doccano_items.append({
+                    "text": text_val,
+                    "annotation": final_payload,
+                    "meta": {"identifier": str(meta_info['identifier'])},
+                })
+            if doccano_items:
+                try:
+                    batch_stats = self.doccano_sync.push_batch(doccano_items)
+                    self.logger.info(
+                        "[BATCH] Doccano sync: pushed=%s, queued=%s, errors=%s",
+                        batch_stats.get('pushed', 0),
+                        batch_stats.get('queued', 0),
+                        batch_stats.get('errors', 0),
+                    )
+                except Exception as sync_exc:
+                    self.logger.warning("[BATCH] Doccano batch push failed: %s", sync_exc)
 
         if save_incrementally and output_path:
             self.logger.info("[BATCH] Batch mode overrides incremental saves; writing final dataset once.")
@@ -2627,6 +2692,14 @@ class LLMAnnotator:
             prompt_count,
             save_success
         )
+
+        # Finalize Doccano sync for batch mode
+        if self.doccano_sync:
+            sync_stats = self.doccano_sync.stop()
+            if sync_stats.get('remaining_queue', 0) > 0:
+                self.logger.warning("[BATCH] Doccano sync: %d items remain in offline queue", sync_stats['remaining_queue'])
+            else:
+                self.logger.info("[BATCH] Doccano sync: all %d items pushed successfully", sync_stats.get('pushed', 0))
 
         return full_data
 

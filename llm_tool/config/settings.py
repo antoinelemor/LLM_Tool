@@ -176,6 +176,14 @@ class SchedulerConfig:
     cpu_grace_tasks: int = 1                 # Tasks CPU can take before cutoff active
 
 
+@dataclass
+class InferAPIConfig:
+    """Configuration for Infer API / Doccano integration"""
+    url: str = ""
+    username: str = ""
+    password: str = ""
+
+
 class Settings:
     """Main settings manager for LLMTool"""
 
@@ -191,6 +199,7 @@ class Settings:
         self.language = LanguageConfig()
         self.paths = PathConfig()
         self.logging = LoggingConfig()
+        self.infer_api = InferAPIConfig()
 
         # Initialize API key manager
         if HAS_KEY_MANAGER:
@@ -284,6 +293,8 @@ class Settings:
                 self.paths = PathConfig(**loaded_paths)
             if 'logging' in config_data:
                 self.logging = LoggingConfig(**config_data['logging'])
+            if 'infer_api' in config_data:
+                self.infer_api = InferAPIConfig(**config_data['infer_api'])
 
             logging.info(f"Configuration loaded from {config_file}")
         except Exception as e:
@@ -300,7 +311,8 @@ class Settings:
             'training': asdict(self.training),
             'language': asdict(self.language),
             'paths': {k: str(v) for k, v in asdict(self.paths).items()},
-            'logging': asdict(self.logging)
+            'logging': asdict(self.logging),
+            'infer_api': asdict(self.infer_api)
         }
 
         # Remove None values
@@ -441,6 +453,25 @@ class Settings:
         """Get the full path for a validation file"""
         return self.paths.validation_dir / filename
 
+    def get_infer_api_url(self) -> str:
+        """Get saved Infer API / Doccano URL"""
+        return self.infer_api.url
+
+    def get_infer_api_username(self) -> str:
+        """Get saved Infer API / Doccano username"""
+        return self.infer_api.username
+
+    def get_infer_api_password(self) -> str:
+        """Get saved Infer API / Doccano password"""
+        return self.infer_api.password
+
+    def set_infer_api_credentials(self, url: str, username: str, password: str):
+        """Save Infer API / Doccano credentials"""
+        self.infer_api.url = url
+        self.infer_api.username = username
+        self.infer_api.password = password
+        self.save()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert all settings to dictionary"""
         return {
@@ -450,7 +481,8 @@ class Settings:
             'training': asdict(self.training),
             'language': asdict(self.language),
             'paths': {k: str(v) for k, v in asdict(self.paths).items()},
-            'logging': asdict(self.logging)
+            'logging': asdict(self.logging),
+            'infer_api': asdict(self.infer_api)
         }
 
     def get_system_recommendations(self) -> Dict[str, Any]:
