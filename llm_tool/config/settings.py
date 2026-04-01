@@ -294,7 +294,13 @@ class Settings:
             if 'logging' in config_data:
                 self.logging = LoggingConfig(**config_data['logging'])
             if 'infer_api' in config_data:
-                self.infer_api = InferAPIConfig(**config_data['infer_api'])
+                infer_data = config_data['infer_api']
+                # Compatibility: rename legacy 'api_url' key to 'url'
+                if 'api_url' in infer_data and 'url' not in infer_data:
+                    infer_data['url'] = infer_data.pop('api_url')
+                elif 'api_url' in infer_data:
+                    infer_data.pop('api_url')
+                self.infer_api = InferAPIConfig(**infer_data)
 
             logging.info(f"Configuration loaded from {config_file}")
         except Exception as e:
