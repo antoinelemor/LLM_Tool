@@ -3129,7 +3129,8 @@ class LLMAnnotator:
                     'id': entry_id,
                     'text': str(row[text_column]),
                     'label': [],
-                    'Comments': []
+                    'Comments': [],
+                    'annotation': annotation_data,
                 }
                 if entry_labels:
                     seen: Set[str] = set()
