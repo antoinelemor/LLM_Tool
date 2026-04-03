@@ -153,8 +153,6 @@ Hybrid approaches have explored various forms of collaboration between human exp
 \label{fig:hybrid_architecture}
 \end{figure}
 
-\subsection{Empirical Advances and Persistent Fragmentation}
-
 Despite these advances, existing hybrid systems remain fragmented. They generally rely on proprietary APIs, target narrow tasks or domains, and rarely provide reproducible infrastructures that other researchers can reuse. As several systematic reviews have underlined, reproducibility represents a persistent weakness in computational annotation. Even published methods that appear well-documented often fail to reproduce because of undocumented preprocessing steps, missing code, or unstable model versions \parencite{chen_etal23, weber_reichardt23}. The opacity of LLM mechanisms further complicates validation, as researchers have limited insight into why models produce particular outputs or when they fail \parencite{zhao_etal24}. 
 
 For commercial APIs, replication becomes nearly impossible once endpoints change or models are deprecated. These structural issues converge with the broader problem of validation inconsistency identified in the literature. Automated text analysis studies differ widely in their evaluation practices, often reporting predictive accuracy without verifying whether models capture the intended constructs or generalize beyond their training contexts \parencite{park_montgomery25, bernhard-harrer_etal25, glockner_etal20}. As \textcite{tornberg24b} and \textcite{atreja_etal24} have noted, this combination of opacity and instability has created what resembles a methodological “Wild West,” where prompt design and implementation details can decisively influence results.
