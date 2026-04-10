@@ -214,12 +214,11 @@ def run_interactive_mode(args):
         try:
             from .cli.advanced_cli import AdvancedCLI
             cli = AdvancedCLI()
-        except ImportError:
-            # Fallback to simple CLI
-            logging.info("Advanced CLI unavailable, using simple CLI")
-            logging.info("💡 For advanced features, install: pip install rich pandas psutil")
-            from .cli.main_cli import LLMToolCLI
-            cli = LLMToolCLI()
+        except Exception:
+            import traceback
+            print("\nADVANCED CLI FAILED TO LOAD:\n")
+            traceback.print_exc()
+            raise
     else:
         from .cli.main_cli import LLMToolCLI
         cli = LLMToolCLI()

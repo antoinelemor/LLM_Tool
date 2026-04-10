@@ -1243,11 +1243,27 @@ class AdvancedCLI:
 
             # Auto-detect models and system resources in background
             with self.console.status("[bold green]🔍 Scanning environment...", spinner="dots"):
+                print("DEBUG: starting LLM detection")
                 self.detected_llms = self.llm_detector.detect_all_llms()
+                print("DEBUG: LLM detection done")
+
+                print("DEBUG: starting trainer model catalog")
                 self.available_trainer_models = self.trainer_model_detector.get_available_models()
-                self.detected_datasets = self._detect_available_datasets()
-                # Detect system resources
-                self.system_resources = self.resource_detector.detect_all()
+                print("DEBUG: trainer model catalog done")
+
+                if os.name == "nt":
+                    print("DEBUG: skipping dataset scan on Windows")
+                    self.detected_datasets = []
+                    print("DEBUG: skipping system resource scan on Windows")
+                    self.system_resources = None
+                else:
+                    print("DEBUG: starting dataset scan")
+                    self.detected_datasets = self._detect_available_datasets()
+                    print("DEBUG: dataset scan done")
+
+                    print("DEBUG: starting resource detection")
+                    self.system_resources = self.resource_detector.detect_all()
+                    print("DEBUG: resource detection done")
 
             # Show detection results
             self._display_detection_results()
