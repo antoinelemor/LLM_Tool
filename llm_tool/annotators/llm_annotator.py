@@ -3081,20 +3081,48 @@ class LLMAnnotator:
                         if normalized_value:
                             entry_labels.append(f"{key_prefix}_{normalized_value}")
 
-                    if isinstance(label_value, list):
-                        for candidate in label_value:
-                            add_combined_label(candidate)
-                    elif isinstance(label_value, dict):
-                        for sub_key, sub_value in label_value.items():
-                            nested_key = _normalize_component(sub_key)
-                            combined_key = (
-                                f"{normalized_key}_{nested_key}"
-                                if nested_key
-                                else normalized_key
-                            )
-                            add_combined_label(sub_value, key_prefix=combined_key)
-                    else:
-                        add_combined_label(label_value)
+                    # Structural wrapper keys that should not appear in the
+                    # flattened label name. When the annotation schema wraps a
+                    # list of category codes under a key like ``subcategories``
+                    # (see prompts with nested ``{detected, subcategories}``
+                    # shapes), the wrapper token is noise and would produce
+                    # stuttering labels like ``ecology_subcategories_eco_eco``.
+                    # We fold directly onto the parent prefix instead.
+                    STRUCTURAL_WRAPPER_KEYS = {
+                        "subcategories",
+                        "subcategory",
+                        "sub_categories",
+                        "values",
+                        "items",
+                    }
+
+                    def flatten_nested(value: Any, key_prefix: str) -> None:
+                        if value is None:
+                            return
+                        if isinstance(value, list):
+                            for candidate in value:
+                                if isinstance(candidate, (dict, list)):
+                                    flatten_nested(candidate, key_prefix)
+                                else:
+                                    add_combined_label(candidate, key_prefix=key_prefix)
+                        elif isinstance(value, dict):
+                            for sub_key, sub_value in value.items():
+                                nested_key = _normalize_component(sub_key)
+                                if nested_key in STRUCTURAL_WRAPPER_KEYS:
+                                    # Fold structural wrappers: keep the parent
+                                    # prefix unchanged.
+                                    flatten_nested(sub_value, key_prefix)
+                                else:
+                                    combined_key = (
+                                        f"{key_prefix}_{nested_key}"
+                                        if nested_key
+                                        else key_prefix
+                                    )
+                                    flatten_nested(sub_value, combined_key)
+                        else:
+                            add_combined_label(value, key_prefix=key_prefix)
+
+                    flatten_nested(label_value, normalized_key)
 
                 meta: Dict[str, Any] = {}
                 for column in annotated_df.columns:
