@@ -76,6 +76,7 @@ from .sota_models import (
     DeBERTaV3Base, DeBERTaV3Large, RoBERTaBase, RoBERTaLarge,
     ELECTRABase, ELECTRALarge, ALBERTBase, ALBERTLarge,
     BigBirdBase, LongformerBase, MDeBERTaV3Base, XLMRobertaBase,
+    TwitterXLMRobertaBase,
     LongT5Base, LongT5TGlobalBase, get_model_class_for_name
 )
 from llm_tool.utils.training_paths import (
@@ -182,6 +183,7 @@ MODEL_TARGET_LANGUAGES = {
     "xlm-roberta-large": None,
     "FacebookAI/xlm-roberta-base": None,
     "FacebookAI/xlm-roberta-large": None,
+    "cardiffnlp/twitter-xlm-roberta-base": None,
     "microsoft/mdeberta-v3-base": None,
     "microsoft/Multilingual-MiniLM-L12-H384": None,
     "distilbert-base-multilingual-cased": None,
@@ -437,6 +439,7 @@ class ModelTrainer:
             # Multilingual models
             "bert-base-multilingual-cased": MultiBERT,
             "xlm-roberta-base": XLMRobertaBase,
+            "cardiffnlp/twitter-xlm-roberta-base": TwitterXLMRobertaBase,
             "microsoft/mdeberta-v3-base": MDeBERTaV3Base,
 
             # Language-specific models

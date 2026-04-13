@@ -63,7 +63,7 @@ from llm_tool.trainers.sota_models import (
     ALBERTBase, ALBERTLarge, ALBERTXLarge,
     BigBirdBase, BigBirdLarge,
     LongformerBase, LongformerLarge,
-    MDeBERTaV3Base, XLMRobertaBase, XLMRobertaLarge,
+    MDeBERTaV3Base, XLMRobertaBase, XLMRobertaLarge, TwitterXLMRobertaBase,
     # French models
     CamembertaV2Base, CamemBERTav2Base, CamembertLarge, FlauBERTBase, FlauBERTLarge,
     BARThez, FrALBERT, DistilCamemBERT,
@@ -269,6 +269,18 @@ class ModelSelector:
             special_features=['multilingual', 'high capacity', 'best multilingual performance'],
             recommended_tasks=['complex multilingual tasks', 'fine-grained classification'],
             supported_languages=['*']  # Supports all languages
+        ),
+        'TwitterXLMRobertaBase': ModelProfile(
+            name='cardiffnlp/twitter-xlm-roberta-base',
+            model_class=TwitterXLMRobertaBase,
+            parameters=278,
+            memory_footprint=1.3,
+            inference_speed=0.9,
+            accuracy_score=0.90,
+            complexity_handling='complex',
+            special_features=['multilingual', 'social media', 'tweet-adapted', '100+ languages'],
+            recommended_tasks=['sentiment analysis', 'social media classification', 'short text'],
+            supported_languages=['*']
         ),
         'ALBERTLarge': ModelProfile(
             name='albert-large-v2',

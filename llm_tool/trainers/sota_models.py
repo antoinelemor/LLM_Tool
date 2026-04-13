@@ -400,6 +400,25 @@ class XLMRobertaLarge(BertBase):
         )
 
 
+class TwitterXLMRobertaBase(BertBase):
+    """Twitter XLM-RoBERTa Base: XLM-RoBERTa fine-tuned on ~198M multilingual tweets.
+    Strong baseline for social-media and short-text classification tasks."""
+
+    def __init__(
+            self,
+            model_name='cardiffnlp/twitter-xlm-roberta-base',
+            device=None,
+            **kwargs
+    ):
+        super().__init__(
+            model_name=model_name,
+            tokenizer=XLMRobertaTokenizer,
+            device=device,
+            model_sequence_classifier=XLMRobertaForSequenceClassification,
+            **kwargs
+        )
+
+
 # French-specific SOTA models (equivalents to English models)
 class CamembertaV2Base(BertBase):
     """CamemBERTa-v2 Base: Modern French equivalent to RoBERTa Base."""
@@ -1075,7 +1094,11 @@ def get_model_class_for_name(model_name: str):
     """
     # Normalize model name for matching
     name_lower = model_name.lower()
-    
+
+    # Twitter-adapted multilingual model (must come before generic xlm-roberta)
+    if 'twitter-xlm-roberta' in name_lower or 'cardiffnlp/twitter-xlm' in name_lower:
+        return TwitterXLMRobertaBase
+
     # Long-document models (4096+ tokens)
     if 'xlm-roberta-longformer' in name_lower or 'xlm-long' in name_lower:
         return XLMRobertaLongformer
