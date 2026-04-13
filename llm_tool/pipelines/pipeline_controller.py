@@ -856,6 +856,8 @@ class PipelineController:
             'context_window_config': config.get('context_window_config'),
             'already_annotated_count': config.get('already_annotated_count'),
             'total_rows_in_file': config.get('total_rows_in_file'),
+            'doccano_sync_client': config.get('doccano_sync_client'),
+            'doccano_rewrite_ids': config.get('doccano_rewrite_ids'),
         }
 
         # Explicit resume flag combines multiple cues so the annotator can skip rows.
