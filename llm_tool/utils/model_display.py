@@ -720,7 +720,7 @@ def display_all_models(
         scored_models.sort(key=lambda x: x[0])
 
     # Create table
-    title = "📚 All Available Models"
+    title = "All Available Models"
     if languages:
         lang_str = ', '.join(sorted(languages))
         title += f" (filtered for {lang_str})"

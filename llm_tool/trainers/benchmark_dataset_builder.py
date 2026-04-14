@@ -104,7 +104,7 @@ class BenchmarkDataset:
         train_dist = self.metadata['train_class_distribution']
         test_dist = self.metadata['test_class_distribution']
 
-        summary = f"📊 Dataset Summary:\n"
+        summary = f"Dataset Summary:\n"
         summary += f"   - Language: {self.language or 'Not specified'}\n"
 
         # Show language distribution if available
@@ -342,7 +342,7 @@ class BenchmarkDatasetBuilder:
 
             # Display warning to user
             console = Console()
-            console.print(f"\n[yellow]⚠️  Found {len(insufficient_classes)} label(s) with insufficient samples:[/yellow]")
+            console.print(f"\n[yellow][!] Found {len(insufficient_classes)} label(s) with insufficient samples:[/yellow]")
             for cls in insufficient_classes:
                 count = label_counts[cls]
                 console.print(f"  • [red]Label {cls}[/red]: {count} sample(s) - need at least 2 for train/test split")
