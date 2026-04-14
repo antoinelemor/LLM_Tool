@@ -61,14 +61,14 @@ def analyze_hardware():
         console.print(f"[red]Error importing parallel training module: {e}[/red]")
         return
 
-    console.print("\n[bold cyan]🔍 Analyzing Hardware Resources...[/bold cyan]\n")
+    console.print("\n[bold cyan]Analyzing Hardware Resources...[/bold cyan]\n")
 
     analyzer = HardwareAnalyzer()
     info = analyzer.analyze()
 
     # Hardware info table
     hw_table = Table(
-        title="📊 System Hardware",
+        title="System Hardware",
         show_header=True,
         header_style="bold magenta",
         box=box.ROUNDED,
@@ -80,14 +80,14 @@ def analyze_hardware():
     # GPU
     gpu = info.get("gpu", {})
     if gpu.get("available"):
-        gpu_status = "✅ Available"
+        gpu_status = "[OK] Available"
         gpu_mem = f"{gpu.get('memory_gb', 0):.1f} GB total, {gpu.get('available_memory_gb', 0):.1f} GB free"
     else:
-        gpu_status = "❌ Not Available"
+        gpu_status = "[FAIL] Not Available"
         gpu_mem = "-"
 
     hw_table.add_row(
-        "🖥️ GPU",
+        "GPU",
         f"{gpu.get('name', 'Unknown')} ({gpu.get('type', 'unknown')})",
         gpu_status,
     )
@@ -96,9 +96,9 @@ def analyze_hardware():
     # CPU
     cpu = info.get("cpu", {})
     hw_table.add_row(
-        "💻 CPU",
+        "CPU",
         cpu.get("name", "Unknown"),
-        f"✅ {cpu.get('physical_cores', 0)} cores",
+        f"[OK] {cpu.get('physical_cores', 0)} cores",
     )
     hw_table.add_row(
         "   Threads",
@@ -109,9 +109,9 @@ def analyze_hardware():
     # Memory
     mem = info.get("memory", {})
     mem_used_pct = mem.get("used_percent", 0)
-    mem_status = "✅ OK" if mem_used_pct < 80 else ("⚠️ High" if mem_used_pct < 90 else "❌ Critical")
+    mem_status = "[OK]" if mem_used_pct < 80 else ("[!] High" if mem_used_pct < 90 else "[FAIL] Critical")
     hw_table.add_row(
-        "🧠 RAM",
+        "RAM",
         f"{mem.get('total_gb', 0):.1f} GB total",
         mem_status,
     )
@@ -124,7 +124,7 @@ def analyze_hardware():
     console.print(hw_table)
 
     # Create resource plan for 30 models (typical benchmark)
-    console.print("\n[bold cyan]📋 Resource Allocation Plan (for 30 models):[/bold cyan]\n")
+    console.print("\n[bold cyan]Resource Allocation Plan (for 30 models):[/bold cyan]\n")
 
     plan = analyzer.create_resource_plan("xlm-roberta-base", total_tasks=30)
 
@@ -142,15 +142,15 @@ def analyze_hardware():
     if plan.gpu_allocation:
         gpu = plan.gpu_allocation
         plan_table.add_row(
-            f"🖥️ GPU ({gpu.device_id})",
+            f"GPU ({gpu.device_id})",
             str(gpu.batch_size),
             str(gpu.num_workers),
-            "⭐ HIGH",
+            "HIGH",
         )
 
     for cpu in plan.cpu_allocations:
         plan_table.add_row(
-            f"💻 CPU ({cpu.device_id})",
+            f"CPU ({cpu.device_id})",
             str(cpu.batch_size),
             str(cpu.num_workers),
             "Normal",
@@ -159,8 +159,8 @@ def analyze_hardware():
     console.print(plan_table)
 
     # Summary
-    console.print(f"\n[bold green]📈 Parallel Capacity:[/bold green] {plan.total_parallel_workers} models simultaneously")
-    console.print(f"[bold green]🎯 Recommended batch:[/bold green] {plan.recommended_models_per_batch} models per round\n")
+    console.print(f"\n[bold green]Parallel Capacity:[/bold green] {plan.total_parallel_workers} models simultaneously")
+    console.print(f"[bold green]Recommended batch:[/bold green] {plan.recommended_models_per_batch} models per round\n")
 
 
 def run_parallel_training(
@@ -195,7 +195,7 @@ def run_parallel_training(
         f"[bold]Epochs:[/bold] {epochs}\n"
         f"[bold]Categories:[/bold] {len(training_files)}\n"
         f"[bold]Output:[/bold] {output_base}",
-        title="🚀 Parallel Training Configuration",
+        title="Parallel Training Configuration",
         border_style="cyan",
     ))
 
@@ -203,7 +203,7 @@ def run_parallel_training(
         console.print("\n[yellow]Dry run mode - not executing training[/yellow]")
         console.print("\n[bold]Training files:[/bold]")
         for category, path in training_files.items():
-            exists = "✅" if Path(path).exists() else "❌"
+            exists = "[OK]" if Path(path).exists() else "[FAIL]"
             console.print(f"  {exists} {category}: {path}")
         return
 
@@ -221,20 +221,20 @@ def run_parallel_training(
         )
 
         # Print summary
-        console.print("\n[bold green]✨ Training Complete![/bold green]\n")
+        console.print("\n[bold green]Training Complete![/bold green]\n")
 
         success_count = sum(1 for r in results.values() if r.get("status") == "success")
         error_count = sum(1 for r in results.values() if r.get("status") == "error")
 
-        console.print(f"[green]✅ Successful:[/green] {success_count}")
+        console.print(f"[green][OK] Successful:[/green] {success_count}")
         if error_count > 0:
-            console.print(f"[red]❌ Failed:[/red] {error_count}")
+            console.print(f"[red][FAIL] Failed:[/red] {error_count}")
 
         # Best models
         successful = [(k, v) for k, v in results.items() if v.get("status") == "success"]
         if successful:
             best = max(successful, key=lambda x: x[1].get("f1_score", 0))
-            console.print(f"\n[bold]🏆 Best Model:[/bold] {best[0]} (F1={best[1].get('f1_score', 0):.4f})")
+            console.print(f"\n[bold]Best Model:[/bold] {best[0]} (F1={best[1].get('f1_score', 0):.4f})")
 
     except ImportError as e:
         console.print(f"[red]Error: {e}[/red]")

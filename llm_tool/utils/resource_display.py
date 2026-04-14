@@ -124,7 +124,7 @@ def create_resource_table(
             show_header=True,
             header_style="bold cyan",
             box=box.ROUNDED,
-            title="[bold]⚙️  System Resources[/bold]",
+            title="[bold]System Resources[/bold]",
             title_style="bold magenta"
         )
 
@@ -147,24 +147,24 @@ def create_resource_table(
 
         if not compact:
             if gpu.device_type == "cuda":
-                status = "🟢 CUDA"
+                status = "[ON] CUDA"
                 if gpu.cuda_version:
                     status += f" {gpu.cuda_version}"
             elif gpu.device_type == "rocm":
-                status = "🟢 ROCm"
+                status = "[ON] ROCm"
                 if gpu.rocm_version:
                     status += f" {gpu.rocm_version}"
             elif gpu.device_type == "mps":
-                status = "🟢 MPS"
+                status = "[ON] MPS"
             else:
-                status = "🟡 CPU"
+                status = "[~] CPU"
 
             table.add_row("GPU", gpu_details, status)
         else:
             table.add_row("GPU", f"{gpu_type}: {gpu_details}")
     else:
         if not compact:
-            table.add_row("GPU", "No GPU detected", "🔴 None")
+            table.add_row("GPU", "No GPU detected", "[OFF] None")
         else:
             table.add_row("GPU", "CPU only")
 
@@ -182,7 +182,7 @@ def create_resource_table(
             cpu_color = _get_status_color(cpu.cpu_percent)
             status = f"[{cpu_color}]{_format_percent(cpu.cpu_percent)}[/{cpu_color}]"
         else:
-            status = "🟢 Ready"
+            status = "[ON] Ready"
         table.add_row("CPU", cpu_details, status)
     else:
         table.add_row("CPU", cpu_details)
@@ -202,7 +202,7 @@ def create_resource_table(
             table.add_row("RAM", mem_details)
     else:
         if not compact:
-            table.add_row("RAM", "Unknown", "⚠️  N/A")
+            table.add_row("RAM", "Unknown", "[!] N/A")
         else:
             table.add_row("RAM", "Unknown")
 
@@ -220,7 +220,7 @@ def create_resource_table(
             table.add_row("Storage", storage_details)
     else:
         if not compact:
-            table.add_row("Storage", "Unknown", "⚠️  N/A")
+            table.add_row("Storage", "Unknown", "[!] N/A")
         else:
             table.add_row("Storage", "Unknown")
 
@@ -229,7 +229,7 @@ def create_resource_table(
         system = resources.system
         sys_details = f"{system.os_name} {system.os_release}"
         sys_details += f"\nPython {system.python_version}"
-        table.add_row("System", sys_details, "ℹ️  Info")
+        table.add_row("System", sys_details, "Info")
 
     return table
 
@@ -270,7 +270,7 @@ def create_recommendations_table(
             show_header=True,
             header_style="bold green",
             box=box.ROUNDED,
-            title="[bold]💡 Recommended Settings[/bold]",
+            title="[bold]Recommended Settings[/bold]",
             title_style="bold green"
         )
 
@@ -374,7 +374,7 @@ def display_resources(
                 notes_text = "\n".join(f"• {note}" for note in recommendations['notes'])
                 panel = Panel(
                     notes_text,
-                    title="[bold]📝 Notes[/bold]",
+                    title="[bold]Notes[/bold]",
                     border_style="dim",
                     padding=(1, 2)
                 )
@@ -476,7 +476,7 @@ def display_resource_header(
         console = Console()
 
     summary = get_resource_summary_text(resources)
-    text = Text(f"⚙️  {summary}", style="dim cyan")
+    text = Text(f"{summary}", style="dim cyan")
     console.print(text)
 
 
@@ -524,15 +524,15 @@ def create_visual_resource_panel(
     # GPU Information
     gpu = resources.gpu
     if gpu.available:
-        # 🎮 for NVIDIA, 🔴 for AMD, 🍎 for Apple, 💻 for CPU
+        # Icon labels for GPU types
         if gpu.device_type == "cuda":
-            gpu_icon = "🎮"
+            gpu_icon = "CUDA"
         elif gpu.device_type == "rocm":
-            gpu_icon = "🔴"  # Red circle for AMD Radeon
+            gpu_icon = "ROCm"
         elif gpu.device_type == "mps":
-            gpu_icon = "🍎"
+            gpu_icon = "MPS"
         else:
-            gpu_icon = "💻"
+            gpu_icon = "CPU"
         gpu_name = gpu.device_names[0] if gpu.device_names else "Unknown"
 
         gpu_details = Text()
@@ -553,13 +553,13 @@ def create_visual_resource_panel(
         hardware_table.add_row("GPU", gpu_details, gpu_usage)
     else:
         gpu_details = Text()
-        gpu_details.append("💻 CPU Only", style="yellow")
+        gpu_details.append("CPU Only", style="yellow")
         hardware_table.add_row("GPU", gpu_details, "—")
 
     # CPU Information
     cpu = resources.cpu
     cpu_details = Text()
-    cpu_details.append(f"⚡ ", style="bold yellow")
+    cpu_details.append("", style="bold yellow")
     if cpu.processor_name:
         # Shorten processor name if too long
         proc_name = cpu.processor_name[:35] + "..." if len(cpu.processor_name) > 35 else cpu.processor_name
@@ -584,7 +584,6 @@ def create_visual_resource_panel(
     # Memory Information
     mem = resources.memory
     mem_details = Text()
-    mem_details.append("🧠 ", style="bold magenta")
     mem_details.append("Memory (RAM)", style="bold bright_magenta")
     mem_details.append(f"\n   {_format_gb(mem.total_gb)} total", style="cyan")
 
@@ -596,7 +595,6 @@ def create_visual_resource_panel(
     # Storage Information
     storage = resources.storage
     storage_details = Text()
-    storage_details.append("💾 ", style="bold blue")
     storage_details.append("Storage (Disk)", style="bold bright_blue")
     storage_details.append(f"\n   {_format_gb(storage.total_gb)} total", style="cyan")
 
@@ -621,28 +619,28 @@ def create_visual_resource_panel(
         # Device
         device_text = Text()
         if recommendations['device'] == "cuda":
-            device_icon = "🎮"
+            device_icon = "CUDA"
         elif recommendations['device'] == "rocm":
-            device_icon = "🔴"
+            device_icon = "ROCm"
         elif recommendations['device'] == "mps":
-            device_icon = "🍎"
+            device_icon = "MPS"
         else:
-            device_icon = "💻"
+            device_icon = "CPU"
         device_text.append(f"{device_icon} ", style="bold")
         device_text.append(recommendations['device'].upper(), style="bold bright_green")
-        rec_table.add_row("🎯 Device", device_text)
+        rec_table.add_row("Device", device_text)
 
         # Batch Size
         batch_text = Text()
         batch_text.append(str(recommendations['batch_size']), style="bold cyan")
         batch_text.append(" samples", style="dim")
-        rec_table.add_row("📦 Batch Size", batch_text)
+        rec_table.add_row("Batch Size", batch_text)
 
         # Workers
         workers_text = Text()
         workers_text.append(str(recommendations['num_workers']), style="bold yellow")
         workers_text.append(" threads", style="dim")
-        rec_table.add_row("👷 Workers", workers_text)
+        rec_table.add_row("Workers", workers_text)
 
         # FP16
         fp16_text = Text()
@@ -650,21 +648,21 @@ def create_visual_resource_panel(
             fp16_text.append("✓ Enabled", style="bold green")
         else:
             fp16_text.append("✗ Disabled", style="dim")
-        rec_table.add_row("⚡ FP16", fp16_text)
+        rec_table.add_row("FP16", fp16_text)
 
         # Gradient Accumulation (only if > 1)
         if recommendations['gradient_accumulation_steps'] > 1:
             grad_text = Text()
             grad_text.append(str(recommendations['gradient_accumulation_steps']), style="bold magenta")
             grad_text.append(" steps", style="dim")
-            rec_table.add_row("🔄 Grad. Accum.", grad_text)
+            rec_table.add_row("Grad. Accum.", grad_text)
 
         # Add notes
         if recommendations['notes']:
             rec_table.add_row("", "")  # Spacer
             notes_text = Text()
             for note in recommendations['notes']:
-                notes_text.append(f"💡 {note}\n", style="dim cyan")
+                notes_text.append(f"Tip: {note}\n", style="dim cyan")
             rec_table.add_row("Notes", notes_text)
 
         # Add to main grid
@@ -675,7 +673,7 @@ def create_visual_resource_panel(
     # Create panel
     panel = Panel(
         main_table,
-        title="[bold bright_cyan]⚙️  System Resources & Recommendations[/bold bright_cyan]",
+        title="[bold bright_cyan]System Resources & Recommendations[/bold bright_cyan]",
         border_style="bright_blue",
         padding=(1, 2)
     )
@@ -719,38 +717,31 @@ def create_mode_resource_banner(
     gpu_text = Text()
     if resources.gpu.available:
         if resources.gpu.device_type == "cuda":
-            gpu_text.append("🎮 ", style="bold")
             gpu_text.append("CUDA", style="bold bright_green")
         elif resources.gpu.device_type == "rocm":
-            gpu_text.append("🔴 ", style="bold")
             gpu_text.append("ROCm", style="bold bright_green")
         elif resources.gpu.device_type == "mps":
-            gpu_text.append("🍎 ", style="bold")
             gpu_text.append("MPS", style="bold bright_green")
 
         if resources.gpu.total_memory_gb > 0:
             gpu_text.append(f"\n{_format_gb(resources.gpu.total_memory_gb)}", style="cyan")
     else:
-        gpu_text.append("💻 ", style="bold")
         gpu_text.append("CPU Only", style="yellow")
 
     # CPU
     cpu_text = Text()
-    cpu_text.append("⚡ ", style="bold yellow")
     cpu_text.append(f"{resources.cpu.physical_cores} Cores", style="bold bright_yellow")
     if resources.cpu.cpu_percent > 0:
         cpu_text.append(f"\n{resources.cpu.cpu_percent:.1f}% used", style="dim")
 
     # RAM
     mem_text = Text()
-    mem_text.append("🧠 ", style="bold magenta")
     mem_text.append(f"{_format_gb(resources.memory.total_gb)}", style="bold bright_magenta")
     mem_text.append(f"\n{_format_gb(resources.memory.available_gb)} free", style="dim green")
 
     # Recommendation
     rec = resources.get_recommendation()
     rec_text = Text()
-    rec_text.append("💡 ", style="bold cyan")
     rec_text.append(f"Batch: {rec['batch_size']}", style="bold cyan")
     rec_text.append(f"\nWorkers: {rec['num_workers']}", style="dim")
 
@@ -794,13 +785,13 @@ def create_detailed_mode_panel(
     # GPU
     if resources.gpu.available:
         if resources.gpu.device_type == "cuda":
-            gpu_icon = "🎮"
+            gpu_icon = "CUDA"
         elif resources.gpu.device_type == "rocm":
-            gpu_icon = "🔴"
+            gpu_icon = "ROCm"
         elif resources.gpu.device_type == "mps":
-            gpu_icon = "🍎"
+            gpu_icon = "MPS"
         else:
-            gpu_icon = "💻"
+            gpu_icon = "CPU"
         gpu_name = resources.gpu.device_names[0][:25] if resources.gpu.device_names else "GPU"
         gpu_line = Text()
         gpu_line.append(f"{gpu_icon} ", style="bold")
@@ -816,11 +807,11 @@ def create_detailed_mode_panel(
             )
             hw_table.add_row("", Text.from_markup(f"{mem_bar} {_format_gb(resources.gpu.available_memory_gb)} free"))
     else:
-        hw_table.add_row("GPU", Text("💻 CPU Only", style="yellow"))
+        hw_table.add_row("GPU", Text("CPU Only", style="yellow"))
 
     # CPU
     cpu_line = Text()
-    cpu_line.append("⚡ ", style="bold yellow")
+    cpu_line.append("", style="bold yellow")
     cpu_line.append(f"{resources.cpu.physical_cores}C/{resources.cpu.logical_cores}T", style="bold bright_yellow")
     if resources.cpu.cpu_percent > 0:
         cpu_line.append(f"  {resources.cpu.cpu_percent:.1f}% used", style="dim")
@@ -838,22 +829,22 @@ def create_detailed_mode_panel(
     rec_table.add_column("")
 
     if rec['device'] == "cuda":
-        device_icon = "🎮"
+        device_icon = "CUDA"
     elif rec['device'] == "rocm":
-        device_icon = "🔴"
+        device_icon = "ROCm"
     elif rec['device'] == "mps":
-        device_icon = "🍎"
+        device_icon = "MPS"
     else:
-        device_icon = "💻"
-    rec_table.add_row("🎯 Device", Text(f"{device_icon} {rec['device'].upper()}", style="bold green"))
-    rec_table.add_row("📦 Batch", Text(str(rec['batch_size']), style="bold cyan"))
-    rec_table.add_row("👷 Workers", Text(str(rec['num_workers']), style="bold yellow"))
+        device_icon = "CPU"
+    rec_table.add_row("Device", Text(f"{device_icon} {rec['device'].upper()}", style="bold green"))
+    rec_table.add_row("Batch", Text(str(rec['batch_size']), style="bold cyan"))
+    rec_table.add_row("Workers", Text(str(rec['num_workers']), style="bold yellow"))
 
     main_grid.add_row(hw_table, rec_table)
 
     panel = Panel(
         main_grid,
-        title=f"[bold bright_blue]⚙️  {mode_name} - System Resources[/bold bright_blue]",
+        title=f"[bold bright_blue]{mode_name} - System Resources[/bold bright_blue]",
         border_style="blue",
         padding=(0, 1)
     )

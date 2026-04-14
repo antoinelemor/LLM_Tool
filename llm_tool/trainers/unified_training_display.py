@@ -627,9 +627,9 @@ class UnifiedTrainingDisplay:
             if self.progress and task_id in self.task_ids:
                 self.progress.update(
                     self.task_ids[task_id],
-                    description=f"✅ {state.category_name}",
+                    description=f"[OK] {state.category_name}",
                     completed=state.total_epochs,
-                    metrics=f"F1={final_f1:.3f} ✓",
+                    metrics=f"F1={final_f1:.3f} [OK]",
                 )
 
             self._refresh_display()
@@ -655,7 +655,7 @@ class UnifiedTrainingDisplay:
             if self.progress and task_id in self.task_ids:
                 self.progress.update(
                     self.task_ids[task_id],
-                    description=f"❌ {state.category_name}",
+                    description=f"[FAIL] {state.category_name}",
                     metrics="ERROR",
                 )
 
@@ -663,7 +663,7 @@ class UnifiedTrainingDisplay:
 
     def _format_task_description(self, state: ModelTrainingState) -> str:
         """Format task description for progress bar."""
-        device_icon = "🖥️" if state.device_type == "gpu" else "💻"
+        device_icon = "GPU" if state.device_type == "gpu" else "CPU"
 
         # Use full category name if expand_labels is enabled, otherwise truncate
         cat = state.category_name
@@ -673,9 +673,9 @@ class UnifiedTrainingDisplay:
         if state.phase == "initializing":
             return f"{device_icon} {cat} [dim]loading...[/dim]"
         elif state.phase == "complete":
-            return f"✅ {cat}"
+            return f"[OK] {cat}"
         elif state.phase == "error":
-            return f"❌ {cat}"
+            return f"[FAIL] {cat}"
         else:
             return f"{device_icon} {cat} E{state.current_epoch}/{state.total_epochs}"
 
@@ -694,7 +694,7 @@ class UnifiedTrainingDisplay:
             Rich Table with per-language F1, accuracy, and sample counts
         """
         lang_table = Table(
-            title=f"🌍 Métriques par Langue",
+            title="Metriques par Langue",
             show_header=True,
             header_style="bold cyan",
             box=box.SIMPLE,
@@ -810,7 +810,7 @@ class UnifiedTrainingDisplay:
         style = "bold green" if index == 0 else "bold yellow" if index == 1 else "bold cyan"
         elements.append(Text(""))
         elements.append(Text("═" * 100, style=f"dim {style.split()[-1]}"))
-        elements.append(Text(f" 📋 MODEL {index + 1}: {model_state.category_name}", style=style))
+        elements.append(Text(f" MODEL {index + 1}: {model_state.category_name}", style=style))
         elements.append(Text(f"    Device: {model_state.device_id} | Epoch: {model_state.current_epoch}/{model_state.total_epochs} | F1: {model_state.f1_score:.4f}", style="dim"))
         elements.append(Text("═" * 100, style=f"dim {style.split()[-1]}"))
 
@@ -850,7 +850,7 @@ class UnifiedTrainingDisplay:
         sorted_langs = sorted(all_languages)
 
         summary_table = Table(
-            title="🏷️ MULTI-LABEL SUMMARY (Labels × Languages)",
+            title="MULTI-LABEL SUMMARY (Labels x Languages)",
             show_header=True,
             header_style="bold magenta",
             box=box.SIMPLE_HEAVY,
@@ -882,7 +882,7 @@ class UnifiedTrainingDisplay:
             f1_style = "bold green" if f1_global >= 0.8 else ("bold yellow" if f1_global >= 0.5 else "bold red")
 
             # Category name (with device icon)
-            dev_icon = "🖥️" if state.device_type == "gpu" else "💻"
+            dev_icon = "GPU" if state.device_type == "gpu" else "CPU"
             cat_name = f"{dev_icon} {state.category_name}"
 
             row = [cat_name, f"[{f1_style}]{f1_global:.3f}[/{f1_style}]"]
@@ -942,27 +942,27 @@ class UnifiedTrainingDisplay:
             header.add_column(style="white", ratio=1)
 
             header.add_row(
-                "📊 Progress:",
+                "Progress:",
                 f"{completed}/{total} ({global_pct:.1f}%)",
-                "⏱️ Elapsed:",
+                "Elapsed:",
                 self._format_time(elapsed),
             )
             header.add_row(
-                "🖥️ GPU Jobs:",
+                "GPU Jobs:",
                 str(self.global_state.active_gpu_jobs),
-                "⏳ ETA:",
+                "ETA:",
                 eta_str,
             )
             header.add_row(
-                "💻 CPU Jobs:",
+                "CPU Jobs:",
                 str(self.global_state.active_cpu_jobs),
-                "🏆 Best F1:",
+                "Best F1:",
                 f"{self.global_state.best_f1_overall:.4f}" if self.global_state.best_f1_overall > 0 else "-",
             )
 
             if failed > 0:
                 header.add_row(
-                    "❌ Failed:",
+                    "Failed:",
                     f"[red]{failed}[/red]",
                     "",
                     "",
@@ -1002,7 +1002,7 @@ class UnifiedTrainingDisplay:
 
             # Show all active jobs (no limit) with full category names
             for state in active_states:
-                dev = "🖥️" if state.device_type == "gpu" else "💻"
+                dev = "GPU" if state.device_type == "gpu" else "CPU"
                 # Use full category name (wrapping handled by table column)
                 cat = state.category_name
 
@@ -1095,13 +1095,13 @@ class UnifiedTrainingDisplay:
                 elements.extend([
                     Text(""),
                     Text("─" * 100, style="dim"),
-                    Text(" ✅ RECENTLY COMPLETED", style="bold green"),
+                    Text(" RECENTLY COMPLETED", style="bold green"),
                     Text(completed_text),
                 ])
 
             return Panel(
                 Group(*elements),
-                title="[bold blue]🚀 PARALLEL TRAINING DASHBOARD[/bold blue]",
+                title="[bold blue]PARALLEL TRAINING DASHBOARD[/bold blue]",
                 subtitle=f"[dim]{active} running | {total - completed - failed - active} queued | {completed} done | {failed} failed[/dim]",
                 border_style="bold blue",
                 box=box.HEAVY,
@@ -1188,7 +1188,7 @@ class UnifiedTrainingDisplay:
 
         # Summary table with dynamic category column
         summary = Table(
-            title="🏁 TRAINING COMPLETE",
+            title="TRAINING COMPLETE",
             show_header=True,
             header_style="bold green",
             box=box.ROUNDED,
@@ -1226,7 +1226,7 @@ class UnifiedTrainingDisplay:
                 f"[{f1_style}]{r['f1']:.4f}[/{f1_style}]",
                 f"{r.get('accuracy', 0):.4f}",
                 self._format_time(r.get("elapsed", 0)),
-                "🖥️ GPU" if r.get("device") == "gpu" else "💻 CPU",
+                "GPU" if r.get("device") == "gpu" else "CPU",
             )
 
         self.console.print(summary)
@@ -1235,7 +1235,7 @@ class UnifiedTrainingDisplay:
         if self.global_state.best_f1_overall > 0:
             self.console.print()
             self.console.print(Panel(
-                f"[bold green]🏆 Best Model:[/bold green] {self.global_state.best_category}\n"
+                f"[bold green]Best Model:[/bold green] {self.global_state.best_category}\n"
                 f"[cyan]F1 Score:[/cyan] {self.global_state.best_f1_overall:.4f}",
                 border_style="green",
                 box=box.ROUNDED,
