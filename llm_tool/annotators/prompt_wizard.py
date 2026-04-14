@@ -59,8 +59,8 @@ except ImportError:
 # UI translations for wizard interface
 UI_TRANSLATIONS = {
     "en": {
-        "category_values_title": "💡 How to Structure Your Categories",
-        "category_values_heading": "📖 Understanding the Category → Values System",
+        "category_values_title": "How to Structure Your Categories",
+        "category_values_heading": "Understanding the Category - Values System",
         "category_values_intro": "This system works in TWO LEVELS:",
         "level1_title": "LEVEL 1: CATEGORY (the general question)",
         "level1_point1": "• This is the GLOBAL DIMENSION you want to analyze",
@@ -79,12 +79,12 @@ UI_TRANSLATIONS = {
         "level2_ex2": "• health (if text discusses healthcare)",
         "level2_ex3": "• economy (if text discusses economics)",
         "level2_ex4": "• justice (if text discusses judicial system)",
-        "complete_example_title": "✨ Complete Example:",
+        "complete_example_title": "Complete Example:",
         "complete_ex1_q": "Question → Category: theme",
         "complete_ex1_a": "Answers → Values: environment, health, justice, economy",
         "complete_ex2_q": "Question → Category: sentiment",
         "complete_ex2_a": "Answers → Values: positive, negative, neutral",
-        "final_annotation_header": "📝 Your final annotation will look like:",
+        "final_annotation_header": "Your final annotation will look like:",
         "final_annotation_comment1": "← the chosen VALUE",
         "final_annotation_comment2": "← the chosen VALUE",
         "keep_category": "Keep this category '{}'?",
@@ -101,8 +101,8 @@ UI_TRANSLATIONS = {
         "add_another_entity": "Add another entity?"
     },
     "fr": {
-        "category_values_title": "💡 Comment Structurer Vos Catégories",
-        "category_values_heading": "📖 Comprendre le Système Catégorie → Valeurs",
+        "category_values_title": "Comment Structurer Vos Categories",
+        "category_values_heading": "Comprendre le Systeme Categorie - Valeurs",
         "category_values_intro": "Ce système fonctionne en DEUX NIVEAUX :",
         "level1_title": "NIVEAU 1 : CATÉGORIE (la question générale)",
         "level1_point1": "• C'est la DIMENSION GLOBALE que vous voulez analyser",
@@ -121,12 +121,12 @@ UI_TRANSLATIONS = {
         "level2_ex2": "• santé (si le texte parle de soins de santé)",
         "level2_ex3": "• économie (si le texte parle d'économie)",
         "level2_ex4": "• justice (si le texte parle de système judiciaire)",
-        "complete_example_title": "✨ Exemple Complet :",
+        "complete_example_title": "Exemple Complet :",
         "complete_ex1_q": "Question → Catégorie : thème",
         "complete_ex1_a": "Réponses → Valeurs : environnement, santé, justice, économie",
         "complete_ex2_q": "Question → Catégorie : sentiment",
         "complete_ex2_a": "Réponses → Valeurs : positif, négatif, neutre",
-        "final_annotation_header": "📝 Votre annotation finale ressemblera à :",
+        "final_annotation_header": "Votre annotation finale ressemblera a :",
         "final_annotation_comment1": "← la VALEUR choisie",
         "final_annotation_comment2": "← la VALEUR choisie",
         "keep_category": "Garder cette catégorie '{}' ?",
@@ -143,8 +143,8 @@ UI_TRANSLATIONS = {
         "add_another_entity": "Ajouter une autre entité ?"
     },
     "es": {
-        "category_values_title": "💡 Cómo Estructurar Sus Categorías",
-        "category_values_heading": "📖 Comprender el Sistema Categoría → Valores",
+        "category_values_title": "Como Estructurar Sus Categorias",
+        "category_values_heading": "Comprender el Sistema Categoria - Valores",
         "category_values_intro": "Este sistema funciona en DOS NIVELES:",
         "level1_title": "NIVEL 1: CATEGORÍA (la pregunta general)",
         "level1_point1": "• Esta es la DIMENSIÓN GLOBAL que desea analizar",
@@ -163,12 +163,12 @@ UI_TRANSLATIONS = {
         "level2_ex2": "• salud (si el texto habla de atención médica)",
         "level2_ex3": "• economía (si el texto habla de economía)",
         "level2_ex4": "• justicia (si el texto habla del sistema judicial)",
-        "complete_example_title": "✨ Ejemplo Completo:",
+        "complete_example_title": "Ejemplo Completo:",
         "complete_ex1_q": "Pregunta → Categoría: tema",
         "complete_ex1_a": "Respuestas → Valores: medio_ambiente, salud, justicia, economía",
         "complete_ex2_q": "Pregunta → Categoría: sentimiento",
         "complete_ex2_a": "Respuestas → Valores: positivo, negativo, neutral",
-        "final_annotation_header": "📝 Su anotación final se verá así:",
+        "final_annotation_header": "Su anotacion final se vera asi:",
         "final_annotation_comment1": "← el VALOR elegido",
         "final_annotation_comment2": "← el VALOR elegido",
         "keep_category": "¿Mantener esta categoría '{}'?",
@@ -422,7 +422,7 @@ class SocialSciencePromptWizard:
             return
 
         welcome_text = """
-[bold cyan]Welcome to the Social Science Prompt Wizard! 🧙‍♂️[/bold cyan]
+[bold cyan]Welcome to the Social Science Prompt Wizard![/bold cyan]
 
 This interactive wizard will guide you through creating a sophisticated annotation prompt
 for your social science research project. You will:
@@ -438,7 +438,7 @@ for your social science research project. You will:
 
         panel = Panel(
             welcome_text,
-            title="[bold]🎓 Social Science Prompt Wizard[/bold]",
+            title="[bold]Social Science Prompt Wizard[/bold]",
             border_style="cyan",
             box=box.DOUBLE
         )
@@ -467,13 +467,13 @@ for your social science research project. You will:
         self.console.print()
 
         description = Prompt.ask(
-            "[cyan]📋 Project description[/cyan]",
+            "[cyan]Project description[/cyan]",
             default=""
         )
 
         while not description.strip():
-            self.console.print("[yellow]⚠️  Description cannot be empty[/yellow]")
-            description = Prompt.ask("[cyan]📋 Project description[/cyan]")
+            self.console.print("[yellow][!] Description cannot be empty[/yellow]")
+            description = Prompt.ask("[cyan]Project description[/cyan]")
 
         self.console.print(f"\n[green]✓[/green] Project: {description[:100]}...\n")
         return description
@@ -501,13 +501,13 @@ for your social science research project. You will:
         self.console.print()
 
         description = Prompt.ask(
-            "[cyan]📊 Data description[/cyan]",
+            "[cyan]Data description[/cyan]",
             default=""
         )
 
         while not description.strip():
-            self.console.print("[yellow]⚠️  Description cannot be empty[/yellow]")
-            description = Prompt.ask("[cyan]📊 Data description[/cyan]")
+            self.console.print("[yellow][!] Description cannot be empty[/yellow]")
+            description = Prompt.ask("[cyan]Data description[/cyan]")
 
         self.console.print(f"\n[green]✓[/green] Data: {description[:100]}...\n")
         return description
@@ -520,7 +520,7 @@ for your social science research project. You will:
         self.console.print(Panel(
             "[bold]Step 2b: Prompt Language[/bold]\n\n"
             "Choose the language for your annotation prompt.\n\n"
-            "[yellow]💡 Important:[/yellow] LLMs generally perform [bold]better with English prompts[/bold],\n"
+            "[yellow]Important:[/yellow] LLMs generally perform [bold]better with English prompts[/bold],\n"
             "but you can use any language. The entire prompt will be generated\n"
             "in your chosen language.",
             border_style="green"
@@ -565,7 +565,7 @@ for your social science research project. You will:
         ))
 
         # Detailed explanation table
-        table = Table(show_header=True, box=box.ROUNDED, title="📚 Annotation Strategies Explained", title_style="bold cyan")
+        table = Table(show_header=True, box=box.ROUNDED, title="Annotation Strategies Explained", title_style="bold cyan")
         table.add_column("Type", style="cyan bold", width=28)
         table.add_column("What it does", style="white", width=40)
         table.add_column("Example Sentences & Output", style="green", width=60)
@@ -575,7 +575,7 @@ for your social science research project. You will:
             "[dim]Example sentence:[/dim]\n"
             "[italic]\"Justin Trudeau announced new climate measures\n"
             "in Toronto on Friday.\"[/italic]\n\n"
-            "[dim]✅ What we EXTRACT (multiple entities from ONE text):[/dim]\n"
+            "[dim][OK] What we EXTRACT (multiple entities from ONE text):[/dim]\n"
             "• [cyan]person:[/cyan] Justin Trudeau\n"
             "• [cyan]role:[/cyan] Prime Minister\n"
             "• [cyan]action:[/cyan] announced\n"
@@ -586,7 +586,7 @@ for your social science research project. You will:
         )
 
         table.add_row(
-            "1️⃣  Named Entity\n    Extraction",
+            "1. Named Entity\n    Extraction",
             "[bold]IDENTIFY and EXTRACT[/bold]\nspecific elements (entities)\nmentioned in the text\n\n"
             "[dim]Focus: WHO, WHAT, WHERE, WHEN[/dim]",
             entity_examples
@@ -596,7 +596,7 @@ for your social science research project. You will:
         categorical_examples = (
             "[dim]Example sentence:[/dim]\n"
             "[italic]\"The government announces an ambitious climate plan.\"[/italic]\n\n"
-            "[dim]✅ How we CLASSIFY (whole text meaning):[/dim]\n"
+            "[dim][OK] How we CLASSIFY (whole text meaning):[/dim]\n"
             "• [cyan]theme:[/cyan] environment\n"
             "• [cyan]sentiment:[/cyan] positive\n"
             "• [cyan]party:[/cyan] Liberal\n\n"
@@ -604,7 +604,7 @@ for your social science research project. You will:
         )
 
         table.add_row(
-            "2️⃣  Categorical\n    Annotation",
+            "2. Categorical\n    Annotation",
             "[bold]CLASSIFY the MEANING[/bold]\nof the entire text into\npredefined categories\n\n"
             "[dim]Focus: TOPIC, TONE, MEANING[/dim]",
             categorical_examples
@@ -615,7 +615,7 @@ for your social science research project. You will:
 
         # Additional guidance
         self.console.print(Panel(
-            "[bold yellow]💡 Which one to choose?[/bold yellow]\n\n"
+            "[bold yellow]Which one to choose?[/bold yellow]\n\n"
             "• [cyan]Named Entity Extraction[/cyan] → When you want to [underline]identify WHO/WHAT[/underline] is mentioned\n"
             "  [dim]Example uses: Extract all person names, organizations, locations, dates[/dim]\n\n"
             "• [cyan]Categorical Annotation[/cyan] → When you want to [underline]classify the MEANING/TOPIC[/underline]\n"
@@ -665,7 +665,7 @@ for your social science research project. You will:
         self.console.print("\n" + "="*80 + "\n")
 
         self.console.print(Panel(
-            "[bold cyan]📎 Additional Option: Named Entity Recognition (NER)[/bold cyan]\n\n"
+            "[bold cyan]Additional Option: Named Entity Recognition (NER)[/bold cyan]\n\n"
             "You've defined your [bold]categorical annotations[/bold] (theme, sentiment, etc.).\n\n"
             "[bold yellow]Would you also like to extract specific entities?[/bold yellow]\n\n"
             "[bold]What is NER (Named Entity Recognition)?[/bold]\n"
@@ -684,10 +684,10 @@ for your social science research project. You will:
             "• Extract names, organizations, locations automatically\n"
             "• Track which actors are mentioned in which contexts\n"
             "• Richer analysis combining classification + extraction\n\n"
-            "[yellow]💡 Common use case:[/yellow] Classify political texts by theme,\n"
+            "[yellow]Common use case:[/yellow] Classify political texts by theme,\n"
             "then extract all politicians, parties, and locations mentioned.",
             border_style="cyan",
-            title="[bold]🎯 Combine Categorical + NER[/bold]"
+            title="[bold]Combine Categorical + NER[/bold]"
         ))
 
         return Confirm.ask(
@@ -724,7 +724,7 @@ for your social science research project. You will:
         use_ai_for_entities = False
         if self.llm_client:
             use_ai_for_entities = Confirm.ask(
-                "[cyan]🤖 Do you want AI assistance for creating your prompt (wizard mode)?[/cyan]",
+                "[cyan]Do you want AI assistance for creating your prompt (wizard mode)?[/cyan]",
                 default=True
             )
             if use_ai_for_entities:
@@ -736,10 +736,10 @@ for your social science research project. You will:
         self.console.print(Panel(
             "[bold cyan]What you'll do next:[/bold cyan]\n\n"
             "For each entity category, you will:\n"
-            "1️⃣  Provide a [bold]short entity name[/bold] (e.g., 'persons', 'organizations')\n"
-            "2️⃣  Provide a [bold]detailed description[/bold] of what to extract\n"
-            "3️⃣  Optionally define [bold]sub-types[/bold] (e.g., politician, scientist)\n"
-            "4️⃣  For each sub-type, provide a [bold]definition[/bold]" +
+            "1. Provide a [bold]short entity name[/bold] (e.g., 'persons', 'organizations')\n"
+            "2. Provide a [bold]detailed description[/bold] of what to extract\n"
+            "3. Optionally define [bold]sub-types[/bold] (e.g., politician, scientist)\n"
+            "4. For each sub-type, provide a [bold]definition[/bold]" +
             (" [dim](AI-assisted)[/dim]" if use_ai_for_entities else "") + "\n\n"
             "[dim]Entities are extracted elements (WHO, WHAT, WHERE) mentioned in texts.[/dim]",
             border_style="blue"
@@ -756,17 +756,17 @@ for your social science research project. You will:
             # Show naming guidance panel for first category
             if category_count == 1:
                 self.console.print(Panel(
-                    "[bold yellow]⚠️  Important: Entity Category Naming[/bold yellow]\n\n"
+                    "[bold yellow]Important: Entity Category Naming[/bold yellow]\n\n"
                     "The category [bold]name[/bold] should be a [bold]SHORT keyword[/bold] (1-2 words):\n"
                     "• It becomes the JSON key in your output\n"
                     "• Keep it simple and concise\n"
                     "• The detailed description comes in the NEXT field\n\n"
-                    "[bold green]✅ GOOD examples:[/bold green]\n"
+                    "[bold green]GOOD examples:[/bold green]\n"
                     "• 'persons'\n"
                     "• 'organizations'\n"
                     "• 'locations'\n"
                     "• 'policy_topics'\n\n"
-                    "[bold red]❌ BAD examples:[/bold red]\n"
+                    "[bold red]BAD examples:[/bold red]\n"
                     "• 'persons_and_their_roles_in_government' [dim](too long - use 'persons')[/dim]\n"
                     "• 'organizations mentioned in the text' [dim](description - use 'organizations')[/dim]\n"
                     "• 'all locations and places' [dim](explanation - use 'locations')[/dim]",
@@ -797,7 +797,7 @@ for your social science research project. You will:
             # Warn if name seems too long
             if len(cat_name) > 30:
                 self.console.print(
-                    f"\n[yellow]⚠️  Warning: '{cat_name}' seems long for an entity category name.[/yellow]"
+                    f"\n[yellow][!] Warning: '{cat_name}' seems long for an entity category name.[/yellow]"
                 )
                 if not Confirm.ask("[cyan]Continue with this name?[/cyan]", default=False):
                     continue
@@ -895,9 +895,9 @@ Description:"""
                     else:
                         # Allow manual edit or refinement
                         self.console.print("\n[bold]What would you like to do?[/bold]")
-                        self.console.print("1. ✍️  Edit manually")
-                        self.console.print("2. 🔄 Regenerate with additional context")
-                        self.console.print("3. ❌ Keep original description")
+                        self.console.print("1. Edit manually")
+                        self.console.print("2. Regenerate with additional context")
+                        self.console.print("3. Keep original description")
 
                         refine_choice = Prompt.ask(
                             "\n[cyan]Your choice[/cyan]",
@@ -972,7 +972,7 @@ Description:"""
 
         # Visual schema explanation for Category → Values system
         explanation_text = (
-            "[bold cyan]📖 Understanding the Category → Values System[/bold cyan]\n\n"
+            "[bold cyan]Understanding the Category → Values System[/bold cyan]\n\n"
             "[bold]Think of it like a questionnaire:[/bold]\n\n"
             "[bold yellow]CATEGORY = The Question[/bold yellow]\n"
             "  What dimension am I analyzing?\n"
@@ -983,12 +983,12 @@ Description:"""
             "    • [green]health[/green] - if text discusses healthcare  \n"
             "    • [green]economy[/green] - if text discusses economics\n"
             "    • [green]justice[/green] - if text discusses legal system\n\n"
-            "[bold green]📝 Final JSON output:[/bold green]\n"
+            "[bold green]Final JSON output:[/bold green]\n"
             "{\n"
             '  "[cyan]theme[/cyan]": "[green]environment[/green]",\n'
             '  "[cyan]sentiment[/cyan]": "[green]positive[/green]"\n'
             "}\n\n"
-            "[bold]💡 The 4 Steps:[/bold]\n"
+            "[bold]The 4 Steps:[/bold]\n"
             "1. Choose a CATEGORY name (short keyword like 'theme')\n"
             "2. Describe what the category classifies\n"
             "3. Define possible VALUES (like 'environment', 'health')\n"
@@ -998,7 +998,7 @@ Description:"""
         self.console.print(Panel(
             explanation_text,
             border_style="cyan",
-            title="[bold]💡 How to Structure Your Categories[/bold]"
+            title="[bold]How to Structure Your Categories[/bold]"
         ))
         self.console.print()
 
@@ -1006,7 +1006,7 @@ Description:"""
         use_ai_for_categories = False
         if self.llm_client:
             use_ai_for_categories = Confirm.ask(
-                "[cyan]🤖 Do you want AI assistance to generate category and value definitions?[/cyan]",
+                "[cyan]Do you want AI assistance to generate category and value definitions?[/cyan]",
                 default=True
             )
             if use_ai_for_categories:
@@ -1018,10 +1018,10 @@ Description:"""
         self.console.print(Panel(
             "[bold cyan]What you'll do next:[/bold cyan]\n\n"
             "For each category, you will:\n"
-            "1️⃣  Provide a [bold]short category name[/bold] (e.g., 'theme', 'sentiment')\n"
-            "2️⃣  Provide a [bold]detailed description[/bold] of what it classifies\n"
-            "3️⃣  Define [bold]possible values[/bold] (e.g., 'environment', 'health')\n"
-            "4️⃣  For each value, provide a [bold]definition[/bold]" +
+            "1. Provide a [bold]short category name[/bold] (e.g., 'theme', 'sentiment')\n"
+            "2. Provide a [bold]detailed description[/bold] of what it classifies\n"
+            "3. Define [bold]possible values[/bold] (e.g., 'environment', 'health')\n"
+            "4. For each value, provide a [bold]definition[/bold]" +
             (" [dim](AI-assisted)[/dim]" if use_ai_for_categories else "") + "\n\n"
             "[dim]You can add as many categories as needed for your research.[/dim]",
             border_style="blue"
@@ -1038,17 +1038,17 @@ Description:"""
             # Show naming guidance panel for first category
             if category_count == 1:
                 self.console.print(Panel(
-                    "[bold yellow]⚠️  Important: Category Naming[/bold yellow]\n\n"
+                    "[bold yellow]Important: Category Naming[/bold yellow]\n\n"
                     "The category [bold]name[/bold] should be a [bold]SHORT keyword[/bold] (1-2 words):\n"
                     "• It becomes the JSON key in your output\n"
                     "• Keep it simple and concise\n"
                     "• The detailed explanation comes in the NEXT field\n\n"
-                    "[bold green]✅ GOOD examples:[/bold green]\n"
+                    "[bold green]GOOD examples:[/bold green]\n"
                     "• 'theme'\n"
                     "• 'sentiment'\n"
                     "• 'party'\n"
                     "• 'actor'\n\n"
-                    "[bold red]❌ BAD examples:[/bold red]\n"
+                    "[bold red]BAD examples:[/bold red]\n"
                     "• 'main_topic_discussed_in_text' [dim](too long - use 'theme' or 'topic')[/dim]\n"
                     "• 'positive or negative sentiment' [dim](description - use 'sentiment')[/dim]\n"
                     "• 'political party mentioned' [dim](explanation - use 'party')[/dim]",
@@ -1079,7 +1079,7 @@ Description:"""
             # Warn if name seems too long
             if len(cat_name) > 30:
                 self.console.print(
-                    f"\n[yellow]⚠️  Warning: '{cat_name}' seems long for a category name.[/yellow]"
+                    f"\n[yellow][!] Warning: '{cat_name}' seems long for a category name.[/yellow]"
                 )
                 if not Confirm.ask("[cyan]Continue with this name?[/cyan]", default=False):
                     continue
@@ -1094,10 +1094,10 @@ Description:"""
             self.console.print(Panel(
                 "[bold cyan]Category Type:[/bold cyan]\n\n"
                 "[bold]Two types of categories:[/bold]\n\n"
-                "1️⃣  [cyan]Closed set[/cyan] - Fixed list of possible values\n"
+                "1. [cyan]Closed set[/cyan] - Fixed list of possible values\n"
                 "   Example: sentiment → positive, negative, neutral\n"
                 "   → You define each possible answer\n\n"
-                "2️⃣  [cyan]Open-ended[/cyan] - Free-form extraction\n"
+                "2. [cyan]Open-ended[/cyan] - Free-form extraction\n"
                 "   Example: themes → extract all themes mentioned (no fixed list)\n"
                 "   → LLM extracts based on your description only\n"
                 "   → More flexible, but less controlled",
@@ -1140,9 +1140,9 @@ Description:"""
                     else:
                         # Allow manual edit or refinement
                         self.console.print("\n[bold]What would you like to do?[/bold]")
-                        self.console.print("1. ✍️  Edit manually")
-                        self.console.print("2. 🔄 Regenerate with additional context")
-                        self.console.print("3. ❌ Keep original description")
+                        self.console.print("1. Edit manually")
+                        self.console.print("2. Regenerate with additional context")
+                        self.console.print("3. Keep original description")
 
                         refine_choice = Prompt.ask(
                             "\n[cyan]Your choice[/cyan]",
@@ -1235,14 +1235,14 @@ Description:"""
         if is_entity_type:
             # Examples for entity type classification (e.g., types of persons)
             good_examples = (
-                "[bold green]✅ GOOD value names:[/bold green]\n"
+                "[bold green]GOOD value names:[/bold green]\n"
                 "• 'politician'\n"
                 "• 'scientist'\n"
                 "• 'activist'\n"
                 "• 'business_leader'"
             )
             bad_examples = (
-                "[bold red]❌ BAD value names:[/bold red]\n"
+                "[bold red]BAD value names:[/bold red]\n"
                 "• 'professional_politicians_and_career_bureaucrats' [dim](too long - use 'politician')[/dim]\n"
                 "• 'people who work in politics' [dim](description not label - use 'politician')[/dim]\n"
                 "• 'elected_officials_at_federal_level' [dim](too specific - use 'politician')[/dim]"
@@ -1251,14 +1251,14 @@ Description:"""
         else:
             # Examples for categorical annotation (themes, sentiment, etc.)
             good_examples = (
-                "[bold green]✅ GOOD value names:[/bold green]\n"
+                "[bold green]GOOD value names:[/bold green]\n"
                 "• 'environment'\n"
                 "• 'positive'\n"
                 "• 'liberal'\n"
                 "• 'health_care'"
             )
             bad_examples = (
-                "[bold red]❌ BAD value names:[/bold red]\n"
+                "[bold red]BAD value names:[/bold red]\n"
                 "• 'environmental_protection_and_climate_change' [dim](too long - use 'environment')[/dim]\n"
                 "• 'very positive with strong enthusiasm' [dim](description - use 'positive')[/dim]\n"
                 "• 'statements made by liberal party' [dim](explanation - use 'liberal')[/dim]"
@@ -1267,7 +1267,7 @@ Description:"""
 
         self.console.print(Panel(
             f"[bold cyan]Defining Values for '{cat_name}'[/bold cyan]\n\n"
-            "[bold yellow]⚠️  Value Naming Guidelines:[/bold yellow]\n\n"
+            "[bold yellow]Value Naming Guidelines:[/bold yellow]\n\n"
             "Each value [bold]name[/bold] should be a [bold]SHORT label[/bold] (1-3 words):\n"
             "• It becomes the actual value in your JSON output\n"
             "• Keep it concise and clear\n"
@@ -1308,7 +1308,7 @@ Description:"""
             # Warn if value name seems too long
             if len(value_name) > 40:
                 self.console.print(
-                    f"\n[yellow]⚠️  Warning: '{value_name}' seems long for a value label.[/yellow]"
+                    f"\n[yellow][!] Warning: '{value_name}' seems long for a value label.[/yellow]"
                 )
                 if not Confirm.ask("[cyan]Continue with this name?[/cyan]", default=False):
                     continue
@@ -1490,7 +1490,7 @@ Definition:"""
                 return f"Text relates to {value_name} in the context of {cat_name}"
 
         except Exception as e:
-            self.console.print(f"[yellow]⚠️  LLM generation failed: {e}[/yellow]")
+            self.console.print(f"[yellow][!] LLM generation failed: {e}[/yellow]")
             return f"Text relates to {value_name} in the context of {cat_name}"
 
     def _generate_open_category_description_with_llm(self, category_name: str, user_description: str) -> str:
@@ -1547,7 +1547,7 @@ Enhanced Description:"""
                 return user_description
 
         except Exception as e:
-            self.console.print(f"[yellow]⚠️  LLM generation failed: {e}[/yellow]")
+            self.console.print(f"[yellow][!] LLM generation failed: {e}[/yellow]")
             return user_description
 
     def _generate_entity_description_with_llm(self, entity_name: str, user_description: str) -> str:
@@ -1601,7 +1601,7 @@ Enhanced Description:"""
                 return user_description
 
         except Exception as e:
-            self.console.print(f"[yellow]⚠️  LLM generation failed: {e}[/yellow]")
+            self.console.print(f"[yellow][!] LLM generation failed: {e}[/yellow]")
             return user_description
 
     def _integrate_value_definitions(self, cat: AnnotationCategory, lang: str) -> List[str]:
@@ -1822,7 +1822,7 @@ Generate the introduction paragraph in {language_name}:"""
                 # Display for review
                 if self.console:
                     self.console.print(Panel(
-                        f"[bold cyan]🤖 AI-Generated Introduction ({language_name}):[/bold cyan]\n\n{intro}",
+                        f"[bold cyan]AI-Generated Introduction ({language_name}):[/bold cyan]\n\n{intro}",
                         border_style="cyan"
                     ))
 
@@ -1837,7 +1837,7 @@ Generate the introduction paragraph in {language_name}:"""
 
         except Exception as e:
             if self.console:
-                self.console.print(f"[yellow]⚠️  Introduction generation failed: {e}[/yellow]")
+                self.console.print(f"[yellow][!] Introduction generation failed: {e}[/yellow]")
             return None
 
     def _generate_examples_with_llm(self, categories: List[AnnotationCategory]) -> List[Dict[str, Any]]:
@@ -1847,10 +1847,10 @@ Generate the introduction paragraph in {language_name}:"""
 
         # Check if spec is available
         if not self.spec:
-            self.console.print("[yellow]⚠️  Cannot generate AI examples: specification not yet created[/yellow]")
+            self.console.print("[yellow][!] Cannot generate AI examples: specification not yet created[/yellow]")
             return []
 
-        self.console.print("\n[cyan]🤖 Generating examples with AI...[/cyan]\n")
+        self.console.print("\n[cyan]Generating examples with AI...[/cyan]\n")
 
         # Build category information for the prompt
         category_info = []
@@ -1985,18 +1985,18 @@ Remember: THE FIRST EXAMPLE MUST HAVE ALL CATEGORIES WITH NON-NULL VALUES:"""
                         self.console.print("[yellow]Examples rejected. You can create them manually.[/yellow]")
                         return []
                 else:
-                    self.console.print("[yellow]⚠️  Could not parse JSON from LLM response[/yellow]")
+                    self.console.print("[yellow][!] Could not parse JSON from LLM response[/yellow]")
                     return []
             else:
-                self.console.print("[yellow]⚠️  LLM returned empty response[/yellow]")
+                self.console.print("[yellow][!] LLM returned empty response[/yellow]")
                 return []
 
         except json.JSONDecodeError as e:
-            self.console.print(f"[red]❌ Failed to parse JSON: {e}[/red]")
+            self.console.print(f"[red][FAIL] Failed to parse JSON: {e}[/red]")
             self.console.print(f"[dim]Response was: {response[:200]}...[/dim]")
             return []
         except Exception as e:
-            self.console.print(f"[red]❌ LLM generation failed: {e}[/red]")
+            self.console.print(f"[red][FAIL] LLM generation failed: {e}[/red]")
             return []
 
     def _show_category_summary(self, cat_name: str, values: List[str], value_defs: Dict[str, str]):
@@ -2026,7 +2026,7 @@ Remember: THE FIRST EXAMPLE MUST HAVE ALL CATEGORIES WITH NON-NULL VALUES:"""
         self.console.print(Panel(
             "[bold]Step 5: Example Annotations (Optional)[/bold]\n\n"
             "You can add example annotations to help guide the LLM.\n\n"
-            "[bold yellow]💡 Why examples matter:[/bold yellow]\n"
+            "[bold yellow]Why examples matter:[/bold yellow]\n"
             "• Examples significantly [bold]improve annotation quality[/bold] (up to 40% accuracy gain)\n"
             "• They help the LLM understand [bold]edge cases[/bold] and ambiguous situations\n"
             "• Good examples ensure [bold]consistency[/bold] across thousands of annotations\n"
@@ -2038,9 +2038,9 @@ Remember: THE FIRST EXAMPLE MUST HAVE ALL CATEGORIES WITH NON-NULL VALUES:"""
         # Offer three options: AI-generated, manual, or skip
         self.console.print("\n[bold cyan]How would you like to create examples?[/bold cyan]\n")
         example_options = {
-            "1": "🤖 AI-generated (LLM creates examples based on your categories)",
-            "2": "✍️  Manual (I'll write examples myself)",
-            "3": "⏭️  Skip (no examples)"
+            "1": "AI-generated (LLM creates examples based on your categories)",
+            "2": "Manual (I'll write examples myself)",
+            "3": "Skip (no examples)"
         }
 
         for key, desc in example_options.items():
@@ -2053,7 +2053,7 @@ Remember: THE FIRST EXAMPLE MUST HAVE ALL CATEGORIES WITH NON-NULL VALUES:"""
         )
 
         if example_mode == "3":
-            self.console.print("[yellow]⚠️  Skipping examples - annotation quality may be lower[/yellow]\n")
+            self.console.print("[yellow][!] Skipping examples - annotation quality may be lower[/yellow]\n")
             return []
 
         examples = []
@@ -2061,12 +2061,12 @@ Remember: THE FIRST EXAMPLE MUST HAVE ALL CATEGORIES WITH NON-NULL VALUES:"""
         if example_mode == "1":
             # AI-generated examples
             if not self.llm_client:
-                self.console.print("[red]❌ AI generation requires an LLM client. Falling back to manual mode.[/red]\n")
+                self.console.print("[red][FAIL] AI generation requires an LLM client. Falling back to manual mode.[/red]\n")
                 example_mode = "2"
             else:
                 examples = self._generate_examples_with_llm(categories)
                 if not examples:
-                    self.console.print("[yellow]⚠️  AI generation failed. Switch to manual mode?[/yellow]")
+                    self.console.print("[yellow][!] AI generation failed. Switch to manual mode?[/yellow]")
                     if Confirm.ask("[cyan]Continue with manual examples?[/cyan]", default=True):
                         example_mode = "2"
                     else:
@@ -2336,11 +2336,11 @@ Remember: THE FIRST EXAMPLE MUST HAVE ALL CATEGORIES WITH NON-NULL VALUES:"""
 
         # Options
         self.console.print("\n[bold]What would you like to do?[/bold]")
-        self.console.print("1. ✅ Accept and use this prompt")
-        self.console.print("2. ✏️  Edit the prompt manually")
-        self.console.print("3. 🔄 Regenerate with modifications")
-        self.console.print("4. 💾 Save prompt to file")
-        self.console.print("5. 📄 View full prompt (scrollable)")
+        self.console.print("1. Accept and use this prompt")
+        self.console.print("2. Edit the prompt manually")
+        self.console.print("3. Regenerate with modifications")
+        self.console.print("4. Save prompt to file")
+        self.console.print("5. View full prompt (scrollable)")
 
         choice = Prompt.ask(
             "\n[cyan]Your choice[/cyan]",

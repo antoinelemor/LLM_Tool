@@ -336,7 +336,7 @@ class AnnotationStudioSessionManager:
                 str(last_step),
             )
 
-        panel = Panel(table, border_style="cyan", title="📂 Session Navigator")
+        panel = Panel(table, border_style="cyan", title="Session Navigator")
         self.console.print(panel)
 
     def render_step_status(self) -> None:

@@ -753,7 +753,7 @@ class ModelTrainer:
 
             # Display warning to user
             console = Console()
-            console.print(f"\n[yellow]⚠️  Found {len(insufficient_labels)} label(s) with insufficient samples for training:[/yellow]")
+            console.print(f"\n[yellow]Found {len(insufficient_labels)} label(s) with insufficient samples for training:[/yellow]")
             for label in insufficient_labels:
                 # Find the class index for this label
                 label_idx = sorted_labels.index(label)
@@ -763,7 +763,7 @@ class ModelTrainer:
             if auto_remove_insufficient_labels:
                 # Auto-remove without prompting (pre-validated upstream)
                 self.logger.info(f"Auto-removing {len(insufficient_labels)} insufficient label(s) (pre-validated upstream)")
-                console.print(f"\n[cyan]ℹ️  Auto-removing insufficient labels (pre-validated upstream)[/cyan]")
+                console.print(f"\n[cyan]Auto-removing insufficient labels (pre-validated upstream)[/cyan]")
                 remove_labels = True
             else:
                 # Interactive prompt

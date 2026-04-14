@@ -1007,9 +1007,9 @@ class TrainingDisplay:
         table.add_column(style="bold white")
 
         if self.is_reinforced:
-            table.add_row("🔄 REINFORCED TRAINING", "")
+            table.add_row("[REINFORCED TRAINING]", "")
         else:
-            table.add_row("🏋️ MODEL TRAINING", "")
+            table.add_row("[MODEL TRAINING]", "")
 
         table.add_row("Model:", self.model_name)
 
@@ -1044,7 +1044,7 @@ class TrainingDisplay:
         reinforced_enabled = self.reinforced_learning_enabled
 
         # Global header
-        table.add_row("🌍 GLOBAL PROGRESS", "")
+        table.add_row("[GLOBAL PROGRESS]", "")
 
         # Display languages tracked for this session (if known)
         language_display = None
@@ -1138,28 +1138,28 @@ class TrainingDisplay:
         # Epoch progress
         epoch_pct = (self.current_epoch / self.n_epochs) * 100 if self.n_epochs > 0 else 0
         epoch_bar = self._create_bar(epoch_pct, width=30)
-        table.add_row("📊 Epoch:", f"{self.current_epoch}/{self.n_epochs} {epoch_bar}")
+        table.add_row("Epoch:", f"{self.current_epoch}/{self.n_epochs} {epoch_bar}")
 
         # Phase
-        table.add_row("🔄 Phase:", self.current_phase)
+        table.add_row("Phase:", self.current_phase)
 
         # Training progress
         if self.train_total > 0:
             train_pct = (self.train_progress / self.train_total) * 100
             train_bar = self._create_bar(train_pct, width=30)
-            table.add_row("📚 Training:", f"{self.train_progress}/{self.train_total} {train_bar}")
+            table.add_row("Training:", f"{self.train_progress}/{self.train_total} {train_bar}")
 
         # Validation progress
         if self.val_total > 0:
             val_pct = (self.val_progress / self.val_total) * 100
             val_bar = self._create_bar(val_pct, width=30)
-            table.add_row("🔍 Validation:", f"{self.val_progress}/{self.val_total} {val_bar}")
+            table.add_row("Validation:", f"{self.val_progress}/{self.val_total} {val_bar}")
 
         return table
 
     def create_metrics_table(self) -> Table:
         """Create table with all performance metrics."""
-        table = Table(title="📈 Performance Metrics", box=box.ROUNDED, title_style="bold magenta")
+        table = Table(title="Performance Metrics", box=box.ROUNDED, title_style="bold magenta")
         table.add_column("Metric", style="cyan", width=25)
 
         # Calculate dynamic column width based on longest class name
@@ -1222,7 +1222,7 @@ class TrainingDisplay:
             table.add_row(*separator_row)
 
             # Add language header
-            lang_header_row = ["─── 🌍 Per Language ───"] + [""] * (self.num_labels + 1)
+            lang_header_row = ["--- Per Language ---"] + [""] * (self.num_labels + 1)
             table.add_row(*lang_header_row, style="bold cyan")
 
             if self.language_metrics:
@@ -1263,7 +1263,7 @@ class TrainingDisplay:
         if not self.language_metrics:
             return None
 
-        table = Table(title="🌍 Per-Language Performance", box=box.ROUNDED, title_style="bold magenta")
+        table = Table(title="Per-Language Performance", box=box.ROUNDED, title_style="bold magenta")
         table.add_column("Language", style="cyan", width=15)
 
         # Calculate dynamic column width based on longest class name
@@ -1344,34 +1344,34 @@ class TrainingDisplay:
         table.add_column(style="white")
 
         # Timing
-        table.add_row("⏱️ Train Time:", self._format_time(self.train_time))
-        table.add_row("⏱️ Val Time:", self._format_time(self.val_time))
-        table.add_row("⏱️ Epoch Time:", self._format_time(self.epoch_time))
-        table.add_row("⏱️ Total Time:", self._format_time(self.total_time))
+        table.add_row("Train Time:", self._format_time(self.train_time))
+        table.add_row("Val Time:", self._format_time(self.val_time))
+        table.add_row("Epoch Time:", self._format_time(self.epoch_time))
+        table.add_row("Total Time:", self._format_time(self.total_time))
 
         # Best model
         if self.best_f1 > 0:
             table.add_row("", "")
-            table.add_row("🏆 Best F1:", f"{self.best_f1:.4f} (Epoch {self.best_epoch})")
+            table.add_row("Best F1:", f"{self.best_f1:.4f} (Epoch {self.best_epoch})")
             if self.improvement != 0:
                 sign = "+" if self.improvement > 0 else ""
-                table.add_row("📈 Improvement:", f"{sign}{self.improvement:.4f}")
+                table.add_row("Improvement:", f"{sign}{self.improvement:.4f}")
 
             # Show combined metric (weighted score) if available
             if self.combined_metric > 0:
-                table.add_row("⚖️ Combined Score:", f"{self.combined_metric:.4f}")
+                table.add_row("Combined Score:", f"{self.combined_metric:.4f}")
 
             # Show reinforced learning info if relevant
             if self.reinforced_threshold > 0:
-                table.add_row("🎯 RL Threshold:", f"{self.reinforced_threshold:.4f}")
+                table.add_row("RL Threshold:", f"{self.reinforced_threshold:.4f}")
                 if self.reinforced_triggered:
-                    table.add_row("🔥 RL Triggered:", "Yes", style="bold yellow")
+                    table.add_row("RL Triggered:", "Yes", style="bold yellow")
 
             # Show language variance if available (for multilingual models)
             if self.language_variance > 0:
                 # Color code based on variance level
                 variance_style = "green" if self.language_variance < 0.3 else ("yellow" if self.language_variance < 0.7 else "red")
-                table.add_row("📊 Lang Variance:", f"{self.language_variance:.3f}", style=variance_style)
+                table.add_row("Lang Variance:", f"{self.language_variance:.3f}", style=variance_style)
 
         return table
 
@@ -1402,7 +1402,7 @@ class TrainingDisplay:
                 sections.append(lang_table)
             elif self.detected_languages and not self.language_metrics:
                 # Show placeholder table when training hasn't started yet
-                placeholder = Table(title="🌍 Per-Language Performance", box=box.ROUNDED,
+                placeholder = Table(title="Per-Language Performance", box=box.ROUNDED,
                                    title_style="bold magenta")
                 placeholder.add_column("Info", style="cyan")
                 placeholder.add_row(f"Detected languages: {', '.join(self.detected_languages)}")
@@ -1416,10 +1416,10 @@ class TrainingDisplay:
 
         # Different colors for normal vs reinforced training
         if self.is_reinforced:
-            title = "🔥 REINFORCED LEARNING"
+            title = "[REINFORCED LEARNING]"
             border_color = "bold yellow"  # Yellow/orange for reinforced
         else:
-            title = "🏋️ MODEL TRAINING"
+            title = "[MODEL TRAINING]"
             border_color = "bold blue"  # Blue for normal
 
         return Panel(group, title=title, border_style=border_color, box=box.HEAVY)
@@ -4438,7 +4438,7 @@ class BertBase(BertABC):
                     # Switch display to reinforced mode
                     display.is_reinforced = True
                     display.current_epoch = 0
-                    display.current_phase = "🔥 Starting Reinforced Training"
+                    display.current_phase = "Starting Reinforced Training"
 
                     # Reset all metrics for clean transition
                     display.train_progress = 0
@@ -4664,7 +4664,7 @@ class BertBase(BertABC):
 
                         # Update display for new epoch
                         display.current_epoch = epoch + 1
-                        display.current_phase = f"🔥 Reinforced Epoch {epoch + 1}/{n_epochs_reinforced}"
+                        display.current_phase = f"Reinforced Epoch {epoch + 1}/{n_epochs_reinforced}"
                         display.train_total = len(new_train_dataloader)
                         display.train_progress = 0
                         # Update with calculated metrics
@@ -5324,7 +5324,7 @@ class BertBase(BertABC):
                                     writer.writerow(row)
 
                                 # Show in display instead of logger (to avoid breaking Rich Live)
-                                display.current_phase = f"🔥 NEW BEST! Metric: {current_metric:.4f}"
+                                display.current_phase = f"NEW BEST! Metric: {current_metric:.4f}"
                                 # Update with calculated metrics
                                 throttled_live.update(display.create_panel(), force=True)
 
@@ -5340,7 +5340,7 @@ class BertBase(BertABC):
 
                     # Reset display back to normal mode with clean transition
                     display.is_reinforced = False
-                    display.current_phase = "✅ Training Complete (Reinforced)"
+                    display.current_phase = "Training Complete (Reinforced)"
                     display.train_progress = 0
                     display.val_progress = 0
                     # Final update after reinforced training
