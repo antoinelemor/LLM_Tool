@@ -1044,7 +1044,7 @@ class ModelSelector:
         print(f"Reasoning: {rec['reasoning']}")
 
         if 'warning' in rec:
-            print(f"\n⚠️  Warning: {rec['warning']}")
+            print(f"\n[!]  Warning: {rec['warning']}")
 
         if rec['configuration_tips']:
             print("\nConfiguration Tips:")
@@ -1061,11 +1061,11 @@ class ModelSelector:
     def _print_detailed_benchmark_results(self, results: List[BenchmarkResult], language_info: Optional[List[str]] = None):
         """Print comprehensive benchmark results with all metrics."""
         if not results:
-            print("\n⚠️ No benchmark results available")
+            print("\n[!] No benchmark results available")
             return
 
         print("\n" + "="*120)
-        print(" " * 40 + "🏆 BENCHMARK RESULTS")
+        print(" " * 40 + " BENCHMARK RESULTS")
         print("="*120)
 
         # Main metrics table
@@ -1095,7 +1095,7 @@ class ModelSelector:
             languages = list(set(language_info))
             if len(languages) > 1:
                 print("\n" + "="*120)
-                print(" " * 40 + "📊 PER-LANGUAGE ANALYSIS")
+                print(" " * 40 + " PER-LANGUAGE ANALYSIS")
                 print("="*120)
                 print("\nLanguages detected:", ", ".join(sorted(languages)))
 
@@ -1114,7 +1114,7 @@ class ModelSelector:
         if results:
             best = results[0]
             print("\n" + "="*120)
-            print(" " * 40 + "🥇 BEST MODEL")
+            print(" " * 40 + " BEST MODEL")
             print("="*120)
             print(f"\nModel: {best.model_name}")
             print(f"  • F1 Macro: {best.f1_score:.3f}")
@@ -1127,7 +1127,7 @@ class ModelSelector:
             f1_0 = getattr(best, 'f1_class_0', 0)
             f1_1 = getattr(best, 'f1_class_1', 0)
             if abs(f1_0 - f1_1) > 0.2:
-                print(f"\n⚠️ Class imbalance detected: F1_0={f1_0:.3f}, F1_1={f1_1:.3f}")
+                print(f"\n[!] Class imbalance detected: F1_0={f1_0:.3f}, F1_1={f1_1:.3f}")
                 print("   Consider using reinforced learning or data augmentation.")
 
     def _print_benchmark_results(self, results: List[BenchmarkResult]):

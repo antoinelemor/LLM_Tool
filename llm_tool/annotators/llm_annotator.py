@@ -966,9 +966,9 @@ class LLMAnnotator:
 
         # Initialize progress bar with position lock to prevent line jumps
         disable_pbar = config.get('disable_tqdm', False)
-        pbar_desc = '🤖 LLM Annotation'
+        pbar_desc = ' LLM Annotation'
         if resume_already > 0:
-            pbar_desc = f'🤖 Annotation (resume, {resume_already:,} already done)'
+            pbar_desc = f' Annotation (resume, {resume_already:,} already done)'
 
         with tqdm(total=total_tasks, desc=pbar_desc, unit='items',
                   position=0, leave=True, dynamic_ncols=True, disable=disable_pbar) as pbar:
@@ -1147,9 +1147,9 @@ class LLMAnnotator:
         failed_tasks_queue = []
         max_final_retry_rounds = config.get('max_final_retry_rounds', 3)  # How many times to retry the failed queue
 
-        pbar_desc = '🤖 LLM Annotation'
+        pbar_desc = ' LLM Annotation'
         if resume_already > 0:
-            pbar_desc = f'🤖 Annotation (resume, {resume_already:,} already done)'
+            pbar_desc = f' Annotation (resume, {resume_already:,} already done)'
 
         for task in tqdm(tasks, desc=pbar_desc, unit='items',
                          position=0, leave=True, dynamic_ncols=True, disable=disable_pbar,

@@ -731,7 +731,7 @@ class TrainingDataSessionManager:
                 f.write("═" * 80 + "\n\n")
 
                 # Configuration
-                f.write("📋 CONFIGURATION\n")
+                f.write(" CONFIGURATION\n")
                 f.write("─" * 80 + "\n")
                 f.write(f"  Dataset Name:          {dataset_name}\n")
                 f.write(f"  Strategy:              {metadata.get('strategy', 'N/A')}\n")
@@ -742,7 +742,7 @@ class TrainingDataSessionManager:
                 f.write("\n")
 
                 # Dataset Statistics
-                f.write("📊 DATASET STATISTICS\n")
+                f.write(" DATASET STATISTICS\n")
                 f.write("─" * 80 + "\n")
                 f.write(f"  Total Samples:         {data['total_samples']:,}\n")
                 f.write(f"  Unique Classes:        {data['num_classes']}\n")
@@ -754,7 +754,7 @@ class TrainingDataSessionManager:
 
                 # Split Ratios
                 if data['total_samples'] > 0:
-                    f.write("📈 SPLIT RATIOS\n")
+                    f.write(" SPLIT RATIOS\n")
                     f.write("─" * 80 + "\n")
                     train_pct = (data['train_samples'] / data['total_samples']) * 100
                     val_pct = (data['val_samples'] / data['total_samples']) * 100
@@ -766,7 +766,7 @@ class TrainingDataSessionManager:
                     f.write("\n")
 
                 # Class Distribution
-                f.write("🎯 CLASS DISTRIBUTION\n")
+                f.write(" CLASS DISTRIBUTION\n")
                 f.write("─" * 80 + "\n")
 
                 # Training distribution
@@ -793,7 +793,7 @@ class TrainingDataSessionManager:
 
                 # Imbalance Metrics
                 if imbalance and imbalance.get('imbalance_ratio', 1.0) > 1.0:
-                    f.write("⚖️ IMBALANCE METRICS\n")
+                    f.write(" IMBALANCE METRICS\n")
                     f.write("─" * 80 + "\n")
                     f.write(f"  Imbalance Ratio:       {imbalance.get('imbalance_ratio', 0):.2f}:1\n")
                     f.write(f"  Gini Index:            {imbalance.get('gini_index', 0):.3f}\n")
@@ -804,14 +804,14 @@ class TrainingDataSessionManager:
 
                 # Warnings
                 if warnings:
-                    f.write("⚠️  WARNINGS\n")
+                    f.write("[!]  WARNINGS\n")
                     f.write("─" * 80 + "\n")
                     for i, warning in enumerate(warnings, 1):
                         f.write(f"  {i}. {warning}\n")
                     f.write("\n")
 
                 # File Information
-                f.write("📁 FILE INFORMATION\n")
+                f.write(" FILE INFORMATION\n")
                 f.write("─" * 80 + "\n")
 
                 # Determine actual file path
@@ -857,7 +857,7 @@ class TrainingDataSessionManager:
                 f.write(f"    Classes: {data['num_classes']}\n")
                 warnings_count = len(data.get('warnings', []))
                 if warnings_count > 0:
-                    f.write(f"    ⚠️  Warnings: {warnings_count}\n")
+                    f.write(f"    [!]  Warnings: {warnings_count}\n")
 
             f.write("\n" + "═" * 80 + "\n")
 
@@ -917,7 +917,7 @@ class TrainingDataSessionManager:
             if df.empty:
                 return
 
-            f.write("🏆 BEST MODELS PERFORMANCE\n")
+            f.write(" BEST MODELS PERFORMANCE\n")
             f.write("─" * 80 + "\n")
 
             # Group by category for organized display
@@ -938,7 +938,7 @@ class TrainingDataSessionManager:
 
                 # Display multi-class models first
                 if multiclass_models:
-                    f.write("\n  📊 MULTI-CLASS MODELS\n")
+                    f.write("\n   MULTI-CLASS MODELS\n")
                     f.write("  " + "─" * 76 + "\n")
 
                     for row in multiclass_models:
@@ -969,7 +969,7 @@ class TrainingDataSessionManager:
 
                 # Display binary models (one-vs-all)
                 if binary_models:
-                    f.write("\n  ⚡ BINARY (ONE-VS-ALL) MODELS\n")
+                    f.write("\n   BINARY (ONE-VS-ALL) MODELS\n")
                     f.write("  " + "─" * 76 + "\n")
 
                     # Group by parent category for cleaner display
@@ -1020,10 +1020,10 @@ class TrainingDataSessionManager:
                             for label, row in sorted_items[-3:]:
                                 acc = row.get('accuracy', 0)
                                 f1 = row.get('macro_f1', 0)
-                                f.write(f"        ⚠ {label}: F1={f1:.4f}, Acc={acc:.4f}\n")
+                                f.write(f"        [!] {label}: F1={f1:.4f}, Acc={acc:.4f}\n")
 
                 # Summary statistics
-                f.write("\n  📈 OVERALL SUMMARY\n")
+                f.write("\n   OVERALL SUMMARY\n")
                 f.write("  " + "─" * 76 + "\n")
 
                 total_models = len(df)
@@ -1038,7 +1038,7 @@ class TrainingDataSessionManager:
                     avg_combined = df['combined_score'].mean()
                     f.write(f"    Average Combined:      {avg_combined:.4f}\n")
 
-            f.write(f"\n  💡 For complete details, see: all_best_models_final.csv\n")
+            f.write(f"\n   For complete details, see: all_best_models_final.csv\n")
             f.write("\n")
 
         except Exception as e:
@@ -1078,7 +1078,7 @@ class TrainingDataSessionManager:
             f.write("═" * 80 + "\n\n")
 
             # Configuration Section
-            f.write("📋 CONFIGURATION\n")
+            f.write(" CONFIGURATION\n")
             f.write("─" * 80 + "\n")
             if config_metadata:
                 f.write(f"  Training Strategy:     {config_metadata.get('strategy', 'N/A')}\n")
@@ -1119,7 +1119,7 @@ class TrainingDataSessionManager:
             f.write("\n")
 
             # Dataset Summary Section
-            f.write("📊 DATASET SUMMARY\n")
+            f.write(" DATASET SUMMARY\n")
             f.write("─" * 80 + "\n")
 
             # Determine if data is pre-split or post-split
@@ -1164,7 +1164,7 @@ class TrainingDataSessionManager:
             f.write("\n")
 
             # Models to be trained section
-            f.write("🎯 MODELS TO BE TRAINED\n")
+            f.write(" MODELS TO BE TRAINED\n")
             f.write("─" * 80 + "\n")
 
             # Load model catalog for detailed listing
@@ -1185,7 +1185,7 @@ class TrainingDataSessionManager:
                 # List multi-class models
                 multiclass_df = catalog_df[catalog_df['type'] == 'multi-class']
                 if len(multiclass_df) > 0:
-                    f.write(f"  📊 MULTI-CLASS MODELS ({len(multiclass_df)} models)\n")
+                    f.write(f"   MULTI-CLASS MODELS ({len(multiclass_df)} models)\n")
                     f.write(f"  {'-' * 76}\n\n")
 
                     for idx, row in multiclass_df.iterrows():
@@ -1203,13 +1203,13 @@ class TrainingDataSessionManager:
                         f.write(f"        - Test:          {row['test_samples_projected']:,}\n")
                         f.write(f"      Imbalance Ratio:   {row['imbalance_ratio']}:1\n")
                         if row['num_warnings'] > 0:
-                            f.write(f"      ⚠️  Warnings:        {row['num_warnings']} ({row['warnings_summary'][:80]}...)\n")
+                            f.write(f"      [!]  Warnings:        {row['num_warnings']} ({row['warnings_summary'][:80]}...)\n")
                         f.write("\n")
 
                 # List binary (one-vs-all) models
                 binary_df = catalog_df[catalog_df['type'] == 'binary (one-vs-all)']
                 if len(binary_df) > 0:
-                    f.write(f"\n  ⚡ BINARY (ONE-VS-ALL) MODELS ({len(binary_df)} models)\n")
+                    f.write(f"\n   BINARY (ONE-VS-ALL) MODELS ({len(binary_df)} models)\n")
                     f.write(f"  {'-' * 76}\n\n")
 
                     # Group by base_dataset
@@ -1234,18 +1234,18 @@ class TrainingDataSessionManager:
                             f.write(f"      ... and {len(group_df) - max_to_show} more binary classifiers\n")
                             f.write(f"      (See model_catalog.csv for complete list)\n\n")
 
-                f.write(f"  💡 Complete list: model_catalog.csv ({total_models} models with full details)\n\n")
+                f.write(f"   Complete list: model_catalog.csv ({total_models} models with full details)\n\n")
             else:
                 # Fallback if catalog doesn't exist yet
                 total_models = len(self.distribution_data)
                 f.write(f"  Total Datasets:        {total_models}\n")
-                f.write(f"  ⚠️  Model catalog not yet generated\n\n")
+                f.write(f"  [!]  Model catalog not yet generated\n\n")
 
             f.write("\n")
 
             # Training Execution Summary (if training context provided)
             if self.training_context:
-                f.write("🎓 TRAINING EXECUTION SUMMARY\n")
+                f.write(" TRAINING EXECUTION SUMMARY\n")
                 f.write("─" * 80 + "\n")
 
                 mode = self.training_context.get('mode', 'unknown')
@@ -1269,7 +1269,7 @@ class TrainingDataSessionManager:
                         f.write(f"  Benchmark Results:     Included in reports\n")
                         f.write(f"  Purpose:               Model comparison and selection\n")
 
-                    f.write(f"\n  💡 Benchmark datasets are used for model comparison only.\n")
+                    f.write(f"\n   Benchmark datasets are used for model comparison only.\n")
                     f.write(f"     Final training may use different data splits or configurations.\n")
 
                 # Runtime parameters
@@ -1286,7 +1286,7 @@ class TrainingDataSessionManager:
 
             # Individual Dataset Details
             if self.distribution_data:
-                f.write("📁 INDIVIDUAL DATASETS\n")
+                f.write(" INDIVIDUAL DATASETS\n")
                 f.write("─" * 80 + "\n")
                 for dataset_name, data in sorted(self.distribution_data.items()):
                     f.write(f"\n  Dataset: {dataset_name}\n")
@@ -1309,13 +1309,13 @@ class TrainingDataSessionManager:
                 f.write("\n")
 
             # Validation Section
-            f.write("⚠️  VALIDATION\n")
+            f.write("[!]  VALIDATION\n")
             f.write("─" * 80 + "\n")
             f.write(f"  Total Warnings:        {summary.get('total_warnings', 0)}\n")
             f.write(f"  Datasets with Issues:  {summary.get('datasets_with_warnings', 0)}\n")
 
             if summary.get('total_warnings', 0) > 0:
-                f.write(f"\n  ⚠️  Some datasets have quality issues.\n")
+                f.write(f"\n  [!]  Some datasets have quality issues.\n")
                 f.write(f"  Review: {self.training_data_logs_dir / 'validation_warnings.log'}\n")
             else:
                 f.write(f"\n  ✓ All datasets passed validation checks\n")
@@ -1323,7 +1323,7 @@ class TrainingDataSessionManager:
             f.write("\n")
 
             # Files & Locations
-            f.write("📂 FILES & LOCATIONS\n")
+            f.write(" FILES & LOCATIONS\n")
             f.write("─" * 80 + "\n")
             f.write(f"  Session Directory:     {self.session_dir}/\n")
             f.write(f"  Training Data:         {self.datasets_dir}/\n")

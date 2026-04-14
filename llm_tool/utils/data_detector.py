@@ -977,7 +977,7 @@ class DataDetector:
 
         console.print(f"\n[bold]{step_label}[/bold]")
         console.print()
-        console.print("[bold cyan]📋 What is an ID column?[/bold cyan]")
+        console.print("[bold cyan] What is an ID column?[/bold cyan]")
         console.print("  • [green]Tracks each text[/green] through the annotation process")
         console.print("  • [green]Links results back[/green] to your original data")
         console.print("  • [green]Resumes annotation[/green] if interrupted")
@@ -1032,7 +1032,7 @@ class DataDetector:
                 elif check_ratio >= 0.95:
                     notes.append("near-unique")
                 else:
-                    notes.append("⚠ duplicates remain")
+                    notes.append("[!] duplicates remain")
 
                 id_table.add_row(
                     str(idx),

@@ -82,7 +82,7 @@ try:
     console = Console()
     HAS_RICH = True
 except ImportError as e:
-    print("\n❌ Error: Rich library is required but not installed.")
+    print("\n Error: Rich library is required but not installed.")
 
 # Requests is optional (only needed for Label Studio direct export)
 HAS_REQUESTS = False
@@ -462,7 +462,7 @@ class LLMDetector:
     def detect_anthropic_models() -> List[ModelInfo]:
         """List available Anthropic models"""
         models = [
-            # ⚠️ Not yet tested in pipeline
+            # [!] Not yet tested in pipeline
         ]
         return models
 
@@ -484,88 +484,88 @@ class TrainerModelDetector:
         """Get all available models for training organized by category"""
         return {
             "Multilingual Models": [
-                {"name": "xlm-roberta-base", "params": "278M", "type": "XLM-R", "languages": "100+", "performance": "★★★★"},
-                {"name": "xlm-roberta-large", "params": "560M", "type": "XLM-R", "languages": "100+", "performance": "★★★★★"},
-                {"name": "microsoft/mdeberta-v3-base", "params": "280M", "type": "mDeBERTa", "languages": "100+", "performance": "★★★★★"},
-                {"name": "bert-base-multilingual-cased", "params": "177M", "type": "mBERT", "languages": "104", "performance": "★★★"},
+                {"name": "xlm-roberta-base", "params": "278M", "type": "XLM-R", "languages": "100+", "performance": "****"},
+                {"name": "xlm-roberta-large", "params": "560M", "type": "XLM-R", "languages": "100+", "performance": "*****"},
+                {"name": "microsoft/mdeberta-v3-base", "params": "280M", "type": "mDeBERTa", "languages": "100+", "performance": "*****"},
+                {"name": "bert-base-multilingual-cased", "params": "177M", "type": "mBERT", "languages": "104", "performance": "***"},
             ],
             "Long Document Models (Multilingual)": [
-                {"name": "markussagen/xlm-roberta-longformer-base-4096", "params": "278M", "type": "XLM-R Longformer", "max_length": "4096", "languages": "100+", "performance": "★★★★★"},
-                {"name": "allenai/led-base-16384", "params": "406M", "type": "LED", "max_length": "16384", "language": "English", "performance": "★★★★★"},
-                {"name": "allenai/led-large-16384", "params": "406M", "type": "LED", "max_length": "16384", "language": "English", "performance": "★★★★★"},
-                {"name": "allenai/longformer-base-4096", "params": "149M", "type": "Longformer", "max_length": "4096", "language": "English", "performance": "★★★★"},
-                {"name": "allenai/longformer-large-4096", "params": "435M", "type": "Longformer", "max_length": "4096", "language": "English", "performance": "★★★★★"},
-                {"name": "google/bigbird-roberta-base", "params": "128M", "type": "BigBird", "max_length": "4096", "language": "English", "performance": "★★★★"},
-                {"name": "google/bigbird-roberta-large", "params": "340M", "type": "BigBird", "max_length": "4096", "language": "English", "performance": "★★★★★"},
+                {"name": "markussagen/xlm-roberta-longformer-base-4096", "params": "278M", "type": "XLM-R Longformer", "max_length": "4096", "languages": "100+", "performance": "*****"},
+                {"name": "allenai/led-base-16384", "params": "406M", "type": "LED", "max_length": "16384", "language": "English", "performance": "*****"},
+                {"name": "allenai/led-large-16384", "params": "406M", "type": "LED", "max_length": "16384", "language": "English", "performance": "*****"},
+                {"name": "allenai/longformer-base-4096", "params": "149M", "type": "Longformer", "max_length": "4096", "language": "English", "performance": "****"},
+                {"name": "allenai/longformer-large-4096", "params": "435M", "type": "Longformer", "max_length": "4096", "language": "English", "performance": "*****"},
+                {"name": "google/bigbird-roberta-base", "params": "128M", "type": "BigBird", "max_length": "4096", "language": "English", "performance": "****"},
+                {"name": "google/bigbird-roberta-large", "params": "340M", "type": "BigBird", "max_length": "4096", "language": "English", "performance": "*****"},
             ],
             "Long Document Models (Language-Specific)": [
                 # French
-                {"name": "cmarkea/distilcamembert-base-nli", "params": "68M", "type": "DistilCamemBERT", "max_length": "512", "language": "French", "performance": "★★★★"},
-                {"name": "gilf/french-camembert-postag-model", "params": "110M", "type": "CamemBERT", "max_length": "512", "language": "French", "performance": "★★★★"},
+                {"name": "cmarkea/distilcamembert-base-nli", "params": "68M", "type": "DistilCamemBERT", "max_length": "512", "language": "French", "performance": "****"},
+                {"name": "gilf/french-camembert-postag-model", "params": "110M", "type": "CamemBERT", "max_length": "512", "language": "French", "performance": "****"},
                 # Spanish
-                {"name": "PlanTL-GOB-ES/roberta-base-bne", "params": "125M", "type": "RoBERTa-BNE", "max_length": "512", "language": "Spanish", "performance": "★★★★"},
-                {"name": "dccuchile/bert-base-spanish-wwm-cased", "params": "110M", "type": "BETO", "max_length": "512", "language": "Spanish", "performance": "★★★★"},
+                {"name": "PlanTL-GOB-ES/roberta-base-bne", "params": "125M", "type": "RoBERTa-BNE", "max_length": "512", "language": "Spanish", "performance": "****"},
+                {"name": "dccuchile/bert-base-spanish-wwm-cased", "params": "110M", "type": "BETO", "max_length": "512", "language": "Spanish", "performance": "****"},
                 # German
-                {"name": "deepset/gbert-base", "params": "110M", "type": "GBERT", "max_length": "512", "language": "German", "performance": "★★★★"},
-                {"name": "bert-base-german-cased", "params": "110M", "type": "German BERT", "max_length": "512", "language": "German", "performance": "★★★★"},
+                {"name": "deepset/gbert-base", "params": "110M", "type": "GBERT", "max_length": "512", "language": "German", "performance": "****"},
+                {"name": "bert-base-german-cased", "params": "110M", "type": "German BERT", "max_length": "512", "language": "German", "performance": "****"},
                 # Italian
-                {"name": "dbmdz/bert-base-italian-cased", "params": "110M", "type": "Italian BERT", "max_length": "512", "language": "Italian", "performance": "★★★★"},
+                {"name": "dbmdz/bert-base-italian-cased", "params": "110M", "type": "Italian BERT", "max_length": "512", "language": "Italian", "performance": "****"},
                 # Portuguese
-                {"name": "neuralmind/bert-base-portuguese-cased", "params": "110M", "type": "BERTimbau", "max_length": "512", "language": "Portuguese", "performance": "★★★★"},
+                {"name": "neuralmind/bert-base-portuguese-cased", "params": "110M", "type": "BERTimbau", "max_length": "512", "language": "Portuguese", "performance": "****"},
                 # Dutch
-                {"name": "GroNLP/bert-base-dutch-cased", "params": "110M", "type": "BERTje", "max_length": "512", "language": "Dutch", "performance": "★★★★"},
-                {"name": "wietsedv/bert-base-dutch-cased", "params": "110M", "type": "Dutch BERT", "max_length": "512", "language": "Dutch", "performance": "★★★★"},
+                {"name": "GroNLP/bert-base-dutch-cased", "params": "110M", "type": "BERTje", "max_length": "512", "language": "Dutch", "performance": "****"},
+                {"name": "wietsedv/bert-base-dutch-cased", "params": "110M", "type": "Dutch BERT", "max_length": "512", "language": "Dutch", "performance": "****"},
                 # Polish
-                {"name": "allegro/herbert-base-cased", "params": "124M", "type": "HerBERT", "max_length": "514", "language": "Polish", "performance": "★★★★"},
+                {"name": "allegro/herbert-base-cased", "params": "124M", "type": "HerBERT", "max_length": "514", "language": "Polish", "performance": "****"},
                 # Chinese
-                {"name": "hfl/chinese-roberta-wwm-ext", "params": "102M", "type": "Chinese RoBERTa", "max_length": "512", "language": "Chinese", "performance": "★★★★"},
-                {"name": "bert-base-chinese", "params": "110M", "type": "Chinese BERT", "max_length": "512", "language": "Chinese", "performance": "★★★★"},
+                {"name": "hfl/chinese-roberta-wwm-ext", "params": "102M", "type": "Chinese RoBERTa", "max_length": "512", "language": "Chinese", "performance": "****"},
+                {"name": "bert-base-chinese", "params": "110M", "type": "Chinese BERT", "max_length": "512", "language": "Chinese", "performance": "****"},
                 # Japanese
-                {"name": "cl-tohoku/bert-base-japanese-whole-word-masking", "params": "111M", "type": "Japanese BERT WWM", "max_length": "512", "language": "Japanese", "performance": "★★★★"},
-                {"name": "cl-tohoku/bert-base-japanese", "params": "111M", "type": "Japanese BERT", "max_length": "512", "language": "Japanese", "performance": "★★★★"},
+                {"name": "cl-tohoku/bert-base-japanese-whole-word-masking", "params": "111M", "type": "Japanese BERT WWM", "max_length": "512", "language": "Japanese", "performance": "****"},
+                {"name": "cl-tohoku/bert-base-japanese", "params": "111M", "type": "Japanese BERT", "max_length": "512", "language": "Japanese", "performance": "****"},
                 # Arabic
-                {"name": "aubmindlab/bert-base-arabert", "params": "135M", "type": "AraBERT", "max_length": "512", "language": "Arabic", "performance": "★★★★"},
-                {"name": "asafaya/bert-base-arabic", "params": "110M", "type": "Arabic BERT", "max_length": "512", "language": "Arabic", "performance": "★★★★"},
+                {"name": "aubmindlab/bert-base-arabert", "params": "135M", "type": "AraBERT", "max_length": "512", "language": "Arabic", "performance": "****"},
+                {"name": "asafaya/bert-base-arabic", "params": "110M", "type": "Arabic BERT", "max_length": "512", "language": "Arabic", "performance": "****"},
                 # Russian
-                {"name": "DeepPavlov/rubert-base-cased", "params": "178M", "type": "RuBERT", "max_length": "512", "language": "Russian", "performance": "★★★★"},
+                {"name": "DeepPavlov/rubert-base-cased", "params": "178M", "type": "RuBERT", "max_length": "512", "language": "Russian", "performance": "****"},
             ],
             "Efficient Models": [
-                {"name": "distilbert-base", "params": "66M", "type": "DistilBERT", "speed": "2x faster", "performance": "★★★"},
-                {"name": "distilroberta-base", "params": "82M", "type": "DistilRoBERTa", "speed": "2x faster", "performance": "★★★"},
-                {"name": "albert-base-v2", "params": "12M", "type": "ALBERT", "speed": "4x faster", "performance": "★★★"},
-                {"name": "albert-large-v2", "params": "18M", "type": "ALBERT", "speed": "3x faster", "performance": "★★★★"},
-                {"name": "deberta-v3-xsmall", "params": "22M", "type": "DeBERTa", "speed": "5x faster", "performance": "★★★"},
-                {"name": "electra-small", "params": "14M", "type": "ELECTRA", "speed": "4x faster", "performance": "★★★"},
+                {"name": "distilbert-base", "params": "66M", "type": "DistilBERT", "speed": "2x faster", "performance": "***"},
+                {"name": "distilroberta-base", "params": "82M", "type": "DistilRoBERTa", "speed": "2x faster", "performance": "***"},
+                {"name": "albert-base-v2", "params": "12M", "type": "ALBERT", "speed": "4x faster", "performance": "***"},
+                {"name": "albert-large-v2", "params": "18M", "type": "ALBERT", "speed": "3x faster", "performance": "****"},
+                {"name": "deberta-v3-xsmall", "params": "22M", "type": "DeBERTa", "speed": "5x faster", "performance": "***"},
+                {"name": "electra-small", "params": "14M", "type": "ELECTRA", "speed": "4x faster", "performance": "***"},
             ],
             "English Models": [
-                {"name": "bert-base-uncased", "params": "110M", "type": "BERT", "performance": "★★★"},
-                {"name": "bert-large-uncased", "params": "340M", "type": "BERT", "performance": "★★★★"},
-                {"name": "roberta-base", "params": "125M", "type": "RoBERTa", "performance": "★★★★"},
-                {"name": "roberta-large", "params": "355M", "type": "RoBERTa", "performance": "★★★★★"},
-                {"name": "deberta-v3-base", "params": "184M", "type": "DeBERTa", "performance": "★★★★★"},
-                {"name": "deberta-v3-large", "params": "435M", "type": "DeBERTa", "performance": "★★★★★"},
-                {"name": "electra-base", "params": "110M", "type": "ELECTRA", "performance": "★★★★"},
-                {"name": "electra-large", "params": "335M", "type": "ELECTRA", "performance": "★★★★★"},
-                {"name": "albert-xlarge-v2", "params": "60M", "type": "ALBERT", "performance": "★★★★"},
+                {"name": "bert-base-uncased", "params": "110M", "type": "BERT", "performance": "***"},
+                {"name": "bert-large-uncased", "params": "340M", "type": "BERT", "performance": "****"},
+                {"name": "roberta-base", "params": "125M", "type": "RoBERTa", "performance": "****"},
+                {"name": "roberta-large", "params": "355M", "type": "RoBERTa", "performance": "*****"},
+                {"name": "deberta-v3-base", "params": "184M", "type": "DeBERTa", "performance": "*****"},
+                {"name": "deberta-v3-large", "params": "435M", "type": "DeBERTa", "performance": "*****"},
+                {"name": "electra-base", "params": "110M", "type": "ELECTRA", "performance": "****"},
+                {"name": "electra-large", "params": "335M", "type": "ELECTRA", "performance": "*****"},
+                {"name": "albert-xlarge-v2", "params": "60M", "type": "ALBERT", "performance": "****"},
             ],
             "French Models": [
-                {"name": "camembert-base", "params": "110M", "type": "CamemBERT", "performance": "★★★★"},
-                {"name": "camembert-large", "params": "335M", "type": "CamemBERT", "performance": "★★★★★"},
-                {"name": "camemberta-base", "params": "110M", "type": "CamemBERTa-v2", "performance": "★★★★"},
-                {"name": "camembertav2-base", "params": "110M", "type": "CamemBERTav2 (SOTA)", "performance": "★★★★★"},
-                {"name": "flaubert-base", "params": "137M", "type": "FlauBERT", "performance": "★★★★"},
-                {"name": "flaubert-large", "params": "373M", "type": "FlauBERT", "performance": "★★★★★"},
-                {"name": "distilcamembert", "params": "68M", "type": "DistilCamemBERT", "performance": "★★★"},
-                {"name": "barthez", "params": "165M", "type": "BARThez", "performance": "★★★★"},
-                {"name": "fralbert", "params": "12M", "type": "FrALBERT", "performance": "★★★"},
-                {"name": "fr-electra", "params": "110M", "type": "FrELECTRA", "performance": "★★★★"},
+                {"name": "camembert-base", "params": "110M", "type": "CamemBERT", "performance": "****"},
+                {"name": "camembert-large", "params": "335M", "type": "CamemBERT", "performance": "*****"},
+                {"name": "camemberta-base", "params": "110M", "type": "CamemBERTa-v2", "performance": "****"},
+                {"name": "camembertav2-base", "params": "110M", "type": "CamemBERTav2 (SOTA)", "performance": "*****"},
+                {"name": "flaubert-base", "params": "137M", "type": "FlauBERT", "performance": "****"},
+                {"name": "flaubert-large", "params": "373M", "type": "FlauBERT", "performance": "*****"},
+                {"name": "distilcamembert", "params": "68M", "type": "DistilCamemBERT", "performance": "***"},
+                {"name": "barthez", "params": "165M", "type": "BARThez", "performance": "****"},
+                {"name": "fralbert", "params": "12M", "type": "FrALBERT", "performance": "***"},
+                {"name": "fr-electra", "params": "110M", "type": "FrELECTRA", "performance": "****"},
             ],
             "Other Language Models": [
-                {"name": "asafaya/bert-base-arabic", "params": "110M", "type": "AraBERT", "language": "Arabic", "performance": "★★★★"},
-                {"name": "bert-base-chinese", "params": "110M", "type": "Chinese BERT", "language": "Chinese", "performance": "★★★★"},
-                {"name": "bert-base-german-cased", "params": "110M", "type": "German BERT", "language": "German", "performance": "★★★★"},
-                {"name": "ai4bharat/indic-bert", "params": "110M", "type": "Hindi BERT", "language": "Hindi", "performance": "★★★"},
-                {"name": "dbmdz/bert-base-italian-cased", "params": "110M", "type": "Italian BERT", "language": "Italian", "performance": "★★★★"},
+                {"name": "asafaya/bert-base-arabic", "params": "110M", "type": "AraBERT", "language": "Arabic", "performance": "****"},
+                {"name": "bert-base-chinese", "params": "110M", "type": "Chinese BERT", "language": "Chinese", "performance": "****"},
+                {"name": "bert-base-german-cased", "params": "110M", "type": "German BERT", "language": "German", "performance": "****"},
+                {"name": "ai4bharat/indic-bert", "params": "110M", "type": "Hindi BERT", "language": "Hindi", "performance": "***"},
+                {"name": "dbmdz/bert-base-italian-cased", "params": "110M", "type": "Italian BERT", "language": "Italian", "performance": "****"},
             ]
         }
 
@@ -940,7 +940,7 @@ class AdvancedCLI:
                                 self.logger.debug(f"Could not load {model_name} tokenizer locally: {model_error}")
 
                     if tokenizer is None and display_results and self.console:
-                        warning_msg = "[yellow]⚠️ Unable to load a Hugging Face tokenizer locally."
+                        warning_msg = "[yellow][!] Unable to load a Hugging Face tokenizer locally."
                         if tokenizer_error:
                             warning_msg += f" ({tokenizer_error})"
                         warning_msg += " Falling back to whitespace token counts.[/yellow]"
@@ -1050,7 +1050,7 @@ class AdvancedCLI:
 
                         if long_document_percentage > 20:
                             requires_long_document_model = True
-                            self.console.print(f"\n[bold yellow]⚠ Warning: {long_document_percentage:.1f}% of documents exceed 512 tokens[/bold yellow]")
+                            self.console.print(f"\n[bold yellow][!] Warning: {long_document_percentage:.1f}% of documents exceed 512 tokens[/bold yellow]")
                             self.console.print("[dim]Standard BERT models truncate at 512 tokens, which may lose important information.[/dim]")
                             self.console.print("[dim]Long-document models (Longformer, BigBird) can handle up to 4096 tokens.[/dim]\n")
                         else:
@@ -1203,22 +1203,22 @@ class AdvancedCLI:
             self.console.print(Align.center("[bright_magenta]╚══════╝[bright_yellow]╚══════╝[bright_green]╚═╝     ╚═╝       [bright_cyan]╚═╝    [bright_red]╚═════╝  [bright_blue]╚═════╝ [bright_white]╚══════╝"))
 
             self.console.print()
-            self.console.print(Align.center("[bold bright_yellow on blue]  🚀 LLM-powered Intelligent Annotation & Training Pipeline 🚀  [/bold bright_yellow on blue]"))
+            self.console.print(Align.center("[bold bright_yellow on blue]   LLM-powered Intelligent Annotation & Training Pipeline   [/bold bright_yellow on blue]"))
             self.console.print()
 
             # Colorful pipeline with emojis
             pipeline_text = Text()
-            pipeline_text.append("📊 Data ", style="bold bright_yellow on black")
+            pipeline_text.append(" Data ", style="bold bright_yellow on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🤖 LLM Annotation ", style="bold bright_green on black")
+            pipeline_text.append(" LLM Annotation ", style="bold bright_green on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🧹 Clean ", style="bold bright_cyan on black")
+            pipeline_text.append(" Clean ", style="bold bright_cyan on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🎯 Label ", style="bold bright_magenta on black")
+            pipeline_text.append(" Label ", style="bold bright_magenta on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🧠 Train ", style="bold bright_red on black")
+            pipeline_text.append(" Train ", style="bold bright_red on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("📈 Deploy ", style="bold bright_blue on black")
+            pipeline_text.append(" Deploy ", style="bold bright_blue on black")
 
             self.console.print(Align.center(pipeline_text))
             self.console.print()
@@ -1228,10 +1228,10 @@ class AdvancedCLI:
 
             # Information table with system info
             info_table = Table(show_header=False, box=None, padding=(0, 2))
-            info_table.add_row("📚 Version:", "[bright_green]1.0[/bright_green]")
-            info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
-            info_table.add_row("🚀 Features:", "[cyan]50+ BERT Models, 2 LLM Providers (OpenAI/Ollama), Parallel GPU/CPU, Reinforcement Learning[/cyan]")
-            info_table.add_row("🎯 Capabilities:", "[magenta]Multi-Label Classification, 100+ Languages, SQL/File I/O, Doccano/Label Studio Export[/magenta]")
+            info_table.add_row(" Version:", "[bright_green]1.0[/bright_green]")
+            info_table.add_row(" Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
+            info_table.add_row(" Features:", "[cyan]50+ BERT Models, 2 LLM Providers (OpenAI/Ollama), Parallel GPU/CPU, Reinforcement Learning[/cyan]")
+            info_table.add_row(" Capabilities:", "[magenta]Multi-Label Classification, 100+ Languages, SQL/File I/O, Doccano/Label Studio Export[/magenta]")
 
             self.console.print(Panel(
                 info_table,
@@ -1242,7 +1242,7 @@ class AdvancedCLI:
             self.console.print()
 
             # Auto-detect models and system resources in background
-            with self.console.status("[bold green]🔍 Scanning environment...", spinner="dots"):
+            with self.console.status("[bold green] Scanning environment...", spinner="dots"):
                 self.detected_llms = self.llm_detector.detect_all_llms()
                 self.available_trainer_models = self.trainer_model_detector.get_available_models()
                 self.detected_datasets = self._detect_available_datasets()
@@ -1257,9 +1257,9 @@ class AdvancedCLI:
             print(" " * 28 + "LLM TOOL")
             print(" " * 15 + "LLM-powered Intelligent Annotation & Training Pipeline")
             print("="*80)
-            print("\n📚 Version: 1.0")
-            print("👨‍💻 Author: Antoine Lemor")
-            print("\n📊 Data → 🤖 LLM Annotation → 🧹 Clean → 🎯 Label → 🧠 Train → 📈 Deploy")
+            print("\n Version: 1.0")
+            print(" Author: Antoine Lemor")
+            print("\n Data →  LLM Annotation →  Clean →  Label →  Train →  Deploy")
             print("\nScanning environment...")
 
             self.detected_llms = self.llm_detector.detect_all_llms()
@@ -1312,7 +1312,7 @@ class AdvancedCLI:
             return
 
         # === ANNOTATION LLMs SECTION ===
-        llms_table = Table(title="🤖 Available LLMs for Annotation", border_style="cyan", show_lines=True, expand=True)
+        llms_table = Table(title=" Available LLMs for Annotation", border_style="cyan", show_lines=True, expand=True)
         llms_table.add_column("Provider", style="cyan", no_wrap=True)
         llms_table.add_column("Model", style="white", no_wrap=True)
         llms_table.add_column("Size", style="yellow", no_wrap=True)
@@ -1341,11 +1341,11 @@ class AdvancedCLI:
                     model.name,
                     "API",
                     f"{model.context_length:,}" if model.context_length else "N/A",
-                    "🔑 API Key" if model.requires_api_key else "✓ Ready"
+                    " API Key" if model.requires_api_key else "✓ Ready"
                 )
 
         # === TRAINABLE MODELS SECTION ===
-        trainer_table = Table(title="🏋️ Available Models for Training", border_style="magenta", show_lines=False, expand=True)
+        trainer_table = Table(title="️ Available Models for Training", border_style="magenta", show_lines=False, expand=True)
         trainer_table.add_column("Category", style="magenta bold", no_wrap=True)
         trainer_table.add_column("Models", style="white", ratio=1)
 
@@ -1400,7 +1400,7 @@ class AdvancedCLI:
         self.console.print()
 
         # === DATASETS SECTION ===
-        datasets_table = Table(title="📊 Detected Datasets", border_style="yellow", show_lines=False, expand=True)
+        datasets_table = Table(title=" Detected Datasets", border_style="yellow", show_lines=False, expand=True)
         datasets_table.add_column("File", style="cyan", no_wrap=True)
         datasets_table.add_column("Format", style="white bold", no_wrap=True, justify="center")
         datasets_table.add_column("Size", style="green", no_wrap=True, justify="right")
@@ -1454,7 +1454,7 @@ class AdvancedCLI:
         # === ALL SUPPORTED FORMATS SECTION ===
         # Create a centered panel showing all supported formats
         all_formats_text = Text(justify="center")
-        all_formats_text.append("📦 Supported Formats: ", style="bold cyan")
+        all_formats_text.append(" Supported Formats: ", style="bold cyan")
 
         # File formats
         all_formats_text.append("CSV", style="cyan bold")
@@ -1470,7 +1470,7 @@ class AdvancedCLI:
         all_formats_text.append("TSV", style="blue bold")
 
         # Databases
-        all_formats_text.append("\n💾 Databases: ", style="bold cyan")
+        all_formats_text.append("\n Databases: ", style="bold cyan")
         all_formats_text.append("PostgreSQL", style="blue bold")
         all_formats_text.append(" • ", style="dim")
         all_formats_text.append("MySQL", style="yellow bold")
@@ -1507,14 +1507,14 @@ class AdvancedCLI:
             menu_table.add_column()
 
             options = [
-                ("1", "🎨 The Annotator - Zero-Shot LLM Annotation (OpenAI/Ollama) → Label Studio/Doccano Export"),
-                ("2", "🏭 The Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models"),
-                ("3", "🎮 Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
-                ("4", "🤖 BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
-                ("5", "🔍 Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement [⚠️ IN DEVELOPMENT]"),
-                ("6", "📂 Resume Center - Manage Sessions & Configurations"),
-                ("7", "📚 Documentation & Help"),
-                ("0", "❌ Exit")
+                ("1", " The Annotator - Zero-Shot LLM Annotation (OpenAI/Ollama) → Label Studio/Doccano Export"),
+                ("2", " The Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models"),
+                ("3", " Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
+                ("4", " BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
+                ("5", " Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement [[!] IN DEVELOPMENT]"),
+                ("6", " Resume Center - Manage Sessions & Configurations"),
+                ("7", " Documentation & Help"),
+                ("0", " Exit")
             ]
 
             for num, desc in options:
@@ -1550,7 +1550,7 @@ class AdvancedCLI:
             print("2. The Annotator Factory - LLM Annotations → Training Data → BERT Models")
             print("3. Training Arena - Train 50+ Models (Multi-Label & Benchmarking)")
             print("4. BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU)")
-            print("5. Validation Lab - Quality Scoring & Sampling [⚠️ IN DEVELOPMENT]")
+            print("5. Validation Lab - Quality Scoring & Sampling [[!] IN DEVELOPMENT]")
             print("6. Resume Center - Manage Sessions & Configurations")
             print("7. Documentation & Help")
             print("0. Exit")
@@ -1558,7 +1558,7 @@ class AdvancedCLI:
 
             suggestions = self._get_smart_suggestions()
             if suggestions:
-                print(f"💡 {suggestions}")
+                print(f" {suggestions}")
 
             choice = input("\nSelect option (0-7): ").strip()
 
@@ -1616,7 +1616,7 @@ class AdvancedCLI:
             return None
 
         if HAS_RICH and self.console:
-            table = Table(title="📂 Sessions Validation Lab", border_style="cyan", expand=True)
+            table = Table(title=" Sessions Validation Lab", border_style="cyan", expand=True)
             table.add_column("#", justify="right", style="cyan", width=4)
             table.add_column("Session", style="white")
             table.add_column("Statut", style="green")
@@ -1879,7 +1879,7 @@ class AdvancedCLI:
             return
 
         if HAS_RICH and self.console:
-            table = Table(title="📂 Resume Center", border_style="cyan", expand=True)
+            table = Table(title=" Resume Center", border_style="cyan", expand=True)
             table.add_column("#", style="cyan", width=3)
             table.add_column("Mode", style="magenta", no_wrap=True)
             table.add_column("Session", style="white")
@@ -1991,11 +1991,11 @@ class AdvancedCLI:
 
         # Prompt for new key
         if HAS_RICH and self.console:
-            self.console.print(f"\n[bold cyan]🔑 API Key Required for {provider}[/bold cyan]")
+            self.console.print(f"\n[bold cyan] API Key Required for {provider}[/bold cyan]")
             if self.settings.key_manager:
                 self.console.print("[dim]Your key will be stored securely using encryption[/dim]")
             else:
-                self.console.print("[yellow]⚠️  Install 'cryptography' for secure key storage: pip install cryptography[/yellow]")
+                self.console.print("[yellow][!]  Install 'cryptography' for secure key storage: pip install cryptography[/yellow]")
 
             api_key = Prompt.ask("API Key", password=True)
 
@@ -2014,7 +2014,7 @@ class AdvancedCLI:
             if self.settings.key_manager:
                 print("(Will be stored securely using encryption)")
             else:
-                print("⚠️  Install 'cryptography' for secure key storage")
+                print("[!]  Install 'cryptography' for secure key storage")
 
             api_key = input("API Key: ").strip()
 
@@ -2110,7 +2110,7 @@ class AdvancedCLI:
         # If multiple ID columns found, offer to combine them
         if len(id_columns) > 1:
             if HAS_RICH and self.console:
-                self.console.print(f"\n[bold cyan]📋 Found {len(id_columns)} ID columns:[/bold cyan]")
+                self.console.print(f"\n[bold cyan] Found {len(id_columns)} ID columns:[/bold cyan]")
                 for i, col in enumerate(id_columns, 1):
                     self.console.print(f"  {i}. [cyan]{col}[/cyan]")
 
@@ -2240,22 +2240,22 @@ class AdvancedCLI:
             self.console.print(Align.center("[bright_magenta]╚══════╝[bright_yellow]╚══════╝[bright_green]╚═╝     ╚═╝       [bright_cyan]╚═╝    [bright_red]╚═════╝  [bright_blue]╚═════╝ [bright_white]╚══════╝"))
 
             self.console.print()
-            self.console.print(Align.center("[bold bright_yellow on blue]  🚀 LLM-powered Intelligent Annotation & Training Pipeline 🚀  [/bold bright_yellow on blue]"))
+            self.console.print(Align.center("[bold bright_yellow on blue]   LLM-powered Intelligent Annotation & Training Pipeline   [/bold bright_yellow on blue]"))
             self.console.print()
 
             # Colorful pipeline with emojis
             pipeline_text = Text()
-            pipeline_text.append("📊 Data ", style="bold bright_yellow on black")
+            pipeline_text.append(" Data ", style="bold bright_yellow on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🤖 LLM Annotation ", style="bold bright_green on black")
+            pipeline_text.append(" LLM Annotation ", style="bold bright_green on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🧹 Clean ", style="bold bright_cyan on black")
+            pipeline_text.append(" Clean ", style="bold bright_cyan on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🎯 Label ", style="bold bright_magenta on black")
+            pipeline_text.append(" Label ", style="bold bright_magenta on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🧠 Train ", style="bold bright_red on black")
+            pipeline_text.append(" Train ", style="bold bright_red on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("📈 Deploy ", style="bold bright_blue on black")
+            pipeline_text.append(" Deploy ", style="bold bright_blue on black")
 
             self.console.print(Align.center(pipeline_text))
             self.console.print()
@@ -2267,7 +2267,7 @@ class AdvancedCLI:
             print(" " * 28 + "LLM TOOL")
             print(" " * 18 + "Intelligent Annotation & Training Pipeline")
             print("="*80)
-            print("\n  🤖 -> 📝 -> 🧹 -> 🎯 -> 🧠 -> 📊 -> ✨")
+            print("\n   ->  ->  ->  ->  ->  -> ✨")
             print("  AI   Annotate Clean Label Train Test Deploy\n")
             print("="*80 + "\n")
 
@@ -2303,21 +2303,21 @@ class AdvancedCLI:
                 info_table = Table(show_header=False, box=None, padding=(0, 2))
 
                 # Always add author first
-                info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
+                info_table.add_row(" Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
 
                 # Add mode-specific rows
                 if 'workflow' in mode_info:
-                    info_table.add_row("📊 Workflow:", f"[cyan]{mode_info['workflow']}[/cyan]")
+                    info_table.add_row(" Workflow:", f"[cyan]{mode_info['workflow']}[/cyan]")
 
                 if 'capabilities' in mode_info:
                     caps = ' • '.join(mode_info['capabilities'])
-                    info_table.add_row("🎯 Capabilities:", f"[yellow]{caps}[/yellow]")
+                    info_table.add_row(" Capabilities:", f"[yellow]{caps}[/yellow]")
 
                 if 'input' in mode_info:
-                    info_table.add_row("📥 Input:", f"[green]{mode_info['input']}[/green]")
+                    info_table.add_row(" Input:", f"[green]{mode_info['input']}[/green]")
 
                 if 'output' in mode_info:
-                    info_table.add_row("📤 Output:", f"[magenta]{mode_info['output']}[/magenta]")
+                    info_table.add_row(" Output:", f"[magenta]{mode_info['output']}[/magenta]")
 
                 if 'best_for' in mode_info:
                     info_table.add_row("✨ Best For:", f"[bright_blue]{mode_info['best_for']}[/bright_blue]")
@@ -2336,7 +2336,7 @@ class AdvancedCLI:
                     resource_banner = create_mode_resource_banner(self.system_resources)
                     banner_panel = Panel(
                         resource_banner,
-                        title="[bold bright_blue]⚙️  System Resources[/bold bright_blue]",
+                        title="[bold bright_blue]  System Resources[/bold bright_blue]",
                         border_style="blue",
                         padding=(0, 1)
                     )
@@ -2355,7 +2355,7 @@ class AdvancedCLI:
                     resource_banner = create_mode_resource_banner(self.system_resources)
                     banner_panel = Panel(
                         resource_banner,
-                        title="[bold bright_blue]⚙️  System Resources[/bold bright_blue]",
+                        title="[bold bright_blue]  System Resources[/bold bright_blue]",
                         border_style="blue",
                         padding=(0, 1)
                     )
@@ -2389,22 +2389,22 @@ class AdvancedCLI:
             self.console.print(Align.center("[bright_magenta]╚══════╝[bright_yellow]╚══════╝[bright_green]╚═╝     ╚═╝       [bright_cyan]╚═╝    [bright_red]╚═════╝  [bright_blue]╚═════╝ [bright_white]╚══════╝"))
 
             self.console.print()
-            self.console.print(Align.center("[bold bright_yellow on blue]  🚀 LLM-powered Intelligent Annotation & Training Pipeline 🚀  [/bold bright_yellow on blue]"))
+            self.console.print(Align.center("[bold bright_yellow on blue]   LLM-powered Intelligent Annotation & Training Pipeline   [/bold bright_yellow on blue]"))
             self.console.print()
 
             # Colorful pipeline with emojis
             pipeline_text = Text()
-            pipeline_text.append("📊 Data ", style="bold bright_yellow on black")
+            pipeline_text.append(" Data ", style="bold bright_yellow on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🤖 LLM Annotation ", style="bold bright_green on black")
+            pipeline_text.append(" LLM Annotation ", style="bold bright_green on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🧹 Clean ", style="bold bright_cyan on black")
+            pipeline_text.append(" Clean ", style="bold bright_cyan on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🎯 Label ", style="bold bright_magenta on black")
+            pipeline_text.append(" Label ", style="bold bright_magenta on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("🧠 Train ", style="bold bright_red on black")
+            pipeline_text.append(" Train ", style="bold bright_red on black")
             pipeline_text.append("→ ", style="bold white")
-            pipeline_text.append("📈 Deploy ", style="bold bright_blue on black")
+            pipeline_text.append(" Deploy ", style="bold bright_blue on black")
 
             self.console.print(Align.center(pipeline_text))
             self.console.print()
@@ -2414,11 +2414,11 @@ class AdvancedCLI:
 
             # Information table
             info_table = Table(show_header=False, box=None, padding=(0, 2))
-            info_table.add_row("📚 Version:", "[bright_green]1.0[/bright_green]")
-            info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
-            info_table.add_row("🚀 Features:", "[cyan]2 LLM Providers (OpenAI/Ollama), Prompt Wizard, Auto JSON Repair, 200K Context Support[/cyan]")
-            info_table.add_row("🎯 Capabilities:", "[magenta]Multi-Label Categories, NER, Hierarchical Schemas, Pydantic Validation[/magenta]")
-            info_table.add_row("⚡ Performance:", "[green]Parallel Processing, Incremental Save, Resume, Label Studio/Doccano Export[/green]")
+            info_table.add_row(" Version:", "[bright_green]1.0[/bright_green]")
+            info_table.add_row(" Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
+            info_table.add_row(" Features:", "[cyan]2 LLM Providers (OpenAI/Ollama), Prompt Wizard, Auto JSON Repair, 200K Context Support[/cyan]")
+            info_table.add_row(" Capabilities:", "[magenta]Multi-Label Categories, NER, Hierarchical Schemas, Pydantic Validation[/magenta]")
+            info_table.add_row(" Performance:", "[green]Parallel Processing, Incremental Save, Resume, Label Studio/Doccano Export[/green]")
 
             self.console.print(Panel(
                 info_table,
@@ -2433,12 +2433,12 @@ class AdvancedCLI:
             print(" " * 28 + "LLM TOOL")
             print(" " * 18 + "Intelligent Annotation & Training Pipeline")
             print("="*80)
-            print("\n📚 Version: 1.0")
-            print("👨‍💻 Author: Antoine Lemor")
-            print("🚀 Features: 2 LLM Providers (OpenAI/Ollama), Prompt Wizard, 200K Context, JSON Repair")
-            print("🎯 Capabilities: Multi-Label Categories, NER, Hierarchical Schemas")
-            print("⚡ Performance: Parallel Processing, Incremental Save, Resume Support")
-            print("\n  🤖 -> 📝 -> 🧹 -> 🎯 -> 🧠 -> 📊 -> ✨")
+            print("\n Version: 1.0")
+            print(" Author: Antoine Lemor")
+            print(" Features: 2 LLM Providers (OpenAI/Ollama), Prompt Wizard, 200K Context, JSON Repair")
+            print(" Capabilities: Multi-Label Categories, NER, Hierarchical Schemas")
+            print(" Performance: Parallel Processing, Incremental Save, Resume Support")
+            print("\n   ->  ->  ->  ->  ->  -> ✨")
             print("  AI   Annotate Clean Label Train Test Deploy\n")
             print("="*80 + "\n")
 
@@ -2452,7 +2452,7 @@ class AdvancedCLI:
 
         # Display personalized mode info
         self._display_section_header(
-            "🏭 The Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models",
+            " The Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models",
             "End-to-end pipeline: 2 LLM Providers (OpenAI/Ollama) → Automatic training data conversion → Model training",
             mode_info={
                 'workflow': 'Data → LLM Annotate (Parallel) → Language Detection → Auto-Convert → Train 50+ Models',
@@ -2474,10 +2474,10 @@ class AdvancedCLI:
             workflow_table.add_column("Description")
 
             workflows = [
-                ("1", "🔄 Resume/Relaunch Workflow (Use saved parameters or resume incomplete)"),
-                ("2", "🎯 Complete Workflow (New annotation → training pipeline)"),
-                ("3", "🗑️  Clean Old Metadata (Delete saved parameters)"),
-                ("0", "⬅️  Back to main menu")
+                ("1", " Resume/Relaunch Workflow (Use saved parameters or resume incomplete)"),
+                ("2", " Complete Workflow (New annotation → training pipeline)"),
+                ("3", "  Clean Old Metadata (Delete saved parameters)"),
+                ("0", "<-  Back to main menu")
             ]
 
             for option, desc in workflows:
@@ -2486,7 +2486,7 @@ class AdvancedCLI:
             # Display panel with suggestions
             panel = Panel(
                 workflow_table,
-                title="[bold]🏭 The Annotator Factory[/bold]",
+                title="[bold] The Annotator Factory[/bold]",
                 subtitle=f"[dim]{suggestions}[/dim]" if suggestions else None,
                 border_style="cyan"
             )
@@ -2509,7 +2509,7 @@ class AdvancedCLI:
                 from datetime import datetime
 
                 self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-                self.console.print("[bold cyan]           📝 Session Name Configuration                       [/bold cyan]")
+                self.console.print("[bold cyan]            Session Name Configuration                       [/bold cyan]")
                 self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
                 self.console.print("[bold]Why session names matter:[/bold]")
@@ -2564,7 +2564,7 @@ class AdvancedCLI:
 
     def _resume_mode2(self, focus_session_id: Optional[str] = None):
         """Resume or relaunch annotation → training workflow using saved parameters"""
-        self.console.print("\n[bold cyan]🔄 Resume/Relaunch Workflow[/bold cyan]\n")
+        self.console.print("\n[bold cyan] Resume/Relaunch Workflow[/bold cyan]\n")
         self.console.print("[dim]Load saved parameters from previous annotation → training sessions[/dim]\n")
 
         # ============================================================
@@ -2644,7 +2644,7 @@ class AdvancedCLI:
         # ============================================================
         # ASK: RESUME OR RELAUNCH?
         # ============================================================
-        self.console.print("\n[bold cyan]📋 Action Mode[/bold cyan]\n")
+        self.console.print("\n[bold cyan] Action Mode[/bold cyan]\n")
         self.console.print("[yellow]What would you like to do?[/yellow]")
         self.console.print("  • [cyan]resume[/cyan]   - Continue an incomplete workflow (skip already completed steps)")
         self.console.print("           [dim]Requires output files from annotation and/or training[/dim]")
@@ -2660,7 +2660,7 @@ class AdvancedCLI:
         # ============================================================
         # ASK: MODIFY PARAMETERS?
         # ============================================================
-        self.console.print("\n[bold cyan]⚙️  Parameter Modification[/bold cyan]\n")
+        self.console.print("\n[bold cyan]  Parameter Modification[/bold cyan]\n")
 
         modify_params = Confirm.ask(
             "Do you want to modify any parameters?",
@@ -2900,7 +2900,7 @@ class AdvancedCLI:
                 selection = stage_info[resume_stage]
                 if selection["available"]:
                     break
-                self.console.print(f"[yellow]⚠️  {selection['label']} is not available. Please choose another stage.[/yellow]")
+                self.console.print(f"[yellow][!]  {selection['label']} is not available. Please choose another stage.[/yellow]")
 
             self.console.print(f"\n[cyan]Resuming from: {stage_info[resume_stage]['label']}[/cyan]\n")
 
@@ -2940,7 +2940,7 @@ class AdvancedCLI:
         model_folder = safe_model_name
 
         if run_annotation:
-            self.console.print("\n[bold cyan]📝 Phase 1: LLM Annotation[/bold cyan]\n")
+            self.console.print("\n[bold cyan] Phase 1: LLM Annotation[/bold cyan]\n")
 
             # CRITICAL: Use organized structure logs/annotator_factory/{session_id}/annotated_data/{dataset_name}/
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -3067,7 +3067,7 @@ class AdvancedCLI:
 
             # Execute annotation
             try:
-                self.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
+                self.console.print("\n[bold green] Starting annotation...[/bold green]\n")
 
                 from ..pipelines.pipeline_controller import PipelineController
                 from ..utils.rich_progress_manager import RichProgressManager
@@ -3084,17 +3084,17 @@ class AdvancedCLI:
 
                     if state.errors:
                         error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
-                        self.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
+                        self.console.print(f"\n[bold red] Error:[/bold red] {error_msg}")
                         return
 
                 annotation_results = state.annotation_results or {}
                 output_file = annotation_results.get('output_file', str(output_path))
 
                 self.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
-                self.console.print(f"[bold cyan]📄 Output File:[/bold cyan] {output_file}\n")
+                self.console.print(f"[bold cyan] Output File:[/bold cyan] {output_file}\n")
 
             except Exception as exc:
-                self.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
+                self.console.print(f"\n[bold red] Annotation failed:[/bold red] {exc}")
                 self.logger.exception("Mode 2 annotation failed")
                 return
 
@@ -3108,7 +3108,7 @@ class AdvancedCLI:
         # ============================================================
         # LANGUAGE DETECTION (if not already done)
         # ============================================================
-        self.console.print("\n[bold cyan]🌍 Language Detection for Training[/bold cyan]")
+        self.console.print("\n[bold cyan] Language Detection for Training[/bold cyan]")
         self.console.print("[yellow]Checking for language column...[/yellow]\n")
 
         try:
@@ -3168,7 +3168,7 @@ class AdvancedCLI:
 
                     if lang_counts_filtered:
                         total = sum(lang_counts_filtered.values())
-                        self.console.print(f"\n[bold]🌍 Languages Detected ({total:,} texts):[/bold]")
+                        self.console.print(f"\n[bold] Languages Detected ({total:,} texts):[/bold]")
 
                         lang_table = Table(border_style="cyan", show_header=True, header_style="bold", expand=True)
                         lang_table.add_column("Language", style="cyan", no_wrap=True)
@@ -3185,7 +3185,7 @@ class AdvancedCLI:
                 self.console.print("[green]✓ Language column already exists[/green]\n")
 
         except Exception as e:
-            self.console.print(f"[yellow]⚠️  Language detection failed: {e}[/yellow]")
+            self.console.print(f"[yellow][!]  Language detection failed: {e}[/yellow]")
             self.logger.exception("Language detection failed")
 
         # ============================================================
@@ -3193,7 +3193,7 @@ class AdvancedCLI:
         # ============================================================
         training_results_summary: Optional[Dict[str, Any]] = None
         if run_training:
-            self.console.print("\n[bold cyan]🎓 Phase 2: Model Training[/bold cyan]\n")
+            self.console.print("\n[bold cyan] Phase 2: Model Training[/bold cyan]\n")
             training_results_summary = self._post_annotation_training_workflow(
                 output_file=output_file,
                 text_column=text_column,
@@ -3249,11 +3249,11 @@ class AdvancedCLI:
                     detail = model_annotation_summary.get("detail")
                     if status != "completed":
                         self.console.print(
-                            f"[yellow]⚠️  Model annotation stage reported status '{status}': {detail}[/yellow]"
+                            f"[yellow][!]  Model annotation stage reported status '{status}': {detail}[/yellow]"
                         )
             else:
                 self.console.print(
-                    "[yellow]⚠️  Skipping deployment annotation stage: trained model artifacts not found.[/yellow]"
+                    "[yellow][!]  Skipping deployment annotation stage: trained model artifacts not found.[/yellow]"
                 )
 
         self.console.print("\n[bold green]✅ Workflow complete![/bold green]")
@@ -3324,7 +3324,7 @@ class AdvancedCLI:
             df_annotated = df[df[annotation_col].notna()].copy()
 
             if len(df_annotated) == 0:
-                self.console.print("[yellow]⚠️  No annotated rows found. Cannot proceed with training.[/yellow]")
+                self.console.print("[yellow][!]  No annotated rows found. Cannot proceed with training.[/yellow]")
                 return
 
             self.console.print(f"[green]✓ Found {len(df_annotated):,} annotated rows for training[/green]\n")
@@ -3461,7 +3461,7 @@ class AdvancedCLI:
 
                         if long_pct > 20:
                             requires_long_document_model = True
-                            self.console.print(f"[yellow]⚠ {long_pct:.1f}% of texts exceed 512 tokens[/yellow]")
+                            self.console.print(f"[yellow][!] {long_pct:.1f}% of texts exceed 512 tokens[/yellow]")
                             use_long = Confirm.ask("Use long-document models (Longformer/BigBird)?", default=True)
                             text_length_stats['user_prefers_long_models'] = use_long
                         else:
@@ -3675,7 +3675,7 @@ class AdvancedCLI:
             # ===========================================================
             # SAVE TRAINING PARAMETERS (Second save point)
             # ===========================================================
-            self.console.print("[bold cyan]💾 Saving Training Parameters[/bold cyan]\n")
+            self.console.print("[bold cyan] Saving Training Parameters[/bold cyan]\n")
 
             training_params = {
                 "training_metadata": {
@@ -3731,7 +3731,7 @@ class AdvancedCLI:
             )
 
             if start_training:
-                self.console.print("[green]🚀 Starting training...[/green]\n")
+                self.console.print("[green] Starting training...[/green]\n")
 
                 # Call Training Arena's training method
                 try:
@@ -3772,7 +3772,7 @@ class AdvancedCLI:
                             # Find which classes have insufficient instances
                             insufficient_classes = [cls for cls, count in label_counts.items() if count < 2]
 
-                            self.console.print(f"\n[yellow]⚠️  Found {len(insufficient_classes)} label(s) with insufficient samples:[/yellow]")
+                            self.console.print(f"\n[yellow][!]  Found {len(insufficient_classes)} label(s) with insufficient samples:[/yellow]")
                             for cls in insufficient_classes:
                                 count = label_counts[cls]
                                 self.console.print(f"  • [red]'{cls}'[/red]: {count} sample(s) - need at least 2")
@@ -3851,7 +3851,7 @@ class AdvancedCLI:
                             self.console.print(f"  {key}: {value}")
 
                 except Exception as train_error:
-                    self.console.print(f"[red]❌ Training error: {train_error}[/red]")
+                    self.console.print(f"[red] Training error: {train_error}[/red]")
                     self.logger.exception("Training execution failed")
             else:
                 self.console.print("[yellow]Training skipped. You can resume later using the saved parameters.[/yellow]")
@@ -3958,7 +3958,7 @@ class AdvancedCLI:
         except Exception:  # pragma: no cover - defensive fallback
             self.detected_llms = {"local": [], "openai": [], "anthropic": []}
             if self.console:
-                self.console.print("[red]⚠️ Unable to refresh available LLMs list.[/red]")
+                self.console.print("[red][!] Unable to refresh available LLMs list.[/red]")
 
     def _interactive_model_update(self, model_config: Dict[str, Any]) -> bool:
         """
@@ -4040,7 +4040,7 @@ class AdvancedCLI:
 
             # Display Local Models with Rich Table
             if local_llms:
-                self.console.print("\n[bold cyan]🖥️  Local Models (Ollama):[/bold cyan]\n")
+                self.console.print("\n[bold cyan]️  Local Models (Ollama):[/bold cyan]\n")
 
                 local_table = Table(border_style="cyan", show_header=True, expand=True)
                 local_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
@@ -4063,7 +4063,7 @@ class AdvancedCLI:
 
             # Display OpenAI Models with Rich Table
             if openai_llms:
-                self.console.print("\n[bold cyan]☁️  OpenAI Models:[/bold cyan]\n")
+                self.console.print("\n[bold cyan]️  OpenAI Models:[/bold cyan]\n")
 
                 openai_table = Table(
                     border_style="blue",
@@ -4132,7 +4132,7 @@ class AdvancedCLI:
 
             # Display Anthropic Models with Rich Table
             if anthropic_llms:
-                self.console.print("\n[bold cyan]🤖 Anthropic Models:[/bold cyan]\n")
+                self.console.print("\n[bold cyan] Anthropic Models:[/bold cyan]\n")
 
                 anthropic_table = Table(border_style="magenta", show_header=True, expand=True)
                 anthropic_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
@@ -4349,7 +4349,7 @@ class AdvancedCLI:
                         datasets = [d for d in datasets if d.format.lower() == filter_format.lower()]
 
                     if datasets:
-                        self.console.print(f"\n[bold cyan]📊 Detected Datasets[/bold cyan]\n")
+                        self.console.print(f"\n[bold cyan] Detected Datasets[/bold cyan]\n")
 
                         datasets_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
                         datasets_table.add_column("#", style="cyan", width=3, justify="right")
@@ -4388,7 +4388,7 @@ class AdvancedCLI:
                         self.console.print()
 
                         # Better instructions for user
-                        self.console.print("[dim]💡 You can either:[/dim]")
+                        self.console.print("[dim] You can either:[/dim]")
                         self.console.print("[dim]   • Enter the [cyan]#[/cyan] number from the table above (e.g., '1', '13')[/dim]")
                         self.console.print("[dim]   • Enter an [cyan]absolute path[/cyan] to any file (e.g., '/Users/name/data/file.csv')[/dim]\n")
 
@@ -4499,7 +4499,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # If no detected prompts or user declined, ask for input method
             self.console.print("\n[bold]Prompt Input Method:[/bold]")
-            self.console.print("[dim]• wizard: 🧙‍♂️ Interactive Social Science Prompt Wizard (Recommended!)[/dim]")
+            self.console.print("[dim]• wizard: ‍️ Interactive Social Science Prompt Wizard (Recommended!)[/dim]")
             self.console.print("[dim]• path: Load from existing file[/dim]")
             self.console.print("[dim]• paste: Paste prompt text directly[/dim]")
 
@@ -4553,7 +4553,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         try:
             # Check if user wants LLM assistance for definition generation
             use_llm_assist = Confirm.ask(
-                "\n[cyan]🤖 Do you want AI assistance for creating your prompt (wizard mode)?[/cyan]",
+                "\n[cyan] Do you want AI assistance for creating your prompt (wizard mode)?[/cyan]",
                 default=True
             )
 
@@ -4570,10 +4570,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             available_models.append(model)
 
                 if not available_models:
-                    self.console.print("[yellow]⚠️  No LLM models detected. Continuing without AI assistance.[/yellow]")
+                    self.console.print("[yellow][!]  No LLM models detected. Continuing without AI assistance.[/yellow]")
                 else:
                     # Display available models
-                    self.console.print("\n[bold cyan]🤖 Available Models for AI Assistance:[/bold cyan]")
+                    self.console.print("\n[bold cyan] Available Models for AI Assistance:[/bold cyan]")
 
                     table = Table(
                         box=box.ROUNDED,
@@ -4594,50 +4594,50 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         # Extract size/quality info from model name
                         type_info = ""
                         if "120b" in model_name.lower():
-                            type_info = "🚀 Very Large (120B)"
+                            type_info = " Very Large (120B)"
                         elif "72b" in model_name.lower() or "70b" in model_name.lower():
-                            type_info = "⚡ Large (70B+)"
+                            type_info = " Large (70B+)"
                         elif "27b" in model_name.lower() or "22b" in model_name.lower():
-                            type_info = "💪 Medium (20B+)"
+                            type_info = " Medium (20B+)"
                         elif "8x" in model_name.lower():
-                            type_info = "🔀 MoE (Mixture)"
+                            type_info = " MoE (Mixture)"
                         elif "3.2" in model_name.lower() or "3.3" in model_name.lower():
-                            type_info = "⚡ Fast (Llama 3)"
+                            type_info = " Fast (Llama 3)"
                         elif "gpt-5-nano" in model_name.lower():
-                            type_info = "⚡ Ultra Fast GPT-5 Nano"
+                            type_info = " Ultra Fast GPT-5 Nano"
                         elif "gpt-5-mini" in model_name.lower():
-                            type_info = "🎯 Balanced GPT-5 Mini"
+                            type_info = " Balanced GPT-5 Mini"
                         elif "gpt-4o-mini" in model_name.lower():
-                            type_info = "⚡ Efficient GPT-4o Mini"
+                            type_info = " Efficient GPT-4o Mini"
                         elif "gpt-4o" in model_name.lower():
-                            type_info = "🏆 Flagship GPT-4o"
+                            type_info = " Flagship GPT-4o"
                         elif "gpt-5-2025" in model_name.lower() or "gpt-5" in model_name.lower():
-                            type_info = "🏆 Flagship GPT-5"
+                            type_info = " Flagship GPT-5"
                         elif model_name.lower().startswith("o1"):
-                            type_info = "🔍 Reasoning (o1)"
+                            type_info = " Reasoning (o1)"
                         elif model_name.lower().startswith("o3"):
-                            type_info = "🔍 Reasoning (o3)"
+                            type_info = " Reasoning (o3)"
                         elif "deepseek-r1" in model_name.lower():
-                            type_info = "🧠 Reasoning"
+                            type_info = " Reasoning"
                         elif "nemotron" in model_name.lower():
-                            type_info = "📝 Instruction"
+                            type_info = " Instruction"
                         else:
                             type_info = model.size or "Standard"
 
                         # Style the provider
                         if provider == "ollama":
-                            provider_styled = "🏠 Ollama"
+                            provider_styled = " Ollama"
                         elif provider == "openai":
-                            provider_styled = "☁️  OpenAI"
+                            provider_styled = "️  OpenAI"
                         elif provider == "anthropic":
-                            provider_styled = "☁️  Anthropic"
+                            provider_styled = "️  Anthropic"
                         else:
                             provider_styled = provider
 
                         table.add_row(str(i), model_name, provider_styled, type_info)
 
                     self.console.print(table)
-                    self.console.print("\n[dim italic]💡 Tip: Larger models give better results but are slower[/dim italic]\n")
+                    self.console.print("\n[dim italic] Tip: Larger models give better results but are slower[/dim italic]\n")
 
                     # Let user select model
                     while True:
@@ -4669,7 +4669,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         )
                         self.console.print("[green]✓ AI assistant ready![/green]\n")
                     except Exception as e:
-                        self.console.print(f"[yellow]⚠️  Failed to initialize AI assistant: {e}[/yellow]")
+                        self.console.print(f"[yellow][!]  Failed to initialize AI assistant: {e}[/yellow]")
                         self.console.print("[yellow]Continuing without AI assistance.[/yellow]\n")
                         llm_client = None
 
@@ -4739,16 +4739,16 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                             prompts_list.append((full_prompt, expected_keys, prefix_word))
                         else:
-                            self.console.print(f"[yellow]⚠ No JSON keys detected, skipping...[/yellow]")
+                            self.console.print(f"[yellow][!] No JSON keys detected, skipping...[/yellow]")
 
                     except Exception as e:
-                        self.console.print(f"[red]❌ Error loading {filename}: {e}[/red]")
+                        self.console.print(f"[red] Error loading {filename}: {e}[/red]")
                         continue
 
                 if prompts_list:
                     self.console.print(f"\n[bold green]✓ Successfully loaded {len(prompts_list)} prompts[/bold green]")
                 else:
-                    self.console.print("\n[red]❌ No valid prompts could be loaded[/red]")
+                    self.console.print("\n[red] No valid prompts could be loaded[/red]")
 
                 return prompts_list
 
@@ -4876,7 +4876,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
     def _display_training_modes_explanation(self):
         """Display detailed explanation of training modes for social science researchers"""
         if HAS_RICH and self.console:
-            self.console.print("\n[bold cyan]📚 Training Modes Guide[/bold cyan]\n")
+            self.console.print("\n[bold cyan] Training Modes Guide[/bold cyan]\n")
 
             # Explain parameters first
             self.console.print("[bold yellow]Key Parameters:[/bold yellow]")
@@ -4917,7 +4917,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             self.console.print(table)
 
-            self.console.print("\n[bold green]💡 Recommendations:[/bold green]")
+            self.console.print("\n[bold green] Recommendations:[/bold green]")
             self.console.print("  • [cyan]Quick[/cyan]: Fast prototyping, verify everything works")
             self.console.print("  • [cyan]Balanced[/cyan]: Best compromise for most projects (recommended)")
             self.console.print("  • [cyan]Thorough[/cyan]: Small or imbalanced dataset, academic publication")
@@ -4966,7 +4966,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
     def _display_configuration_summary(self, config: Dict[str, Any]):
         """Display configuration summary in professional format"""
         if HAS_RICH and self.console:
-            table = Table(title="📋 Configuration Summary", border_style="green", show_lines=True, expand=True)
+            table = Table(title=" Configuration Summary", border_style="green", show_lines=True, expand=True)
             table.add_column("Setting", style="cyan", no_wrap=True)
             table.add_column("Value", style="white")
 
@@ -5198,7 +5198,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # REPRODUCIBILITY METADATA
         # ============================================================
         if HAS_RICH and self.console:
-            self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
+            self.console.print("\n[bold cyan] Reproducibility & Metadata[/bold cyan]")
             self.console.print("[green]✓ Session parameters are automatically saved for:[/green]\n")
 
             self.console.print("  [green]1. Resume Capability[/green]")
@@ -5215,7 +5215,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             save_metadata = True
 
             # Validation tool export option
-            self.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
+            self.console.print("\n[bold cyan] Validation Tool Export[/bold cyan]")
             self.console.print("[dim]Export annotations to JSONL format for human validation[/dim]\n")
 
             self.console.print("[yellow]Available validation tools:[/yellow]")
@@ -5412,13 +5412,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 if HAS_RICH and self.console:
                     self.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
-                    self.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
+                    self.console.print(f"[bold cyan] Metadata File:[/bold cyan]")
                     self.console.print(f"   {metadata_path}\n")
                 else:
                     print(f"\n✅ Metadata saved: {metadata_path}\n")
 
             # Execute with real-time progress tracking
-            print("\n🚀 Starting pipeline...\n")
+            print("\n Starting pipeline...\n")
 
             # Create pipeline controller with session ID for test
             from ..pipelines.pipeline_controller import PipelineController
@@ -5454,13 +5454,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     # Check for errors
                     if state.errors:
                         error_msg = state.errors[0]['error'] if state.errors else "Pipeline failed"
-                        self.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
+                        self.console.print(f"\n[bold red] Error:[/bold red] {error_msg}")
                         raise Exception(error_msg)
             else:
                 # Fallback without Rich
                 state = pipeline_with_progress.run_pipeline(pipeline_config)
         except Exception as exc:
-            message = f"❌ Quick start pipeline failed: {exc}"
+            message = f" Quick start pipeline failed: {exc}"
             if HAS_RICH and self.console:
                 self.console.print(f"[red]{message}[/red]")
             else:
@@ -5474,15 +5474,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if HAS_RICH and self.console:
             self.console.print("\n[bold green]✅ Pipeline completed successfully![/bold green]")
-            self.console.print(f"📄 Annotated file: [cyan]{output_file}[/cyan]")
-            self.console.print(f"🗣️ Detected language: [cyan]{detected_language}[/cyan]")
+            self.console.print(f" Annotated file: [cyan]{output_file}[/cyan]")
+            self.console.print(f"️ Detected language: [cyan]{detected_language}[/cyan]")
             if training_results:
                 best_model = training_results.get('best_model') or training_results.get('model_name')
                 best_f1 = training_results.get('best_f1_macro')
                 if best_model:
-                    self.console.print(f"🏆 Best model: [cyan]{best_model}[/cyan]")
+                    self.console.print(f" Best model: [cyan]{best_model}[/cyan]")
                 if best_f1 is not None:
-                    self.console.print(f"📊 Macro F1: [cyan]{best_f1:.3f}[/cyan]")
+                    self.console.print(f" Macro F1: [cyan]{best_f1:.3f}[/cyan]")
         else:
             print("✅ Pipeline completed successfully!")
             print(f"Annotated file: {output_file}")
@@ -5593,7 +5593,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.show_documentation()
                 elif choice == "0":
                     if HAS_RICH and self.console:
-                        self.console.print("\n[bold cyan]Thank you for using LLMTool! 👋[/bold cyan]\n")
+                        self.console.print("\n[bold cyan]Thank you for using LLMTool! [/bold cyan]\n")
                     else:
                         print("\nThank you for using LLMTool!\n")
                     sys.exit(0)
@@ -5605,7 +5605,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             except KeyboardInterrupt:
                 if HAS_RICH and self.console:
                     if Confirm.ask("\n[yellow]Exit LLMTool?[/yellow]", default=False):
-                        self.console.print("\n[bold cyan]Goodbye! 👋[/bold cyan]\n")
+                        self.console.print("\n[bold cyan]Goodbye! [/bold cyan]\n")
                         sys.exit(0)
                 else:
                     if input("\nExit? (y/n): ").lower() == 'y':
@@ -5639,7 +5639,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Display personalized mode info
         self._display_section_header(
-            "🎨 The Annotator - Zero-Shot LLM Annotation → Label Studio/Doccano Export",
+            " The Annotator - Zero-Shot LLM Annotation → Label Studio/Doccano Export",
             "Professional zero-shot annotation with 2 LLM Providers (OpenAI/Ollama), automatic JSON repair, and export to review platforms",
             mode_info={
                 'workflow': 'Data → Prompt Wizard → LLM Annotate (Parallel) → JSON Repair → Export (Doccano/Label Studio)',
@@ -5661,11 +5661,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             workflow_table.add_column("Description")
 
             workflows = [
-                ("1", "🔄 Resume/Relaunch Annotation (Use saved parameters or resume incomplete)"),
-                ("2", "🎯 Smart Annotate (Guided wizard with all options)"),
-                ("3", "🗄️  Database Annotator (PostgreSQL direct)"),
-                ("4", "🗑️  Clean Old Metadata (Delete saved parameters)"),
-                ("0", "⬅️  Back to main menu")
+                ("1", " Resume/Relaunch Annotation (Use saved parameters or resume incomplete)"),
+                ("2", " Smart Annotate (Guided wizard with all options)"),
+                ("3", "  Database Annotator (PostgreSQL direct)"),
+                ("4", "  Clean Old Metadata (Delete saved parameters)"),
+                ("0", "<-  Back to main menu")
             ]
 
             for option, desc in workflows:
@@ -5674,7 +5674,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Display panel with suggestions
             panel = Panel(
                 workflow_table,
-                title="[bold]🎨 The Annotator[/bold]",
+                title="[bold] The Annotator[/bold]",
                 subtitle=f"[dim]{suggestions}[/dim]" if suggestions else None,
                 border_style="cyan"
             )
@@ -5697,7 +5697,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 from datetime import datetime
 
                 self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-                self.console.print("[bold cyan]           📝 Session Name Configuration                       [/bold cyan]")
+                self.console.print("[bold cyan]            Session Name Configuration                       [/bold cyan]")
                 self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
                 self.console.print("[bold]Why session names matter:[/bold]")
@@ -5762,7 +5762,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Display personalized mode info
         self._display_section_header(
-            "🤖 BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)",
+            " BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)",
             "Production-ready inference with trained BERT models: Parallel processing, language validation, confidence scoring",
             mode_info={
                 'workflow': 'Select Model → Load Data (SQL/File) → Detect Language → Preprocessing → Parallel Inference → Export',
@@ -5778,7 +5778,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         if HAS_RICH and self.console:
             if resume_session_id is None:
                 # Create mode menu
-                self.console.print("\n[bold cyan]🎯 BERT Annotation Studio Options[/bold cyan]\n")
+                self.console.print("\n[bold cyan] BERT Annotation Studio Options[/bold cyan]\n")
 
                 studio_options_table = Table(show_header=False, box=None, padding=(0, 2))
                 studio_options_table.add_column("Option", style="cyan", no_wrap=True)
@@ -5786,9 +5786,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 options = [
                     ("1", "🆕 Start new session"),
-                    ("2", "🔄 Resume session"),
-                    ("3", "📚 Session history"),
-                    ("0", "⬅️  Back to main menu"),
+                    ("2", " Resume session"),
+                    ("3", " Session history"),
+                    ("0", "<-  Back to main menu"),
                 ]
 
                 for option, desc in options:
@@ -5796,7 +5796,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                 panel = Panel(
                     studio_options_table,
-                    title="[bold]🤖 BERT Annotation Studio[/bold]",
+                    title="[bold] BERT Annotation Studio[/bold]",
                     border_style="cyan"
                 )
 
@@ -5835,7 +5835,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self._display_ascii_logo()
         self._display_mode_banner('validation')
         self._display_section_header(
-            "🔍 Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement",
+            " Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement",
             "Collect validation exports from Annotator, Factory, and Training Arena to compute quality metrics."
         )
 
@@ -5845,23 +5845,23 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         choice: Optional[str] = None
 
         if HAS_RICH and self.console:
-            self.console.print("\n[bold cyan]🎯 Options Validation Lab[/bold cyan]\n")
+            self.console.print("\n[bold cyan] Options Validation Lab[/bold cyan]\n")
             options_table = Table(show_header=False, box=None, padding=(0, 2))
             options_table.add_column("Option", style="cyan", no_wrap=True)
             options_table.add_column("Description")
 
-            resume_label = "🔄 Resume a session"
+            resume_label = " Resume a session"
             if not resume_available:
                 resume_label += " [dim](none available)[/dim]"
 
             options_table.add_row("[bold cyan]1[/bold cyan]", "🆕 Start a new session")
             options_table.add_row("[bold cyan]2[/bold cyan]", resume_label)
-            options_table.add_row("[bold cyan]0[/bold cyan]", "⬅️  Back to main menu")
+            options_table.add_row("[bold cyan]0[/bold cyan]", "<-  Back to main menu")
 
             self.console.print(
                 Panel(
                     options_table,
-                    title="[bold]🔍 Validation Lab[/bold]",
+                    title="[bold] Validation Lab[/bold]",
                     border_style="cyan",
                 )
             )
@@ -5908,7 +5908,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         """Analytics dashboard"""
         # Display simple section header
         self._display_section_header(
-            "📊 Analytics Dashboard",
+            " Analytics Dashboard",
             "Performance analysis and insights (Coming Soon)"
         )
 
@@ -5924,7 +5924,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Display personalized mode info
         self._display_section_header(
-            "💾 Profile Manager",
+            " Profile Manager",
             "Save and reuse your favorite pipeline configurations",
             mode_info={
                 'workflow': 'Browse Profiles → Select → Load Configuration → Execute',
@@ -5942,7 +5942,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 self.console.print("[yellow]No saved profiles found[/yellow]")
                 return
 
-            table = Table(title="💾 Saved Profiles", border_style="blue", expand=True)
+            table = Table(title=" Saved Profiles", border_style="blue", expand=True)
             table.add_column("#", style="cyan", width=3)
             table.add_column("Name", style="white")
             table.add_column("Created", style="dim")
@@ -5974,7 +5974,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Display personalized mode info
         self._display_section_header(
-            "⚙️ Advanced Settings",
+            " Advanced Settings",
             "Fine-tune system configuration and preferences",
             mode_info={
                 'workflow': 'Browse Settings → Modify → Save → Apply',
@@ -6125,7 +6125,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Verify no nulls
             null_count = df[id_column].isna().sum()
             if null_count > 0:
-                self.console.print(f"[yellow]⚠️  Found {null_count} null IDs, filling them...[/yellow]")
+                self.console.print(f"[yellow][!]  Found {null_count} null IDs, filling them...[/yellow]")
                 next_id = len(df) + 1
                 for idx in df[df[id_column].isna()].index:
                     df.at[idx, id_column] = f"ann_{next_id:06d}"
@@ -6222,7 +6222,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def _quick_annotate(self, focus_session_id: Optional[str] = None):
         """Resume or relaunch annotation using saved parameters"""
-        self.console.print("\n[bold cyan]🔄 Resume/Relaunch Annotation[/bold cyan]\n")
+        self.console.print("\n[bold cyan] Resume/Relaunch Annotation[/bold cyan]\n")
         self.console.print("[dim]Load saved parameters from previous annotations[/dim]\n")
 
         # ============================================================
@@ -6301,7 +6301,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         # ASK: RESUME OR RELAUNCH?
         # ============================================================
-        self.console.print("\n[bold cyan]📋 Action Mode[/bold cyan]\n")
+        self.console.print("\n[bold cyan] Action Mode[/bold cyan]\n")
         self.console.print("[yellow]What would you like to do?[/yellow]")
         self.console.print("  • [cyan]resume[/cyan]   - Continue an incomplete annotation (skip already annotated rows)")
         self.console.print("           [dim]Requires the output file with annotated rows[/dim]")
@@ -6317,7 +6317,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         # ASK: MODIFY PARAMETERS?
         # ============================================================
-        self.console.print("\n[bold cyan]⚙️  Parameter Modification[/bold cyan]\n")
+        self.console.print("\n[bold cyan]  Parameter Modification[/bold cyan]\n")
 
         modify_params = Confirm.ask(
             "Do you want to modify any parameters?",
@@ -6349,7 +6349,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def _display_metadata_parameters(self, metadata: dict):
         """Display all parameters from metadata in a formatted way"""
-        self.console.print("\n[bold cyan]📋 Saved Parameters[/bold cyan]\n")
+        self.console.print("\n[bold cyan] Saved Parameters[/bold cyan]\n")
 
         # Create parameter display table
         params_table = Table(border_style="blue", show_header=False, box=None)
@@ -6358,7 +6358,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Session Info
         session = metadata.get('annotation_session', {})
-        params_table.add_row("📅 Session", f"{session.get('workflow', 'N/A')}")
+        params_table.add_row(" Session", f"{session.get('workflow', 'N/A')}")
         params_table.add_row("", f"Date: {session.get('timestamp', 'N/A')}")
 
         # Data Source
@@ -6491,21 +6491,21 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         try:
             non_null = series.dropna()
         except Exception:
-            return "🧩"
+            return ""
 
         if non_null.empty:
             return "⬜️ Empty"
 
         if pd_types:
             if pd_types.is_datetime64_any_dtype(series):
-                return "🕒 Date/Time"
+                return " Date/Time"
             if pd_types.is_numeric_dtype(series):
                 unique_ratio = non_null.nunique() / len(non_null)
                 if unique_ratio > 0.95:
-                    return "🔑 Numeric ID"
-                return "🔢 Numeric"
+                    return " Numeric ID"
+                return " Numeric"
             if pd_types.is_bool_dtype(series):
-                return "⚙️ Boolean"
+                return " Boolean"
 
         # Treat as text-like
         text_values = non_null.astype(str)
@@ -6513,14 +6513,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         unique_ratio = text_values.nunique() / len(text_values)
 
         if unique_ratio > 0.95 and avg_len < 40:
-            return "🔑 ID / Reference"
+            return " ID / Reference"
         if avg_len >= 200:
-            return "📝 Long text"
+            return " Long text"
         if avg_len >= 60:
-            return "📝 Text"
+            return " Text"
         if avg_len >= 20:
-            return "📝 Short text"
-        return "🗂️ Category"
+            return " Short text"
+        return "️ Category"
 
     def _render_dataset_preview(
         self,
@@ -6539,7 +6539,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         if not columns:
             return
 
-        table = Table(title="📊 Available Columns", box=box.SIMPLE_HEAD, show_lines=False, expand=True)
+        table = Table(title=" Available Columns", box=box.SIMPLE_HEAD, show_lines=False, expand=True)
         if show_indices:
             table.add_column("#", style="cyan", justify="right", width=3)
         table.add_column("Column", style="green", overflow="fold")
@@ -6590,7 +6590,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             samples = df[highlight].dropna().astype(str).head(sample_rows)
             if not samples.empty:
                 text_table = Table(
-                    title=f"📝 Samples – {highlight}",
+                    title=f" Samples – {highlight}",
                     box=box.SIMPLE_HEAD,
                     show_header=False,
                 )
@@ -6754,7 +6754,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         changed_this_round = True
                         self._current_resume_preview_df = df_preview.copy() if df_preview is not None else None
                         if df_preview is not None and new_col not in {str(c) for c in df_preview.columns}:
-                            self.console.print(f"[yellow]⚠️ Column '{new_col}' not found in preview sample.[/yellow]")
+                            self.console.print(f"[yellow][!] Column '{new_col}' not found in preview sample.[/yellow]")
                     else:
                         self.console.print("[dim]No changes applied to text column[/dim]")
 
@@ -7010,7 +7010,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
     def _clean_metadata(self):
         """Clean old metadata files"""
-        self.console.print("\n[bold cyan]🗑️  Clean Old Metadata[/bold cyan]\n")
+        self.console.print("\n[bold cyan]  Clean Old Metadata[/bold cyan]\n")
         self.console.print("[dim]Delete saved annotation parameters to free space[/dim]\n")
 
         from pathlib import Path
@@ -7068,7 +7068,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if clean_choice == "1":
             # Delete ALL
-            self.console.print(f"\n[red]⚠️  Warning: This will delete ALL {len(metadata_files)} metadata files![/red]")
+            self.console.print(f"\n[red][!]  Warning: This will delete ALL {len(metadata_files)} metadata files![/red]")
             confirm = Confirm.ask("Are you sure?", default=False)
 
             if confirm:
@@ -7232,7 +7232,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         try:
             validation_copy_path = None
-            self.console.print("\n[bold cyan]📤 Exporting to Doccano JSONL...[/bold cyan]")
+            self.console.print("\n[bold cyan] Exporting to Doccano JSONL...[/bold cyan]")
 
             # Load the annotated file
             output_path = Path(output_file)
@@ -7243,12 +7243,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             elif output_path.suffix.lower() == '.parquet':
                 df = pd.read_parquet(output_path)
             else:
-                self.console.print(f"[yellow]⚠️  Unsupported format for Doccano export: {output_path.suffix}[/yellow]")
+                self.console.print(f"[yellow][!]  Unsupported format for Doccano export: {output_path.suffix}[/yellow]")
                 return
 
             # Filter only annotated rows
             if 'annotation' not in df.columns:
-                self.console.print("[yellow]⚠️  No annotation column found[/yellow]")
+                self.console.print("[yellow][!]  No annotation column found[/yellow]")
                 return
 
             annotated_mask = (
@@ -7259,7 +7259,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             df_annotated = df[annotated_mask].copy()
 
             if len(df_annotated) == 0:
-                self.console.print("[yellow]⚠️  No valid annotations to export[/yellow]")
+                self.console.print("[yellow][!]  No valid annotations to export[/yellow]")
                 return
 
             total_annotated = len(df_annotated)
@@ -7471,18 +7471,18 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 except Exception as copy_exc:
                     validation_copy_path = None
                     self.console.print(
-                        f"[yellow]⚠️  Could not copy export to Validation Lab directory: {copy_exc}[/yellow]"
+                        f"[yellow][!]  Could not copy export to Validation Lab directory: {copy_exc}[/yellow]"
                     )
 
             # Display success
             self.console.print(f"\n[bold green]✅ Doccano JSONL export completed![/bold green]")
-            self.console.print(f"[bold cyan]📄 JSONL File:[/bold cyan]")
+            self.console.print(f"[bold cyan] JSONL File:[/bold cyan]")
             self.console.print(f"   {jsonl_path}")
             self.console.print(f"[cyan]   Exported: {exported_count:,} entries[/cyan]\n")
             if validation_copy_path:
                 self.console.print(f"[cyan]   Validation Lab copy: {validation_copy_path}[/cyan]")
 
-            self.console.print("[yellow]📌 Next Steps:[/yellow]")
+            self.console.print("[yellow] Next Steps:[/yellow]")
             self.console.print("  1. Import this JSONL file into Doccano for validation")
             self.console.print("  2. Review and correct annotations in Doccano")
             self.console.print("  3. Export validated annotations from Doccano")
@@ -7495,7 +7495,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             }
 
         except Exception as e:
-            self.console.print(f"\n[red]❌ Doccano export failed: {e}[/red]")
+            self.console.print(f"\n[red] Doccano export failed: {e}[/red]")
             self.logger.exception("Doccano JSONL export failed")
             return None
 
@@ -7523,7 +7523,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         import pandas as pd
 
         try:
-            self.console.print("\n[bold cyan]📤 Exporting to Label Studio JSONL...[/bold cyan]")
+            self.console.print("\n[bold cyan] Exporting to Label Studio JSONL...[/bold cyan]")
 
             # Load the annotated file
             output_path = Path(output_file)
@@ -7534,12 +7534,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             elif output_path.suffix.lower() == '.parquet':
                 df = pd.read_parquet(output_path)
             else:
-                self.console.print(f"[yellow]⚠️  Unsupported format for Label Studio export: {output_path.suffix}[/yellow]")
+                self.console.print(f"[yellow][!]  Unsupported format for Label Studio export: {output_path.suffix}[/yellow]")
                 return
 
             # Filter only annotated rows
             if 'annotation' not in df.columns:
-                self.console.print("[yellow]⚠️  No annotation column found[/yellow]")
+                self.console.print("[yellow][!]  No annotation column found[/yellow]")
                 return
 
             annotated_mask = (
@@ -7550,7 +7550,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             df_annotated = df[annotated_mask].copy()
 
             if len(df_annotated) == 0:
-                self.console.print("[yellow]⚠️  No valid annotations to export[/yellow]")
+                self.console.print("[yellow][!]  No valid annotations to export[/yellow]")
                 return
 
             total_annotated = len(df_annotated)
@@ -7775,13 +7775,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'both': 'with predictions'
             }.get(prediction_mode, '')
 
-            self.console.print(f"[bold cyan]📄 Files created ({mode_desc}):[/bold cyan]")
+            self.console.print(f"[bold cyan] Files created ({mode_desc}):[/bold cyan]")
             self.console.print(f"   {json_path} [dim](JSON array - use this for import)[/dim]")
             self.console.print(f"   {jsonl_path} [dim](JSONL - alternative format)[/dim]")
             self.console.print(f"   {config_path} [dim](labeling config XML)[/dim]")
             self.console.print(f"[cyan]   Exported: {exported_count:,} entries[/cyan]\n")
 
-            self.console.print("[yellow]📌 Import Instructions:[/yellow]")
+            self.console.print("[yellow] Import Instructions:[/yellow]")
             self.console.print("  [bold]Recommended: Use the JSON file[/bold]")
             self.console.print("  1. In Label Studio, click 'Create Project'")
             self.console.print("  2. Name your project and click 'Save'")
@@ -7793,7 +7793,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("  [dim]Alternative: Use direct API export for automatic setup[/dim]\n")
 
         except Exception as e:
-            self.console.print(f"\n[red]❌ Label Studio export failed: {e}[/red]")
+            self.console.print(f"\n[red] Label Studio export failed: {e}[/red]")
             self.logger.exception("Label Studio JSONL export failed")
 
     def _export_to_labelstudio_direct(self, output_file: str, text_column: str,
@@ -7818,7 +7818,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         # Check if requests is available
         if not HAS_REQUESTS:
-            self.console.print("\n[yellow]⚠️  Direct export to Label Studio requires the 'requests' library[/yellow]")
+            self.console.print("\n[yellow][!]  Direct export to Label Studio requires the 'requests' library[/yellow]")
             self.console.print("[cyan]This library is not currently installed.[/cyan]\n")
 
             install_requests = Confirm.ask(
@@ -7844,13 +7844,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         globals()['requests'] = req_module
                         globals()['HAS_REQUESTS'] = True
                     else:
-                        self.console.print(f"[red]❌ Installation failed: {result.stderr}[/red]")
+                        self.console.print(f"[red] Installation failed: {result.stderr}[/red]")
                         self.console.print("\n[yellow]Please install manually:[/yellow]")
                         self.console.print("  pip install requests")
                         return
 
                 except Exception as e:
-                    self.console.print(f"[red]❌ Installation error: {e}[/red]")
+                    self.console.print(f"[red] Installation error: {e}[/red]")
                     self.console.print("\n[yellow]Please install manually:[/yellow]")
                     self.console.print("  pip install requests")
                     return
@@ -7864,7 +7864,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         import requests
 
         try:
-            self.console.print("\n[bold cyan]📤 Exporting directly to Label Studio...[/bold cyan]")
+            self.console.print("\n[bold cyan] Exporting directly to Label Studio...[/bold cyan]")
 
             # Load the annotated file
             output_path = Path(output_file)
@@ -7875,12 +7875,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             elif output_path.suffix.lower() == '.parquet':
                 df = pd.read_parquet(output_path)
             else:
-                self.console.print(f"[yellow]⚠️  Unsupported format: {output_path.suffix}[/yellow]")
+                self.console.print(f"[yellow][!]  Unsupported format: {output_path.suffix}[/yellow]")
                 return
 
             # Filter only annotated rows
             if 'annotation' not in df.columns:
-                self.console.print("[yellow]⚠️  No annotation column found[/yellow]")
+                self.console.print("[yellow][!]  No annotation column found[/yellow]")
                 return
 
             annotated_mask = (
@@ -7891,7 +7891,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             df_annotated = df[annotated_mask].copy()
 
             if len(df_annotated) == 0:
-                self.console.print("[yellow]⚠️  No valid annotations to export[/yellow]")
+                self.console.print("[yellow][!]  No valid annotations to export[/yellow]")
                 return
 
             total_annotated = len(df_annotated)
@@ -7989,7 +7989,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     self.console.print(f"[yellow]  Trying alternative auth format ({i+2}/{len(auth_formats)})...[/yellow]")
 
             if response.status_code not in [200, 201]:
-                self.console.print(f"[red]❌ Failed to create project: {response.text}[/red]")
+                self.console.print(f"[red] Failed to create project: {response.text}[/red]")
                 return
 
             project = response.json()
@@ -8054,7 +8054,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     tasks.append(task)
 
                 except Exception as e:
-                    self.console.print(f"[yellow]⚠️  Skipped row {idx}: {e}[/yellow]")
+                    self.console.print(f"[yellow][!]  Skipped row {idx}: {e}[/yellow]")
                     continue
 
             # Import tasks to project
@@ -8065,11 +8065,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             )
 
             if response.status_code not in [200, 201]:
-                self.console.print(f"[red]❌ Failed to import tasks: {response.text}[/red]")
+                self.console.print(f"[red] Failed to import tasks: {response.text}[/red]")
                 return
 
             self.console.print(f"\n[bold green]✅ Successfully exported {len(tasks):,} tasks to Label Studio[/bold green]")
-            self.console.print(f"[cyan]🔗 Project URL: {api_url}/projects/{project_id}/[/cyan]\n")
+            self.console.print(f"[cyan] Project URL: {api_url}/projects/{project_id}/[/cyan]\n")
 
             # If mode is 'both', create second project without predictions
             if prediction_mode == 'both':
@@ -8095,11 +8095,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("  4. Use LLM Tool to calculate metrics\n")
 
         except requests.exceptions.ConnectionError:
-            self.console.print(f"\n[red]❌ Connection error: Could not connect to {api_url}[/red]")
+            self.console.print(f"\n[red] Connection error: Could not connect to {api_url}[/red]")
             self.console.print("[yellow]Make sure Label Studio is running:[/yellow]")
             self.console.print("  label-studio start")
         except Exception as e:
-            self.console.print(f"\n[red]❌ Export failed: {e}[/red]")
+            self.console.print(f"\n[red] Export failed: {e}[/red]")
             self.logger.exception("Label Studio direct export failed")
 
     def _build_labelstudio_config(self, label_keys, prompt_configs=None):
@@ -8181,7 +8181,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         # DATASET SCOPE
         # ============================================================
-        self.console.print("\n[bold cyan]📊 Dataset Scope[/bold cyan]")
+        self.console.print("\n[bold cyan] Dataset Scope[/bold cyan]")
         self.console.print("[dim]Determine how many rows to annotate from your dataset[/dim]\n")
 
         if total_rows:
@@ -8232,7 +8232,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     n_adjusted = n_infinite / (1 + ((n_infinite - 1) / total_rows))
                     recommended_sample = int(math.ceil(n_adjusted))
 
-                    self.console.print(f"\n[green]📈 Recommended sample size: {recommended_sample} rows[/green]")
+                    self.console.print(f"\n[green] Recommended sample size: {recommended_sample} rows[/green]")
                     self.console.print(f"[dim]   (95% confidence level, 5% margin of error)[/dim]")
 
                     use_recommended = Confirm.ask(f"Use recommended sample size ({recommended_sample} rows)?", default=True)
@@ -8260,12 +8260,12 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         # PARALLEL PROCESSING
         # ============================================================
-        self.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
+        self.console.print("\n[bold cyan]  Parallel Processing[/bold cyan]")
         self.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
 
         self.console.print("[yellow]Parallel Workers:[/yellow]")
         self.console.print("  Number of simultaneous annotation processes")
-        self.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
+        self.console.print("\n  [red][!]  IMPORTANT:[/red]")
         self.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
         self.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
         self.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
@@ -8281,7 +8281,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         # INCREMENTAL SAVE
         # ============================================================
-        self.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
+        self.console.print("\n[bold cyan] Incremental Save[/bold cyan]")
         self.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
 
         self.console.print("[yellow]Enable incremental save?[/yellow]")
@@ -8290,7 +8290,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         self.console.print("  • [red]No[/red]  - Save only at the end")
         self.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
 
-        save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
+        save_incrementally = Confirm.ask("\n Enable incremental save?", default=True)
         config['save_incrementally'] = save_incrementally
 
         # Only ask for batch size if incremental save is enabled
@@ -8313,7 +8313,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         # MODEL PARAMETERS
         # ============================================================
-        self.console.print("\n[bold cyan]🎛️  Model Parameters[/bold cyan]")
+        self.console.print("\n[bold cyan]  Model Parameters[/bold cyan]")
         self.console.print("[dim]Configure advanced model generation parameters[/dim]\n")
 
         # Check if model supports parameter tuning
@@ -8326,13 +8326,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         if not supports_params:
             if is_o_series:
-                self.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
+                self.console.print(f"[yellow][!]  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
                 self.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
             elif is_gpt5_series:
-                self.console.print(f"[yellow]⚠️  Model '{model_name}' uses locked sampling parameters[/yellow]")
+                self.console.print(f"[yellow][!]  Model '{model_name}' uses locked sampling parameters[/yellow]")
                 self.console.print("[dim]   Temperature and top_p are fixed to 1.0; only Max Tokens can be adjusted.[/dim]")
             else:
-                self.console.print(f"[yellow]⚠️  Model '{model_name}' does not allow temperature/top_p overrides[/yellow]")
+                self.console.print(f"[yellow][!]  Model '{model_name}' does not allow temperature/top_p overrides[/yellow]")
                 self.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
             configure_params = False
         else:
@@ -8352,7 +8352,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("\n[bold]Parameter Explanations:[/bold]\n")
 
             # Temperature
-            self.console.print("[cyan]🌡️  Temperature (0.0 - 2.0):[/cyan]")
+            self.console.print("[cyan]️  Temperature (0.0 - 2.0):[/cyan]")
             self.console.print("  Controls randomness in responses")
             self.console.print("  • [green]Low (0.0-0.3)[/green]  - Deterministic, focused, consistent")
             self.console.print("           [dim]Use for: Structured tasks, factual extraction, classification[/dim]")
@@ -8363,7 +8363,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             temperature = FloatPrompt.ask("Temperature", default=0.7)
 
             # Max tokens
-            self.console.print("\n[cyan]📏 Max Tokens:[/cyan]")
+            self.console.print("\n[cyan] Max Tokens:[/cyan]")
             self.console.print("  Maximum length of the response")
             self.console.print("  • [green]Short (100-500)[/green]   - Brief responses, simple annotations")
             self.console.print("  • [yellow]Medium (500-2000)[/yellow]  - Standard responses, detailed annotations")
@@ -8372,7 +8372,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             max_tokens = self._int_prompt_with_validation("Max tokens", 1000, 50, 8000)
 
             # Top_p (nucleus sampling)
-            self.console.print("\n[cyan]🎯 Top P (0.0 - 1.0):[/cyan]")
+            self.console.print("\n[cyan] Top P (0.0 - 1.0):[/cyan]")
             self.console.print("  Nucleus sampling - alternative to temperature")
             self.console.print("  • [green]Low (0.1-0.5)[/green]  - Focused on most likely tokens")
             self.console.print("           [dim]More deterministic, safer outputs[/dim]")
@@ -8383,7 +8383,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Top_k (only for some models)
             if provider and provider in ['ollama', 'google']:
-                self.console.print("\n[cyan]🔢 Top K:[/cyan]")
+                self.console.print("\n[cyan] Top K:[/cyan]")
                 self.console.print("  Limits vocabulary to K most likely next tokens")
                 self.console.print("  • [green]Small (1-10)[/green]   - Very focused, repetitive")
                 self.console.print("  • [yellow]Medium (20-50)[/yellow]  - Balanced diversity")
@@ -8396,7 +8396,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         config['top_k'] = top_k if provider and provider in ['ollama', 'google'] else None
 
         if is_gpt5_series:
-            self.console.print("\n[cyan]📏 Max Tokens (GPT-5 Series):[/cyan]")
+            self.console.print("\n[cyan] Max Tokens (GPT-5 Series):[/cyan]")
             self.console.print("  Maximum response length; sampling parameters stay locked at 1.0.")
             self.console.print("  [dim]Note: higher values increase API usage.[/dim]")
             config['max_tokens'] = self._int_prompt_with_validation("Max tokens", config['max_tokens'], 50, 8000)
@@ -8407,8 +8407,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         # REPRODUCIBILITY METADATA
         # ============================================================
-        self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
-        self.console.print("[yellow]⚠️  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
+        self.console.print("\n[bold cyan] Reproducibility & Metadata[/bold cyan]")
+        self.console.print("[yellow][!]  IMPORTANT: Save parameters for two critical purposes:[/yellow]\n")
 
         self.console.print("  [green]1. Resume Capability[/green]")
         self.console.print("     • Continue this annotation if it stops or crashes")
@@ -8427,7 +8427,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # ============================================================
         # VALIDATION TOOL EXPORT OPTION
         # ============================================================
-        self.console.print("\n[bold cyan]📤 Validation Tool Export[/bold cyan]")
+        self.console.print("\n[bold cyan] Validation Tool Export[/bold cyan]")
         self.console.print("[dim]Export annotations to JSONL format for human validation[/dim]\n")
 
         self.console.print("[yellow]Available validation tools:[/yellow]")
@@ -8546,7 +8546,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         Supports multiple database systems with intelligent sampling and flexible output options.
         """
-        self.console.print("\n[bold cyan]🗄️  SQL Database Annotator[/bold cyan]\n")
+        self.console.print("\n[bold cyan]  SQL Database Annotator[/bold cyan]\n")
         from datetime import datetime
 
         session_id = f"annotator_db_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -8769,23 +8769,23 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 text_match = next((tc for tc in text_candidates if tc['name'] == col_name), None)
                 if text_match:
                     if text_match['confidence'] == 'high':
-                        detection = "📝 Text (High confidence)"
+                        detection = " Text (High confidence)"
                         if detected_text_col is None:
                             detected_text_col = idx
                     elif text_match['confidence'] == 'medium':
-                        detection = "📝 Text (Medium)"
+                        detection = " Text (Medium)"
                     else:
-                        detection = "📝 Text (Low)"
+                        detection = " Text (Low)"
 
                 # Check if it's a suggested ID column
                 id_match = next((ic for ic in id_candidates if ic['name'] == col_name), None)
                 if id_match:
                     if id_match['confidence'] == 'high':
-                        detection = "🔑 ID (Recommended)"
+                        detection = " ID (Recommended)"
                         if detected_id_col is None:
                             detected_id_col = idx
                     else:
-                        detection = "🔑 ID (Possible)"
+                        detection = " ID (Possible)"
 
                 col_table.add_row(str(idx), col_name, col_type, detection)
 
@@ -8793,7 +8793,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Select text column with intelligent default
             if detected_text_col:
-                self.console.print(f"\n[cyan]💡 Suggested text column: '{columns[detected_text_col-1]['name']}' (detected automatically)[/cyan]")
+                self.console.print(f"\n[cyan] Suggested text column: '{columns[detected_text_col-1]['name']}' (detected automatically)[/cyan]")
 
             text_col_choice = Prompt.ask(
                 "\n[cyan]Select TEXT column (to annotate)[/cyan]",
@@ -8805,7 +8805,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # Select ID column with intelligent default
             if Confirm.ask("\n[cyan]Do you want to select an ID column?[/cyan]", default=True):
                 if detected_id_col:
-                    self.console.print(f"\n[cyan]💡 Suggested ID column: '{columns[detected_id_col-1]['name']}' (unique values detected)[/cyan]")
+                    self.console.print(f"\n[cyan] Suggested ID column: '{columns[detected_id_col-1]['name']}' (unique values detected)[/cyan]")
 
                 id_col_choice = Prompt.ask(
                     "\n[cyan]Select ID column[/cyan]",
@@ -9042,7 +9042,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             self.console.print("\n[bold]Prompt Selection Options:[/bold]")
             self.console.print("  [cyan]all[/cyan]     - Use ALL detected prompts")
             self.console.print("  [cyan]select[/cyan]  - Choose SPECIFIC prompts by number")
-            self.console.print("  [cyan]wizard[/cyan]  - 🧙‍♂️ Create NEW prompt using Social Science Wizard")
+            self.console.print("  [cyan]wizard[/cyan]  - ‍️ Create NEW prompt using Social Science Wizard")
             self.console.print("  [cyan]custom[/cyan]  - Provide path to a prompt file")
 
             prompt_choice = Prompt.ask(
@@ -9065,7 +9065,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                                 if 0 <= idx < len(detected_prompts):
                                     selected_prompts.append(detected_prompts[idx])
                             except ValueError:
-                                self.console.print(f"[yellow]⚠️  Skipping invalid number: '{idx_str}'[/yellow]")
+                                self.console.print(f"[yellow][!]  Skipping invalid number: '{idx_str}'[/yellow]")
                 if not selected_prompts:
                     self.console.print("[yellow]No valid prompts selected. Using all prompts.[/yellow]")
                     selected_prompts = detected_prompts
@@ -9098,7 +9098,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Offer wizard or custom path
             self.console.print("\n[bold]Prompt Options:[/bold]")
-            self.console.print("  [cyan]wizard[/cyan] - 🧙‍♂️ Create prompt using Social Science Wizard (Recommended)")
+            self.console.print("  [cyan]wizard[/cyan] - ‍️ Create prompt using Social Science Wizard (Recommended)")
             self.console.print("  [cyan]custom[/cyan] - Provide path to existing prompt file")
 
             choice = Prompt.ask(
@@ -9386,7 +9386,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
             # Execute annotation using SAME pipeline as Smart Annotate
             try:
-                self.console.print("[bold green]🚀 Starting annotation...[/bold green]\n")
+                self.console.print("[bold green] Starting annotation...[/bold green]\n")
 
                 from ..pipelines.pipeline_controller import PipelineController
                 from ..utils.rich_progress_manager import RichProgressManager
@@ -9447,7 +9447,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             # ========================================
             # Save results to final destination
             # ========================================
-            self.console.print("\n[bold cyan]📁 Saving to final destination...[/bold cyan]\n")
+            self.console.print("\n[bold cyan] Saving to final destination...[/bold cyan]\n")
 
             if output_dest['type'] == 'same_table':
                 # Update same table in database
@@ -9479,7 +9479,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             conn.execute(update_query, {'annotation': str(annotation_value), 'id_val': id_value})
                             updated_count += 1
                         else:
-                            self.console.print("[yellow]⚠️  Warning: No ID column specified, cannot update specific rows[/yellow]")
+                            self.console.print("[yellow][!]  Warning: No ID column specified, cannot update specific rows[/yellow]")
                             break
                     conn.commit()
 
@@ -9540,7 +9540,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     temp_input_file.unlink()
 
             self.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
-            self.console.print("[dim]🛈 Training workflows are available in Annotator Factory (mode 2). Skipping model training.[/dim]\n")
+            self.console.print("[dim] Training workflows are available in Annotator Factory (mode 2). Skipping model training.[/dim]\n")
 
             # Export to Doccano JSONL if requested
             if export_to_doccano:
@@ -9708,7 +9708,7 @@ Selecting `factory_session_20250304_111000` reopens the Annotator Factory at the
             """
 
             md = Markdown(doc_text)
-            self.console.print(Panel(md, title="📚 Documentation", border_style="blue"))
+            self.console.print(Panel(md, title=" Documentation", border_style="blue"))
         else:
             print("\n=== Documentation ===")
             print("Visit: https://github.com/antoine-lemor/LLMTool")

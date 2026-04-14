@@ -423,7 +423,7 @@ class DataLoader:
             if filter_languages:
                 # Filter out insufficient classes instead of failing
                 logging.warning(
-                    f"⚠️  WARNING: Filtering out classes with insufficient samples (< {min_total_required}):"
+                    f"[!]  WARNING: Filtering out classes with insufficient samples (< {min_total_required}):"
                 )
                 for key, count in insufficient_classes.items():
                     logging.warning(f"   • Filtering class '{key}': {count} sample(s)")
@@ -457,7 +457,7 @@ class DataLoader:
             else:
                 # Original behavior for non-language stratification
                 error_msg = (
-                    f"❌ CRITICAL ERROR: Cannot split dataset - some classes have insufficient samples:\n"
+                    f" CRITICAL ERROR: Cannot split dataset - some classes have insufficient samples:\n"
                 )
                 for key, count in insufficient_classes.items():
                     error_msg += f"   • Class '{key}': {count} sample(s) (minimum required: {min_total_required})\n"
@@ -468,7 +468,7 @@ class DataLoader:
         critical_classes = {k: v for k, v in key_counts.items() if v == min_total_required}
         if critical_classes:
             logging.warning(
-                f"⚠️  CRITICAL WARNING: Some classes have exactly the minimum required samples "
+                f"[!]  CRITICAL WARNING: Some classes have exactly the minimum required samples "
                 f"({min_total_required} = {min_train_per_class} train + {min_val_per_class} val):"
             )
             for key, count in critical_classes.items():
@@ -482,7 +482,7 @@ class DataLoader:
                             if min_total_required < v < 10}
         if low_sample_classes:
             logging.warning(
-                f"⚠️  WARNING: Some classes have very few samples (recommended: >= 10):"
+                f"[!]  WARNING: Some classes have very few samples (recommended: >= 10):"
             )
             for key, count in low_sample_classes.items():
                 logging.warning(f"   • Class '{key}': {count} samples")
@@ -555,9 +555,9 @@ class DataLoader:
                     label_part = class_key
 
                 if train_labels.get(label_part, 0) < min_train_per_class:
-                    logging.error(f"❌ Guarantee violation: Class '{label_part}' has {train_labels.get(label_part, 0)} train samples (required: {min_train_per_class})")
+                    logging.error(f" Guarantee violation: Class '{label_part}' has {train_labels.get(label_part, 0)} train samples (required: {min_train_per_class})")
                 if val_labels.get(label_part, 0) < min_val_per_class:
-                    logging.error(f"❌ Guarantee violation: Class '{label_part}' has {val_labels.get(label_part, 0)} val samples (required: {min_val_per_class})")
+                    logging.error(f" Guarantee violation: Class '{label_part}' has {val_labels.get(label_part, 0)} val samples (required: {min_val_per_class})")
 
         return train_samples, val_samples, test_samples
 

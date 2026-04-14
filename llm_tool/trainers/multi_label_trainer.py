@@ -186,7 +186,7 @@ def setup_multiclass_model(model, num_classes: int, class_names: List[str]) -> N
     # Log the configuration (use model's logger if available)
     if hasattr(model, 'logger'):
         if num_classes > 2:
-            model.logger.info(f"🎯 Multi-class mode: {num_classes} classes - {class_names}")
+            model.logger.info(f" Multi-class mode: {num_classes} classes - {class_names}")
         else:
             model.logger.debug(f"Binary mode: {class_names}")
 
@@ -596,7 +596,7 @@ class MultiLabelTrainer:
             df = pd.DataFrame(overall_report)
             df.to_csv(overall_csv, index=False)
             if self.verbose:
-                self.logger.info(f"📊 Distribution report saved to: {overall_csv}")
+                self.logger.info(f" Distribution report saved to: {overall_csv}")
 
         # 2. Detailed per-label reports
         for label_name, splits in split_datasets.items():
@@ -657,7 +657,7 @@ class MultiLabelTrainer:
             df = pd.DataFrame(lang_report)
             df.to_csv(lang_csv, index=False)
             if self.verbose:
-                self.logger.info(f"🌍 Language balance report saved to: {lang_csv}")
+                self.logger.info(f" Language balance report saved to: {lang_csv}")
 
     def prepare_label_datasets(self,
                               samples: List[MultiLabelSample],
@@ -982,7 +982,7 @@ class MultiLabelTrainer:
         if self.config.force_device:
             target_device = torch.device(self.config.force_device)
             if self.verbose:
-                self.logger.info(f"🖥️ Using forced device: {target_device}")
+                self.logger.info(f"️ Using forced device: {target_device}")
 
         # Build resource recommendations for DataLoader optimization
         # These settings are CRITICAL for consistent GPU/CPU utilization without stutters
@@ -1022,7 +1022,7 @@ class MultiLabelTrainer:
             model.num_labels = num_labels
             if class_names:
                 model.class_names = class_names
-            self.logger.info(f"🎯 Multi-class mode: {num_labels} classes - {class_names}")
+            self.logger.info(f" Multi-class mode: {num_labels} classes - {class_names}")
         else:
             # For binary classification in one-vs-all mode, set proper class names
             # Check if we have actual distinct values (like _yes/_no) rather than presence/absence
@@ -1031,13 +1031,13 @@ class MultiLabelTrainer:
                 model.num_labels = 2
                 model.class_names = class_names
                 if self.verbose:
-                    self.logger.info(f"🎯 Binary mode for {label_name} with distinct values: {model.class_names}")
+                    self.logger.info(f" Binary mode for {label_name} with distinct values: {model.class_names}")
             else:
                 # Fall back to NOT_ pattern for true presence/absence classification
                 model.num_labels = 2
                 model.class_names = [f"NOT_{label_value}", label_value]
                 if self.verbose:
-                    self.logger.info(f"🎯 Binary mode for {label_name}: {model.class_names}")
+                    self.logger.info(f" Binary mode for {label_name}: {model.class_names}")
 
         # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================
         from .model_trainer import get_model_target_languages
@@ -1049,7 +1049,7 @@ class MultiLabelTrainer:
         if target_languages is not None:
             # Language-specific model - filter samples to target language
             if self.verbose:
-                self.logger.info(f"🌍 Filtering samples to {target_languages} for {actual_model_name}")
+                self.logger.info(f" Filtering samples to {target_languages} for {actual_model_name}")
 
             # Filter train samples
             train_samples_original = len(train_samples)
@@ -1063,7 +1063,7 @@ class MultiLabelTrainer:
 
             # Check if we have enough data
             if len(train_samples) < 10:
-                self.logger.warning(f"⚠️  Very few samples ({len(train_samples)}) for {actual_model_name} "
+                self.logger.warning(f"[!]  Very few samples ({len(train_samples)}) for {actual_model_name} "
                                    f"targeting {target_languages}. Training may be unstable.")
 
             if len(train_samples) == 0:
@@ -1610,7 +1610,7 @@ class MultiLabelTrainer:
         # Train one model per multi-class group
         for idx, (group_name, group_labels) in enumerate(self.config.multiclass_groups.items(), start=1):
             if self.verbose:
-                self.logger.info(f"\n🎯 Training multi-class model for: {group_name}")
+                self.logger.info(f"\n Training multi-class model for: {group_name}")
                 self.logger.info(f"   Classes: {group_labels}")
 
             # Convert multi-label samples to multi-class samples
@@ -1720,7 +1720,7 @@ class MultiLabelTrainer:
         # Check if multi-class mode is enabled
         if self.config.multiclass_mode and self.config.multiclass_groups:
             if self.verbose:
-                self.logger.info(f"🎯 Multi-class training mode enabled")
+                self.logger.info(f" Multi-class training mode enabled")
                 self.logger.info(f"Groups: {self.config.multiclass_groups}")
 
             # Train multi-class models
@@ -1758,7 +1758,7 @@ class MultiLabelTrainer:
         stratify_by_language = len(unique_languages) > 1
 
         if stratify_by_language and self.verbose:
-            self.logger.info(f"🌍 Multiple languages detected ({len(unique_languages)}): {sorted(unique_languages)}")
+            self.logger.info(f" Multiple languages detected ({len(unique_languages)}): {sorted(unique_languages)}")
             self.logger.info(f"   Stratifying splits per language to ensure minority classes in each language's validation set")
 
         label_datasets = self.prepare_label_datasets(
@@ -2485,7 +2485,7 @@ class ParallelMultiLabelTrainer:
             from rich import box
 
             table = Table(
-                title="🔧 Resource Allocation Plan",
+                title=" Resource Allocation Plan",
                 show_header=True,
                 header_style="bold cyan",
                 box=box.ROUNDED,
@@ -2497,21 +2497,21 @@ class ParallelMultiLabelTrainer:
             if plan.gpu_allocation:
                 gpu = plan.gpu_allocation
                 table.add_row(
-                    "🖥️ GPU",
+                    "️ GPU",
                     f"{gpu.device_id.upper()} (Priority: HIGH)",
                     f"batch={gpu.batch_size}, workers={gpu.num_workers}",
                 )
 
             for cpu in plan.cpu_allocations:
                 table.add_row(
-                    "💻 CPU Worker",
+                    " CPU Worker",
                     cpu.device_id,
                     f"batch={cpu.batch_size}, workers={cpu.num_workers}",
                 )
 
             table.add_row("", "", "")
             table.add_row(
-                "📊 Summary",
+                " Summary",
                 f"{plan.total_parallel_workers} parallel workers",
                 "",
             )

@@ -496,7 +496,7 @@ class BenchmarkRunner:
 
         if target_languages is not None and test_languages is not None:
             # Language-specific model - filter data to target language only
-            self.logger.info(f"🌍 Model '{model_name}' targets {target_languages}. Filtering data...")
+            self.logger.info(f" Model '{model_name}' targets {target_languages}. Filtering data...")
 
             # Create temporary dataframes for filtering
             train_df = pd.DataFrame({'text': train_texts, 'label': train_labels, 'language': test_languages[:len(train_texts)]})
@@ -551,7 +551,7 @@ class BenchmarkRunner:
         dataset_suffix = f"[{dataset_name}]" if dataset_name else ""
         model_name = f"{cat_name}_{language}"
         self.logger.info(
-            "\n🔁 Training %s %s on %d train / %d validation samples",
+            "\n Training %s %s on %d train / %d validation samples",
             model_name,
             dataset_suffix,
             len(train_texts),
@@ -732,7 +732,7 @@ class BenchmarkRunner:
 
         # Log to console with language info
         self.logger.info(
-            "📊 Dataset composition for %s/%s:\n"
+            " Dataset composition for %s/%s:\n"
             "   Train: %d samples (Class 0: %d, Class 1: %d, Balance: %.2f%%)\n"
             "   Test: %d samples (Class 0: %d, Class 1: %d, Balance: %.2f%%)",
             category, language,
@@ -796,7 +796,7 @@ class BenchmarkRunner:
                     # Use most common category
                     if category_counts:
                         reference_category = max(category_counts, key=category_counts.get)
-                        print(f"\n🏷️  Multi-label dataset detected. Using '{reference_category}' for benchmark")
+                        print(f"\n️  Multi-label dataset detected. Using '{reference_category}' for benchmark")
                         print(f"   (Most common category with {category_counts[reference_category]} positive samples)")
 
         # Second pass to extract data
@@ -862,7 +862,7 @@ class BenchmarkRunner:
         self.logger.info("Data path: %s", data_path)
 
         # Load and analyze data (auto-detect format)
-        print("\n🔍 Analyzing dataset format...")
+        print("\n Analyzing dataset format...")
         texts, labels, languages = self._read_jsonl(data_path)
 
         if not texts:
@@ -882,7 +882,7 @@ class BenchmarkRunner:
             detected_languages = ["EN"]  # Default
 
         if verbose:
-            print(f"\n📊 Dataset Analysis:")
+            print(f"\n Dataset Analysis:")
             print(f"   - Total samples: {len(texts)}")
             print(f"   - Languages: {', '.join(detected_languages)}")
             print(f"   - Multilingual: {'Yes' if is_multilingual else 'No'}")
@@ -1144,7 +1144,7 @@ class BenchmarkRunner:
                 self.logger.info(f"  Multilingual models ({len(multilingual_models)}): {', '.join(sorted(multilingual_models))}")
 
             for lang, models in language_specific.items():
-                lang_emoji = "🇫🇷" if lang.upper() == 'FR' else "🇬🇧" if lang.upper() == 'EN' else "🌍"
+                lang_emoji = "🇫🇷" if lang.upper() == 'FR' else "🇬🇧" if lang.upper() == 'EN' else ""
                 self.logger.info(f"  {lang_emoji} {lang}-specific models ({len(models)}): {', '.join(sorted(models))}")
 
         return models_with_languages
@@ -1186,7 +1186,7 @@ class BenchmarkRunner:
 
                     if not train_idx or not test_idx:
                         if verbose:
-                            print(f"   ⚠️ No data for {model_name} in {', '.join(test_languages)}")
+                            print(f"   [!] No data for {model_name} in {', '.join(test_languages)}")
                         continue
 
                     filtered_train_texts = [dataset.train_texts[i] for i in train_idx]
@@ -1217,7 +1217,7 @@ class BenchmarkRunner:
                 if target_languages is not None and filtered_test_languages:
                     # This model should only train on specific languages
                     if verbose:
-                        print(f"   🌍 Filtering data to {target_languages} for {model_name}")
+                        print(f"    Filtering data to {target_languages} for {model_name}")
 
                     # Create dataframes for filtering
                     train_df = pd.DataFrame({
@@ -1238,7 +1238,7 @@ class BenchmarkRunner:
                     # Check if we have enough data
                     if len(train_df_filtered) < 10 or len(test_df_filtered) < 5:
                         if verbose:
-                            print(f"   ⚠️ Insufficient data after language filtering: "
+                            print(f"   [!] Insufficient data after language filtering: "
                                  f"{len(train_df_filtered)} train, {len(test_df_filtered)} test. Skipping.")
                         continue
 
@@ -1271,12 +1271,12 @@ class BenchmarkRunner:
                     # Always calculate for problematic models
                     avg_seq_length = np.mean([len(t.split()) for t in filtered_train_texts[:100]]) * 1.3  # Approx tokens
                     if verbose:
-                        print(f"   📏 Avg sequence length: ~{avg_seq_length:.0f} tokens")
+                        print(f"    Avg sequence length: ~{avg_seq_length:.0f} tokens")
                 elif self.config.optimize_for_short_sequences:
                     # Also calculate if optimization is requested
                     avg_seq_length = np.mean([len(t.split()) for t in filtered_train_texts[:100]]) * 1.3  # Approx tokens
                     if verbose:
-                        print(f"   📏 Avg sequence length: ~{avg_seq_length:.0f} tokens")
+                        print(f"    Avg sequence length: ~{avg_seq_length:.0f} tokens")
 
                 # Adjust parameters for problematic models with short sequences
                 adjusted_batch_size = self.config.batch_size
@@ -1347,7 +1347,7 @@ class BenchmarkRunner:
                     if verbose and (adjusted_batch_size != self.config.batch_size or
                                    adjusted_lr != self.config.learning_rate or
                                    adjusted_epochs != benchmark_epochs):
-                        print(f"   ⚙️ Auto-adjusting parameters ({adjustment_reason}):")
+                        print(f"    Auto-adjusting parameters ({adjustment_reason}):")
                         if adjusted_batch_size != self.config.batch_size:
                             print(f"      Batch: {self.config.batch_size} → {adjusted_batch_size}")
                         if adjusted_lr != self.config.learning_rate:
@@ -1399,7 +1399,7 @@ class BenchmarkRunner:
                 # Log reinforced status for transparency
                 if verbose:
                     if use_reinforced:
-                        print(f"   ⚡ Reinforced learning enabled (will auto-trigger if F1_1 < {self.config.reinforced_f1_threshold:.2f})")
+                        print(f"    Reinforced learning enabled (will auto-trigger if F1_1 < {self.config.reinforced_f1_threshold:.2f})")
 
                         # Additional context for models likely to need it
                         if needs_adjustment:
@@ -1449,7 +1449,7 @@ class BenchmarkRunner:
                 # Log if reinforced learning was triggered
                 if use_reinforced and summary.get('reinforced_triggered', False):
                     if verbose:
-                        print(f"   ⚡ Reinforced learning was triggered (F1_1 < {self.config.reinforced_f1_threshold})")
+                        print(f"    Reinforced learning was triggered (F1_1 < {self.config.reinforced_f1_threshold})")
 
                 # Clean up model
                 if hasattr(model, 'last_saved_model_path') and model.last_saved_model_path:
@@ -1480,7 +1480,7 @@ class BenchmarkRunner:
             except Exception as e:
                 self.logger.error(f"Error benchmarking {model_name}: {e}")
                 if verbose:
-                    print(f"   ❌ Error: {e}")
+                    print(f"    Error: {e}")
 
         return all_results
 
@@ -1506,7 +1506,7 @@ class BenchmarkRunner:
     ):
         """Display comprehensive benchmark results."""
         print("\n" + "="*120)
-        print("🏆 COMPREHENSIVE BENCHMARK RESULTS")
+        print(" COMPREHENSIVE BENCHMARK RESULTS")
         print("="*120)
 
         # Main results table
@@ -1514,7 +1514,7 @@ class BenchmarkRunner:
         print("-"*120)
 
         for i, result in enumerate(results, 1):
-            emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "  "
+            emoji = "" if i == 1 else "" if i == 2 else "" if i == 3 else "  "
             lang_str = ', '.join(result.get('tested_languages', []))
 
             print(f"{emoji}[{i}] {result['model_name']:<25} {lang_str:<15} "
@@ -1525,7 +1525,7 @@ class BenchmarkRunner:
 
         # Language-specific metrics for ALL models
         if is_multilingual:
-            print("\n🌍 LANGUAGE-SPECIFIC PERFORMANCE (ALL MODELS):")
+            print("\n LANGUAGE-SPECIFIC PERFORMANCE (ALL MODELS):")
             print("="*120)
             print(f"{'Model':<25} {'Language':<10} {'F1 Score':<12} {'Accuracy':<12} {'F1 Cl.0':<12} {'F1 Cl.1':<12}")
             print("-"*120)
@@ -1550,16 +1550,16 @@ class BenchmarkRunner:
             print("="*120)
 
         # Recommendations
-        print("\n💡 RECOMMENDATIONS:")
+        print("\n RECOMMENDATIONS:")
         print(f"   ✅ Best overall F1: {results[0]['model_name']} ({results[0]['f1_score']:.3f})")
 
         # Best for minority class
         best_minority = max(results, key=lambda x: x.get('f1_class_1', 0))
-        print(f"   🎯 Best for minority class: {best_minority['model_name']} (F1: {best_minority['f1_class_1']:.3f})")
+        print(f"    Best for minority class: {best_minority['model_name']} (F1: {best_minority['f1_class_1']:.3f})")
 
         # Fastest
         fastest = min(results, key=lambda x: x.get('inference_time', float('inf')))
-        print(f"   ⚡ Fastest: {fastest['model_name']} ({fastest['inference_time']*1000:.1f} ms/sample)")
+        print(f"    Fastest: {fastest['model_name']} ({fastest['inference_time']*1000:.1f} ms/sample)")
 
     def _select_best_multilingual_model(self, results: List[Dict], languages: List[str]) -> str:
         """
@@ -1624,7 +1624,7 @@ class BenchmarkRunner:
     def _user_select_model(self, results: List[Dict]) -> Optional[str]:
         """Let user select model from results."""
         print("\n" + "="*120)
-        print("🎮 MODEL SELECTION")
+        print(" MODEL SELECTION")
         print("="*120)
 
         print("\nSelect model for full training:")
@@ -1652,7 +1652,7 @@ class BenchmarkRunner:
                             print(f"\n✅ Selected: {result['model_name']}")
                             return result['model_name']
 
-                print("❌ Invalid choice")
+                print(" Invalid choice")
 
             except KeyboardInterrupt:
                 return None
@@ -1770,8 +1770,8 @@ class BenchmarkRunner:
 
                     writer.writerow(row)
 
-            self.logger.info(f"💾 Detailed benchmark log saved: {detailed_file}")
-            print(f"\n💾 Detailed log saved: {detailed_file}")
+            self.logger.info(f" Detailed benchmark log saved: {detailed_file}")
+            print(f"\n Detailed log saved: {detailed_file}")
 
             # Also append to consolidated file
             consolidated_exists = consolidated_file.exists()
@@ -1913,8 +1913,8 @@ class BenchmarkRunner:
                             'reason': reason
                         })
 
-            self.logger.info(f"🏆 Best models summary saved: {best_file}")
-            print(f"🏆 Best models saved: {best_file}")
+            self.logger.info(f" Best models summary saved: {best_file}")
+            print(f" Best models saved: {best_file}")
 
             # Also append to consolidated best models file
             consolidated_best_exists = consolidated_best_file.exists()
@@ -1967,4 +1967,4 @@ class BenchmarkRunner:
                 'results': results
             }, f, indent=2, ensure_ascii=False)
 
-        print(f"📋 JSON results saved: {json_file}")
+        print(f" JSON results saved: {json_file}")

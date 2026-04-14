@@ -99,7 +99,7 @@ class TrainingCLI:
             Exit code (0 for success)
         """
         print("\n" + "="*70)
-        print(" " * 15 + "🚀 AUGMENTED SOCIAL SCIENTIST TRAINING CLI")
+        print(" " * 15 + " AUGMENTED SOCIAL SCIENTIST TRAINING CLI")
         print(" " * 20 + "Advanced Model Training System")
         print("="*70)
 
@@ -107,7 +107,7 @@ class TrainingCLI:
         mode = self._select_mode()
 
         if mode == "quit":
-            print("\n👋 Goodbye!")
+            print("\n Goodbye!")
             return 0
 
         elif mode == "multi-label":
@@ -117,7 +117,7 @@ class TrainingCLI:
             return self._run_benchmark_mode()
 
         elif mode == "legacy":
-            print("\n⚠️  Legacy mode not implemented in CLI.")
+            print("\n[!]  Legacy mode not implemented in CLI.")
             print("   Use multi-label mode for better results.")
             return 1
 
@@ -130,12 +130,12 @@ class TrainingCLI:
         Returns:
             Selected mode string
         """
-        print("\n🎯 SELECT TRAINING MODE")
+        print("\n SELECT TRAINING MODE")
         print("-" * 40)
-        print("[1] 📊 Multi-label Training (Recommended)")
-        print("[2] 🏆 Benchmark Mode (Compare models)")
-        print("[3] 📦 Legacy Mode (Separate folders)")
-        print("[4] ❌ Quit")
+        print("[1]  Multi-label Training (Recommended)")
+        print("[2]  Benchmark Mode (Compare models)")
+        print("[3]  Legacy Mode (Separate folders)")
+        print("[4]  Quit")
 
         while True:
             choice = input("\nYour choice [1-4]: ").strip()
@@ -148,7 +148,7 @@ class TrainingCLI:
             elif choice == "4":
                 return "quit"
             else:
-                print("❌ Invalid choice. Please select 1-4.")
+                print(" Invalid choice. Please select 1-4.")
 
     def _run_multilabel_training(self) -> int:
         """
@@ -158,7 +158,7 @@ class TrainingCLI:
             Exit code
         """
         print("\n" + "="*60)
-        print("📊 MULTI-LABEL TRAINING MODE")
+        print(" MULTI-LABEL TRAINING MODE")
         print("="*60)
 
         # Select data file
@@ -170,7 +170,7 @@ class TrainingCLI:
         config = self._get_training_config()
 
         # Ask about benchmark
-        use_benchmark = self._confirm("\n🏆 Run benchmark to select best model?")
+        use_benchmark = self._confirm("\n Run benchmark to select best model?")
 
         if use_benchmark:
             # Run benchmark first
@@ -183,12 +183,12 @@ class TrainingCLI:
 
             # Ask about reinforced learning
             use_reinforced_bench = self._confirm(
-                "\n⚡ Enable reinforced learning for poor performers?",
+                "\n Enable reinforced learning for poor performers?",
                 default=True
             )
 
             # Ask about short sequence optimization
-            print("\n📏 Your data may contain short sequences (individual sentences).")
+            print("\n Your data may contain short sequences (individual sentences).")
             print("   Some models (Longformer, BigBird, ALBERT Large) are optimized for long documents.")
             optimize_short_bench = self._confirm(
                 "Optimize parameters for short sequences?",
@@ -196,13 +196,13 @@ class TrainingCLI:
             )
 
             # Detect languages in data
-            print("\n🔍 Analyzing dataset...")
+            print("\n Analyzing dataset...")
             languages = self._detect_data_languages(data_file)
 
             # Display and select models for benchmark
             selected_models = self._select_benchmark_models(languages)
             if not selected_models:
-                print("\n❌ No models selected for benchmark")
+                print("\n No models selected for benchmark")
                 return 1
 
             # Pass benchmark options to config
@@ -218,7 +218,7 @@ class TrainingCLI:
             )
 
             if not best_model_name:
-                print("\n❌ Benchmark failed to select a model")
+                print("\n Benchmark failed to select a model")
                 return 1
 
             print(f"\n✅ Benchmark selected: {best_model_name}")
@@ -243,14 +243,14 @@ class TrainingCLI:
 
         # Train models
         print("\n" + "="*60)
-        print("🚀 STARTING TRAINING")
+        print(" STARTING TRAINING")
         print("="*60)
 
         try:
             trainer = MultiLabelTrainer(config)
 
             # Load data to show statistics
-            print("\n📊 Loading and analyzing data...")
+            print("\n Loading and analyzing data...")
             samples = trainer.load_multi_label_data(str(data_file))
 
             # Display statistics
@@ -277,7 +277,7 @@ class TrainingCLI:
 
         except Exception as e:
             logger.error(f"Training error: {e}", exc_info=True)
-            print(f"\n❌ Error: {e}")
+            print(f"\n Error: {e}")
             return 1
 
     def _run_benchmark_mode(self) -> int:
@@ -288,7 +288,7 @@ class TrainingCLI:
             Exit code
         """
         print("\n" + "="*60)
-        print("🏆 BENCHMARK MODE")
+        print(" BENCHMARK MODE")
         print("="*60)
 
         # Select data file
@@ -297,30 +297,30 @@ class TrainingCLI:
             return 1
 
         # Analyze data to detect languages
-        print("\n🔍 Analyzing dataset...")
+        print("\n Analyzing dataset...")
         languages = self._detect_data_languages(data_file)
 
         # Display available models and let user select
         selected_models = self._select_benchmark_models(languages)
         if not selected_models:
-            print("\n❌ No models selected for benchmark")
+            print("\n No models selected for benchmark")
             return 1
 
         # Get benchmark configuration
         epochs = self._get_integer("Number of epochs", default=10, min_val=1, max_val=50)
         batch_size = self._get_integer("Batch size", default=32, min_val=4, max_val=128)
 
-        balance = self._confirm("\n📊 Balance classes (undersample)?")
+        balance = self._confirm("\n Balance classes (undersample)?")
         test_all = False  # We handle selection above
 
         # Ask about reinforced learning
         use_reinforced = self._confirm(
-            "\n⚡ Enable reinforced learning for poor performers?",
+            "\n Enable reinforced learning for poor performers?",
             default=True
         )
 
         # Ask about short sequence optimization
-        print("\n📏 Your data may contain short sequences (individual sentences).")
+        print("\n Your data may contain short sequences (individual sentences).")
         print("   Some models (Longformer, BigBird, ALBERT Large) are optimized for long documents.")
         optimize_short = self._confirm(
             "Optimize parameters for short sequences?",
@@ -365,7 +365,7 @@ class TrainingCLI:
             print(f"\n✅ Selected model: {selected}")
             return 0
         else:
-            print("\n⚠️  No model selected")
+            print("\n[!]  No model selected")
             return 1
 
     def _run_benchmark(
@@ -391,7 +391,7 @@ class TrainingCLI:
         Returns:
             Selected model name or None
         """
-        print("\n🔍 Starting benchmark...")
+        print("\n Starting benchmark...")
         if models_to_test:
             print(f"   • Testing {len(models_to_test)} selected models")
         else:
@@ -428,7 +428,7 @@ class TrainingCLI:
         # Show log locations
         logs_dir = runner.models_root / "benchmark_logs"
         if logs_dir.exists():
-            print(f"\n📂 Benchmark logs saved to: {logs_dir}")
+            print(f"\n Benchmark logs saved to: {logs_dir}")
             print("   • benchmark_detailed_*.csv - All model metrics")
             print("   • benchmark_best_models_*.csv - Best models summary")
             print("   • benchmark_results_*.json - Complete results")
@@ -442,7 +442,7 @@ class TrainingCLI:
         Returns:
             Path to selected file or None
         """
-        print("\n📁 SELECT DATA FILE")
+        print("\n SELECT DATA FILE")
         print("-" * 40)
 
         # Find available files
@@ -454,7 +454,7 @@ class TrainingCLI:
             files.extend(list(self.data_dir.rglob(pattern)))
 
         if not files:
-            print(f"❌ No JSON/JSONL files found in {self.data_dir}")
+            print(f" No JSON/JSONL files found in {self.data_dir}")
             return None
 
         # Display files
@@ -475,7 +475,7 @@ class TrainingCLI:
                     selected = files[idx]
                     print(f"✓ Selected: {selected.name}")
                     return selected
-            print("❌ Invalid selection")
+            print(" Invalid selection")
 
     def _get_training_config(self) -> TrainingConfig:
         """
@@ -484,7 +484,7 @@ class TrainingCLI:
         Returns:
             TrainingConfig object
         """
-        print("\n⚙️  TRAINING CONFIGURATION")
+        print("\n  TRAINING CONFIGURATION")
         print("-" * 40)
 
         # Basic parameters
@@ -502,7 +502,7 @@ class TrainingCLI:
             stratified = self._confirm("Use stratified split?")
 
         # Advanced options
-        print("\n🔧 ADVANCED OPTIONS")
+        print("\n ADVANCED OPTIONS")
         reinforced = self._confirm("Enable reinforced learning?")
         reinforced_epochs = 5
         if reinforced:
@@ -514,7 +514,7 @@ class TrainingCLI:
             max_workers = self._get_integer("Number of workers", default=2, min_val=1, max_val=8)
 
         # Language strategy
-        print("\n🌍 LANGUAGE STRATEGY")
+        print("\n LANGUAGE STRATEGY")
         print("[1] Auto-detect from data")
         print("[2] One multilingual model per label")
         print("[3] Separate models by language")
@@ -553,16 +553,16 @@ class TrainingCLI:
         Returns:
             Model name or 'auto'
         """
-        print("\n🤖 MODEL SELECTION")
+        print("\n MODEL SELECTION")
         print("-" * 40)
 
         selector = ModelSelector(verbose=False)
         models = ["auto (recommended)"] + list(selector.MODEL_PROFILES.keys())
 
         # Group models by language
-        print("\n[0] 🔮 Auto-select (recommended)")
+        print("\n[0]  Auto-select (recommended)")
 
-        print("\n📌 Multilingual Models:")
+        print("\n Multilingual Models:")
         idx = 1
         multilingual = []
         for name, profile in selector.MODEL_PROFILES.items():
@@ -595,11 +595,11 @@ class TrainingCLI:
                 idx = int(choice)
                 if 0 <= idx < len(all_models):
                     return all_models[idx]
-            print("❌ Invalid selection")
+            print(" Invalid selection")
 
     def _display_data_statistics(self, samples: List) -> None:
         """Display statistics about the loaded data."""
-        print(f"\n📈 DATASET STATISTICS")
+        print(f"\n DATASET STATISTICS")
         print("="*60)
         print(f"  Total samples: {len(samples)}")
 
@@ -607,7 +607,7 @@ class TrainingCLI:
         if samples and hasattr(samples[0], 'lang'):
             lang_counts = Counter(s.lang for s in samples if s.lang)
             if lang_counts:
-                print(f"\n  📍 Language distribution:")
+                print(f"\n   Language distribution:")
                 total_width = 40
                 for lang, count in lang_counts.most_common():
                     ratio = count / len(samples)
@@ -623,7 +623,7 @@ class TrainingCLI:
                     category_counts.update(sample.labels.keys())
 
             if category_counts:
-                print(f"\n  📑 Category distribution:")
+                print(f"\n   Category distribution:")
                 print(f"  {'Category':<30} {'Count':<10} {'Percentage':<10}")
                 print("  " + "-"*50)
                 for cat, count in sorted(category_counts.items()):
@@ -638,11 +638,11 @@ class TrainingCLI:
         print("="*60)
 
         if not models:
-            print("⚠️  No models were trained")
+            print("[!]  No models were trained")
             return
 
         # Results table
-        print(f"\n📊 RESULTS ({len(models)} models trained)")
+        print(f"\n RESULTS ({len(models)} models trained)")
         print("-"*60)
         print(f"{'Category':<30} {'F1 Score':<12} {'Accuracy':<12} {'Support':<10}")
         print("-"*60)
@@ -700,7 +700,7 @@ class TrainingCLI:
                 }
                 writer.writerow(row)
 
-        print(f"\n💾 Results saved to: {csv_file}")
+        print(f"\n Results saved to: {csv_file}")
 
         # Save JSON summary
         json_file = self.logs_dir / f"training_summary_{timestamp}.json"
@@ -724,7 +724,7 @@ class TrainingCLI:
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        print(f"📋 Summary saved to: {json_file}")
+        print(f" Summary saved to: {json_file}")
 
     def _confirm(self, prompt: str, default: bool = True) -> bool:
         """Get yes/no confirmation."""
@@ -752,9 +752,9 @@ class TrainingCLI:
                 val = int(value)
                 if min_val <= val <= max_val:
                     return val
-                print(f"❌ Value must be between {min_val} and {max_val}")
+                print(f" Value must be between {min_val} and {max_val}")
             except ValueError:
-                print("❌ Please enter a valid number")
+                print(" Please enter a valid number")
 
     def _get_float(self, prompt: str, default: float, min_val: float = 0.0, max_val: float = 1.0) -> float:
         """Get float input with validation."""
@@ -766,9 +766,9 @@ class TrainingCLI:
                 val = float(value)
                 if min_val <= val <= max_val:
                     return val
-                print(f"❌ Value must be between {min_val} and {max_val}")
+                print(f" Value must be between {min_val} and {max_val}")
             except ValueError:
-                print("❌ Please enter a valid number")
+                print(" Please enter a valid number")
 
     def _detect_data_languages(self, data_file: Path) -> List[str]:
         """Detect languages in data file."""
@@ -788,13 +788,13 @@ class TrainingCLI:
                     continue
 
         if not languages:
-            print("⚠️  No language information found, assuming English")
+            print("[!]  No language information found, assuming English")
             return ['EN']
 
         lang_counts = Counter(languages)
         detected_langs = list(lang_counts.keys())
 
-        print(f"\n📊 Detected languages: {', '.join(detected_langs)}")
+        print(f"\n Detected languages: {', '.join(detected_langs)}")
         for lang, count in lang_counts.items():
             print(f"   - {lang}: {count} samples")
 
@@ -805,7 +805,7 @@ class TrainingCLI:
         from llm_tool.trainers.model_selector import ModelSelector
 
         print("\n" + "="*60)
-        print("🤖 MODEL SELECTION FOR BENCHMARK")
+        print(" MODEL SELECTION FOR BENCHMARK")
         print("="*60)
 
         selector = ModelSelector(verbose=False)
@@ -838,7 +838,7 @@ class TrainingCLI:
         all_models = []
         model_index = 1
 
-        print("\n🌍 MULTILINGUAL MODELS (work with all languages):")
+        print("\n MULTILINGUAL MODELS (work with all languages):")
         print("-" * 50)
         for model in multilingual_models:
             desc = model_descriptions.get(model, "")
@@ -914,53 +914,53 @@ class TrainingCLI:
                         print(f"   - {model}")
                     return selected
                 else:
-                    print("❌ No valid models selected")
+                    print(" No valid models selected")
                     return None
             except:
-                print("❌ Invalid selection format")
+                print(" Invalid selection format")
                 return None
         else:
-            print("❌ Invalid choice")
+            print(" Invalid choice")
             return None
 
     def _get_model_descriptions(self) -> Dict[str, str]:
         """Get short descriptions for each model."""
         return {
             # Multilingual
-            'MDeBERTaV3Base': '🌐 278M params, SOTA multilingual',
-            'XLMRobertaBase': '🌐 270M params, 100+ languages',
-            'XLMRobertaLarge': '🌐 560M params, best multilingual',
-            'DistilBertMultilingual': '🌐 134M params, fast & efficient',
+            'MDeBERTaV3Base': ' 278M params, SOTA multilingual',
+            'XLMRobertaBase': ' 270M params, 100+ languages',
+            'XLMRobertaLarge': ' 560M params, best multilingual',
+            'DistilBertMultilingual': ' 134M params, fast & efficient',
 
             # English
-            'DeBERTaV3XSmall': '🚀 22M params, ultra-fast',
-            'DeBERTaV3Small': '⚡ 44M params, fast & accurate',
-            'DeBERTaV3Base': '💪 86M params, best accuracy',
-            'RobertaBase': '📚 125M params, classic SOTA',
-            'RobertaLarge': '🏆 355M params, highest accuracy',
-            'ElectraSmall': '⚡ 14M params, efficient',
-            'ElectraBase': '🔌 110M params, good balance',
-            'ElectraLarge': '⚡ 335M params, discriminative',
-            'AlbertBaseV2': '💡 12M params, parameter sharing',
-            'AlbertLargeV2': '💡 18M params, factorized',
-            'BertBase': '🔤 110M params, original BERT',
-            'BertLarge': '🔤 340M params, large BERT',
-            'DistilBert': '🏃 66M params, distilled',
-            'TinyBert': '🐜 4M params, ultra-light',
-            'MobileBert': '📱 25M params, mobile-optimized',
+            'DeBERTaV3XSmall': ' 22M params, ultra-fast',
+            'DeBERTaV3Small': ' 44M params, fast & accurate',
+            'DeBERTaV3Base': ' 86M params, best accuracy',
+            'RobertaBase': ' 125M params, classic SOTA',
+            'RobertaLarge': ' 355M params, highest accuracy',
+            'ElectraSmall': ' 14M params, efficient',
+            'ElectraBase': ' 110M params, good balance',
+            'ElectraLarge': ' 335M params, discriminative',
+            'AlbertBaseV2': ' 12M params, parameter sharing',
+            'AlbertLargeV2': ' 18M params, factorized',
+            'BertBase': ' 110M params, original BERT',
+            'BertLarge': ' 340M params, large BERT',
+            'DistilBert': ' 66M params, distilled',
+            'TinyBert': ' 4M params, ultra-light',
+            'MobileBert': ' 25M params, mobile-optimized',
 
             # French
-            'CamembertBase': '🥖 110M params, French RoBERTa',
-            'CamembertaV2Base': '🥐 110M params, French CamemBERTa v1',
-            'CamemBERTav2Base': '🥐 110M params, French SOTA Nov 2024 (ALMAnaCH/Inria)',
+            'CamembertBase': ' 110M params, French RoBERTa',
+            'CamembertaV2Base': ' 110M params, French CamemBERTa v1',
+            'CamemBERTav2Base': ' 110M params, French SOTA Nov 2024 (ALMAnaCH/Inria)',
             'FlaubertBase': '🇫🇷 137M params, French BERT',
-            'FrALBERTBase': '🗼 12M params, French ALBERT',
-            'DistilCamembert': '🏃 68M params, fast French',
-            'FrELECTRABase': '⚡ 110M params, French discriminative',
+            'FrALBERTBase': ' 12M params, French ALBERT',
+            'DistilCamembert': ' 68M params, fast French',
+            'FrELECTRABase': ' 110M params, French discriminative',
 
             # German
             'GBertBase': '🇩🇪 110M params, German BERT',
-            'GElectraBase': '⚡ 110M params, German ELECTRA',
+            'GElectraBase': ' 110M params, German ELECTRA',
 
             # Spanish
             'BetoBERT': '🇪🇸 110M params, Spanish BERT',
@@ -1025,7 +1025,7 @@ def main():
 
     # Validate directories
     if not args.data_dir.exists():
-        print(f"❌ Data directory not found: {args.data_dir}")
+        print(f" Data directory not found: {args.data_dir}")
         sys.exit(1)
 
     # Create CLI instance
@@ -1043,7 +1043,7 @@ def main():
         # Load config and run non-interactively
         with open(args.config, 'r') as f:
             config = json.load(f)
-        print("⚠️  Non-interactive mode not fully implemented")
+        print("[!]  Non-interactive mode not fully implemented")
         exit_code = 1
     else:
         exit_code = cli.run()

@@ -223,7 +223,7 @@ def set_detected_languages_on_model(model, train_samples=None, val_samples=None,
             if isinstance(lang, str) and lang
         ))
         if logger:
-            logger.info(f"🌍 Using confirmed languages: {', '.join(detected_languages)}")
+            logger.info(f" Using confirmed languages: {', '.join(detected_languages)}")
 
     # Priority 2: Extract from samples
     elif train_samples or val_samples:
@@ -238,7 +238,7 @@ def set_detected_languages_on_model(model, train_samples=None, val_samples=None,
             if hasattr(s, 'lang') and s.lang and isinstance(s.lang, str)
         ))
         if logger:
-            logger.info(f"🌍 Detected languages from samples: {', '.join(detected_languages)}")
+            logger.info(f" Detected languages from samples: {', '.join(detected_languages)}")
 
     # Priority 3: Extract from language lists
     elif train_languages or val_languages:
@@ -253,7 +253,7 @@ def set_detected_languages_on_model(model, train_samples=None, val_samples=None,
             if isinstance(lang, str) and lang
         ))
         if logger:
-            logger.info(f"🌍 Detected languages from language lists: {', '.join(detected_languages)}")
+            logger.info(f" Detected languages from language lists: {', '.join(detected_languages)}")
 
     # Set on model if we detected any languages
     if detected_languages:
@@ -261,7 +261,7 @@ def set_detected_languages_on_model(model, train_samples=None, val_samples=None,
         if logger:
             logger.info(f"✓ Set model.detected_languages = {detected_languages}")
     elif logger:
-        logger.warning("⚠️  No languages detected in data")
+        logger.warning("[!]  No languages detected in data")
 
     return detected_languages
 
@@ -591,7 +591,7 @@ class ModelTrainer:
             effective_batch = self.config.batch_size * self.config.gradient_accumulation_steps
             model_category = model_config.get('model_category', 'unknown')
             self.logger.info(
-                f"🚀 Model-specific GPU optimization for {model_name} ({model_category}): "
+                f" Model-specific GPU optimization for {model_name} ({model_category}): "
                 f"{', '.join(changes)} [effective batch: {effective_batch}]"
             )
 
@@ -933,7 +933,7 @@ class ModelTrainer:
         missing_in_val = [cls for cls in all_classes if val_label_counts.get(cls, 0) == 0]
         if missing_in_val:
             self.logger.warning(
-                f"⚠️  Some classes have 0 samples in validation set after split. "
+                f"[!]  Some classes have 0 samples in validation set after split. "
                 f"Moving 1 sample per missing class from train to val."
             )
 
@@ -1013,7 +1013,7 @@ class ModelTrainer:
                           training_approach: Optional[str] = None) -> TrainingResult:
         """Train a single model"""
         from tqdm import tqdm
-        print(f"\n🏋️  Training model: {model_name}")
+        print(f"\n️  Training model: {model_name}")
         self.logger.info(f"Training model: {model_name} with {training_strategy} strategy")
         start_time = time.time()
 
@@ -1040,7 +1040,7 @@ class ModelTrainer:
 
         if target_languages is not None:
             # This is a language-specific model - filter data
-            self.logger.info(f"🌍 Model '{model_name}' targets {target_languages}. Filtering data...")
+            self.logger.info(f" Model '{model_name}' targets {target_languages}. Filtering data...")
 
             # Check if language column exists (can be 'language' or 'lang')
             lang_col = None
@@ -1060,14 +1060,14 @@ class ModelTrainer:
 
                 # Verify we still have enough data
                 if len(train_df) < 10:
-                    self.logger.warning(f"⚠️  Very few training samples ({len(train_df)}) for {model_name} "
+                    self.logger.warning(f"[!]  Very few training samples ({len(train_df)}) for {model_name} "
                                        f"targeting {target_languages}. Training may be unstable.")
             else:
-                self.logger.warning(f"⚠️  No 'language' or 'lang' column found. Cannot filter for {model_name}. "
+                self.logger.warning(f"[!]  No 'language' or 'lang' column found. Cannot filter for {model_name}. "
                                    f"Training on ALL data (not recommended for monolingual models).")
         else:
             # Multilingual model - use all data
-            self.logger.info(f"🌍 Model '{model_name}' is multilingual. Using all language data.")
+            self.logger.info(f" Model '{model_name}' is multilingual. Using all language data.")
 
         # Prepare data - use the correct label column
         # CRITICAL: Filter out empty/invalid texts BEFORE processing
@@ -1233,14 +1233,14 @@ class ModelTrainer:
                 # ONLY when label encoder didn't provide class names (true binary presence/absence)
                 # Class 0 = NOT_category (negative), Class 1 = category (positive)
                 class_names_for_display = [f"NOT_{category_name}", category_name]
-                self.logger.info(f"🏷️  One-vs-all class names: {class_names_for_display}")
+                self.logger.info(f"️  One-vs-all class names: {class_names_for_display}")
             elif class_names_for_display is not None:
                 class_names_for_display = [str(name) for name in class_names_for_display]
 
             if class_names_for_display is not None and num_labels is not None:
                 if len(class_names_for_display) != num_labels:
                     self.logger.warning(
-                        f"⚠️ class_names length ({len(class_names_for_display)}) does not match num_labels ({num_labels}). "
+                        f"[!] class_names length ({len(class_names_for_display)}) does not match num_labels ({num_labels}). "
                         "Adjusting to keep them in sync."
                     )
                     if len(class_names_for_display) > num_labels:
@@ -1303,7 +1303,7 @@ class ModelTrainer:
             # Check ALL locals for numpy types
             for key, value in locals().items():
                 if isinstance(value, (np.integer, np.floating, np.ndarray)):
-                    self.logger.warning(f"  ⚠️ NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
+                    self.logger.warning(f"  [!] NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
             self.logger.debug("=" * 80)
 
             metrics_base_dir = resolve_metrics_base_dir(getattr(self.config, "metrics_output_dir", None))
@@ -1349,14 +1349,14 @@ class ModelTrainer:
 
             # Log final model path
             if best_model_path:
-                self.logger.info(f"🎯 Training complete. Best model at: {best_model_path}")
+                self.logger.info(f" Training complete. Best model at: {best_model_path}")
             else:
-                self.logger.warning(f"⚠️ Training complete but no model path returned")
+                self.logger.warning(f"[!] Training complete but no model path returned")
 
             # FINAL EVALUATION: Use test set if available, otherwise use validation metrics
             if len(test_df) > 0:
                 # Evaluate on separate test set (final unbiased evaluation)
-                self.logger.info(f"📊 Final evaluation on test set ({len(test_df)} samples)...")
+                self.logger.info(f" Final evaluation on test set ({len(test_df)} samples)...")
                 test_probs = model_instance.predict(test_dataloader, model_instance.model, proba=True)
                 test_predictions = self._to_label_predictions(test_probs)
 
@@ -1386,7 +1386,7 @@ class ModelTrainer:
                 )
             else:
                 # No separate test set - use validation metrics from training
-                self.logger.info(f"📊 Using validation metrics as final evaluation (no separate test set)")
+                self.logger.info(f" Using validation metrics as final evaluation (no separate test set)")
                 # CRITICAL FIX: Use last_training_summary which is a dict, not best_scores (tuple)
                 # best_scores is a numpy tuple, but last_training_summary is the dict created by bert_base.py
                 training_summary = getattr(model_instance, 'last_training_summary', {})
@@ -1643,7 +1643,7 @@ class ModelTrainer:
             # Otherwise, use MultiLabelTrainer for one-vs-all or multiclass
             from .multi_label_trainer import MultiLabelTrainer
 
-            print("\n🏋️ Training multi-label model...")
+            print("\n️ Training multi-label model...")
             self.logger.info(f"Starting multi-label training for {label_column}")
 
             # Load multi-label data directly without encoding
@@ -2098,13 +2098,13 @@ class ModelTrainer:
 
             # CRITICAL: Validate models_by_language is a dict (defensive fix for numpy type issues)
             if models_by_language is not None and not isinstance(models_by_language, dict):
-                self.logger.warning(f"⚠️  models_by_language has invalid type: {type(models_by_language)} (value: {models_by_language})")
+                self.logger.warning(f"[!]  models_by_language has invalid type: {type(models_by_language)} (value: {models_by_language})")
                 self.logger.warning("   Expected dict, got scalar or other type. Disabling per-language training.")
                 models_by_language = None
 
             if models_by_language:
                 # Train separate model for each language
-                self.logger.info(f"🌍 Training {len(models_by_language)} language-specific models")
+                self.logger.info(f" Training {len(models_by_language)} language-specific models")
 
                 # Check if language column exists (can be 'language' or 'lang')
                 lang_col_name = None
@@ -2116,7 +2116,7 @@ class ModelTrainer:
                     self.logger.info(f"✓ Found 'lang' column for filtering")
 
                 if not lang_col_name:
-                    self.logger.error("❌ Cannot train per-language models: No 'language' or 'lang' column found in data")
+                    self.logger.error(" Cannot train per-language models: No 'language' or 'lang' column found in data")
                     raise ValueError("Per-language training requested but no language column found in data")
 
                 # Train a model for each language
@@ -2124,7 +2124,7 @@ class ModelTrainer:
                 total_training_time = 0
 
                 for lang_code, lang_model in models_by_language.items():
-                    self.logger.info(f"\n🏋️  Training {lang_code} model: {lang_model}")
+                    self.logger.info(f"\n️  Training {lang_code} model: {lang_model}")
 
                     # Filter data to this language only
                     lang_code_upper = lang_code.upper()
@@ -2150,7 +2150,7 @@ class ModelTrainer:
 
                     # Skip if insufficient data
                     if len(train_df_lang) < 10:
-                        self.logger.warning(f"⚠️  Skipping {lang_code}: Insufficient training samples ({len(train_df_lang)})")
+                        self.logger.warning(f"[!]  Skipping {lang_code}: Insufficient training samples ({len(train_df_lang)})")
                         continue
 
                     # CRITICAL: Re-encode labels to ensure they are contiguous (0, 1, 2, ..., n-1)
@@ -2184,7 +2184,7 @@ class ModelTrainer:
                                 class_names_lang.append(str(all_class_names[old_label]))
                             else:
                                 self.logger.warning(
-                                    f"  ⚠️ Label index {old_label} out of range for class names (len={len(all_class_names)}). "
+                                    f"  [!] Label index {old_label} out of range for class names (len={len(all_class_names)}). "
                                     "Using fallback placeholder."
                                 )
                                 class_names_lang.append(f"Class {len(class_names_lang)}")
@@ -2256,7 +2256,7 @@ class ModelTrainer:
                     except Exception as e:
                         # CRITICAL: Log full traceback to identify where numpy.int64 has no len() error occurs
                         import traceback
-                        self.logger.error(f"❌ Failed to train {lang_code} model: {str(e)}", exc_info=True)
+                        self.logger.error(f" Failed to train {lang_code} model: {str(e)}", exc_info=True)
                         self.logger.error(f"Full traceback:\n{traceback.format_exc()}")
                         language_results[lang_code] = {'error': str(e)}
                         # CRITICAL: Re-raise to see the actual error instead of "All language-specific models failed"
@@ -2570,7 +2570,7 @@ class ModelTrainer:
         # Check for numpy types
         for key, value in locals().items():
             if isinstance(value, (np.integer, np.floating, np.ndarray)):
-                self.logger.warning(f"  ⚠️ NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
+                self.logger.warning(f"  [!] NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
         self.logger.debug("=" * 80)
 
         # CRITICAL FIX: Use run_training (not run_training_enhanced which doesn't exist) with language_info
@@ -2603,9 +2603,9 @@ class ModelTrainer:
 
         # Log final model path
         if best_model_path:
-            self.logger.info(f"🎯 Training complete. Best model at: {best_model_path}")
+            self.logger.info(f" Training complete. Best model at: {best_model_path}")
         else:
-            self.logger.warning(f"⚠️ Training complete but no model path returned")
+            self.logger.warning(f"[!] Training complete but no model path returned")
 
         # Evaluate on test set
         test_probs = model.predict(test_loader, model.model, proba=True)
@@ -2723,12 +2723,12 @@ class ModelTrainer:
         from .sota_models import get_model_class_for_name
 
         self.logger.info("=" * 80)
-        self.logger.info("🏷️ TRUE MULTI-LABEL TRAINING")
+        self.logger.info("️ TRUE MULTI-LABEL TRAINING")
         self.logger.info("=" * 80)
         self.logger.info(f"  Model: {model_name}")
         self.logger.info(f"  Data: {data_path}")
         self.logger.info(f"  Mode: Single model with BCEWithLogitsLoss + sigmoid")
-        print("\n🏷️ Starting TRUE multi-label training (single model, multiple labels per text)")
+        print("\n️ Starting TRUE multi-label training (single model, multiple labels per text)")
 
         # ========== STEP 1: Load Data ==========
         if data_path.endswith('.jsonl'):
@@ -2786,7 +2786,7 @@ class ModelTrainer:
         if num_labels > 10:
             self.logger.info(f"    ... and {num_labels - 10} more")
 
-        print(f"  📊 {num_labels} unique labels found")
+        print(f"   {num_labels} unique labels found")
 
         # ========== STEP 3: Create Multi-Hot Label Vectors ==========
         def labels_to_multi_hot(labels, label_to_idx, num_labels):
@@ -2837,7 +2837,7 @@ class ModelTrainer:
             detected_languages = None
 
         self.logger.info(f"  Train samples: {len(X_train)}, Val samples: {len(X_val)}")
-        print(f"  📈 Train: {len(X_train)}, Val: {len(X_val)}")
+        print(f"   Train: {len(X_train)}, Val: {len(X_val)}")
 
         # ========== STEP 5: Initialize Model ==========
         model_class = get_model_class_for_name(model_name)
@@ -2912,8 +2912,8 @@ class ModelTrainer:
         optimize_thresholds = config.get('optimize_thresholds', True)  # Per-class threshold optimization
 
         loss_type = "ASL (SOTA)" if use_asymmetric_loss else "BCE"
-        self.logger.info(f"  🚀 Starting training with multi_label=True, threshold={multi_label_threshold}, loss={loss_type}")
-        print(f"  🚀 Training with {loss_type} (threshold={multi_label_threshold})")
+        self.logger.info(f"   Starting training with multi_label=True, threshold={multi_label_threshold}, loss={loss_type}")
+        print(f"   Training with {loss_type} (threshold={multi_label_threshold})")
 
         # Set detected languages on model for per-language tracking
         if track_languages and detected_languages:
@@ -2985,7 +2985,7 @@ class ModelTrainer:
         if optimize_thresholds:
             from .bert_base import optimize_thresholds_per_class, apply_optimized_thresholds
 
-            self.logger.info("  🎯 Optimizing per-class thresholds...")
+            self.logger.info("   Optimizing per-class thresholds...")
             optimized_thresholds, threshold_scores = optimize_thresholds_per_class(
                 val_probs, y_val, metric='f1', search_range=(0.1, 0.9), num_points=50
             )
@@ -3006,7 +3006,7 @@ class ModelTrainer:
             if len(all_labels) > 5:
                 self.logger.info(f"      ... and {len(all_labels) - 5} more")
 
-            print(f"  🎯 Threshold optimization: F1(macro) {f1_macro_fixed:.4f} → {f1_macro_optimized:.4f} ({improvement:+.1f}%)")
+            print(f"   Threshold optimization: F1(macro) {f1_macro_fixed:.4f} → {f1_macro_optimized:.4f} ({improvement:+.1f}%)")
 
             # Store optimized thresholds on model for inference
             model.optimized_thresholds = optimized_thresholds
@@ -3041,7 +3041,7 @@ class ModelTrainer:
         self.logger.info(f"    F1 (macro): {f1_macro:.4f}")
         self.logger.info(f"    Jaccard: {jaccard:.4f}")
 
-        print(f"  📊 Metrics: F1(macro)={f1_macro:.4f}, Subset Acc={subset_accuracy:.4f}, Hamming={h_loss:.4f}")
+        print(f"   Metrics: F1(macro)={f1_macro:.4f}, Subset Acc={subset_accuracy:.4f}, Hamming={h_loss:.4f}")
 
         # ========== STEP 9b: Calculate Combined Metric ==========
         # Combined metric for multi-label: 0.6 × macro + 0.4 × micro
@@ -3051,7 +3051,7 @@ class ModelTrainer:
         combined_metric = 0.6 * f1_macro + 0.4 * f1_micro
         language_balance_penalty = 0.0
 
-        self.logger.info(f"  📊 Combined metric (base): {combined_metric:.4f} (0.6×{f1_macro:.4f} + 0.4×{f1_micro:.4f})")
+        self.logger.info(f"   Combined metric (base): {combined_metric:.4f} (0.6×{f1_macro:.4f} + 0.4×{f1_micro:.4f})")
 
         # Apply language balance penalty if multilingual
         if track_languages and detected_languages and len(detected_languages) > 1 and val_language_info:
@@ -3077,8 +3077,8 @@ class ModelTrainer:
                     cv = std_f1 / mean_f1
                     language_balance_penalty = min(cv * 0.2, 0.2)
                     combined_metric = combined_metric * (1 - language_balance_penalty)
-                    self.logger.info(f"  📊 Language balance: CV={cv:.3f}, penalty={language_balance_penalty:.1%}")
-                    self.logger.info(f"  📊 Combined metric (final): {combined_metric:.4f}")
+                    self.logger.info(f"   Language balance: CV={cv:.3f}, penalty={language_balance_penalty:.1%}")
+                    self.logger.info(f"   Combined metric (final): {combined_metric:.4f}")
 
         # ========== STEP 10: Return Results ==========
         result = {
@@ -3125,7 +3125,7 @@ class ModelTrainer:
         }
 
         self.logger.info("=" * 80)
-        self.logger.info("🏷️ TRUE MULTI-LABEL TRAINING COMPLETE")
+        self.logger.info("️ TRUE MULTI-LABEL TRAINING COMPLETE")
         self.logger.info("=" * 80)
 
         return result
@@ -3247,9 +3247,9 @@ class ModelTrainer:
             # Penalize if any model is weak (min < 0.5)
             if overall_metrics['min_combined_metric'] < 0.5:
                 overall_metrics['ensemble_combined_metric'] *= 0.9  # 10% penalty
-                self.logger.info(f"  ⚠️ Weak model detected (min={overall_metrics['min_combined_metric']:.4f}), 10% penalty applied")
+                self.logger.info(f"  [!] Weak model detected (min={overall_metrics['min_combined_metric']:.4f}), 10% penalty applied")
 
-            self.logger.info(f"  📊 Ensemble ranking: {len(ranked_results)} models")
+            self.logger.info(f"   Ensemble ranking: {len(ranked_results)} models")
             self.logger.info(f"     Ensemble combined_metric: {overall_metrics['ensemble_combined_metric']:.4f}")
             self.logger.info(f"     Best individual: {ranked_results[0]['label']} ({ranked_results[0]['combined_metric']:.4f})")
             self.logger.info(f"     Worst individual: {ranked_results[-1]['label']} ({ranked_results[-1]['combined_metric']:.4f})")

@@ -181,7 +181,7 @@ def filter_languages_with_sufficient_samples(
     # Log which classes are being dropped
     if classes_to_drop:
         logger.warning(
-            f"⚠️  Filtering {len(classes_to_drop)} class(es) with insufficient samples per language (< {min_required}):"
+            f"[!]  Filtering {len(classes_to_drop)} class(es) with insufficient samples per language (< {min_required}):"
         )
         for cls in sorted(classes_to_drop):
             counts = drop_reasons[cls]['counts_per_language']

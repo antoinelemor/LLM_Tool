@@ -1477,7 +1477,7 @@ class ParallelTrainingDisplay:
                 if m.f1_macro > 0:
                     f1 = f"{m.f1_macro:.4f}"
                     if m.best_f1 > 0 and m.f1_macro >= m.best_f1:
-                        f1 = f"[bold green]{f1}★[/bold green]"
+                        f1 = f"[bold green]{f1}*[/bold green]"
                 else:
                     f1 = "-"
 
@@ -1673,7 +1673,7 @@ class ParallelTrainingDisplay:
         self.console.print()
 
         summary = Table(
-            title="🏁 TRAINING COMPLETE",
+            title=" TRAINING COMPLETE",
             show_header=True,
             header_style="bold green",
             box=box.ROUNDED,
@@ -2137,8 +2137,8 @@ class ParallelTrainingManager:
         self.metrics_dir.mkdir(parents=True, exist_ok=True)
         self.charts_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"📁 Models directory: {self.models_dir}")
-        logger.info(f"📁 Logs directory: {self.logs_base_dir}")
+        logger.info(f" Models directory: {self.models_dir}")
+        logger.info(f" Logs directory: {self.logs_base_dir}")
         self.console.print(f"[cyan]Models directory:[/cyan] {self.models_dir}")
         self.console.print(f"[cyan]Logs directory:[/cyan] {self.logs_base_dir}")
 
@@ -2788,7 +2788,7 @@ class ParallelTrainingManager:
             intelligent_selection = self._select_best_model_intelligent(self.results)
             if intelligent_selection:
                 self.results['_intelligent_selection'] = intelligent_selection
-                logger.info(f"🏆 Best model selected: {intelligent_selection.get('best_model')}")
+                logger.info(f" Best model selected: {intelligent_selection.get('best_model')}")
                 logger.info(f"   Selection method: {intelligent_selection.get('selection_method')}")
 
             # ========== FINAL SUMMARY ==========
@@ -3076,7 +3076,7 @@ class ParallelTrainingManager:
             best_model_id = best_row['model']
 
             # Log all languages performance
-            logger.info(f"🏆 Intelligent selection: {best_model_id}")
+            logger.info(f" Intelligent selection: {best_model_id}")
             logger.info(f"   Combined score: {best_row['combined_score']:.4f}")
             logger.info(f"   F1 Macro: {best_row['f1_macro']:.4f}")
 

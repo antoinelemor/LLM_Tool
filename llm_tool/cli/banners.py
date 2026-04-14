@@ -46,7 +46,7 @@ BANNERS = {
             "██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║\n"
             "╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝"
         ),
-        'tagline': '🎨 Zero-Shot LLM Annotation → Label Studio/Doccano Export (Ollama/OpenAI)'
+        'tagline': ' Zero-Shot LLM Annotation → Label Studio/Doccano Export (Ollama/OpenAI)'
     },
     'factory': {
         'color': 'bright_yellow',
@@ -65,7 +65,7 @@ BANNERS = {
             "                  ██║     ██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║   ██║                  \n"
             "                  ╚═╝     ╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝   ╚═╝                  "
         ),
-        'tagline': '🏭 LLM Annotations → Training Data → Fine-Tuned BERT Models (End-to-End Pipeline)'
+        'tagline': ' LLM Annotations → Training Data → Fine-Tuned BERT Models (End-to-End Pipeline)'
     },
     'arena': {
         'color': 'bright_green',
@@ -84,7 +84,7 @@ BANNERS = {
             "██║  ██║██║  ██║███████╗██║ ╚████║██║  ██║\n"
             "╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝"
         ),
-        'tagline': '🎮 Train 50+ Models (BERT/RoBERTa/DeBERTa) • Multi-Label • Benchmarking • Reinforcement Learning'
+        'tagline': ' Train 50+ Models (BERT/RoBERTa/DeBERTa) • Multi-Label • Benchmarking • Reinforcement Learning'
     },
     'bert_studio': {
         'color': 'bright_cyan',
@@ -110,7 +110,7 @@ BANNERS = {
             "███████║   ██║   ╚██████╔╝██████╔╝██║╚██████╔╝\n"
             "╚══════╝   ╚═╝    ╚═════╝ ╚═════╝ ╚═╝ ╚═════╝ "
         ),
-        'tagline': '🤖 High-Throughput Inference with Trained Models (Parallel GPU/CPU, 100+ Languages)'
+        'tagline': ' High-Throughput Inference with Trained Models (Parallel GPU/CPU, 100+ Languages)'
     },
     'validation': {
         'color': 'bright_magenta',
@@ -129,7 +129,7 @@ BANNERS = {
             " ███████╗██║  ██║██████╔╝\n"
             " ╚══════╝╚═╝  ╚═╝╚═════╝ \n"
         ),
-        'tagline': '🔍 Quality Scoring • Stratified Sampling • Inter-Annotator Agreement • Schema Validation'
+        'tagline': ' Quality Scoring • Stratified Sampling • Inter-Annotator Agreement • Schema Validation'
     },
     'llm_annotator': {
         'color': 'bright_cyan',
@@ -148,7 +148,7 @@ BANNERS = {
             "██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║\n"
             "╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝"
         ),
-        'tagline': '🤖 AI-Powered Dataset Annotation'
+        'tagline': ' AI-Powered Dataset Annotation'
     },
     'train_model': {
         'color': 'bright_green',
@@ -160,7 +160,7 @@ BANNERS = {
             "   ██║   ██║  ██║██║  ██║██║██║ ╚████║    ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗\n"
             "   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝    ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝"
         ),
-        'tagline': '🎯 Transform Annotations into Production Models'
+        'tagline': ' Transform Annotations into Production Models'
     },
     'deploy_and_annotate': {
         'color': 'bright_magenta',
@@ -186,7 +186,7 @@ BANNERS = {
             "██║  ██║██║ ╚████║██║ ╚████║╚██████╔╝   ██║   ██║  ██║   ██║   ███████╗\n"
             "╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚══════╝"
         ),
-        'tagline': '🚀 Deploy Models to Production & Scale Your Annotation Pipeline'
+        'tagline': ' Deploy Models to Production & Scale Your Annotation Pipeline'
     }
 }
 
