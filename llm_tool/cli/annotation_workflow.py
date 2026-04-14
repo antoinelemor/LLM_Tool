@@ -571,7 +571,7 @@ def _display_cost_estimate_panel(
             console.print(
                 Panel(
                     "\n".join(rich_lines),
-                    title="Estimated API Cost",
+                    title="💰 Estimated API Cost",
                     border_style="bright_magenta",
                 )
             )
@@ -2951,7 +2951,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     )
     _persist_metadata_bundle(metadata_targets, placeholder_metadata)
 
-    cli.console.print("\n[bold cyan]Smart Annotate - Guided Wizard[/bold cyan]\n")
+    cli.console.print("\n[bold cyan]🎯 Smart Annotate - Guided Wizard[/bold cyan]\n")
 
     # Step 1: Data Selection
     cli.console.print("[bold]Step 1/7: Data Selection[/bold]")
@@ -2960,7 +2960,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         cli.console.print("[yellow]No datasets auto-detected.[/yellow]")
         data_path = Path(cli._prompt_file_path("Dataset path"))
     else:
-        cli.console.print(f"\n[bold cyan]Found {len(cli.detected_datasets)} dataset(s):[/bold cyan]\n")
+        cli.console.print(f"\n[bold cyan]📊 Found {len(cli.detected_datasets)} dataset(s):[/bold cyan]\n")
 
         # Create table for datasets
         datasets_table = Table(border_style="cyan", show_header=True, expand=True)
@@ -3290,7 +3290,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         cli.console.print("\n  [cyan]select[/cyan]  - Choose SPECIFIC prompts by number (e.g., 1,3,5)")
         cli.console.print("           → Only selected prompts will be used")
         cli.console.print("           → Useful when testing or when you need only certain annotations")
-        cli.console.print("\n  [cyan]wizard[/cyan]  - Create NEW prompt using Social Science Wizard")
+        cli.console.print("\n  [cyan]wizard[/cyan]  - 🧙‍♂️ Create NEW prompt using Social Science Wizard")
         cli.console.print("           → Interactive guided prompt creation")
         cli.console.print("           → Optional AI assistance for definitions")
         cli.console.print("           → [bold green]Recommended for new research projects![/bold green]")
@@ -3319,7 +3319,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                             if 0 <= idx < len(detected_prompts):
                                 selected_prompts.append(detected_prompts[idx])
                         except ValueError:
-                            cli.console.print(f"[yellow][!] Skipping invalid number: '{idx_str}'[/yellow]")
+                            cli.console.print(f"[yellow]⚠️  Skipping invalid number: '{idx_str}'[/yellow]")
             if not selected_prompts:
                 cli.console.print("[yellow]No valid prompts selected. Using all prompts.[/yellow]")
                 selected_prompts = detected_prompts
@@ -3354,7 +3354,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
         # Offer wizard or custom path
         cli.console.print("\n[bold]Prompt Options:[/bold]")
-        cli.console.print("  [cyan]wizard[/cyan] - Create prompt using Social Science Wizard (Recommended)")
+        cli.console.print("  [cyan]wizard[/cyan] - 🧙‍♂️ Create prompt using Social Science Wizard (Recommended)")
         cli.console.print("  [cyan]custom[/cyan] - Provide path to existing prompt file")
 
         choice = Prompt.ask(
@@ -3474,7 +3474,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     doccano_rewrite_ids = None
     doccano_enabled = False
 
-    cli.console.print("\n[bold cyan]Doccano Integration[/bold cyan]")
+    cli.console.print("\n[bold cyan]🔗 Doccano Integration[/bold cyan]")
     cli.console.print(
         "[dim]Doccano is an open-source annotation platform.  When enabled, every\n"
         "annotation produced by the LLM is pushed [bold]in real-time[/bold] to a Doccano\n"
@@ -3557,11 +3557,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     if doccano_rewrite_ids is not None:
         # Rewrite mode locks scope to matched rows
         cli.console.print(
-            f"\n[bold cyan]Dataset Scope[/bold cyan]  "
+            f"\n[bold cyan]📊 Dataset Scope[/bold cyan]  "
             f"[green]locked to {len(doccano_rewrite_ids)} matched Doccano rows[/green]"
         )
     else:
-        cli.console.print("\n[bold cyan]Dataset Scope[/bold cyan]")
+        cli.console.print("\n[bold cyan]📊 Dataset Scope[/bold cyan]")
         cli.console.print("[dim]Determine how many rows to annotate from your dataset[/dim]\n")
 
         if total_rows:
@@ -3593,7 +3593,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                     n_adjusted = n_infinite / (1 + ((n_infinite - 1) / total_rows))
                     recommended_sample = int(math.ceil(n_adjusted))
 
-                    cli.console.print(f"\n[green]Recommended sample size: {recommended_sample} rows[/green]")
+                    cli.console.print(f"\n[green]📈 Recommended sample size: {recommended_sample} rows[/green]")
                     cli.console.print(f"[dim]   (95% confidence level, 5% margin of error)[/dim]")
                     cli.console.print(f"[dim]   Population: {total_rows:,} rows[/dim]\n")
 
@@ -3625,7 +3625,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # DOCCANO PUSH SCOPE (only when live sync is active)
     # ============================================================
     if doccano_enabled and doccano_sync_client and doccano_rewrite_ids is None:
-        cli.console.print("\n[bold cyan]Doccano Push Scope[/bold cyan]")
+        cli.console.print("\n[bold cyan]📤 Doccano Push Scope[/bold cyan]")
         if _effective_rows:
             cli.console.print(
                 f"[dim]You will annotate [bold]{_effective_rows:,}[/bold] rows.  "
@@ -3677,7 +3677,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # PARALLEL PROCESSING
     # ============================================================
     if openai_batch_mode:
-        cli.console.print("\n[bold cyan]Processing[/bold cyan]")
+        cli.console.print("\n[bold cyan]⚙️  Processing[/bold cyan]")
         cli.console.print(
             "[dim]OpenAI Batch mode manages concurrency, retries, and persistence. "
             "Local parallelism and incremental save settings are skipped.[/dim]\n"
@@ -3686,12 +3686,12 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         save_incrementally = False
         batch_size = 1
     else:
-        cli.console.print("\n[bold cyan]Parallel Processing[/bold cyan]")
+        cli.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
         cli.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
 
         cli.console.print("[yellow]Parallel Workers:[/yellow]")
         cli.console.print("  Number of simultaneous annotation processes")
-        cli.console.print("\n  [red]IMPORTANT:[/red]")
+        cli.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
         cli.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
         cli.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
         cli.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
@@ -3703,7 +3703,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
         num_processes = cli._int_prompt_with_validation("Parallel workers", 1, 1, 16)
 
-        cli.console.print("\n[bold cyan]Incremental Save[/bold cyan]")
+        cli.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
         cli.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
 
         cli.console.print("[yellow]Enable incremental save?[/yellow]")
@@ -3712,7 +3712,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         cli.console.print("  • [red]No[/red]  - Save only at the end")
         cli.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
 
-        save_incrementally = Confirm.ask("\nEnable incremental save?", default=True)
+        save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
 
         if save_incrementally:
             cli.console.print("\n[yellow]Batch Size:[/yellow]")
@@ -3746,7 +3746,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # ============================================================
     # MODEL PARAMETERS
     # ============================================================
-    cli.console.print("\n[bold cyan]Model Parameters[/bold cyan]")
+    cli.console.print("\n[bold cyan]🎛️  Model Parameters[/bold cyan]")
     cli.console.print("[dim]Configure advanced model generation parameters[/dim]\n")
 
     # Check if model supports parameter tuning
@@ -3759,12 +3759,12 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
     if not supports_params:
         if is_o_series:
-            cli.console.print(f"[yellow][!] Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
         elif is_gpt5_series:
-            cli.console.print(f"[yellow][!] Model '{model_name}' uses locked sampling parameters[/yellow]")
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses locked sampling parameters[/yellow]")
             cli.console.print("[dim]   Temperature and top_p are fixed to 1.0; only max tokens can be adjusted.[/dim]")
         else:
-            cli.console.print(f"[yellow][!] Model '{model_name}' does not allow temperature/top_p overrides[/yellow]")
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' does not allow temperature/top_p overrides[/yellow]")
             cli.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
 
         configure_params = False
@@ -3785,7 +3785,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         cli.console.print("\n[bold]Parameter Explanations:[/bold]\n")
 
         # Temperature
-        cli.console.print("[cyan]Temperature (0.0 - 2.0):[/cyan]")
+        cli.console.print("[cyan]🌡️  Temperature (0.0 - 2.0):[/cyan]")
         cli.console.print("  Controls randomness in responses")
         cli.console.print("  • [green]Low (0.0-0.3)[/green]  - Deterministic, focused, consistent")
         cli.console.print("           [dim]Use for: Structured tasks, factual extraction, classification[/dim]")
@@ -3796,7 +3796,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         temperature = FloatPrompt.ask("Temperature", default=0.7)
 
         # Max tokens
-        cli.console.print("\n[cyan]Max Tokens:[/cyan]")
+        cli.console.print("\n[cyan]📏 Max Tokens:[/cyan]")
         cli.console.print("  Maximum length of the response")
         cli.console.print("  • [green]Short (100-500)[/green]   - Brief responses, simple annotations")
         cli.console.print("  • [yellow]Medium (500-2000)[/yellow]  - Standard responses, detailed annotations")
@@ -3805,7 +3805,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         max_tokens = cli._int_prompt_with_validation("Max tokens", 1000, 50, 8000)
 
         # Top_p (nucleus sampling)
-        cli.console.print("\n[cyan]Top P (0.0 - 1.0):[/cyan]")
+        cli.console.print("\n[cyan]🎯 Top P (0.0 - 1.0):[/cyan]")
         cli.console.print("  Nucleus sampling - alternative to temperature")
         cli.console.print("  • [green]Low (0.1-0.5)[/green]  - Focused on most likely tokens")
         cli.console.print("           [dim]More deterministic, safer outputs[/dim]")
@@ -3816,7 +3816,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
         # Top_k (only for some models)
         if provider in ['ollama', 'google']:
-            cli.console.print("\n[cyan]Top K:[/cyan]")
+            cli.console.print("\n[cyan]🔢 Top K:[/cyan]")
             cli.console.print("  Limits vocabulary to K most likely next tokens")
             cli.console.print("  • [green]Small (1-10)[/green]   - Very focused, repetitive")
             cli.console.print("  • [yellow]Medium (20-50)[/yellow]  - Balanced diversity")
@@ -3824,7 +3824,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             top_k = cli._int_prompt_with_validation("Top K", 40, 1, 100)
 
     if is_gpt5_series:
-        cli.console.print("\n[cyan]Max Tokens (GPT-5 Series):[/cyan]")
+        cli.console.print("\n[cyan]📏 Max Tokens (GPT-5 Series):[/cyan]")
         cli.console.print("  Maximum response length; temperature/top_p remain fixed at 1.0.")
         cli.console.print("  [dim]Note: higher values increase API usage.[/dim]")
         max_tokens = cli._int_prompt_with_validation("Max tokens", max_tokens, 50, 8000)
@@ -3975,7 +3975,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     # ============================================================
     # REPRODUCIBILITY METADATA
     # ============================================================
-    cli.console.print("\n[bold cyan]Reproducibility & Metadata[/bold cyan]")
+    cli.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
     cli.console.print("[green]✓ Session parameters are automatically saved for:[/green]\n")
 
     cli.console.print("  [green]1. Resume Capability[/green]")
@@ -4020,12 +4020,12 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     if doccano_enabled and doccano_sync_client:
         # Live sync already active — skip the export question
         cli.console.print(
-            "\n[bold cyan]Validation Lab Preparation[/bold cyan]  "
+            "\n[bold cyan]📤 Validation Lab Preparation[/bold cyan]  "
             "[green]Doccano live sync is active — annotations are pushed in real-time.[/green]"
         )
         export_confirm = False
     else:
-        cli.console.print("\n[bold cyan]Validation Lab Preparation[/bold cyan]")
+        cli.console.print("\n[bold cyan]📤 Validation Lab Preparation[/bold cyan]")
         cli.console.print(
             f"[dim]Export annotations, review them manually, then copy the validated JSONL into [white]{validation_hint}[/white] so Validation Lab (Mode 5) can compute agreement metrics.[/dim]\n"
         )
@@ -4238,7 +4238,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
     default_output_path = dataset_subdir / output_filename
 
-    cli.console.print(f"\n[bold cyan]Output Location:[/bold cyan]")
+    cli.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
     cli.console.print(f"   {default_output_path}")
     cli.console.print()
     if factory_metadata_state is not None and factory_metadata_targets is not None:
@@ -4406,8 +4406,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         _persist_metadata_bundle(metadata_targets, ready_metadata)
         metadata_state = copy.deepcopy(ready_metadata)
 
-        cli.console.print(f"\n[bold green][OK] Metadata saved for reproducibility[/bold green]")
-        cli.console.print(f"[bold cyan]Metadata File:[/bold cyan]")
+        cli.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
+        cli.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
         cli.console.print(f"   {metadata_path if metadata_path else 'Not available'}\n")
         detail_message = f"Metadata saved: {metadata_path.name}" if metadata_path else "Metadata saved"
         tracker_extra = {
@@ -4425,7 +4425,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
     # Execute pipeline with Rich progress
     try:
-        cli.console.print("\n[bold green]Starting annotation...[/bold green]\n")
+        cli.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
 
         running_metadata = _compose_metadata_payload(
             session_id=session_id,
@@ -4491,7 +4491,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                     overall_status="failed",
                     extra={"error": error_msg},
                 )
-                cli.console.print(f"\n[bold red][FAIL] Error:[/bold red] {error_msg}")
+                cli.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
                 cli.console.print("[dim]Press Enter to return to menu...[/dim]")
                 input()
                 return
@@ -4528,8 +4528,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             _persist_metadata_bundle(metadata_targets, metadata_state)
 
         # Display success message
-        cli.console.print("\n[bold green][OK] Annotation completed successfully![/bold green]")
-        cli.console.print(f"\n[bold cyan]Output File:[/bold cyan]")
+        cli.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
+        cli.console.print(f"\n[bold cyan]📄 Output File:[/bold cyan]")
         cli.console.print(f"   {output_file}")
 
         # Display statistics if available
@@ -4552,7 +4552,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             prompt_success_count = None
 
         if total_annotated:
-            cli.console.print(f"\n[bold cyan]Statistics:[/bold cyan]")
+            cli.console.print(f"\n[bold cyan]📊 Statistics:[/bold cyan]")
             cli.console.print(f"   Rows annotated: {total_annotated:,}")
 
             success_count = annotation_results.get('success_count', 0)
@@ -4618,7 +4618,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
         preview_samples = annotation_results.get('preview_samples') or []
         if preview_samples:
-            cli.console.print("\n[bold cyan]Sample Annotations:[/bold cyan]")
+            cli.console.print("\n[bold cyan]📝 Sample Annotations:[/bold cyan]")
             preview_keys = list(preview_samples[0].keys())
             preview_table = Table(show_header=True, header_style="bold magenta")
             for key in preview_keys:
@@ -4643,7 +4643,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         # AUTOMATIC LANGUAGE DETECTION (if no language column provided)
         # ============================================================
         if not lang_column:
-            cli.console.print("\n[bold cyan]Language Detection for Training[/bold cyan]")
+            cli.console.print("\n[bold cyan]🌍 Language Detection for Training[/bold cyan]")
             cli.console.print("[yellow]No language column was provided. Detecting languages for training...[/yellow]\n")
 
             try:
@@ -4668,10 +4668,10 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                     df_annotated = df_annotated[(df_annotated[annotation_col].notna()) & (df_annotated[annotation_col] != '')].copy()
                     cli.console.print(f"[dim]Filtering to {len(df_annotated):,} annotated rows (out of {original_row_count:,} total rows in file)[/dim]")
                 else:
-                    cli.console.print(f"[yellow][!] Could not identify annotation column. Processing all {original_row_count:,} rows.[/yellow]")
+                    cli.console.print(f"[yellow]⚠️  Could not identify annotation column. Processing all {original_row_count:,} rows.[/yellow]")
 
                 if len(df_annotated) == 0:
-                    cli.console.print("[yellow][!] No annotated rows found. Skipping language detection.[/yellow]")
+                    cli.console.print("[yellow]⚠️  No annotated rows found. Skipping language detection.[/yellow]")
                 elif text_column in df_annotated.columns:
                     # Get ALL texts (including NaN) to maintain index alignment
                     all_texts = df_annotated[text_column].tolist()
@@ -4727,7 +4727,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
                         if lang_counts:
                             total = sum(lang_counts.values())
-                            cli.console.print(f"\n[bold]Languages Detected ({total:,} texts):[/bold]")
+                            cli.console.print(f"\n[bold]🌍 Languages Detected ({total:,} texts):[/bold]")
 
                             lang_table = Table(border_style="cyan", show_header=True, header_style="bold", expand=True)
                             lang_table.add_column("Language", style="cyan", no_wrap=True)
@@ -4745,10 +4745,10 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
                             cli.console.print(lang_table)
                             cli.console.print(f"\n[green]✓ Language column 'lang' added to {output_file}[/green]")
                         else:
-                            cli.console.print("[yellow][!] No languages detected successfully[/yellow]")
+                            cli.console.print("[yellow]⚠️  No languages detected successfully[/yellow]")
 
             except Exception as e:
-                cli.console.print(f"[yellow][!] Language detection failed: {e}[/yellow]")
+                cli.console.print(f"[yellow]⚠️  Language detection failed: {e}[/yellow]")
                 cli.logger.exception("Language detection failed")
 
 
@@ -4771,7 +4771,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
             if can_reuse_existing:
                 cli.console.print(
-                    "\n[cyan]Reusing Doccano export generated during annotation.[/cyan]"
+                    "\n[cyan]ℹ️  Reusing Doccano export generated during annotation.[/cyan]"
                 )
                 doccano_export_result = {
                     'jsonl_path': str(existing_doccano_path),
@@ -4856,7 +4856,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         # GENERATE ANNOTATION METRICS CHART
         # ============================================================
         try:
-            cli.console.print("\n[bold cyan]Generating Annotation Metrics Chart...[/bold cyan]")
+            cli.console.print("\n[bold cyan]📊 Generating Annotation Metrics Chart...[/bold cyan]")
 
             # Determine chart output directory
             chart_output_dir = session_dirs.get('root', Path(output_file).parent) if session_dirs else Path(output_file).parent
@@ -4893,11 +4893,11 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
             if chart_path:
                 cli.console.print(f"[green]✓ Annotation metrics chart saved to:[/green] {chart_path}")
             else:
-                cli.console.print("[yellow][!] Could not generate annotation metrics chart[/yellow]")
+                cli.console.print("[yellow]⚠️  Could not generate annotation metrics chart[/yellow]")
 
         except Exception as chart_exc:
             cli.logger.warning(f"Failed to generate annotation metrics chart: {chart_exc}")
-            cli.console.print(f"[yellow][!] Chart generation failed: {chart_exc}[/yellow]")
+            cli.console.print(f"[yellow]⚠️  Chart generation failed: {chart_exc}[/yellow]")
 
         tracker.update_status(
             "completed",
@@ -4913,7 +4913,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
     except Exception as exc:
         tracker.update_status("failed", note=str(exc))
-        cli.console.print(f"\n[bold red][FAIL] Annotation failed:[/bold red] {exc}")
+        cli.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
         cli.logger.exception("Annotation execution failed")
         cli.console.print("\n[dim]Press Enter to return to menu...[/dim]")
         input()
@@ -5005,8 +5005,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
     # Ask user to choose between files and SQL database
     cli.console.print("[yellow]Available data sources:[/yellow]")
-    cli.console.print("  1. Files (CSV/Excel/JSON/etc.) - Auto-detected or manual")
-    cli.console.print("  2. SQL Database (PostgreSQL/MySQL/SQLite/SQL Server)\n")
+    cli.console.print("  1. 📁 Files (CSV/Excel/JSON/etc.) - Auto-detected or manual")
+    cli.console.print("  2. 🗄️  SQL Database (PostgreSQL/MySQL/SQLite/SQL Server)\n")
 
     data_source_choice = Prompt.ask(
         "Data source",
@@ -5018,7 +5018,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
     if use_sql_database:
         # SQL DATABASE WORKFLOW
-        cli.console.print("\n[bold cyan]SQL Database (Training Sample)[/bold cyan]\n")
+        cli.console.print("\n[bold cyan]🗄️  SQL Database (Training Sample)[/bold cyan]\n")
         cli.console.print("[yellow]Note: For training, you'll select a representative sample from your database[/yellow]\n")
 
         # Database type selection
@@ -5119,7 +5119,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             cli.console.print("[yellow]No datasets auto-detected.[/yellow]")
             data_path = Path(cli._prompt_file_path("Dataset path"))
         else:
-            cli.console.print(f"\n[bold cyan]Found {len(cli.detected_datasets)} dataset(s):[/bold cyan]\n")
+            cli.console.print(f"\n[bold cyan]📊 Found {len(cli.detected_datasets)} dataset(s):[/bold cyan]\n")
 
             # Create table for datasets
             datasets_table = Table(border_style="cyan", show_header=True, expand=True)
@@ -5345,7 +5345,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         cli.console.print("\n  [cyan]select[/cyan]  - Choose SPECIFIC prompts by number (e.g., 1,3,5)")
         cli.console.print("           → Only selected prompts will be used")
         cli.console.print("           → Useful when testing or when you need only certain annotations")
-        cli.console.print("\n  [cyan]wizard[/cyan]  - Create NEW prompt using Social Science Wizard")
+        cli.console.print("\n  [cyan]wizard[/cyan]  - 🧙‍♂️ Create NEW prompt using Social Science Wizard")
         cli.console.print("           → Interactive guided prompt creation")
         cli.console.print("           → Optional AI assistance for definitions")
         cli.console.print("           → [bold green]Recommended for new research projects![/bold green]")
@@ -5374,7 +5374,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                             if 0 <= idx < len(detected_prompts):
                                 selected_prompts.append(detected_prompts[idx])
                         except ValueError:
-                            cli.console.print(f"[yellow][!] Skipping invalid number: '{idx_str}'[/yellow]")
+                            cli.console.print(f"[yellow]⚠️  Skipping invalid number: '{idx_str}'[/yellow]")
             if not selected_prompts:
                 cli.console.print("[yellow]No valid prompts selected. Using all prompts.[/yellow]")
                 selected_prompts = detected_prompts
@@ -5409,7 +5409,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
         # Offer wizard or custom path
         cli.console.print("\n[bold]Prompt Options:[/bold]")
-        cli.console.print("  [cyan]wizard[/cyan] - Create prompt using Social Science Wizard (Recommended)")
+        cli.console.print("  [cyan]wizard[/cyan] - 🧙‍♂️ Create prompt using Social Science Wizard (Recommended)")
         cli.console.print("  [cyan]custom[/cyan] - Provide path to existing prompt file")
 
         choice = Prompt.ask(
@@ -5510,7 +5510,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     doccano_sync_client = None
     doccano_enabled = False
 
-    cli.console.print("\n[bold cyan]Doccano Integration[/bold cyan]")
+    cli.console.print("\n[bold cyan]🔗 Doccano Integration[/bold cyan]")
     cli.console.print(
         "[dim]Doccano is an open-source annotation platform.  When enabled, every\n"
         "annotation produced by the LLM is pushed [bold]in real-time[/bold] to a Doccano\n"
@@ -5567,7 +5567,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     if column_info.get('df') is not None:
         total_rows = len(pd.read_csv(data_path)) if data_format == 'csv' else None
 
-    cli.console.print("\n[bold cyan]Dataset Scope[/bold cyan]")
+    cli.console.print("\n[bold cyan]📊 Dataset Scope[/bold cyan]")
     cli.console.print("[dim]Determine how many rows to annotate from your dataset[/dim]\n")
 
     if total_rows:
@@ -5599,7 +5599,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                 n_adjusted = n_infinite / (1 + ((n_infinite - 1) / total_rows))
                 recommended_sample = int(math.ceil(n_adjusted))
 
-                cli.console.print(f"\n[green]Recommended sample size: {recommended_sample} rows[/green]")
+                cli.console.print(f"\n[green]📈 Recommended sample size: {recommended_sample} rows[/green]")
                 cli.console.print(f"[dim]   (95% confidence level, 5% margin of error)[/dim]")
                 cli.console.print(f"[dim]   Population: {total_rows:,} rows[/dim]\n")
 
@@ -5631,7 +5631,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # DOCCANO PUSH SCOPE (only when live sync is active)
     # ============================================================
     if doccano_enabled and doccano_sync_client:
-        cli.console.print("\n[bold cyan]Doccano Push Scope[/bold cyan]")
+        cli.console.print("\n[bold cyan]📤 Doccano Push Scope[/bold cyan]")
         if _effective_rows:
             cli.console.print(
                 f"[dim]You will annotate [bold]{_effective_rows:,}[/bold] rows.  "
@@ -5683,7 +5683,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # PARALLEL PROCESSING
     # ============================================================
     if openai_batch_mode:
-        cli.console.print("\n[bold cyan]Processing[/bold cyan]")
+        cli.console.print("\n[bold cyan]⚙️  Processing[/bold cyan]")
         cli.console.print(
             "[dim]OpenAI Batch mode manages concurrency, retries, and persistence. "
             "Local parallelism and incremental save settings are skipped.[/dim]\n"
@@ -5692,12 +5692,12 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         save_incrementally = False
         batch_size = 1
     else:
-        cli.console.print("\n[bold cyan]Parallel Processing[/bold cyan]")
+        cli.console.print("\n[bold cyan]⚙️  Parallel Processing[/bold cyan]")
         cli.console.print("[dim]Configure how many processes run simultaneously[/dim]\n")
 
         cli.console.print("[yellow]Parallel Workers:[/yellow]")
         cli.console.print("  Number of simultaneous annotation processes")
-        cli.console.print("\n  [red]IMPORTANT:[/red]")
+        cli.console.print("\n  [red]⚠️  IMPORTANT:[/red]")
         cli.console.print("  [dim]Most local machines can only handle 1 worker for LLM inference[/dim]")
         cli.console.print("  [dim]Parallel processing is mainly useful for API models[/dim]")
         cli.console.print("\n  • [cyan]1 worker[/cyan]  - Sequential processing")
@@ -5712,7 +5712,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         # ============================================================
         # INCREMENTAL SAVE
         # ============================================================
-        cli.console.print("\n[bold cyan]Incremental Save[/bold cyan]")
+        cli.console.print("\n[bold cyan]💾 Incremental Save[/bold cyan]")
         cli.console.print("[dim]Configure how often results are saved during annotation[/dim]\n")
 
         cli.console.print("[yellow]Enable incremental save?[/yellow]")
@@ -5721,7 +5721,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         cli.console.print("  • [red]No[/red]  - Save only at the end")
         cli.console.print("           [dim]Faster but risky - you lose everything if process crashes[/dim]")
 
-        save_incrementally = Confirm.ask("\nEnable incremental save?", default=True)
+        save_incrementally = Confirm.ask("\n💿 Enable incremental save?", default=True)
 
         # Only ask for batch size if incremental save is enabled
         if save_incrementally:
@@ -5741,7 +5741,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # ============================================================
     # MODEL PARAMETERS
     # ============================================================
-    cli.console.print("\n[bold cyan]Model Parameters[/bold cyan]")
+    cli.console.print("\n[bold cyan]🎛️  Model Parameters[/bold cyan]")
     cli.console.print("[dim]Configure advanced model generation parameters[/dim]\n")
 
     # Check if model supports parameter tuning
@@ -5752,10 +5752,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
     if not supports_params:
         if is_o_series:
-            cli.console.print(f"[yellow][!] Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses fixed parameters (reasoning model)[/yellow]")
             cli.console.print("[dim]   Temperature and top_p are automatically set to 1.0[/dim]")
         elif is_gpt5_series:
-            cli.console.print(f"[yellow][!] Model '{model_name}' uses locked sampling parameters[/yellow]")
+            cli.console.print(f"[yellow]⚠️  Model '{model_name}' uses locked sampling parameters[/yellow]")
             cli.console.print("[dim]   Temperature and top_p are fixed to 1.0; only max tokens can be adjusted.[/dim]")
         configure_params = False
     else:
@@ -5775,7 +5775,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         cli.console.print("\n[bold]Parameter Explanations:[/bold]\n")
 
         # Temperature
-        cli.console.print("[cyan]Temperature (0.0 - 2.0):[/cyan]")
+        cli.console.print("[cyan]🌡️  Temperature (0.0 - 2.0):[/cyan]")
         cli.console.print("  Controls randomness in responses")
         cli.console.print("  • [green]Low (0.0-0.3)[/green]  - Deterministic, focused, consistent")
         cli.console.print("           [dim]Use for: Structured tasks, factual extraction, classification[/dim]")
@@ -5786,7 +5786,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         temperature = FloatPrompt.ask("Temperature", default=0.7)
 
         # Max tokens
-        cli.console.print("\n[cyan]Max Tokens:[/cyan]")
+        cli.console.print("\n[cyan]📏 Max Tokens:[/cyan]")
         cli.console.print("  Maximum length of the response")
         cli.console.print("  • [green]Short (100-500)[/green]   - Brief responses, simple annotations")
         cli.console.print("  • [yellow]Medium (500-2000)[/yellow]  - Standard responses, detailed annotations")
@@ -5795,7 +5795,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         max_tokens = cli._int_prompt_with_validation("Max tokens", 1000, 50, 8000)
 
         # Top_p (nucleus sampling)
-        cli.console.print("\n[cyan]Top P (0.0 - 1.0):[/cyan]")
+        cli.console.print("\n[cyan]🎯 Top P (0.0 - 1.0):[/cyan]")
         cli.console.print("  Nucleus sampling - alternative to temperature")
         cli.console.print("  • [green]Low (0.1-0.5)[/green]  - Focused on most likely tokens")
         cli.console.print("           [dim]More deterministic, safer outputs[/dim]")
@@ -5806,7 +5806,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
         # Top_k (only for some models)
         if provider in ['ollama', 'google']:
-            cli.console.print("\n[cyan]Top K:[/cyan]")
+            cli.console.print("\n[cyan]🔢 Top K:[/cyan]")
             cli.console.print("  Limits vocabulary to K most likely next tokens")
             cli.console.print("  • [green]Small (1-10)[/green]   - Very focused, repetitive")
             cli.console.print("  • [yellow]Medium (20-50)[/yellow]  - Balanced diversity")
@@ -5814,7 +5814,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             top_k = cli._int_prompt_with_validation("Top K", 40, 1, 100)
 
     if is_gpt5_series:
-        cli.console.print("\n[cyan]Max Tokens (GPT-5 Series):[/cyan]")
+        cli.console.print("\n[cyan]📏 Max Tokens (GPT-5 Series):[/cyan]")
         cli.console.print("  Maximum response length; temperature/top_p remain fixed at 1.0.")
         cli.console.print("  [dim]Note: higher values increase API usage.[/dim]")
         max_tokens = cli._int_prompt_with_validation("Max tokens", max_tokens, 50, 8000)
@@ -5921,7 +5921,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     # ============================================================
     # REPRODUCIBILITY METADATA
     # ============================================================
-    cli.console.print("\n[bold cyan]Reproducibility & Metadata[/bold cyan]")
+    cli.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
     cli.console.print("[green]✓ Session parameters are automatically saved for:[/green]\n")
 
     cli.console.print("  [green]1. Resume Capability[/green]")
@@ -5970,12 +5970,12 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     if doccano_enabled and doccano_sync_client:
         # Live sync already active — skip the export question
         cli.console.print(
-            "\n[bold cyan]Validation Lab Preparation[/bold cyan]  "
+            "\n[bold cyan]📤 Validation Lab Preparation[/bold cyan]  "
             "[green]Doccano live sync is active — annotations are pushed in real-time.[/green]"
         )
         export_confirm = False
     else:
-        cli.console.print("\n[bold cyan]Validation Lab Preparation[/bold cyan]")
+        cli.console.print("\n[bold cyan]📤 Validation Lab Preparation[/bold cyan]")
         cli.console.print(
             f"[dim]Export annotations, review them manually, then copy the validated JSONL into [white]{validation_hint}[/white] so Validation Lab (Mode 5) can compute agreement metrics.[/dim]\n"
         )
@@ -6164,7 +6164,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
     default_output_path = dataset_subdir / output_filename
 
-    cli.console.print(f"\n[bold cyan]Output Location:[/bold cyan]")
+    cli.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
     cli.console.print(f"   {default_output_path}")
     cli.console.print()
 
@@ -6345,13 +6345,13 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         _persist_metadata_bundle(factory_metadata_targets, factory_metadata_state)
         metadata_state = factory_metadata_state
 
-        cli.console.print(f"\n[bold green][OK] Metadata saved for reproducibility[/bold green]")
-        cli.console.print(f"[bold cyan]Metadata File:[/bold cyan]")
+        cli.console.print(f"\n[bold green]✅ Metadata saved for reproducibility[/bold green]")
+        cli.console.print(f"[bold cyan]📋 Metadata File:[/bold cyan]")
         cli.console.print(f"   {metadata_path}\n")
 
     # Execute pipeline with Rich progress
     try:
-        cli.console.print("\n[bold green]Starting annotation...[/bold green]\n")
+        cli.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
         if metadata_state:
             metadata_state = copy.deepcopy(metadata_state)
             metadata_state.setdefault('annotation_session', {})['status'] = 'running'
@@ -6389,7 +6389,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                     failure_metadata = copy.deepcopy(metadata_state)
                     failure_metadata.setdefault('annotation_session', {})['status'] = 'failed'
                     _persist_metadata_bundle(factory_metadata_targets, failure_metadata)
-                cli.console.print(f"\n[bold red][FAIL] Error:[/bold red] {error_msg}")
+                cli.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
                 cli.console.print("[dim]Press Enter to return to menu...[/dim]")
                 input()
                 return
@@ -6418,8 +6418,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             _persist_metadata_bundle(factory_metadata_targets, metadata_state)
 
         # Display success message
-        cli.console.print("\n[bold green][OK] Annotation completed successfully![/bold green]")
-        cli.console.print(f"\n[bold cyan]Output File:[/bold cyan]")
+        cli.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
+        cli.console.print(f"\n[bold cyan]📄 Output File:[/bold cyan]")
         cli.console.print(f"   {output_file}")
 
         # Display statistics if available
@@ -6442,7 +6442,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             prompt_success_count = None
 
         if total_annotated:
-            cli.console.print(f"\n[bold cyan]Statistics:[/bold cyan]")
+            cli.console.print(f"\n[bold cyan]📊 Statistics:[/bold cyan]")
             cli.console.print(f"   Rows annotated: {total_annotated:,}")
 
             success_count = annotation_results.get('success_count', 0)
@@ -6482,7 +6482,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
         preview_samples = annotation_results.get('preview_samples') or []
         if preview_samples:
-            cli.console.print("\n[bold cyan]Sample Annotations:[/bold cyan]")
+            cli.console.print("\n[bold cyan]📝 Sample Annotations:[/bold cyan]")
             preview_keys = list(preview_samples[0].keys())
             preview_table = Table(show_header=True, header_style="bold magenta")
             for key in preview_keys:
@@ -6507,7 +6507,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         # AUTOMATIC LANGUAGE DETECTION (if no language column provided)
         # ============================================================
         if not lang_column:
-            cli.console.print("\n[bold cyan]Language Detection for Training[/bold cyan]")
+            cli.console.print("\n[bold cyan]🌍 Language Detection for Training[/bold cyan]")
             cli.console.print("[yellow]No language column was provided. Detecting languages for training...[/yellow]\n")
 
             try:
@@ -6532,10 +6532,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                     df_annotated = df_annotated[(df_annotated[annotation_col].notna()) & (df_annotated[annotation_col] != '')].copy()
                     cli.console.print(f"[dim]Filtering to {len(df_annotated):,} annotated rows (out of {original_row_count:,} total rows in file)[/dim]")
                 else:
-                    cli.console.print(f"[yellow][!] Could not identify annotation column. Processing all {original_row_count:,} rows.[/yellow]")
+                    cli.console.print(f"[yellow]⚠️  Could not identify annotation column. Processing all {original_row_count:,} rows.[/yellow]")
 
                 if len(df_annotated) == 0:
-                    cli.console.print("[yellow][!] No annotated rows found. Skipping language detection.[/yellow]")
+                    cli.console.print("[yellow]⚠️  No annotated rows found. Skipping language detection.[/yellow]")
                 elif text_column in df_annotated.columns:
                     # Get ALL texts (including NaN) to maintain index alignment
                     all_texts = df_annotated[text_column].tolist()
@@ -6591,7 +6591,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
                         if lang_counts:
                             total = sum(lang_counts.values())
-                            cli.console.print(f"\n[bold]Languages Detected ({total:,} texts):[/bold]")
+                            cli.console.print(f"\n[bold]🌍 Languages Detected ({total:,} texts):[/bold]")
 
                             lang_table = Table(border_style="cyan", show_header=True, header_style="bold", expand=True)
                             lang_table.add_column("Language", style="cyan", no_wrap=True)
@@ -6609,10 +6609,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                             cli.console.print(lang_table)
                             cli.console.print(f"\n[green]✓ Language column 'lang' added to {output_file}[/green]")
                         else:
-                            cli.console.print("[yellow][!] No languages detected successfully[/yellow]")
+                            cli.console.print("[yellow]⚠️  No languages detected successfully[/yellow]")
 
             except Exception as e:
-                cli.console.print(f"[yellow][!] Language detection failed: {e}[/yellow]")
+                cli.console.print(f"[yellow]⚠️  Language detection failed: {e}[/yellow]")
                 cli.logger.exception("Language detection failed")
 
         # ============================================================
@@ -6703,7 +6703,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
                     _url, _token,
                 )
         else:
-            cli.console.print("\n[dim]Training workflow is reserved for Annotator Factory (mode 2). Skipping post-annotation training.[/dim]\n")
+            cli.console.print("\n[dim]🛈 Training workflow is reserved for Annotator Factory (mode 2). Skipping post-annotation training.[/dim]\n")
             tracker.mark_step(
                 8,
                 status="skipped",
@@ -6734,7 +6734,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
             if can_reuse_existing:
                 cli.console.print(
-                    "\n[cyan]Reusing Doccano export generated during annotation.[/cyan]"
+                    "\n[cyan]ℹ️  Reusing Doccano export generated during annotation.[/cyan]"
                 )
                 doccano_export_result = {
                     'jsonl_path': str(existing_doccano_path),
@@ -6821,7 +6821,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         # GENERATE ANNOTATION METRICS CHART (Annotator Factory)
         # ============================================================
         try:
-            cli.console.print("\n[bold cyan]Generating Annotation Metrics Chart...[/bold cyan]")
+            cli.console.print("\n[bold cyan]📊 Generating Annotation Metrics Chart...[/bold cyan]")
 
             # Determine chart output directory
             chart_output_dir = session_dirs.get('root', Path(output_file).parent) if session_dirs else Path(output_file).parent
@@ -6858,11 +6858,11 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             if chart_path:
                 cli.console.print(f"[green]✓ Annotation metrics chart saved to:[/green] {chart_path}")
             else:
-                cli.console.print("[yellow][!] Could not generate annotation metrics chart[/yellow]")
+                cli.console.print("[yellow]⚠️  Could not generate annotation metrics chart[/yellow]")
 
         except Exception as chart_exc:
             cli.logger.warning(f"Failed to generate annotation metrics chart: {chart_exc}")
-            cli.console.print(f"[yellow][!] Chart generation failed: {chart_exc}[/yellow]")
+            cli.console.print(f"[yellow]⚠️  Chart generation failed: {chart_exc}[/yellow]")
 
         tracker.update_status(
             "completed",
@@ -6878,7 +6878,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
     except Exception as exc:
         tracker.update_status("failed", note=str(exc))
-        cli.console.print(f"\n[bold red][FAIL] Annotation failed:[/bold red] {exc}")
+        cli.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
         cli.logger.exception("Annotation execution failed")
         cli.console.print("\n[dim]Press Enter to return to menu...[/dim]")
         input()
@@ -6949,7 +6949,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
             export_tools.append("Doccano")
         if export_to_labelstudio:
             export_tools.append("Label Studio")
-        cli.console.print(f"\n[cyan]Export enabled for: {', '.join(export_tools)} (from saved preferences)[/cyan]")
+        cli.console.print(f"\n[cyan]ℹ️  Export enabled for: {', '.join(export_tools)} (from saved preferences)[/cyan]")
         if export_sample_size != 'all':
             cli.console.print(f"[cyan]   Sample size: {export_sample_size}[/cyan]")
 
@@ -6971,7 +6971,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         original_output = Path(output_config.get('output_path', ''))
 
         if not original_output.exists():
-            cli.console.print(f"\n[yellow][!] Output file not found: {original_output}[/yellow]")
+            cli.console.print(f"\n[yellow]⚠️  Output file not found: {original_output}[/yellow]")
             cli.console.print("[yellow]Switching to relaunch mode (fresh annotation)[/yellow]")
             action_mode = 'relaunch'
         else:
@@ -7016,7 +7016,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                     )
                 if not resolved_identifier:
                     cli.console.print(
-                        "[yellow][!] Could not determine identifier column from resume file.[/yellow]"
+                        "[yellow]⚠️  Could not determine identifier column from resume file.[/yellow]"
                     )
 
                 # Count rows with valid annotations (non-empty, non-null strings)
@@ -7217,7 +7217,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         data_source['identifier_column'] = identifier_column
         proc_config['identifier_column'] = identifier_column
 
-    cli.console.print(f"\n[bold cyan]Output Location:[/bold cyan]")
+    cli.console.print(f"\n[bold cyan]📁 Output Location:[/bold cyan]")
     cli.console.print(f"   {default_output_path}")
 
     # Prepare prompts payload
@@ -7266,7 +7266,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     # This ensures we pick up exactly where we left off, not random new rows
     if action_mode == 'resume':
         sample_strategy = 'head'
-        cli.console.print(f"\n[cyan]Resume mode: Using sequential (head) strategy to continue where you left off[/cyan]")
+        cli.console.print(f"\n[cyan]ℹ️  Resume mode: Using sequential (head) strategy to continue where you left off[/cyan]")
 
     # Get API key if needed
     api_key = None
@@ -7376,21 +7376,21 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                         pipeline_config['already_annotated_count'] = int(annotated_count_from_mask)
                         pipeline_config['total_rows_in_file'] = len(df_resume)
 
-                        cli.console.print(f"\n[bold cyan]Resume Summary:[/bold cyan]")
+                        cli.console.print(f"\n[bold cyan]📊 Resume Summary:[/bold cyan]")
                         cli.console.print(f"   Total rows in file: {len(df_resume):,}")
                         cli.console.print(f"   Already annotated:  {annotated_count_from_mask:,}")
                         cli.console.print(f"   Remaining to do:    {len(df_resume) - annotated_count_from_mask:,}")
                         cli.console.print(f"   Will skip {annotated_count_from_mask:,} already annotated row(s)\n")
                     elif 'annotation' not in df_resume.columns:
-                        cli.console.print(f"[yellow][!] No 'annotation' column found in resume file — treating all rows as unannotated[/yellow]")
+                        cli.console.print(f"[yellow]⚠️  No 'annotation' column found in resume file — treating all rows as unannotated[/yellow]")
                     elif not id_column:
-                        cli.console.print(f"[yellow][!] Could not find identifier column in resume file — skip-by-ID disabled[/yellow]")
+                        cli.console.print(f"[yellow]⚠️  Could not find identifier column in resume file — skip-by-ID disabled[/yellow]")
                         cli.console.print(f"[cyan]   Resume will still use annotation column (NaN check) to skip completed rows[/cyan]")
             else:
-                cli.console.print(f"[yellow][!] Resume file not found: {resume_file} — proceeding without skip list[/yellow]")
+                cli.console.print(f"[yellow]⚠️  Resume file not found: {resume_file} — proceeding without skip list[/yellow]")
         except Exception as e:
             cli.logger.warning(f"Could not load annotated IDs from resume file: {e}")
-            cli.console.print(f"[yellow][!] Warning: Could not load annotated IDs - will rely on annotation column NaN check[/yellow]")
+            cli.console.print(f"[yellow]⚠️  Warning: Could not load annotated IDs - will rely on annotation column NaN check[/yellow]")
 
     # Add model-specific options
     if provider == 'ollama':
@@ -7420,8 +7420,8 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         with open(new_metadata_path, 'w', encoding='utf-8') as f:
             json.dump(new_metadata, f, indent=2, ensure_ascii=False)
 
-        cli.console.print(f"\n[green][OK] New session metadata saved[/green]")
-        cli.console.print(f"[cyan]Metadata File:[/cyan]")
+        cli.console.print(f"\n[green]✅ New session metadata saved[/green]")
+        cli.console.print(f"[cyan]📋 Metadata File:[/cyan]")
         cli.console.print(f"   {new_metadata_path}\n")
 
     if action_mode == 'resume' and metadata_root is not None:
@@ -7442,8 +7442,8 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         with open(resume_metadata_path, 'w', encoding='utf-8') as f:
             json.dump(resume_metadata, f, indent=2, ensure_ascii=False)
 
-        cli.console.print(f"\n[green][OK] Resume metadata saved[/green]")
-        cli.console.print(f"[cyan]Metadata File:[/cyan]")
+        cli.console.print(f"\n[green]✅ Resume metadata saved[/green]")
+        cli.console.print(f"[cyan]📋 Metadata File:[/cyan]")
         cli.console.print(f"   {resume_metadata_path}\n")
 
     # ── Doccano Integration ──
@@ -7451,7 +7451,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     doccano_rewrite_ids = None
     _text_col = data_source.get('text_column', 'text')
 
-    cli.console.print("\n[bold cyan]Doccano Integration[/bold cyan]")
+    cli.console.print("\n[bold cyan]🔗 Doccano Integration[/bold cyan]")
     cli.console.print(
         "[dim]Doccano is an open-source annotation platform.  When enabled, every\n"
         "annotation produced by the LLM is pushed [bold]in real-time[/bold] to a Doccano\n"
@@ -7520,7 +7520,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
 
     # Execute pipeline
     try:
-        cli.console.print("\n[bold green]Starting annotation...[/bold green]\n")
+        cli.console.print("\n[bold green]🚀 Starting annotation...[/bold green]\n")
         cli.console.print(f"[dim]Identifier column in use: {identifier_column}[/dim]")
 
         from ..pipelines.pipeline_controller import PipelineController
@@ -7554,7 +7554,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
 
             if state.errors:
                 error_msg = state.errors[0]['error'] if state.errors else "Annotation failed"
-                cli.console.print(f"\n[bold red][FAIL] Error:[/bold red] {error_msg}")
+                cli.console.print(f"\n[bold red]❌ Error:[/bold red] {error_msg}")
                 return False
 
         # Display results
@@ -7575,8 +7575,8 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
             annotation_results['output_file'] = output_file
         annotations_only_path = output_paths.get("annotations_only_path")
 
-        cli.console.print("\n[bold green][OK] Annotation completed successfully![/bold green]")
-        cli.console.print(f"\n[bold cyan]Output File:[/bold cyan]")
+        cli.console.print("\n[bold green]✅ Annotation completed successfully![/bold green]")
+        cli.console.print(f"\n[bold cyan]📄 Output File:[/bold cyan]")
         cli.console.print(f"   {output_file}")
         if annotations_only_path:
             cli.console.print(f"   [dim]Annotations-only CSV:[/dim] {annotations_only_path}")
@@ -7611,7 +7611,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
                     progress_meta['remaining'] = max(_total - _completed, 0)
                     progress_meta['available'] = _total
 
-                    cli.console.print(f"\n[bold cyan]Overall Progress:[/bold cyan]")
+                    cli.console.print(f"\n[bold cyan]📊 Overall Progress:[/bold cyan]")
                     cli.console.print(f"   Completed: {_completed:,} / {_total:,}")
                     cli.console.print(f"   Remaining: {max(_total - _completed, 0):,}")
 
@@ -7650,7 +7650,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
             prompt_success_count = None
 
         if total_annotated:
-            cli.console.print(f"\n[bold cyan]Statistics:[/bold cyan]")
+            cli.console.print(f"\n[bold cyan]📊 Statistics:[/bold cyan]")
             cli.console.print(f"   Rows annotated: {total_annotated:,}")
 
             success_count = annotation_results.get('success_count', 0)
@@ -7760,7 +7760,7 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
             )
 
     except Exception as exc:
-        cli.console.print(f"\n[bold red][FAIL] Annotation failed:[/bold red] {exc}")
+        cli.console.print(f"\n[bold red]❌ Annotation failed:[/bold red] {exc}")
         cli.logger.exception("Resume/Relaunch annotation failed")
         return False
 

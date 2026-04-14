@@ -234,7 +234,7 @@ def training_studio(self):
 
     # Display personalized mode info
     self._display_section_header(
-        "Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking",
+        "🎮 Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking",
         "Professional model training with intelligent optimization, reinforcement learning, and comprehensive benchmarking",
         mode_info={
             'workflow': 'Load Data → Language Detection → Model Selection → Multi-Label Training → Reinforcement Learning → Benchmark',
@@ -253,7 +253,7 @@ def training_studio(self):
     self._ensure_training_models_loaded()
 
     # NEW: Add resume/new menu BEFORE starting wizard
-    self.console.print("\n[bold cyan]Training Session Options[/bold cyan]\n")
+    self.console.print("\n[bold cyan]🎯 Training Session Options[/bold cyan]\n")
 
     session_options_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
     session_options_table.add_column("Option", style="cyan bold", no_wrap=True)
@@ -261,11 +261,11 @@ def training_studio(self):
 
     session_options_table.add_row(
         "1",
-        "Resume/Relaunch Training\n   Load saved parameters from previous training sessions"
+        "🔄 Resume/Relaunch Training\n   Load saved parameters from previous training sessions"
     )
     session_options_table.add_row(
         "2",
-        "New Training Session\n   Start fresh with dataset selection and configuration"
+        "🆕 New Training Session\n   Start fresh with dataset selection and configuration"
     )
     session_options_table.add_row(
         "3",
@@ -295,7 +295,7 @@ def training_studio(self):
     from llm_tool.utils.training_data_utils import TrainingDataSessionManager
 
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-    self.console.print("[bold cyan]           Session Name Configuration                       [/bold cyan]")
+    self.console.print("[bold cyan]           📝 Session Name Configuration                       [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     self.console.print("[bold]Why session names matter:[/bold]")
@@ -460,7 +460,7 @@ def _run_parallel_training(
         ParallelTrainingConfig,
     )
 
-    self.console.print("\n[bold green]Starting Parallel Training with Full Integration...[/bold green]\n")
+    self.console.print("\n[bold green]🚀 Starting Parallel Training with Full Integration...[/bold green]\n")
 
     # Use "models" as the base directory for model outputs
     # ParallelTrainingManager will add session_id subfolder: models/{session_id}/{category}/
@@ -502,7 +502,7 @@ def _run_parallel_training(
     if train_by_language:
         num_categories = len(category_files)
         total_models = num_categories * len(languages_list)
-        self.console.print(f"[cyan]Per-language training enabled:[/cyan] {num_categories} categories × {len(languages_list)} languages = {total_models} models")
+        self.console.print(f"[cyan]🌍 Per-language training enabled:[/cyan] {num_categories} categories × {len(languages_list)} languages = {total_models} models")
         self.console.print(f"[dim]   Languages: {', '.join(sorted(languages_list))}[/dim]")
     else:
         self.console.print(f"[dim]Multilingual training: {len(category_files)} models (all languages combined)[/dim]")
@@ -580,22 +580,22 @@ def _run_parallel_training(
             self.console.print(f"\n[bold green]{'═' * 60}[/bold green]")
             self.console.print(f"[bold green]   PARALLEL TRAINING COMPLETE[/bold green]")
             self.console.print(f"[bold green]{'═' * 60}[/bold green]")
-            self.console.print(f"[green]   [OK] Models trained: {len(successful_results)}/{total_models_expected}[/green]")
+            self.console.print(f"[green]   ✅ Models trained: {len(successful_results)}/{total_models_expected}[/green]")
             if failed_results:
-                self.console.print(f"[red]   [FAIL] Models failed: {len(failed_results)}[/red]")
+                self.console.print(f"[red]   ❌ Models failed: {len(failed_results)}[/red]")
             if train_by_language:
-                self.console.print(f"[cyan]   Per-language: {len(category_files)} categories × {len(languages_list)} languages[/cyan]")
-            self.console.print(f"[cyan]   Average F1: {avg_f1:.4f}[/cyan]")
-            self.console.print(f"[cyan]   Best: Best model: {best_category} (F1={best_result.get('f1_score', 0):.4f})[/cyan]")
-            self.console.print(f"[cyan]   Total time: {total_time:.1f}s ({total_time/60:.1f} min)[/cyan]")
-            self.console.print(f"[dim]   Logs: {session_output_dir}/training.csv[/dim]")
-            self.console.print(f"[dim]   Charts: {session_output_dir}/charts/[/dim]")
+                self.console.print(f"[cyan]   🌍 Per-language: {len(category_files)} categories × {len(languages_list)} languages[/cyan]")
+            self.console.print(f"[cyan]   📊 Average F1: {avg_f1:.4f}[/cyan]")
+            self.console.print(f"[cyan]   🏆 Best model: {best_category} (F1={best_result.get('f1_score', 0):.4f})[/cyan]")
+            self.console.print(f"[cyan]   ⏱️  Total time: {total_time:.1f}s ({total_time/60:.1f} min)[/cyan]")
+            self.console.print(f"[dim]   📁 Logs: {session_output_dir}/training.csv[/dim]")
+            self.console.print(f"[dim]   📁 Charts: {session_output_dir}/charts/[/dim]")
 
             # Generate comprehensive cross-model summary chart
             try:
                 from llm_tool.trainers.training_metrics_chart import generate_comprehensive_summary_chart
 
-                self.console.print("\n[bold cyan]Generating Comprehensive Summary Chart...[/bold cyan]")
+                self.console.print("\n[bold cyan]📊 Generating Comprehensive Summary Chart...[/bold cyan]")
 
                 _session_dir = str(session_output_dir)
                 _chart_output = str(session_output_dir / "charts")
@@ -612,13 +612,13 @@ def _run_parallel_training(
                 )
 
                 if comp_chart_path:
-                    self.console.print(f"[green]   Comprehensive summary chart saved:[/green] {comp_chart_path}")
+                    self.console.print(f"[green]   ✓ Comprehensive summary chart saved:[/green] {comp_chart_path}")
                 else:
-                    self.console.print("[yellow]   [!] Could not generate comprehensive summary chart[/yellow]")
+                    self.console.print("[yellow]   ⚠️  Could not generate comprehensive summary chart[/yellow]")
 
             except Exception as e:
                 self.logger.warning(f"Failed to generate comprehensive summary chart: {e}")
-                self.console.print(f"[yellow]   [!] Comprehensive chart failed: {e}[/yellow]")
+                self.console.print(f"[yellow]   ⚠️  Comprehensive chart failed: {e}[/yellow]")
 
             return {
                 'runtime_params': runtime_params,
@@ -638,7 +638,7 @@ def _run_parallel_training(
                 'charts_dir': str(session_output_dir / "charts"),
             }
         else:
-            self.console.print("[red][FAIL] All parallel trainings failed[/red]")
+            self.console.print("[red]❌ All parallel trainings failed[/red]")
             # Show detailed error information for debugging
             if failed_results:
                 self.console.print("\n[bold red]Error details:[/bold red]")
@@ -664,7 +664,7 @@ def _run_parallel_training(
     except Exception as e:
         self.logger.exception(f"Parallel training failed: {e}")
         import traceback
-        self.console.print(f"\n[red][FAIL] Parallel training failed: {e}[/red]")
+        self.console.print(f"\n[red]❌ Parallel training failed: {e}[/red]")
         self.console.print(f"[dim]{traceback.format_exc()}[/dim]")
         return {
             'runtime_params': runtime_params,
@@ -721,7 +721,7 @@ def _training_studio_confirm_and_execute(
     # STEP 2: Show configuration summary with modification loop
     while True:
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-        self.console.print("[bold cyan]           Training Configuration Summary                     [/bold cyan]")
+        self.console.print("[bold cyan]           ✅ Training Configuration Summary                     [/bold cyan]")
         self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
         # Create configuration table
@@ -730,17 +730,17 @@ def _training_studio_confirm_and_execute(
         config_table.add_column("Value", style="white", overflow="fold", ratio=1)
 
         # Dataset information
-        config_table.add_row("Dataset", str(bundle.primary_file.name) if bundle.primary_file else "—")
-        config_table.add_row("Format", bundle.strategy)
-        config_table.add_row("Text Column", bundle.text_column)
-        config_table.add_row("Label Column", bundle.label_column)
+        config_table.add_row("📊 Dataset", str(bundle.primary_file.name) if bundle.primary_file else "—")
+        config_table.add_row("📝 Format", bundle.strategy)
+        config_table.add_row("📖 Text Column", bundle.text_column)
+        config_table.add_row("🏷️  Label Column", bundle.label_column)
 
         if bundle.metadata.get('confirmed_languages'):
             langs = ', '.join([l.upper() for l in bundle.metadata['confirmed_languages']])
-            config_table.add_row("Languages", langs)
+            config_table.add_row("🌍 Languages", langs)
 
         # Training mode
-        config_table.add_row("Training Mode", "Quick Start - Fast training with defaults")
+        config_table.add_row("🎯 Training Mode", "⚡ Quick Start - Fast training with defaults")
 
         # Mode-specific parameters
         if mode == "quick" and quick_params:
@@ -750,10 +750,10 @@ def _training_studio_confirm_and_execute(
                 models_display = []
                 for lang, model in sorted(quick_params['models_by_language'].items()):
                     models_display.append(f"{lang}: {model}")
-                config_table.add_row("Selected Models", "\n".join(models_display))
+                config_table.add_row("🤖 Selected Models", "\n".join(models_display))
             else:
                 # Single model for all languages
-                config_table.add_row("Selected Model", quick_params['model_name'])
+                config_table.add_row("🤖 Selected Model", quick_params['model_name'])
 
             # Reinforced learning display
             if quick_params['reinforced_learning']:
@@ -763,30 +763,30 @@ def _training_studio_confirm_and_execute(
                     f"  • Oversample: {quick_params.get('rl_oversample_factor', 2.0):.1f}×\n"
                     f"  • Loss Weight: {quick_params.get('rl_class_weight_factor', 2.0):.1f}×"
                 )
-                config_table.add_row("Reinforced Learning", rl_details)
+                config_table.add_row("🎓 Reinforced Learning", rl_details)
             else:
-                config_table.add_row("Reinforced Learning", "No")
+                config_table.add_row("🎓 Reinforced Learning", "No")
 
             # Epochs display with reinforced learning info
             if quick_params['reinforced_learning']:
                 manual_rl_epochs = quick_params.get('manual_rl_epochs')
                 if manual_rl_epochs:
                     max_epochs = quick_params['epochs'] + manual_rl_epochs
-                    config_table.add_row("Epochs", f"{quick_params['epochs']} (up to {max_epochs} with reinforced learning)")
+                    config_table.add_row("⏱️  Epochs", f"{quick_params['epochs']} (up to {max_epochs} with reinforced learning)")
                 else:
-                    config_table.add_row("Epochs", f"{quick_params['epochs']} (up to {quick_params['epochs']}+auto with reinforced learning)")
+                    config_table.add_row("⏱️  Epochs", f"{quick_params['epochs']} (up to {quick_params['epochs']}+auto with reinforced learning)")
             else:
-                config_table.add_row("Epochs", str(quick_params['epochs']))
-            config_table.add_row("Batch Size", "16 (default)")
+                config_table.add_row("⏱️  Epochs", str(quick_params['epochs']))
+            config_table.add_row("📦 Batch Size", "16 (default)")
         elif mode == "quick":
-            config_table.add_row("Epochs", "Will be asked (default: 10)")
-            config_table.add_row("Batch Size", "16 (default)")
+            config_table.add_row("⏱️  Epochs", "Will be asked (default: 10)")
+            config_table.add_row("📦 Batch Size", "16 (default)")
 
         # Statistics
         if bundle.metadata.get('text_length_stats'):
             stats = bundle.metadata['text_length_stats']
             avg_len = stats.get('avg_chars', stats.get('avg_length', 0))
-            config_table.add_row("Avg Text Length", f"{avg_len:.0f} characters")
+            config_table.add_row("📏 Avg Text Length", f"{avg_len:.0f} characters")
 
         self.console.print(config_table)
         self.console.print()
@@ -844,7 +844,7 @@ def _training_studio_confirm_and_execute(
     metadata_path = None
 
     if not is_resume:
-        self.console.print("\n[bold cyan]Reproducibility & Metadata[/bold cyan]")
+        self.console.print("\n[bold cyan]📋 Reproducibility & Metadata[/bold cyan]")
         self.console.print("  [green]✓ Session metadata will be automatically saved for:[/green]")
         self.console.print("     • Resume capability if training is interrupted")
         self.console.print("     • Complete parameter tracking for reproducibility")
@@ -852,7 +852,7 @@ def _training_studio_confirm_and_execute(
 
     # STEP 4: Start training
     confirm_start = Confirm.ask(
-        "\n[bold yellow]Start training now?[/bold yellow]",
+        "\n[bold yellow]🚀 Start training now?[/bold yellow]",
         default=True
     )
 
@@ -944,12 +944,12 @@ def _training_studio_confirm_and_execute(
                     }
                 }
             )
-            self.console.print(f"\n[green][OK] Metadata saved for reproducibility[/green]")
-            self.console.print(f"[cyan]Metadata File:[/cyan]")
+            self.console.print(f"\n[green]✅ Metadata saved for reproducibility[/green]")
+            self.console.print(f"[cyan]📋 Metadata File:[/cyan]")
             self.console.print(f"   {metadata_path}\n")
         except Exception as e:
             self.logger.error(f"Failed to save metadata: {e}")
-            self.console.print(f"[yellow][!] Failed to save metadata: {e}[/yellow]\n")
+            self.console.print(f"[yellow]⚠️  Failed to save metadata: {e}[/yellow]\n")
 
     # Execute the selected training mode
     self.console.print("\n[green]✓ Starting training...[/green]\n")
@@ -1063,7 +1063,7 @@ def _training_studio_confirm_and_execute(
                     training_context={'trained_model_paths': trained_models_map},
                     model_config=final_model_config
                 )
-                self.console.print(f"\n[green][OK] Training metadata updated with complete parameters[/green]\n")
+                self.console.print(f"\n[green]✅ Training metadata updated with complete parameters[/green]\n")
             except Exception as e:
                 self.logger.error(f"Failed to update metadata: {e}")
         # Generate comprehensive training data logs AFTER training completion
@@ -1088,10 +1088,10 @@ def _training_studio_confirm_and_execute(
             try:
                 from llm_tool.utils.training_summary_generator import generate_training_summaries
 
-                self.console.print("\n[bold cyan]Generating Comprehensive Training Summaries...[/bold cyan]")
+                self.console.print("\n[bold cyan]📊 Generating Comprehensive Training Summaries...[/bold cyan]")
                 csv_path, jsonl_path = generate_training_summaries(session_id)
 
-                self.console.print("[green]Training summaries generated successfully:[/green]")
+                self.console.print("[green]✓ Training summaries generated successfully:[/green]")
                 self.console.print(f"  • CSV Summary: [cyan]{csv_path.name}[/cyan]")
                 self.console.print(f"  • JSONL Summary: [cyan]{jsonl_path.name}[/cyan]")
                 self.console.print(f"\n[dim]Full paths:[/dim]")
@@ -1100,13 +1100,13 @@ def _training_studio_confirm_and_execute(
 
             except Exception as e:
                 self.logger.error(f"Failed to generate training summaries: {e}")
-                self.console.print(f"[yellow][!] Could not generate comprehensive summaries: {e}[/yellow]")
+                self.console.print(f"[yellow]⚠️  Could not generate comprehensive summaries: {e}[/yellow]")
 
             # Generate comprehensive cross-model summary chart
             try:
                 from llm_tool.trainers.training_metrics_chart import generate_comprehensive_summary_chart
 
-                self.console.print("\n[bold cyan]Generating Comprehensive Summary Chart...[/bold cyan]")
+                self.console.print("\n[bold cyan]📊 Generating Comprehensive Summary Chart...[/bold cyan]")
 
                 # Determine session directory for disk scan
                 _session_dir = None
@@ -1146,17 +1146,17 @@ def _training_studio_confirm_and_execute(
                 )
 
                 if comp_chart_path:
-                    self.console.print(f"[green]Comprehensive summary chart saved:[/green] {comp_chart_path}")
+                    self.console.print(f"[green]✓ Comprehensive summary chart saved:[/green] {comp_chart_path}")
                 else:
-                    self.console.print("[yellow][!] Could not generate comprehensive summary chart (insufficient data)[/yellow]")
+                    self.console.print("[yellow]⚠️  Could not generate comprehensive summary chart (insufficient data)[/yellow]")
 
             except Exception as e:
                 self.logger.warning(f"Failed to generate comprehensive summary chart: {e}")
-                self.console.print(f"[yellow][!] Comprehensive summary chart generation failed: {e}[/yellow]")
+                self.console.print(f"[yellow]⚠️  Comprehensive summary chart generation failed: {e}[/yellow]")
 
             # NEW: Generate session manifest for complete experiment reproducibility
             try:
-                self.console.print("\n[bold cyan]Generating Session Manifest...[/bold cyan]")
+                self.console.print("\n[bold cyan]📋 Generating Session Manifest...[/bold cyan]")
 
                 # Collect hyperparameters from quick_params or model_config
                 hyperparams = TrainingHyperparameters(
@@ -1216,12 +1216,12 @@ def _training_studio_confirm_and_execute(
                     status=status,
                 )
 
-                self.console.print("[green]Session manifest generated successfully:[/green]")
+                self.console.print("[green]✓ Session manifest generated successfully:[/green]")
                 self.console.print(f"  • {manifest_path}")
 
             except Exception as e:
                 self.logger.error(f"Failed to generate session manifest: {e}")
-                self.console.print(f"[yellow][!] Could not generate session manifest: {e}[/yellow]")
+                self.console.print(f"[yellow]⚠️  Could not generate session manifest: {e}[/yellow]")
 
     except Exception as e:
         # Update metadata with failure status
@@ -1344,7 +1344,7 @@ def _training_studio_show_model_catalog(self) -> None:
 
         if self.console and resolved_column != requested_column:
             self.console.print(
-                f"[yellow]Stored {column_label} '{requested_column}' not found. "
+                f"[yellow]ℹ Stored {column_label} '{requested_column}' not found. "
                 f"Using '{resolved_column}' instead.[/yellow]"
             )
 
@@ -1367,7 +1367,7 @@ def _confirm_language_selection(self,
     # Display detected languages if available
     total = sum(language_distribution.values())
     if total > 0:
-        console.print(f"\n[bold]Languages Detected ({total:,} texts analyzed):[/bold]")
+        console.print(f"\n[bold]🌍 Languages Detected ({total:,} texts analyzed):[/bold]")
 
         lang_table = Table(border_style="cyan", show_header=True, header_style="bold", expand=True)
         lang_table.add_column("Language", style="cyan", no_wrap=True)
@@ -1396,7 +1396,7 @@ def _confirm_language_selection(self,
 
     # Provide options to adjust minority languages
     if minority_languages:
-        console.print(f"\n[yellow][!] Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
+        console.print(f"\n[yellow]⚠ Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
         for lang, count in sorted(minority_languages.items(), key=lambda x: x[1], reverse=True):
             percentage = (count / total * 100) if total > 0 else 0
             console.print(f"  • {lang.upper()}: {count} texts ({percentage:.2f}%)")
@@ -1414,7 +1414,7 @@ def _confirm_language_selection(self,
         )
 
         if minority_action == "correct":
-            console.print("\n[bold cyan]Quick Language Correction[/bold cyan]\n")
+            console.print("\n[bold cyan]🔧 Quick Language Correction[/bold cyan]\n")
 
             all_supported_langs = [
                 'en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'ru', 'zh', 'ja',
@@ -1482,13 +1482,13 @@ def _confirm_language_selection(self,
                                       if isinstance(count, (int, float)) and count >= LOW_PERCENTAGE_THRESHOLD)
             excluded_count = sum(minority_languages.values())
             console.print(f"\n[yellow]✗ Excluded {excluded_count} texts from {len(minority_languages)} low-percentage language(s)[/yellow]")
-            console.print(f"[green]Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+            console.print(f"[green]✓ Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
 
         elif minority_action == "keep":
-            console.print("[yellow][!] Keeping all detected languages (including low-percentage ones)[/yellow]")
+            console.print("[yellow]⚠ Keeping all detected languages (including low-percentage ones)[/yellow]")
 
         elif minority_action == "select":
-            console.print("\n[bold cyan]Language Selection:[/bold cyan]")
+            console.print("\n[bold cyan]📝 Language Selection:[/bold cyan]")
             console.print(f"[dim]Select which languages to keep for training (from all {len(language_distribution)} detected)[/dim]\n")
 
             console.print("[bold]All Detected Languages:[/bold]")
@@ -1496,7 +1496,7 @@ def _confirm_language_selection(self,
                 if lang.startswith('_'):
                     continue
                 percentage = (count / total * 100) if total > 0 else 0
-                status = "[green]majority[/green]" if lang in majority_languages else "[yellow][!] minority[/yellow]"
+                status = "[green]✓ majority[/green]" if lang in majority_languages else "[yellow]⚠ minority[/yellow]"
                 console.print(f"  {i:2d}. {lang.upper():5s} - {count:6,} texts ({percentage:5.2f}%) {status}")
 
             console.print("\n[bold yellow]Select languages to KEEP:[/bold yellow]")
@@ -1509,7 +1509,7 @@ def _confirm_language_selection(self,
                 selected_set = set([l.strip().lower() for l in selected_langs.split(',') if l.strip()])
                 invalid_langs = selected_set - set(language_distribution.keys())
                 if invalid_langs:
-                    console.print(f"[yellow][!] Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
+                    console.print(f"[yellow]⚠ Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
                     selected_set = selected_set - invalid_langs
 
                 for lang in list(language_distribution.keys()):
@@ -1527,7 +1527,7 @@ def _confirm_language_selection(self,
                 console.print(f"\n[green]✓ Kept {len(selected_set)} language(s): {', '.join([l.upper() for l in sorted(selected_set)])}[/green]")
                 console.print(f"[dim]  → {kept_count:,} texts kept, {excluded_count:,} texts excluded[/dim]")
             else:
-                console.print("[green]Keeping all detected languages[/green]")
+                console.print("[green]✓ Keeping all detected languages[/green]")
 
     # Final confirmation
     filtered_distribution = {lang: count for lang, count in language_distribution.items()
@@ -1583,16 +1583,16 @@ def _confirm_language_selection(self,
                         count = lang_series.str.lower().eq(lang).sum()
                         language_distribution[lang] = count
 
-                    console.print(f"[green]Using column '{lang_column}': {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                    console.print(f"[green]✓ Using column '{lang_column}': {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
                 else:
                     # Fall back to manual entry
                     manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
                     confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
-                    console.print(f"[green]Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                    console.print(f"[green]✓ Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
             else:
                 manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
                 confirmed_languages = set([l.strip().lower() for l in manual_langs.split(',') if l.strip()])
-                console.print(f"[green]Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                console.print(f"[green]✓ Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
 
             # Clean up language distribution if manually entered
             if not potential_lang_cols or not use_col:
@@ -1607,7 +1607,7 @@ def _confirm_language_selection(self,
                         if detected_languages_per_text[i] and detected_languages_per_text[i] not in confirmed_languages:
                             detected_languages_per_text[i] = None
         else:
-            console.print("[green]Languages confirmed from analysis[/green]")
+            console.print("[green]✓ Languages confirmed from analysis[/green]")
     else:
         console.print("[yellow]No languages confirmed. Please specify manually if required.[/yellow]")
         manual_langs = Prompt.ask("Expected language codes (optional, e.g., en,fr,de)", default="")
@@ -1635,7 +1635,7 @@ def _confirm_language_selection(self,
         if data_path:
             try:
                 df.to_csv(data_path, index=False)
-                console.print(f"[dim]Language data saved to column '{target_column}'[/dim]")
+                console.print(f"[dim]✓ Language data saved to column '{target_column}'[/dim]")
             except Exception as exc:
                 self.logger.warning(f"Could not save language updates: {exc}")
 
@@ -1680,7 +1680,7 @@ def _training_studio_intelligent_dataset_selector(
 
     # Show detected datasets if available
     if self.detected_datasets:
-        datasets_table = Table(title="Detected Datasets", border_style="cyan", expand=True)
+        datasets_table = Table(title="📊 Detected Datasets", border_style="cyan", expand=True)
         datasets_table.add_column("#", style="cyan", width=3)
         datasets_table.add_column("Name", style="white", no_wrap=True)
         datasets_table.add_column("Format", style="yellow", no_wrap=True)
@@ -1734,18 +1734,18 @@ def _training_studio_intelligent_dataset_selector(
         self.console.print("[dim]No datasets auto-detected in data/ folder[/dim]")
         data_path = Path(self._prompt_file_path("Dataset path"))
 
-    self.console.print(f"[green]Selected: {data_path.name} ({data_path.suffix[1:]})[/green]\n")
+    self.console.print(f"[green]✓ Selected: {data_path.name} ({data_path.suffix[1:]})[/green]\n")
 
     # Step 2: Intelligent File Analysis
     self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     self.console.print("[bold cyan]  STEP 2:[/bold cyan] [bold white]Analyzing Dataset Structure[/bold white]")
     self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    self.console.print("[dim]Analyzing columns, detecting types, and extracting samples...[/dim]")
+    self.console.print("[dim]🔍 Analyzing columns, detecting types, and extracting samples...[/dim]")
 
     analysis = DataDetector.analyze_file_intelligently(data_path)
 
     if analysis['issues']:
-        self.console.print("\n[yellow][!]  Analysis warnings:[/yellow]")
+        self.console.print("\n[yellow]⚠️  Analysis warnings:[/yellow]")
         for issue in analysis['issues']:
             self.console.print(f"  • {issue}")
 
@@ -1767,7 +1767,7 @@ def _training_studio_intelligent_dataset_selector(
 
     if has_lang_column and languages_found_in_column:
         # Option 1: Language column exists - offer to use it or detect automatically
-        self.console.print("[bold]Languages Found in Column:[/bold]")
+        self.console.print("[bold]🌍 Languages Found in Column:[/bold]")
         for lang, count in analysis['languages_detected'].items():
             self.console.print(f"  • {lang.upper()}: {count:,} rows")
 
@@ -1782,13 +1782,13 @@ def _training_studio_intelligent_dataset_selector(
         if use_lang_column:
             confirmed_languages = languages_found_in_column
             lang_column = lang_column_candidate
-            self.console.print(f"[green]Using language column: {lang_column}[/green]")
+            self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
         else:
             # User said no to language column - offer automatic detection
             self.console.print("\n[yellow]Language column not used. Applying automatic detection...[/yellow]")
     else:
         # Option 2: No language column - go straight to automatic detection
-        self.console.print("[yellow]No language column detected[/yellow]")
+        self.console.print("[yellow]ℹ️  No language column detected[/yellow]")
 
     # We need to detect text column first for content-based language detection
     # Quick text column detection for language analysis
@@ -1831,7 +1831,7 @@ def _training_studio_intelligent_dataset_selector(
                     lang_counts[value] = lang_counts.get(value, 0) + 1
 
         if apply_auto_detection and not lang_counts:
-            self.console.print("[dim]Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
+            self.console.print("[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
             from llm_tool.utils.language_detector import LanguageDetector
             from tqdm import tqdm
 
@@ -1903,7 +1903,7 @@ def _training_studio_intelligent_dataset_selector(
     self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
     self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Text Column Selection[/bold white]")
     self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    self.console.print("[bold]What You Need to Select:[/bold]")
+    self.console.print("[bold]💡 What You Need to Select:[/bold]")
     self.console.print("   [cyan]• Text Column[/cyan] - Contains the text data to train on (input for predictions)\n")
 
     column_info = self._detect_text_columns(data_path)
@@ -1990,7 +1990,7 @@ def _training_studio_intelligent_dataset_selector(
     label_step = resolve_step_label("label_selection", "STEP 5")
     self.console.print(f"[bold cyan]  {label_step}:[/bold cyan] [bold white]Label/Category Column Selection[/bold white]")
     self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    self.console.print("[bold]What You Need to Select:[/bold]")
+    self.console.print("[bold]💡 What You Need to Select:[/bold]")
     self.console.print("   [cyan]• Label Column[/cyan] - Contains the labels/categories (what the model will learn to predict)\n")
 
     label_column_default = "labels" if "multi" in format_type else "label"
@@ -2000,7 +2000,7 @@ def _training_studio_intelligent_dataset_selector(
         best_label = annotation_candidates[0]['name']
         label_column_default = best_label
 
-        self.console.print(f"[green]Label column detected: '{best_label}'[/green]")
+        self.console.print(f"[green]✓ Label column detected: '{best_label}'[/green]")
 
         stats = analysis.get('annotation_stats', {}).get(best_label, {})
         fill_rate = stats.get('fill_rate', 0)
@@ -2035,7 +2035,7 @@ def _training_studio_intelligent_dataset_selector(
 
                 # Display categories table
                 if len(label_counts) > 0:
-                    self.console.print(f"\n[bold]Detected {len(label_counts)} Categories:[/bold]")
+                    self.console.print(f"\n[bold]📊 Detected {len(label_counts)} Categories:[/bold]")
 
                     cat_table = Table(border_style="green", show_header=True, header_style="bold cyan", expand=True)
                     cat_table.add_column("#", style="cyan", width=5)
@@ -2103,7 +2103,7 @@ def _training_studio_intelligent_dataset_selector(
         )
     except Exception as e:
         self.logger.warning(f"Could not load dataframe for ID detection: {e}")
-        self.console.print(f"[yellow][!] Could not analyze ID columns: {e}[/yellow]")
+        self.console.print(f"[yellow]⚠ Could not analyze ID columns: {e}[/yellow]")
         self.console.print("[dim]An automatic ID will be generated[/dim]")
         id_column = None
 
@@ -2116,7 +2116,7 @@ def _training_studio_intelligent_dataset_selector(
     # Skip model selection - will be done in training mode
     if False and confirmed_languages and len(confirmed_languages) > 1:
         # Multiple languages detected - offer strategy choice
-        self.console.print(f"[bold]Dataset contains {len(confirmed_languages)} languages:[/bold]")
+        self.console.print(f"[bold]📊 Dataset contains {len(confirmed_languages)} languages:[/bold]")
 
         if language_distribution:
             # Filter out metadata keys (like _reclassification_map)
@@ -2233,7 +2233,7 @@ def _training_studio_intelligent_dataset_selector(
             lang_recommendations = LanguageNormalizer.recommend_models({lang}, self.available_trainer_models)
 
         if lang_recommendations:
-            self.console.print(f"\n[bold]Recommended Models for {lang.upper()}:[/bold]")
+            self.console.print(f"\n[bold]🤖 Recommended Models for {lang.upper()}:[/bold]")
             for i, rec in enumerate(lang_recommendations[:5], 1):
                 self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
 
@@ -2244,7 +2244,7 @@ def _training_studio_intelligent_dataset_selector(
             else:
                 model_to_use = choice
 
-            self.console.print(f"[green]Selected: {model_to_use}[/green]")
+            self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")
     else:
         # No languages detected - use default
         model_to_use = self._get_model_recommendation_from_languages(set())
@@ -2312,7 +2312,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
     self.console.print()
 
     # Add development notice for experimental formats
-    self.console.print("[yellow][!] Note:[/yellow] [bold red]category-csv, binary-long, jsonl-single, and jsonl-multi are currently under development and NOT accessible.[/bold red]")
+    self.console.print("[yellow]⚠️  Note:[/yellow] [bold red]category-csv, binary-long, jsonl-single, and jsonl-multi are currently under development and NOT accessible.[/bold red]")
     self.console.print("[dim]      These formats will be enabled in a future release after thorough testing.[/dim]")
     self.console.print()
 
@@ -2334,7 +2334,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Show detected datasets if available
         if self.detected_datasets:
-            datasets_table = Table(title="Detected Datasets", border_style="cyan", expand=True)
+            datasets_table = Table(title="📊 Detected Datasets", border_style="cyan", expand=True)
             datasets_table.add_column("#", style="cyan", width=3)
             datasets_table.add_column("Name", style="white", no_wrap=True)
             datasets_table.add_column("Format", style="yellow", no_wrap=True)
@@ -2377,7 +2377,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
             self.console.print(datasets_table)
             self.console.print()
-            self.console.print("[dim]Tip: You can either:[/dim]")
+            self.console.print("[dim]💡 You can either:[/dim]")
             self.console.print("[dim]   • Enter the [cyan]#[/cyan] number from the table above (e.g., '1', '13')[/dim]")
             self.console.print("[dim]   • Enter an [cyan]absolute path[/cyan] to any file (e.g., '/Users/name/data/file.csv')[/dim]\n")
 
@@ -2386,7 +2386,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             # Parse choice
             if not dataset_choice or dataset_choice.strip() == "":
                 # Empty input - default to first dataset
-                self.console.print("[yellow][!] No selection made, defaulting to first dataset[/yellow]")
+                self.console.print("[yellow]⚠️  No selection made, defaulting to first dataset[/yellow]")
                 csv_path = self.detected_datasets[0].path
             elif dataset_choice.isdigit():
                 idx = int(dataset_choice) - 1
@@ -2408,18 +2408,18 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             file_path_str = self._prompt_file_path("Annotated file path (CSV/JSON/Excel/Parquet)")
             csv_path = Path(file_path_str)
 
-        self.console.print(f"[green]Selected: {csv_path.name} ({csv_path.suffix[1:]})[/green]\n")
+        self.console.print(f"[green]✓ Selected: {csv_path.name} ({csv_path.suffix[1:]})[/green]\n")
 
         # Step 3: File Structure Analysis
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[bold cyan]  STEP 3:[/bold cyan] [bold white]Analyzing Dataset Structure[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[dim]Analyzing columns, detecting types, and extracting samples...[/dim]")
+        self.console.print("[dim]🔍 Analyzing columns, detecting types, and extracting samples...[/dim]")
         analysis = DataDetector.analyze_file_intelligently(csv_path)
 
         # Show analysis results
         if analysis['issues']:
-            self.console.print("\n[yellow][!]  Analysis warnings:[/yellow]")
+            self.console.print("\n[yellow]⚠️  Analysis warnings:[/yellow]")
             for issue in analysis['issues']:
                 self.console.print(f"  • {issue}")
 
@@ -2427,7 +2427,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
         self.console.print("[bold cyan]  STEP 4:[/bold cyan] [bold white]Column Selection[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[bold]What You Need to Select:[/bold]")
+        self.console.print("[bold]💡 What You Need to Select:[/bold]")
         self.console.print("   [cyan]• Text Column[/cyan]     - Contains the text data to train on (input for predictions)")
         self.console.print("   [cyan]• Annotation Column[/cyan] - Contains the JSON annotations (labels/categories for training)\n")
 
@@ -2454,7 +2454,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Create comprehensive column overview table
         if all_columns:
-            self.console.print(f"[bold]Dataset Overview ({len(all_columns)} columns, {len(df):,} rows):[/bold]\n")
+            self.console.print(f"[bold]📊 Dataset Overview ({len(all_columns)} columns, {len(df):,} rows):[/bold]\n")
 
             # Create detailed columns table
             all_columns_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
@@ -2498,7 +2498,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             self.console.print(all_columns_table)
 
             # Now show AI suggestions
-            self.console.print("\n[bold]Tip: Helpful Suggestions[/bold] [dim](not required - you choose)[/dim]")
+            self.console.print("\n[bold]💡 Helpful Suggestions[/bold] [dim](not required - you choose)[/dim]")
             self.console.print("[dim]These are suggestions based on column names and content analysis.[/dim]")
             self.console.print("[dim]You are free to select ANY column from the table above.[/dim]\n")
 
@@ -2515,12 +2515,12 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 text_stats = text_candidates[0]
                 avg_len = text_stats.get('avg_length', 0)
                 suggestions_table.add_row(
-                    "Text Data",
+                    "📝 Text Data",
                     best_text,
                     f"Contains text (avg {avg_len:.0f} chars)"
                 )
             else:
-                suggestions_table.add_row("Text Data", "—", "No automatic suggestion")
+                suggestions_table.add_row("📝 Text Data", "—", "⚠️  No automatic suggestion")
 
             # Annotation column row
             annotation_column_default = "annotation"
@@ -2548,7 +2548,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                     reason_parts.append(f"{fill_rate*100:.1f}% filled")
 
                     suggestions_table.add_row(
-                        "Annotations",
+                        "🏷️  Annotations",
                         best_annotation,
                         ", ".join(reason_parts)
                     )
@@ -2558,12 +2558,12 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                         has_annotation_alternatives = True
                 else:
                     suggestions_table.add_row(
-                        "Annotations",
+                        "🏷️  Annotations",
                         best_annotation,
-                        "[red][!] Column is EMPTY - cannot use[/red]"
+                        "[red]⚠️  Column is EMPTY - cannot use[/red]"
                     )
             else:
-                suggestions_table.add_row("Annotations", "—", "No automatic suggestion")
+                suggestions_table.add_row("🏷️  Annotations", "—", "⚠️  No automatic suggestion")
 
             self.console.print(suggestions_table)
 
@@ -2587,11 +2587,11 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 stats = analysis['annotation_stats'].get(best_annotation, {})
                 fill_rate = stats.get('fill_rate', 0)
                 if fill_rate > 0:
-                    self.console.print(f"[green]Suggested annotation column: '{best_annotation}' ({fill_rate*100:.1f}% filled)[/green]")
+                    self.console.print(f"[green]✓ Suggested annotation column: '{best_annotation}' ({fill_rate*100:.1f}% filled)[/green]")
                 else:
-                    self.console.print(f"[red][!] Suggested annotation column '{best_annotation}' is EMPTY - cannot be used for training![/red]")
+                    self.console.print(f"[red]⚠️  Suggested annotation column '{best_annotation}' is EMPTY - cannot be used for training![/red]")
 
-        self.console.print("[bold yellow]Your Turn - Select Columns:[/bold yellow]")
+        self.console.print("[bold yellow]📝 Your Turn - Select Columns:[/bold yellow]")
         self.console.print("[dim]   → Press [bold]Enter[/bold] to use the suggested column[/dim]")
         self.console.print("[dim]   → Or type ANY column name from the table above[/dim]")
         self.console.print("[dim]   → The suggestions are helpful, but not mandatory![/dim]\n")
@@ -2654,7 +2654,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         if has_lang_column and languages_found_in_column:
             # Option 1: Language column exists - offer to use it or detect automatically
-            self.console.print("[bold]Languages Found in Column:[/bold]")
+            self.console.print("[bold]🌍 Languages Found in Column:[/bold]")
             for lang, count in analysis['languages_detected'].items():
                 self.console.print(f"  • {lang.upper()}: {count:,} rows")
 
@@ -2669,15 +2669,15 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             if use_lang_column:
                 confirmed_languages = languages_found_in_column
                 lang_column = lang_column_candidate
-                self.console.print(f"[green]Using language column: {lang_column}[/green]")
+                self.console.print(f"[green]✓ Using language column: {lang_column}[/green]")
         else:
             # Option 2: No language column
             if not has_lang_column:
-                self.console.print("[yellow]No language column detected[/yellow]")
+                self.console.print("[yellow]ℹ️  No language column detected[/yellow]")
 
         # Automatic language detection from text content
         if apply_auto_detection:
-            self.console.print("\n[dim]Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
+            self.console.print("\n[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
 
             try:
                 from llm_tool.utils.language_detector import LanguageDetector
@@ -2726,7 +2726,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                             language_distribution = lang_counts
                             total = sum(lang_counts.values())
 
-                            self.console.print(f"\n[bold]Languages Detected from Content ({total:,} texts analyzed):[/bold]")
+                            self.console.print(f"\n[bold]🌍 Languages Detected from Content ({total:,} texts analyzed):[/bold]")
 
                             # Create detailed table
                             lang_table = Table(border_style="cyan", show_header=True, header_style="bold", expand=True)
@@ -2760,7 +2760,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
                             # Handle low-percentage languages if detected
                             if minority_languages:
-                                self.console.print(f"\n[yellow][!] Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
+                                self.console.print(f"\n[yellow]⚠ Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
                                 for lang, count in sorted(minority_languages.items(), key=lambda x: x[1], reverse=True):
                                     percentage = (count / total * 100)
                                     self.console.print(f"  • {lang.upper()}: {count} texts ({percentage:.2f}%)")
@@ -2779,7 +2779,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
                                 if minority_action == "correct":
                                     # Quick correction: force all minority languages to one language
-                                    self.console.print("\n[bold cyan]Quick Language Correction[/bold cyan]\n")
+                                    self.console.print("\n[bold cyan]🔧 Quick Language Correction[/bold cyan]\n")
 
                                     # Show available languages
                                     all_supported_langs = [
@@ -2856,21 +2856,21 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                                     confirmed_languages = set(majority_languages.keys())
                                     excluded_count = sum(minority_languages.values())
                                     self.console.print(f"\n[yellow]✗ Excluded {excluded_count} texts from {len(minority_languages)} low-percentage language(s)[/yellow]")
-                                    self.console.print(f"[green]Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                                    self.console.print(f"[green]✓ Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
 
                                 elif minority_action == "keep":
-                                    self.console.print("[yellow][!] Keeping all detected languages (including low-percentage ones)[/yellow]")
+                                    self.console.print("[yellow]⚠ Keeping all detected languages (including low-percentage ones)[/yellow]")
 
                                 elif minority_action == "select":
                                     # Manual selection of languages to keep
-                                    self.console.print("\n[bold cyan]Language Selection:[/bold cyan]")
+                                    self.console.print("\n[bold cyan]📝 Language Selection:[/bold cyan]")
                                     self.console.print(f"[dim]Select which languages to keep for training (from all {len(lang_counts)} detected)[/dim]\n")
 
                                     # Show all languages sorted by count
                                     self.console.print("[bold]All Detected Languages:[/bold]")
                                     for i, (lang, count) in enumerate(sorted(lang_counts.items(), key=lambda x: x[1], reverse=True), 1):
                                         percentage = (count / total * 100)
-                                        status = "[green]majority[/green]" if lang in majority_languages else "[yellow][!] minority[/yellow]"
+                                        status = "[green]✓ majority[/green]" if lang in majority_languages else "[yellow]⚠ minority[/yellow]"
                                         self.console.print(f"  {i:2d}. {lang.upper():5s} - {count:6,} texts ({percentage:5.2f}%) {status}")
 
                                     self.console.print("\n[bold yellow]Select languages to KEEP:[/bold yellow]")
@@ -2886,7 +2886,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                                         # Validate that selected languages exist
                                         invalid_langs = selected_set - set(lang_counts.keys())
                                         if invalid_langs:
-                                            self.console.print(f"[yellow][!] Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
+                                            self.console.print(f"[yellow]⚠ Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
                                             selected_set = selected_set - invalid_langs
 
                                         # Exclude non-selected languages
@@ -2908,7 +2908,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                                         self.console.print(f"[dim]  → {kept_count:,} texts kept, {excluded_count:,} texts excluded[/dim]")
                                     else:
                                         # User pressed Enter - keep all
-                                        self.console.print("[green]Keeping all detected languages[/green]")
+                                        self.console.print("[green]✓ Keeping all detected languages[/green]")
 
                             # Final confirmation (allow override even after selection)
                             lang_list = ', '.join([l.upper() for l in sorted(confirmed_languages)])
@@ -2954,7 +2954,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                                             count = lang_series.str.lower().eq(lang).sum()
                                             language_distribution[lang] = count
 
-                                        self.console.print(f"[green]Using column '{lang_column}': {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                                        self.console.print(f"[green]✓ Using column '{lang_column}': {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
 
                                 if not use_col:
                                     manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
@@ -2971,9 +2971,9 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                                             if detected_languages_per_text[i] and detected_languages_per_text[i] not in confirmed_languages:
                                                 detected_languages_per_text[i] = None
 
-                                    self.console.print(f"[green]Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                                    self.console.print(f"[green]✓ Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
                             else:
-                                self.console.print("[green]Languages confirmed from content analysis[/green]")
+                                self.console.print("[green]✓ Languages confirmed from content analysis[/green]")
 
                             # CRITICAL FIX: Add detected language column to DataFrame and save
                             if 'detected_languages_per_text' in locals() and detected_languages_per_text:
@@ -2994,9 +2994,9 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
                                         # Save updated DataFrame back to CSV
                                         df.to_csv(csv_path, index=False)
-                                        self.console.print(f"[dim]Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
+                                        self.console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
                                     else:
-                                        self.console.print("[dim]Auto-detected languages available; existing language column preserved.[/dim]")
+                                        self.console.print("[dim]ℹ️  Auto-detected languages available; existing language column preserved.[/dim]")
                         else:
                             # Fallback: ask user
                             self.console.print("[yellow]Could not detect languages automatically[/yellow]")
@@ -3024,7 +3024,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         annotation_step = resolve_step_label("annotation_preview", "STEP 8")
         self.console.print(f"[bold cyan]  {annotation_step}:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
         self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        self.console.print("[dim]Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
+        self.console.print("[dim]🔍 Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
 
         # df already loaded above for language detection
 
@@ -3078,7 +3078,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Display comprehensive preview with Rich table
         if all_keys_values:
-            self.console.print(f"\n[bold cyan]Complete Annotation Data Preview[/bold cyan]")
+            self.console.print(f"\n[bold cyan]📊 Complete Annotation Data Preview[/bold cyan]")
             self.console.print(f"[dim]Analyzed {total_samples} samples ({malformed_count} malformed)[/dim]\n")
 
             preview_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
@@ -3106,12 +3106,12 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             self.console.print()
 
             # Show selection options
-            self.console.print("[bold]Training Options:[/bold]")
+            self.console.print("[bold]💡 Training Options:[/bold]")
             self.console.print("  [dim]• You can choose to train on [cyan]ALL[/cyan] keys/values[/dim]")
             self.console.print("  [dim]• Or select [cyan]specific keys[/cyan] to train (asked later)[/dim]")
             self.console.print("  [dim]• Or select [cyan]specific values[/cyan] for each key (asked later)[/dim]\n")
         else:
-            self.console.print("[yellow][!] No valid annotation data found[/yellow]\n")
+            self.console.print("[yellow]⚠️  No valid annotation data found[/yellow]\n")
 
         # Step 6.5: Value Filtering (Optional) - CRITICAL FOR DATA QUALITY
         if all_keys_values:
@@ -3119,7 +3119,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             value_filter_step = resolve_step_label("value_filter", "STEP 9")
             self.console.print(f"[bold cyan]  {value_filter_step}:[/bold cyan] [bold white]Value Filtering (Optional)[/bold white]")
             self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            self.console.print("[dim]You can exclude specific values from your training data.[/dim]")
+            self.console.print("[dim]📋 You can exclude specific values from your training data.[/dim]")
             self.console.print("[dim]   For example: Remove 'null' values, or exclude rare categories.[/dim]\n")
 
             filter_values = Confirm.ask(
@@ -3131,7 +3131,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             rows_to_remove = []  # List of indices to remove from df
 
             if filter_values:
-                self.console.print("\n[bold]Value Filtering Configuration[/bold]\n")
+                self.console.print("\n[bold]🔍 Value Filtering Configuration[/bold]\n")
 
                 # Ask for each key
                 for key in sorted(all_keys_values.keys()):
@@ -3221,15 +3221,15 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                             invalid_excluded = [v for v in excluded_list if v not in values_set]
 
                             if invalid_excluded:
-                                self.console.print(f"[yellow][!] Warning: These values don't exist: {', '.join(invalid_excluded)}[/yellow]")
+                                self.console.print(f"[yellow]⚠️  Warning: These values don't exist: {', '.join(invalid_excluded)}[/yellow]")
 
                             if valid_excluded:
                                 excluded_values[key] = valid_excluded
-                                self.console.print(f"[green]Will exclude: {', '.join(valid_excluded)}[/green]")
+                                self.console.print(f"[green]✓ Will exclude: {', '.join(valid_excluded)}[/green]")
 
                 # Now filter the DataFrame based on excluded values
                 if excluded_values:
-                    self.console.print(f"\n[bold cyan]Filtering labels from dataset...[/bold cyan]")
+                    self.console.print(f"\n[bold cyan]🔄 Filtering labels from dataset...[/bold cyan]")
                     self.console.print(f"[dim]Note: Removing excluded labels from samples, not the samples themselves.[/dim]\n")
 
                     original_count = len(df)
@@ -3297,7 +3297,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                     removed_count = 0
                     filtered_count = len(df)
 
-                    self.console.print(f"[green]Label filtering complete:[/green]")
+                    self.console.print(f"[green]✓ Label filtering complete:[/green]")
                     self.console.print(f"  • [cyan]Samples kept:[/cyan] {original_count} → {filtered_count}")
                     self.console.print(f"  • [cyan]Samples modified:[/cyan] {samples_modified}")
                     self.console.print(f"  • [cyan]Labels removed:[/cyan] {labels_removed_count}")
@@ -3345,7 +3345,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                             continue
 
                     # Display updated summary
-                    self.console.print("[bold]Updated Data Summary:[/bold]")
+                    self.console.print("[bold]📊 Updated Data Summary:[/bold]")
                     summary_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
                     summary_table.add_column("Key", style="yellow bold", no_wrap=True)
                     summary_table.add_column("Values (After Filtering)", style="white", ratio=1, overflow="fold")
@@ -3373,7 +3373,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                     self.console.print(summary_table)
                     self.console.print()
             else:
-                self.console.print("[dim]No values excluded - using all data[/dim]\n")
+                self.console.print("[dim]✓ No values excluded - using all data[/dim]\n")
 
         # Step 7: Training Strategy Selection (SIMPLIFIED)
         self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -3398,7 +3398,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Show sample annotation for context
         if real_example_data:
-            self.console.print("[bold]Example annotation from your data:[/bold]")
+            self.console.print("[bold]📄 Example annotation from your data:[/bold]")
             example_str = json.dumps(real_example_data, ensure_ascii=False, indent=2)
             self.console.print(f"[dim]{example_str}[/dim]\n")
 
@@ -3411,7 +3411,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         # Step 6a: Show all annotation keys and their values
         if all_keys_values:
             detected_keys = sorted(all_keys_values.keys())
-            self.console.print(f"[bold]Annotation Keys Detected in Your Data:[/bold]\n")
+            self.console.print(f"[bold]📝 Annotation Keys Detected in Your Data:[/bold]\n")
 
             # Show all keys and their values
             for key in detected_keys:
@@ -3444,7 +3444,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         if invalid_keys:
             from difflib import get_close_matches
 
-            self.console.print(f"\n[bold yellow][!]  Some keys need correction:[/bold yellow]")
+            self.console.print(f"\n[bold yellow]⚠️  Some keys need correction:[/bold yellow]")
 
             # Auto-correct using fuzzy matching
             corrected_keys = []
@@ -3463,7 +3463,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
             # Show available keys for reference
             if len(corrected_keys) < len(keys_to_train):
-                self.console.print(f"\n[bold cyan]Tip: Available keys:[/bold cyan]")
+                self.console.print(f"\n[bold cyan]💡 Available keys:[/bold cyan]")
                 for key in sorted(all_keys_values.keys()):
                     self.console.print(f"  • [green]{key}[/green]")
 
@@ -3478,7 +3478,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                     self.console.print("[yellow]Training cancelled. Please try again with correct key names.[/yellow]")
                     return None
             else:
-                self.console.print("[red][FAIL] No valid keys found after correction. Training cancelled.[/red]")
+                self.console.print("[red]❌ No valid keys found after correction. Training cancelled.[/red]")
                 return None
 
         # Calculate total number of models for each approach
@@ -3492,7 +3492,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         # ALWAYS ask the training approach question, even for binary classification
         # User may want one-vs-all even with 2 values
         if True:  # Always ask
-            self.console.print(f"\n[bold cyan]Training Approach[/bold cyan]\n")
+            self.console.print(f"\n[bold cyan]🎯 Training Approach[/bold cyan]\n")
 
             if annotation_keys and len(annotation_keys) == 1:
                 # Single key selected
@@ -3523,7 +3523,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
                 approach_table.add_row(
                     "multi-class",
-                    f"Trains ONE model for '{selected_key}'\n\n"
+                    f"🎯 Trains ONE model for '{selected_key}'\n\n"
                     f"• Chooses between all {num_unique_values} values\n"
                     f"• Example: '{values_list[0]}' vs '{values_list[1]}' vs ...\n"
                     f"• Predicts exactly ONE value per text\n"
@@ -3532,7 +3532,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 )
                 approach_table.add_row(
                     "one-vs-all",
-                    f"Trains {num_unique_values} binary models for '{selected_key}'\n\n"
+                    f"⚡ Trains {num_unique_values} binary models for '{selected_key}'\n\n"
                     f"• Model 1: '{values_list[0]}' vs NOT '{values_list[0]}'\n"
                     f"• Model 2: '{values_list[1]}' vs NOT '{values_list[1]}'\n"
                     f"• ... (one model per value)\n"
@@ -3541,7 +3541,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 )
                 approach_table.add_row(
                     "multi-label",
-                    f"Trains ONE model with MULTIPLE labels per text\n\n"
+                    f"🏷️  Trains ONE model with MULTIPLE labels per text\n\n"
                     f"• Uses sigmoid activation (independent probabilities)\n"
                     f"• Each text can have 0, 1, or many labels simultaneously\n"
                     f"• Threshold-based selection (default: 0.5)\n"
@@ -3566,7 +3566,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
                 approach_table.add_row(
                     "multi-class",
-                    f"Trains ONE model PER KEY (not per value)\n\n"
+                    f"🎯 Trains ONE model PER KEY (not per value)\n\n"
                     f"• {num_keys} models total (one per annotation key)\n"
                     f"• Each model learns ALL values of ITS key\n"
                     f"• Example: One model for 'political_party' learns BQ, CAQ, CPC, etc.\n"
@@ -3576,7 +3576,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 )
                 approach_table.add_row(
                     "one-vs-all",
-                    f"Trains ONE model PER VALUE (not per key)\n\n"
+                    f"⚡ Trains ONE model PER VALUE (not per key)\n\n"
                     f"• {total_values_count} binary models total (one per unique value)\n"
                     f"• Each model: 'value X' vs NOT 'value X'\n"
                     f"• Example: Separate model for 'political_party_BQ' (binary: BQ or not)\n"
@@ -3586,7 +3586,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 )
                 approach_table.add_row(
                     "multi-label",
-                    f"Trains ONE model with MULTIPLE labels per text\n\n"
+                    f"🏷️  Trains ONE model with MULTIPLE labels per text\n\n"
                     f"• {num_keys} models total (one per annotation key)\n"
                     f"• Uses sigmoid activation (independent probabilities)\n"
                     f"• Each text can have 0, 1, or many labels simultaneously\n"
@@ -3596,10 +3596,10 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 )
                 approach_table.add_row(
                     "hybrid",
-                    f"SMART: Choose multi-label OR adaptive multi-class/one-vs-all\n\n"
+                    f"🔀 SMART: Choose multi-label OR adaptive multi-class/one-vs-all\n\n"
                     f"• You'll choose between:\n"
-                    f"  -  [bold magenta]Multi-label[/bold magenta]: 1 model per key with sigmoid (overlapping labels)\n"
-                    f"  - [bold green]Multi-class + Binary[/bold green]: Adaptive per key (≤5 vals → multi-class, >5 → one-vs-all)\n"
+                    f"  - 🏷️  [bold magenta]Multi-label[/bold magenta]: 1 model per key with sigmoid (overlapping labels)\n"
+                    f"  - 🎯 [bold green]Multi-class + Binary[/bold green]: Adaptive per key (≤5 vals → multi-class, >5 → one-vs-all)\n"
                     f"• For multi-class+binary on your data:\n"
                     f"  - {hybrid_multiclass_count} keys use multi-class ({', '.join([k for k, _ in keys_small[:3]])}{'...' if len(keys_small) > 3 else ''})\n"
                     f"  - {len(keys_large)} keys use one-vs-all ({', '.join([k for k, _ in keys_large[:3]])}{'...' if len(keys_large) > 3 else ''})\n"
@@ -3608,7 +3608,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 )
                 approach_table.add_row(
                     "custom",
-                    f"CUSTOM: You choose the strategy for EACH key individually\n\n"
+                    f"⚙️  CUSTOM: You choose the strategy for EACH key individually\n\n"
                     f"• You'll be asked for each of the {num_keys} keys\n"
                     f"• Choose multi-class, one-vs-all, OR multi-label per key\n"
                     f"• Example: multi-class for 'sentiment', multi-label for 'themes'\n"
@@ -3644,11 +3644,11 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             if training_approach == "hybrid":
                 # Ask user to choose between multi-label or multi-class+binary
                 self.console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-                self.console.print("[bold cyan]  Hybrid Mode: Choose Your Strategy[/bold cyan]")
+                self.console.print("[bold cyan]  🔀 Hybrid Mode: Choose Your Strategy[/bold cyan]")
                 self.console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]\n")
 
                 # Display detailed statistics per key/value to help user make informed decisions
-                self.console.print("[bold cyan]Detailed Statistics per Key/Value:[/bold cyan]")
+                self.console.print("[bold cyan]📊 Detailed Statistics per Key/Value:[/bold cyan]")
                 self.console.print("[dim]This shows the number of instances for each value in each key.[/dim]\n")
 
                 stats_table = Table(show_header=True, header_style="bold magenta", box=box.ROUNDED, padding=(0, 1), expand=True)
@@ -3703,7 +3703,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
                 hybrid_sub_table.add_row(
                     "multi-label",
-                    f"[bold magenta]One model per key with sigmoid activation[/bold magenta]\n\n"
+                    f"🏷️  [bold magenta]One model per key with sigmoid activation[/bold magenta]\n\n"
                     f"• Each text can have MULTIPLE labels simultaneously\n"
                     f"• Independent probabilities per label (BCEWithLogitsLoss)\n"
                     f"• Threshold-based selection (default: 0.5)\n"
@@ -3712,7 +3712,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 )
                 hybrid_sub_table.add_row(
                     "multi-class+binary",
-                    f"[bold green]Adaptive strategy per key[/bold green]\n\n"
+                    f"🎯 [bold green]Adaptive strategy per key[/bold green]\n\n"
                     f"• Keys with ≤N values → Multi-class (mutually exclusive)\n"
                     f"• Keys with >N values → One-vs-all (binary per value)\n"
                     f"• You'll choose the threshold N (default: {default_threshold})\n"
@@ -3742,7 +3742,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                         key_strategies[key] = 'multi-label'
                 else:
                     # multi-class+binary: Ask for threshold
-                    self.console.print("\n[bold cyan]Multi-class + Binary Strategy Configuration:[/bold cyan]")
+                    self.console.print("\n[bold cyan]📊 Multi-class + Binary Strategy Configuration:[/bold cyan]")
                     self.console.print("[dim]Choose the threshold N that determines which keys use multi-class vs one-vs-all.[/dim]")
                     self.console.print("[dim]Keys with ≤N values → multi-class (1 model), Keys with >N values → one-vs-all (N models)[/dim]\n")
 
@@ -3792,7 +3792,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
             elif training_approach == "custom":
                 # User chooses per key
-                self.console.print("\n[bold cyan] Custom Strategy Selection:[/bold cyan]")
+                self.console.print("\n[bold cyan]⚙️  Custom Strategy Selection:[/bold cyan]")
                 self.console.print("[dim]Choose the training strategy for each key individually.[/dim]\n")
 
                 total_custom_models = 0
@@ -3884,7 +3884,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
         # Note: split_config will be stored in bundle.metadata after bundle is created
 
         # Step 6d: Label naming strategy
-        self.console.print("\n[bold] Label Naming Strategy:[/bold]")
+        self.console.print("\n[bold]🏷️  Label Naming Strategy:[/bold]")
         self.console.print("[dim]This determines how label names appear in your training files and model predictions.[/dim]\n")
 
         # Generate examples based on SELECTED keys (not random example data)
@@ -3935,7 +3935,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             "Only the value\n[dim](no prefix)[/dim]",
             "✓ Training [bold]single key only[/bold]\n"
             "✓ Values are unique across dataset\n"
-            "[!] [yellow]Can cause conflicts with multiple keys[/yellow]"
+            "⚠️  [yellow]Can cause conflicts with multiple keys[/yellow]"
         )
 
         self.console.print(strategy_table)
@@ -3943,7 +3943,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Show concrete transformation if we have examples
         if transformation_examples:
-            self.console.print("[bold]How Your Data Will Be Transformed:[/bold]\n")
+            self.console.print("[bold]📋 How Your Data Will Be Transformed:[/bold]\n")
 
             transform_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.SIMPLE, expand=True)
             transform_table.add_column("Original (key → value)", style="cyan", no_wrap=True)
@@ -3962,11 +3962,11 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         # Show warning if multiple keys and value_only
         if len(keys_to_train) > 1:
-            self.console.print("[bold yellow]Recommendation:[/bold yellow]")
+            self.console.print("[bold yellow]💡 Recommendation:[/bold yellow]")
             self.console.print(f"[dim]You selected {len(keys_to_train)} keys. Use [bold cyan]key_value[/bold cyan] to avoid label conflicts.")
             self.console.print(f"[dim]Example: If both 'affiliation' and 'gender' have value 'no', they would conflict with [yellow]value_only[/yellow].[/dim]\n")
         else:
-            self.console.print("[dim]Tip: With a single key, both strategies work fine. [cyan]key_value[/cyan] is still recommended for consistency.[/dim]\n")
+            self.console.print("[dim]💡 With a single key, both strategies work fine. [cyan]key_value[/cyan] is still recommended for consistency.[/dim]\n")
 
         label_strategy = Prompt.ask("Label naming strategy", choices=["key_value", "value_only", "back"], default="key_value")
         if label_strategy == "back":
@@ -4033,7 +4033,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             )
         except Exception as e:
             self.logger.debug("Skipping automatic ID detection: %s", e)
-            self.console.print("[dim yellow]Unable to auto-suggest an ID column; continuing without one.[/dim]")
+            self.console.print("[dim yellow]ℹ Unable to auto-suggest an ID column; continuing without one.[/dim]")
             id_column = None
 
         # Language column handling - check if already processed in Step 5
@@ -4188,13 +4188,13 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
     if format_choice == "category-csv":
         # DEVELOPMENT MODE: This format is not yet available
-        self.console.print("\n[bold red][FAIL] Error: category-csv format is currently under development[/bold red]")
+        self.console.print("\n[bold red]❌ Error: category-csv format is currently under development[/bold red]")
         self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
         self.console.print("[dim]Please use 'llm-json' format instead.[/dim]\n")
         return None
 
         # Ask user for training strategy (mono-label vs multi-label)
-        self.console.print("\n[bold cyan]Training Strategy Selection[/bold cyan]\n")
+        self.console.print("\n[bold cyan]📊 Training Strategy Selection[/bold cyan]\n")
         self.console.print("[dim]Choose how to handle the labels in your dataset:[/dim]\n")
 
         strategy_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
@@ -4203,13 +4203,13 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
         strategy_table.add_row(
             "single-label",
-            "Each sample has ONE label/category\n"
+            "🎯 Each sample has ONE label/category\n"
             "✓ Best for: classification tasks (sentiment, topic, etc.)\n"
             "✓ Example: each text is either 'positive' OR 'negative'"
         )
         strategy_table.add_row(
             "multi-label",
-            "Each sample can have MULTIPLE labels\n"
+            "🏷️  Each sample can have MULTIPLE labels\n"
             "✓ Best for: tagging, multiple categories per text\n"
             "✓ Example: a text can be 'politics' AND 'economy' AND 'urgent'"
         )
@@ -4237,7 +4237,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             num_unique_labels = df[label_column].nunique()
 
             # Always ask, even for binary classification (user may want one-vs-all)
-            self.console.print(f"\n[bold cyan]Training Approach for {num_unique_labels} Categories[/bold cyan]\n")
+            self.console.print(f"\n[bold cyan]🎯 Training Approach for {num_unique_labels} Categories[/bold cyan]\n")
             if num_unique_labels == 2:
                 self.console.print("[dim]Even with 2 categories, you can choose between multi-class or one-vs-all:[/dim]\n")
             else:
@@ -4249,21 +4249,21 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
             approach_table.add_row(
                 "multi-class",
-                f"ONE model predicting among {num_unique_labels} categories\n"
+                f"🎯 ONE model predicting among {num_unique_labels} categories\n"
                 "✓ Faster training (1 model only)\n"
                 "✓ Model learns relationships between categories\n"
                 "✓ Best for: mutually exclusive categories"
             )
             approach_table.add_row(
                 "one-vs-all",
-                f"{num_unique_labels} binary models (one per category)\n"
+                f"⚡ {num_unique_labels} binary models (one per category)\n"
                 "✓ Each model: 'Category X' vs 'NOT Category X'\n"
                 "✓ Better for: imbalanced data or category-specific tuning\n"
                 "✓ Longer training but more flexible"
             )
             approach_table.add_row(
                 "multi-label",
-                f"ONE model with MULTIPLE labels per text\n"
+                f"🏷️  ONE model with MULTIPLE labels per text\n"
                 "✓ Uses sigmoid activation (independent probabilities)\n"
                 "✓ Each text can have 0, 1, or many labels simultaneously\n"
                 "✓ Best for: texts with overlapping categories"
@@ -4349,7 +4349,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
     if format_choice == "binary-long":
         # DEVELOPMENT MODE: This format is not yet available
-        self.console.print("\n[bold red][FAIL] Error: binary-long format is currently under development[/bold red]")
+        self.console.print("\n[bold red]❌ Error: binary-long format is currently under development[/bold red]")
         self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
         self.console.print("[dim]Please use 'llm-json' format instead.[/dim]\n")
         return None
@@ -4393,7 +4393,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
     if format_choice == "jsonl-single":
         # DEVELOPMENT MODE: This format is not yet available
-        self.console.print("\n[bold red][FAIL] Error: jsonl-single format is currently under development[/bold red]")
+        self.console.print("\n[bold red]❌ Error: jsonl-single format is currently under development[/bold red]")
         self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
         self.console.print("[dim]Please use 'llm-json' format instead.[/dim]\n")
         return None
@@ -4431,13 +4431,13 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
     # jsonl-multi (should not be reached - format is not in choices list)
     if format_choice == "jsonl-multi":
         # DEVELOPMENT MODE: This format is not yet available
-        self.console.print("\n[bold red][FAIL] Error: jsonl-multi format is currently under development[/bold red]")
+        self.console.print("\n[bold red]❌ Error: jsonl-multi format is currently under development[/bold red]")
         self.console.print("[yellow]This format will be available in a future release after thorough testing.[/yellow]")
         self.console.print("[dim]Please use 'llm-json' format instead.[/dim]\n")
         return None
 
     # Fallback: unrecognized format
-    self.console.print(f"\n[bold red][FAIL] Error: Unknown format '{format_choice}'[/bold red]")
+    self.console.print(f"\n[bold red]❌ Error: Unknown format '{format_choice}'[/bold red]")
     self.console.print("[dim]Supported formats: llm-json[/dim]\n")
     return None
 
@@ -4478,7 +4478,7 @@ def _display_model_details(self, model_id: str, MODEL_METADATA: dict):
     full_desc = meta.get('description', 'No description available')
     info.append(full_desc, style="dim white")
 
-    panel = Panel(info, title="Model Details", border_style="cyan", expand=False)
+    panel = Panel(info, title="📋 Model Details", border_style="cyan", expand=False)
     self.console.print(panel)
 
 def _run_benchmark_mode(
@@ -4534,25 +4534,25 @@ def _run_benchmark_mode(
     from datetime import datetime
 
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-    self.console.print("[bold cyan]           BENCHMARK MODE - Model Comparison                [/bold cyan]")
+    self.console.print("[bold cyan]           🎯 BENCHMARK MODE - Model Comparison                [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     # Load original source file from bundle metadata (not the transformed JSONL)
     source_file = bundle.metadata.get('source_file')
     if not source_file:
-        self.console.print("[red][FAIL] Cannot run benchmark: source file not found in bundle metadata[/red]")
+        self.console.print("[red]❌ Cannot run benchmark: source file not found in bundle metadata[/red]")
         self.console.print("[dim]Bundle metadata keys:[/dim] " + ", ".join(bundle.metadata.keys()))
         return None
 
     source_path = Path(source_file)
     if not source_path.exists():
-        self.console.print(f"[red][FAIL] Source file not found: {source_path}[/red]")
+        self.console.print(f"[red]❌ Source file not found: {source_path}[/red]")
         return None
 
     # Get annotation column from metadata
     annotation_column = bundle.metadata.get('annotation_column')
     if not annotation_column:
-        self.console.print("[red][FAIL] Annotation column not found in bundle metadata[/red]")
+        self.console.print("[red]❌ Annotation column not found in bundle metadata[/red]")
         return None
 
     # Load data based on file format
@@ -4567,10 +4567,10 @@ def _run_benchmark_mode(
         elif file_ext in ['.json', '.jsonl']:
             original_dataframe = pd.read_json(source_path, lines=(file_ext == '.jsonl'))
         else:
-            self.console.print(f"[red][FAIL] Unsupported file format: {file_ext}[/red]")
+            self.console.print(f"[red]❌ Unsupported file format: {file_ext}[/red]")
             return None
     except Exception as e:
-        self.console.print(f"[red][FAIL] Error loading data: {e}[/red]")
+        self.console.print(f"[red]❌ Error loading data: {e}[/red]")
         return None
 
     self.logger.debug(f"Loaded source file: {source_path}")
@@ -4588,7 +4588,7 @@ def _run_benchmark_mode(
 
         for lang in sorted(languages):
             self.console.print(f"\n[bold yellow]{'─'*60}[/bold yellow]")
-            self.console.print(f"[bold yellow]Selecting models for {lang} texts[/bold yellow]")
+            self.console.print(f"[bold yellow]🎯 Selecting models for {lang} texts[/bold yellow]")
             self.console.print(f"[bold yellow]{'─'*60}[/bold yellow]\n")
 
             lang_models = []
@@ -4604,7 +4604,7 @@ def _run_benchmark_mode(
             while True:
                 # Show models
                 if lang_recommended:
-                    self.console.print(f"[bold cyan]Top 10 Recommended Models for {lang}:[/bold cyan]\n")
+                    self.console.print(f"[bold cyan]🎯 Top 10 Recommended Models for {lang}:[/bold cyan]\n")
 
                     models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
                     models_table.add_column("#", style="yellow", width=3, no_wrap=True)
@@ -4636,7 +4636,7 @@ def _run_benchmark_mode(
                         self.console.print(f"  • {m}")
 
                 # Show selection hint
-                self.console.print(f"\n[dim]Tip: Tip: Type 'info X' (e.g., 'info 1') to see full details of a model[/dim]")
+                self.console.print(f"\n[dim]💡 Tip: Type 'info X' (e.g., 'info 1') to see full details of a model[/dim]")
 
                 model_input = Prompt.ask(
                     f"\n[bold yellow]{'Add' if lang_models else 'Select'} model #{len(lang_models)+1} for {lang}[/bold yellow]",
@@ -4668,7 +4668,7 @@ def _run_benchmark_mode(
 
                 # Validate model exists (check in MODEL_METADATA or HuggingFace format)
                 if selected_model not in MODEL_METADATA and '/' not in selected_model:
-                    self.console.print(f"[yellow][!] Model '{selected_model}' not found in metadata[/yellow]")
+                    self.console.print(f"[yellow]⚠️  Model '{selected_model}' not found in metadata[/yellow]")
                     # Ask if they want to use it anyway
                     use_anyway = Confirm.ask(
                         f"[yellow]Use '{selected_model}' anyway? (may fail if invalid)[/yellow]",
@@ -4678,7 +4678,7 @@ def _run_benchmark_mode(
                         continue  # Ask for selection again
 
                 lang_models.append(selected_model)
-                self.console.print(f"[green]Added: {selected_model}[/green]")
+                self.console.print(f"[green]✓ Added: {selected_model}[/green]")
 
                 # Display full model details after selection
                 self._display_model_details(selected_model, MODEL_METADATA)
@@ -4692,7 +4692,7 @@ def _run_benchmark_mode(
                     if not add_more:
                         break
                 else:
-                    self.console.print(f"[yellow][!] At least 2 models required. Please select one more.[/yellow]")
+                    self.console.print(f"[yellow]⚠️  At least 2 models required. Please select one more.[/yellow]")
 
             models_by_language_benchmark[lang] = lang_models
             self.console.print(f"\n[green]✓ {len(lang_models)} models selected for {lang}[/green]")
@@ -4717,7 +4717,7 @@ def _run_benchmark_mode(
         while True:
             # Show models
             if recommended_models_list:
-                self.console.print("[bold cyan]Top 10 Recommended Models:[/bold cyan]\n")
+                self.console.print("[bold cyan]🎯 Top 10 Recommended Models:[/bold cyan]\n")
 
                 models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
                 models_table.add_column("#", style="yellow", width=3, no_wrap=True)
@@ -4751,7 +4751,7 @@ def _run_benchmark_mode(
                 default_model = 'bert-base-uncased'
 
             # Show selection hint
-            self.console.print(f"\n[dim]Tip: Tip: Type 'info X' (e.g., 'info 1') to see full details of a model[/dim]")
+            self.console.print(f"\n[dim]💡 Tip: Type 'info X' (e.g., 'info 1') to see full details of a model[/dim]")
 
             model_input = Prompt.ask(
                 f"\n[bold yellow]{'Add' if selected_models_benchmark else 'Select'} model #{len(selected_models_benchmark)+1}[/bold yellow]",
@@ -4783,7 +4783,7 @@ def _run_benchmark_mode(
 
             # Validate model exists (check in MODEL_METADATA or HuggingFace format)
             if selected_model not in MODEL_METADATA and '/' not in selected_model:
-                self.console.print(f"[yellow][!] Model '{selected_model}' not found in metadata[/yellow]")
+                self.console.print(f"[yellow]⚠️  Model '{selected_model}' not found in metadata[/yellow]")
                 # Ask if they want to use it anyway
                 use_anyway = Confirm.ask(
                     f"[yellow]Use '{selected_model}' anyway? (may fail if invalid)[/yellow]",
@@ -4794,11 +4794,11 @@ def _run_benchmark_mode(
 
             # Check for duplicates
             if selected_model in selected_models_benchmark:
-                self.console.print(f"[yellow][!] Model '{selected_model}' is already selected. Please choose a different model.[/yellow]")
+                self.console.print(f"[yellow]⚠️  Model '{selected_model}' is already selected. Please choose a different model.[/yellow]")
                 continue
 
             selected_models_benchmark.append(selected_model)
-            self.console.print(f"[green]Added: {selected_model}[/green]")
+            self.console.print(f"[green]✓ Added: {selected_model}[/green]")
 
             # Display full model details after selection
             self._display_model_details(selected_model, MODEL_METADATA)
@@ -4812,7 +4812,7 @@ def _run_benchmark_mode(
                 if not add_more:
                     break
             else:
-                self.console.print(f"[yellow][!] At least 2 models required. Please select one more.[/yellow]")
+                self.console.print(f"[yellow]⚠️  At least 2 models required. Please select one more.[/yellow]")
 
     # Deduplicate models and track changes
     if train_by_language:
@@ -4839,14 +4839,14 @@ def _run_benchmark_mode(
             for m in models:
                 self.console.print(f"    - {m}")
         if total_models < 2:
-            self.console.print(f"\n[red][FAIL] Only {total_models} unique model(s) - benchmark requires at least 2 different models[/red]")
+            self.console.print(f"\n[red]❌ Only {total_models} unique model(s) - benchmark requires at least 2 different models[/red]")
             return None
     else:
         self.console.print(f"  • [cyan]{len(selected_models_benchmark)} unique model(s)[/cyan]")
         for m in selected_models_benchmark:
             self.console.print(f"    - {m}")
         if len(selected_models_benchmark) < 2:
-            self.console.print(f"\n[red][FAIL] Only {len(selected_models_benchmark)} unique model(s) - benchmark requires at least 2 different models[/red]")
+            self.console.print(f"\n[red]❌ Only {len(selected_models_benchmark)} unique model(s) - benchmark requires at least 2 different models[/red]")
             return None
 
     # ======================== STEP 2: Training Epochs ========================
@@ -4856,7 +4856,7 @@ def _run_benchmark_mode(
     rl_oversample_factor = 2.0
     rl_class_weight_factor = 2.0
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-    self.console.print("[bold cyan]           STEP 3: Training Epochs (Benchmark)              [/bold cyan]")
+    self.console.print("[bold cyan]           ⏱️  STEP 3: Training Epochs (Benchmark)              [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     self.console.print("[bold]What are Epochs?[/bold]")
@@ -4869,27 +4869,27 @@ def _run_benchmark_mode(
     self.console.print("  • [green]Medium dataset (1000-10000)[/green]: 5-10 epochs recommended")
     self.console.print("  • [green]Large dataset (>10000)[/green]: 3-5 epochs recommended\n")
 
-    self.console.print("[bold green]Automatic Best Model Checkpointing:[/bold green]")
+    self.console.print("[bold green]💾 Automatic Best Model Checkpointing:[/bold green]")
     self.console.print("  • [cyan]Don't worry about setting too many epochs![/cyan]")
     self.console.print("  • The [bold]BEST model[/bold] is automatically saved during training")
     self.console.print("  • System monitors [yellow]validation F1 score[/yellow] after each epoch")
     self.console.print("  • Only the checkpoint with [bold green]highest F1[/bold green] is kept")
     self.console.print("  • Early stopping prevents overfitting automatically\n")
 
-    self.console.print("[dim]Tip: Example: You set 15 epochs, but best F1 was at epoch 8 → Model from epoch 8 is used[/dim]\n")
+    self.console.print("[dim]💡 Example: You set 15 epochs, but best F1 was at epoch 8 → Model from epoch 8 is used[/dim]\n")
 
     benchmark_epochs = IntPrompt.ask("[bold yellow]Number of epochs[/bold yellow]", default=10)
 
     # ======================== OPTIONAL: Reinforced Learning ========================
-    self.console.print("\n[bold]Reinforced Learning (optional)[/bold]")
+    self.console.print("\n[bold]🔄 Reinforced Learning (optional)[/bold]")
     self.console.print("[dim]Reinforced learning adds extra training epochs when F1 is below a threshold.[/dim]\n")
 
-    self.console.print("[yellow][!] NOT RECOMMENDED for benchmark:[/yellow]")
+    self.console.print("[yellow]⚠️  NOT RECOMMENDED for benchmark:[/yellow]")
     self.console.print("  • Adds variable epochs per model (unfair comparison)")
     self.console.print("  • Significantly increases benchmark time")
     self.console.print("  • May mask differences between base models\n")
 
-    self.console.print("[green]RECOMMENDED: Keep RL disabled for benchmark[/green]")
+    self.console.print("[green]✓ RECOMMENDED: Keep RL disabled for benchmark[/green]")
     self.console.print("[dim]  RL will be available during final training after model selection.[/dim]\n")
 
     enable_rl_choice = Confirm.ask(
@@ -4899,9 +4899,9 @@ def _run_benchmark_mode(
 
     if enable_rl_choice:
         enable_benchmark_rl = True
-        self.console.print("[yellow][!] Reinforced learning enabled - benchmark may take significantly longer[/yellow]\n")
+        self.console.print("[yellow]⚠️  Reinforced learning enabled - benchmark may take significantly longer[/yellow]\n")
     else:
-        self.console.print("[green]Reinforced learning disabled - fair comparison mode[/green]\n")
+        self.console.print("[green]✓ Reinforced learning disabled - fair comparison mode[/green]\n")
 
     # Store RL params
     # CRITICAL: Initialize reinforced_epochs with a default value to ensure global_max_epochs calculation works
@@ -4917,11 +4917,11 @@ def _run_benchmark_mode(
     from ..trainers.reinforced_params import get_reinforced_params
 
     if enable_benchmark_rl:
-        self.console.print("\n[bold yellow][!]  Reinforced Learning Epoch Calculation[/bold yellow]\n")
+        self.console.print("\n[bold yellow]⚠️  Reinforced Learning Epoch Calculation[/bold yellow]\n")
         self.console.print("[dim]When F1 < {:.2f}, reinforced learning adds extra epochs.[/dim]".format(rl_f1_threshold))
         self.console.print("[dim]The table below shows the MAXIMUM possible epochs (worst case: F1 = 0.0)[/dim]\n")
     else:
-        self.console.print("\n[bold cyan]Total Training Epochs[/bold cyan]\n")
+        self.console.print("\n[bold cyan]📊 Total Training Epochs[/bold cyan]\n")
         self.console.print("[dim]Reinforced learning is disabled. All models will train for the same number of epochs.[/dim]\n")
 
     # Create table showing epoch calculation (always show)
@@ -5010,9 +5010,9 @@ def _run_benchmark_mode(
                 "[bold yellow]Base epochs for benchmark[/bold yellow]",
                 default=benchmark_epochs
             )
-            self.console.print(f"[green]Base epochs set to: {benchmark_epochs}[/green]\n")
+            self.console.print(f"[green]✓ Base epochs set to: {benchmark_epochs}[/green]\n")
         else:
-            self.console.print(f"[green]Keeping base epochs at: {benchmark_epochs}[/green]\n")
+            self.console.print(f"[green]✓ Keeping base epochs at: {benchmark_epochs}[/green]\n")
 
         # ──────────────────────────────────────────────────────────────
         # Step 2: Reinforced Learning Epochs Configuration (independent)
@@ -5027,7 +5027,7 @@ def _run_benchmark_mode(
             )
 
             if configure_rl_epochs:
-                self.console.print("\n[bold cyan]ℹ Reinforced Learning Epochs:[/bold cyan]")
+                self.console.print("\n[bold cyan]ℹ️  Reinforced Learning Epochs:[/bold cyan]")
                 self.console.print("[dim]These epochs will be used for ALL models when F1 < {:.2f}[/dim]".format(rl_f1_threshold))
                 self.console.print("[dim]Auto-calculation typically uses 8-20 epochs based on model type[/dim]\n")
 
@@ -5036,9 +5036,9 @@ def _run_benchmark_mode(
                     default=10
                 )
 
-                self.console.print(f"[green]Manual reinforced epochs set to: {manual_reinforced_epochs}[/green]\n")
+                self.console.print(f"[green]✓ Manual reinforced epochs set to: {manual_reinforced_epochs}[/green]\n")
             else:
-                self.console.print("[green]Reinforced learning epochs will be auto-calculated[/green]\n")
+                self.console.print("[green]✓ Reinforced learning epochs will be auto-calculated[/green]\n")
 
     # Update RL params with manual reinforced epochs if configured
     if manual_reinforced_epochs is not None:
@@ -5088,7 +5088,7 @@ def _run_benchmark_mode(
     num_categories_in_data = len(metadata_categories)
 
     if num_categories_in_data == 0:
-        self.console.print("[red][FAIL] No categories found in training data[/red]")
+        self.console.print("[red]❌ No categories found in training data[/red]")
         self.console.print("[yellow]This may indicate an issue with the data conversion.[/yellow]")
         self.console.print("[dim]Benchmark requires category information for analysis.[/dim]\n")
         return None
@@ -5117,22 +5117,22 @@ def _run_benchmark_mode(
         )
 
         if not imbalance_analysis:
-            self.console.print("[red][FAIL] No categories found in annotations[/red]")
+            self.console.print("[red]❌ No categories found in annotations[/red]")
             return None
 
         # Select suggested categories
         suggested_categories = select_benchmark_categories(imbalance_analysis, num_categories=3)
 
         # Display analysis with explanation
-        self.console.print("[bold cyan]Class Imbalance Analysis[/bold cyan]\n")
+        self.console.print("[bold cyan]📊 Class Imbalance Analysis[/bold cyan]\n")
 
-        self.console.print("[bold]Why This Analysis?[/bold]")
+        self.console.print("[bold]🎯 Why This Analysis?[/bold]")
         self.console.print("[dim]To choose the best model, we need to test how each model performs on:[/dim]")
         self.console.print("[dim]  • [cyan]Balanced categories[/cyan] - Equal class distribution (easier, baseline performance)[/dim]")
         self.console.print("[dim]  • [yellow]Imbalanced categories[/yellow] - Skewed class distribution (harder, real-world scenario)[/dim]")
         self.console.print("[dim]This reveals which model handles both easy and challenging data best.[/dim]\n")
 
-        self.console.print("[bold]Category Selection Strategy:[/bold]")
+        self.console.print("[bold]📋 Category Selection Strategy:[/bold]")
         self.console.print("[dim]The system automatically selects a mix of:[/dim]")
         self.console.print("[dim]  • Categories with different imbalance ratios (2:1, 5:1, 10:1+)[/dim]")
         self.console.print("[dim]  • Different sample sizes (small vs large datasets)[/dim]")
@@ -5157,7 +5157,7 @@ def _run_benchmark_mode(
         self.console.print(categories_table)
 
         # Explain metrics
-        self.console.print("\n[bold]Understanding the Metrics:[/bold]")
+        self.console.print("\n[bold]📏 Understanding the Metrics:[/bold]")
         self.console.print("[dim]  • [cyan]Ratio[/cyan] - Largest class / Smallest class (e.g., 5.3:1 means majority class is 5.3× larger)[/dim]")
         self.console.print("[dim]  • [cyan]Gini[/cyan] - Inequality coefficient (0=perfect balance, 1=extreme imbalance)[/dim]")
         self.console.print("[dim]  • [green]Balanced[/green]: Ratio < 2:1, Gini < 0.2 | [yellow]Moderate[/yellow]: Ratio 2-5:1, Gini 0.2-0.4 | [red]Imbalanced[/red]: Ratio > 5:1, Gini > 0.4[/dim]\n")
@@ -5222,7 +5222,7 @@ def _run_benchmark_mode(
             selected_benchmark_categories = [c.strip() for c in choice.split(',')]
 
         if not selected_benchmark_categories:
-            self.console.print("[red][FAIL] No categories selected[/red]")
+            self.console.print("[red]❌ No categories selected[/red]")
             return None
 
         self.console.print(f"\n[green]✓ Selected {len(selected_benchmark_categories)} categories:[/green]")
@@ -5248,15 +5248,15 @@ def _run_benchmark_mode(
 
         if selected_onevsall:
             self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-            self.console.print("[bold cyan]     STEP 4.5: Representative Selection for One-vs-All     [/bold cyan]")
+            self.console.print("[bold cyan]     🎯 STEP 4.5: Representative Selection for One-vs-All     [/bold cyan]")
             self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
-            self.console.print("[bold]Why This Step?[/bold]")
+            self.console.print("[bold]🎯 Why This Step?[/bold]")
             self.console.print("[dim]Your data uses [cyan]hybrid mode[/cyan] with one-vs-all categories.[/dim]")
             self.console.print("[dim]Each one-vs-all category has multiple values, each requiring its own binary model.[/dim]")
             self.console.print("[dim]Training ALL values would take too long for benchmark purposes.[/dim]\n")
 
-            self.console.print("[bold]Representative Selection Strategy:[/bold]")
+            self.console.print("[bold]📊 Representative Selection Strategy:[/bold]")
             self.console.print("[dim]To make benchmark efficient while still testing the one-vs-all strategy:[/dim]")
             self.console.print("[dim]  • Select 1 [green]balanced[/green] value (lowest imbalance ratio) - tests baseline performance[/dim]")
             self.console.print("[dim]  • Select 1 [yellow]imbalanced[/yellow] value (highest imbalance ratio) - tests hard cases[/dim]")
@@ -5272,7 +5272,7 @@ def _run_benchmark_mode(
             )
 
             # Display the automatic selection
-            self.console.print("[bold cyan]Automatic Representative Selection:[/bold cyan]\n")
+            self.console.print("[bold cyan]🤖 Automatic Representative Selection:[/bold cyan]\n")
 
             selection_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
             selection_table.add_column("#", style="yellow", width=3, no_wrap=True)
@@ -5303,7 +5303,7 @@ def _run_benchmark_mode(
             original_onevsall = breakdown['one-vs-all'].get('original_total', 0)
             selected_onevsall_count = breakdown['one-vs-all']['models']
 
-            self.console.print(f"\n[bold]Benchmark Reduction:[/bold]")
+            self.console.print(f"\n[bold]📈 Benchmark Reduction:[/bold]")
             self.console.print(f"  • Multi-class models: [cyan]{breakdown['multi-class']['models']}[/cyan]")
             self.console.print(f"  • One-vs-all models: [cyan]{selected_onevsall_count}[/cyan] (instead of [red]{original_onevsall}[/red])")
             self.console.print(f"  • [green]Total models per base: {representative_selection['total_models']}[/green]")
@@ -5343,7 +5343,7 @@ def _run_benchmark_mode(
 
             elif selection_choice == "2":
                 # Use all - benchmark_onevsall_selection stays None
-                self.console.print("\n[yellow][!] Training ALL values - this may take a very long time[/yellow]")
+                self.console.print("\n[yellow]⚠ Training ALL values - this may take a very long time[/yellow]")
                 benchmark_onevsall_selection = None
 
             else:
@@ -5435,7 +5435,7 @@ def _run_benchmark_mode(
         if selected_benchmark_categories is None:
             # Single-label: Use existing training file
             benchmark_file = bundle.primary_file
-            self.console.print(f"[green]Using full training dataset: {bundle.primary_file.name}[/green]\n")
+            self.console.print(f"[green]✓ Using full training dataset: {bundle.primary_file.name}[/green]\n")
         else:
             # Multi-label: Create filtered dataset
             self.console.print("\n[dim]Creating filtered benchmark dataset...[/dim]")
@@ -5503,7 +5503,7 @@ def _run_benchmark_mode(
                 for row in benchmark_rows:
                     f.write(json.dumps(row, ensure_ascii=False) + '\n')
 
-            self.console.print(f"[green]Benchmark dataset created: {len(benchmark_rows)} samples[/green]\n")
+            self.console.print(f"[green]✓ Benchmark dataset created: {len(benchmark_rows)} samples[/green]\n")
 
         # Run benchmark for each model
         benchmark_results = {}
@@ -5534,7 +5534,7 @@ def _run_benchmark_mode(
         self.logger.info(f"  Models will be saved to: models/{benchmark_session_id}/benchmark/")
         self.logger.info(f"  Logs will be saved to: {benchmark_metrics_dir}")
         self.logger.info("="*80)
-        self.console.print(f"\n[cyan]Session ID:[/cyan] [bold]{benchmark_session_id}[/bold]")
+        self.console.print(f"\n[cyan]📂 Session ID:[/cyan] [bold]{benchmark_session_id}[/bold]")
         self.console.print(f"[dim]All benchmark models will be saved to: models/{benchmark_session_id}/benchmark/[/dim]\n")
 
         # ============================================================
@@ -5589,12 +5589,12 @@ def _run_benchmark_mode(
                     }
                 }
             )
-            self.console.print(f"[dim]Session metadata saved: {initial_metadata_path.name}[/dim]\n")
+            self.console.print(f"[dim]💾 Session metadata saved: {initial_metadata_path.name}[/dim]\n")
             self.logger.info(f"✓ Initial benchmark metadata saved: {initial_metadata_path}")
 
         except Exception as e:
             self.logger.error(f"Failed to save initial benchmark metadata: {e}")
-            self.console.print(f"[yellow][!] Warning: Could not save session metadata: {e}[/yellow]\n")
+            self.console.print(f"[yellow]⚠️  Warning: Could not save session metadata: {e}[/yellow]\n")
             # Continue anyway - metadata saving should not block training
 
         # Initialize global progress tracking for benchmark
@@ -5631,7 +5631,7 @@ def _run_benchmark_mode(
         benchmark_data = pd.read_json(benchmark_file, lines=True)
 
         # Validate label sufficiency with more robust handling
-        self.console.print("[yellow]Validating benchmark data...[/yellow]")
+        self.console.print("[yellow]🔍 Validating benchmark data...[/yellow]")
         validated_data, validation_report = validate_label_sufficiency(
             benchmark_data,
             'labels',
@@ -5641,16 +5641,16 @@ def _run_benchmark_mode(
 
         # Display validation report
         if validation_report['removed_classes']:
-            self.console.print(f"[yellow][!] Removed {len(validation_report['removed_classes'])} insufficient classes:[/yellow]")
+            self.console.print(f"[yellow]⚠️  Removed {len(validation_report['removed_classes'])} insufficient classes:[/yellow]")
             for removed in validation_report['removed_classes'][:5]:  # Show first 5
                 self.console.print(f"    • {removed['label']}_{removed['class']}: {removed['count']} samples")
             if len(validation_report['removed_classes']) > 5:
                 self.console.print(f"    ... and {len(validation_report['removed_classes']) - 5} more")
 
         if validation_report['removed_samples'] > 0:
-            self.console.print(f"[yellow][!] Removed {validation_report['removed_samples']} samples with only insufficient classes[/yellow]")
+            self.console.print(f"[yellow]⚠️  Removed {validation_report['removed_samples']} samples with only insufficient classes[/yellow]")
 
-        self.console.print(f"[green]Validated dataset: {validation_report['final_samples']} samples[/green]")
+        self.console.print(f"[green]✓ Validated dataset: {validation_report['final_samples']} samples[/green]")
 
         # Save validated data
         validated_benchmark_file = Path(tmpdir) / "benchmark_validated.jsonl"
@@ -5682,7 +5682,7 @@ def _run_benchmark_mode(
                     f"{lang} (min counts: {lang_report['drop_reasons'].get(lang, {})})"
                     for lang in lang_report.get('languages_dropped', [])
                 ) or "none"
-                self.console.print(f"[yellow][!] Language filtering applied for {category}[/yellow]")
+                self.console.print(f"[yellow]⚠️  Language filtering applied for {category}[/yellow]")
                 self.console.print(f"    • Kept: {kept_display}")
                 self.console.print(f"    • Dropped: {dropped_display}")
 
@@ -5694,17 +5694,17 @@ def _run_benchmark_mode(
             filtered_category_datasets[category] = filtered_df
 
         if not filtered_category_datasets:
-            self.console.print("[red][FAIL] No categories have sufficient multilingual coverage for benchmarking.[/red]")
+            self.console.print("[red]❌ No categories have sufficient multilingual coverage for benchmarking.[/red]")
             return None
 
         category_datasets = filtered_category_datasets
 
-        self.console.print(f"\n[cyan]Category Distribution:[/cyan]")
+        self.console.print(f"\n[cyan]📊 Category Distribution:[/cyan]")
         for category, cat_data in category_datasets.items():
             self.console.print(f"  • {category}: {len(cat_data)} samples")
 
         if not category_datasets:
-            self.console.print(f"[red][FAIL] No valid data after preprocessing[/red]")
+            self.console.print(f"[red]❌ No valid data after preprocessing[/red]")
             return None
 
         # ============================================================
@@ -5719,7 +5719,7 @@ def _run_benchmark_mode(
         # Build mapping: category -> strategy
         category_strategy_map: Dict[str, str] = {}
         if training_approach in ['hybrid', 'custom'] and (multiclass_keys or multilabel_keys or onevsall_keys):
-            self.console.print(f"\n[cyan]Hybrid/Custom benchmark mode detected:[/cyan]")
+            self.console.print(f"\n[cyan]🔀 Hybrid/Custom benchmark mode detected:[/cyan]")
             for cat in category_datasets.keys():
                 if cat in multiclass_keys:
                     category_strategy_map[cat] = 'multi-class'
@@ -5789,7 +5789,7 @@ def _run_benchmark_mode(
         else:
             global_max_epochs = global_total_epochs
 
-        self.console.print(f"\n[cyan]Training Summary:[/cyan]")
+        self.console.print(f"\n[cyan]📊 Training Summary:[/cyan]")
         self.console.print(f"  • Base models to test: {num_base_models}")
         self.console.print(f"  • Sub-models per base: {total_submodels_per_base}")
         self.console.print(f"  • Total models to train: {global_total_models}")
@@ -5801,7 +5801,7 @@ def _run_benchmark_mode(
         # Run benchmark for each model
         for idx, model_id in enumerate(all_models_to_test, 1):
             self.console.print(f"\n[bold yellow]{'═' * 70}[/bold yellow]")
-            self.console.print(f"[bold yellow]Testing Model {idx}/{len(all_models_to_test)}: {model_id}[/bold yellow]")
+            self.console.print(f"[bold yellow]🔬 Testing Model {idx}/{len(all_models_to_test)}: {model_id}[/bold yellow]")
             self.console.print(f"[bold yellow]{'═' * 70}[/bold yellow]\n")
 
             try:
@@ -5973,7 +5973,7 @@ def _run_benchmark_mode(
                     # ============================================================
                     if cat_strategy == 'one-vs-all':
                         # ONE-VS-ALL: Create binary datasets and train each label separately
-                        self.console.print(f"  [dim]One-vs-all mode: Creating binary classifiers[/dim]")
+                        self.console.print(f"  [dim]🔀 One-vs-all mode: Creating binary classifiers[/dim]")
 
                         binary_dir = Path(tmpdir) / f"binary_{category}"
                         binary_dir.mkdir(exist_ok=True)
@@ -6067,7 +6067,7 @@ def _run_benchmark_mode(
 
                     elif cat_strategy == 'multi-class':
                         # MULTI-CLASS: Convert to single-label and train one model
-                        self.console.print(f"  [dim]Multi-class mode: Training single classifier[/dim]")
+                        self.console.print(f"  [dim]🎯 Multi-class mode: Training single classifier[/dim]")
 
                         single_label_df = _convert_to_single_label(cat_data, category)
 
@@ -6106,7 +6106,7 @@ def _run_benchmark_mode(
                             filtering_report = cat_result.get('language_filtering_report') or lang_report
                             cat_result['language_filtering_report'] = filtering_report
                             if filtering_report and filtering_report.get('filtered', False):
-                                self.console.print(f"  [yellow][!] Language filtering applied for {category}:[/yellow]")
+                                self.console.print(f"  [yellow]⚠ Language filtering applied for {category}:[/yellow]")
                                 self.console.print(f"    - Kept: {', '.join(filtering_report.get('languages_kept', []))}")
                                 self.console.print(f"    - Dropped: {', '.join(filtering_report.get('languages_dropped', []))}")
 
@@ -6151,7 +6151,7 @@ def _run_benchmark_mode(
                             filtering_report = cat_result.get('language_filtering_report') or lang_report
                             cat_result['language_filtering_report'] = filtering_report
                             if filtering_report and filtering_report.get('filtered', False):
-                                self.console.print(f"  [yellow][!] Language filtering applied for {category}:[/yellow]")
+                                self.console.print(f"  [yellow]⚠ Language filtering applied for {category}:[/yellow]")
                                 self.console.print(f"    - Kept: {', '.join(filtering_report.get('languages_kept', []))}")
                                 self.console.print(f"    - Dropped: {', '.join(filtering_report.get('languages_dropped', []))}")
 
@@ -6212,7 +6212,7 @@ def _run_benchmark_mode(
                     self.console.print(f"  • Overall Accuracy: [bold green]{accuracy:.3f}[/bold green]")
 
                     if result.get('partial_success'):
-                        self.console.print(f"  • [yellow][!]  Partial success: {result['successful_categories']}/{result['successful_categories'] + result['failed_categories']} categories trained[/yellow]")
+                        self.console.print(f"  • [yellow]⚠️  Partial success: {result['successful_categories']}/{result['successful_categories'] + result['failed_categories']} categories trained[/yellow]")
 
                     if 'training_time' in result:
                         self.console.print(f"  • Time: [cyan]{result['training_time']:.1f}s[/cyan]")
@@ -6226,7 +6226,7 @@ def _run_benchmark_mode(
                     self.console.print(f"  • [red]All categories failed for this model[/red]")
 
             except Exception as e:
-                self.console.print(f"\n[red][FAIL] Error during training: {str(e)}[/red]")
+                self.console.print(f"\n[red]❌ Error during training: {str(e)}[/red]")
                 # Add placeholder result with normalized keys
                 benchmark_results[model_id] = {
                     'f1_macro': 0.0,          # Normalized key for compare_model_results
@@ -6244,11 +6244,11 @@ def _run_benchmark_mode(
 
     # ======================== STEP 6: Display Results ========================
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-    self.console.print("[bold cyan]         STEP 6: BENCHMARK RESULTS                           [/bold cyan]")
+    self.console.print("[bold cyan]         📊 STEP 6: BENCHMARK RESULTS                           [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     # Display ranking methodology explanation
-    self.console.print("[bold yellow]How Models Are Ranked:[/bold yellow]")
+    self.console.print("[bold yellow]📋 How Models Are Ranked:[/bold yellow]")
     self.console.print("\n[bold]Sophisticated Combined Metric System[/bold] (mirrors epoch selection):\n")
     self.console.print("  [cyan]1. Combined Score[/cyan] (Primary Criterion)")
     self.console.print("     • Binary Classification: [green]70% × F1_minority + 30% × F1_macro[/green]")
@@ -6265,7 +6265,7 @@ def _run_benchmark_mode(
     self.console.print("     • [green]Accuracy[/green] (when combined scores equal)")
     self.console.print("     • [green]Training Time[/green] (faster is better when score + accuracy equal)\n")
 
-    self.console.print("[dim]Tip: This ensures models are ranked the same way best epochs are selected during training[/dim]\n")
+    self.console.print("[dim]💡 This ensures models are ranked the same way best epochs are selected during training[/dim]\n")
 
     # Check if we have multi-category results
     has_category_details = any('category_metrics' in result and result['category_metrics']
@@ -6290,11 +6290,11 @@ def _run_benchmark_mode(
         for _, row in comparison_df.iterrows():
             # Add emoji for top 3
             if row['rank'] == 1:
-                rank_str = "#1"
+                rank_str = "🥇 1"
             elif row['rank'] == 2:
-                rank_str = "#2"
+                rank_str = "🥈 2"
             elif row['rank'] == 3:
-                rank_str = "#3"
+                rank_str = "🥉 3"
             else:
                 rank_str = f"   {row['rank']}"
 
@@ -6380,11 +6380,11 @@ def _run_benchmark_mode(
         for _, row in comparison_df.iterrows():
             # Add emoji for top 3
             if row['rank'] == 1:
-                rank_str = "#1"
+                rank_str = "🥇 1"
             elif row['rank'] == 2:
-                rank_str = "#2"
+                rank_str = "🥈 2"
             elif row['rank'] == 3:
-                rank_str = "#3"
+                rank_str = "🥉 3"
             else:
                 rank_str = f"   {row['rank']}"
 
@@ -6408,9 +6408,9 @@ def _run_benchmark_mode(
         self.console.print(results_table)
 
         # Display ranking explanations for top 3 models
-        self.console.print("\n[bold cyan]Top 3 Models - Ranking Details:[/bold cyan]\n")
+        self.console.print("\n[bold cyan]📊 Top 3 Models - Ranking Details:[/bold cyan]\n")
         for _, row in comparison_df.head(3).iterrows():
-            emoji = "#1" if row['rank'] == 1 else "#2" if row['rank'] == 2 else "#3"
+            emoji = "🥇" if row['rank'] == 1 else "🥈" if row['rank'] == 2 else "🥉"
             self.console.print(f"{emoji} [bold]{row['model']}[/bold]")
             if 'ranking_explanation' in row and row['ranking_explanation']:
                 self.console.print(f"   → {row['ranking_explanation']}")
@@ -6437,21 +6437,21 @@ def _run_benchmark_mode(
             session_dir = get_training_metrics_dir(benchmark_session_id)
 
         if session_dir.exists():
-            self.console.print("\n[bold cyan]Consolidating session metrics...[/bold cyan]")
+            self.console.print("\n[bold cyan]📊 Consolidating session metrics...[/bold cyan]")
             consolidated_files = consolidate_session_csvs(session_dir, benchmark_session_id)
 
             if consolidated_files:
-                self.console.print("[green]Created consolidated CSV files:[/green]")
+                self.console.print("[green]✓ Created consolidated CSV files:[/green]")
                 if 'training' in consolidated_files:
                     self.console.print(f"  • Training metrics: {consolidated_files['training'].name}")
                 if 'best' in consolidated_files:
                     self.console.print(f"  • Best models: {consolidated_files['best'].name}")
     except Exception as e:
-        self.console.print(f"[yellow][!] Warning: Could not consolidate CSVs: {e}[/yellow]")
+        self.console.print(f"[yellow]⚠ Warning: Could not consolidate CSVs: {e}[/yellow]")
 
     # ======================== STEP 7: Final Choice ========================
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-    self.console.print("[bold cyan]         STEP 7: Final Model Selection                       [/bold cyan]")
+    self.console.print("[bold cyan]         🎯 STEP 7: Final Model Selection                       [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     self.console.print("[bold]Based on benchmark results, you can:[/bold]")
@@ -6530,22 +6530,22 @@ def _run_benchmark_mode(
                     }
                 }
             )
-            self.console.print(f"[dim]Final metadata saved: {final_metadata_path.name}[/dim]")
+            self.console.print(f"[dim]💾 Final metadata saved: {final_metadata_path.name}[/dim]")
             self.logger.info(f"✓ Final benchmark metadata saved: {final_metadata_path}")
 
         except Exception as e:
             self.logger.error(f"Failed to save final benchmark metadata: {e}")
-            self.console.print(f"[yellow][!] Warning: Could not save final metadata: {e}[/yellow]")
+            self.console.print(f"[yellow]⚠️  Warning: Could not save final metadata: {e}[/yellow]")
             # Continue to summaries even if metadata fails
 
         # Generate comprehensive summary files for benchmark-only session
         try:
             from llm_tool.utils.training_summary_generator import generate_training_summaries
 
-            self.console.print("\n[bold cyan]Generating Comprehensive Benchmark Summaries...[/bold cyan]")
+            self.console.print("\n[bold cyan]📊 Generating Comprehensive Benchmark Summaries...[/bold cyan]")
             csv_path, jsonl_path = generate_training_summaries(benchmark_session_id)
 
-            self.console.print("[green]Benchmark summaries generated successfully:[/green]")
+            self.console.print("[green]✓ Benchmark summaries generated successfully:[/green]")
             self.console.print(f"  • CSV Summary: [cyan]{csv_path.name}[/cyan]")
             self.console.print(f"  • JSONL Summary: [cyan]{jsonl_path.name}[/cyan]")
             self.console.print(f"\n[dim]Full paths:[/dim]")
@@ -6554,7 +6554,7 @@ def _run_benchmark_mode(
 
         except Exception as e:
             self.logger.error(f"Failed to generate benchmark summaries: {e}")
-            self.console.print(f"[yellow][!] Could not generate comprehensive summaries: {e}[/yellow]")
+            self.console.print(f"[yellow]⚠️  Could not generate comprehensive summaries: {e}[/yellow]")
 
         return None
 
@@ -6684,10 +6684,10 @@ def _log_training_data_distributions(self, bundle: TrainingDataBundle, training_
         return
 
     if training_context:
-        self.console.print(f"\n[bold cyan]Generating comprehensive training session report...[/bold cyan]")
+        self.console.print(f"\n[bold cyan]📊 Generating comprehensive training session report...[/bold cyan]")
         self.console.print(f"[dim]Mode: {training_context.get('mode', 'unknown')} | Models: {len(training_context.get('models_trained', []))}[/dim]")
     else:
-        self.console.print("\n[dim]Logging comprehensive training data distributions...[/dim]")
+        self.console.print("\n[dim]📊 Logging comprehensive training data distributions...[/dim]")
 
     # Collect all dataset files (primary + training_files)
     all_files = []
@@ -6774,7 +6774,7 @@ def _log_training_data_distributions(self, bundle: TrainingDataBundle, training_
             self.console.print(f"  • [cyan]Session ID:[/cyan] {self.current_session_id}")
             self.console.print(f"  • [cyan]Datasets logged:[/cyan] {datasets_logged}")
 
-        self.console.print(f"\n  [cyan]Reports:[/cyan]")
+        self.console.print(f"\n  📋 [cyan]Reports:[/cyan]")
         self.console.print(f"     - Model Catalog:      {self.current_session_manager.training_data_logs_dir / 'model_catalog.csv'} ← ALL models with full details")
         self.console.print(f"     - Session Summary:    {self.current_session_manager.session_dir / 'SESSION_SUMMARY.txt'} ← Complete overview")
         self.console.print(f"     - Quick overview:     {self.current_session_manager.training_data_logs_dir / 'quick_summary.csv'}")
@@ -6782,20 +6782,20 @@ def _log_training_data_distributions(self, bundle: TrainingDataBundle, training_
         self.console.print(f"     - Complete data:      {self.current_session_manager.training_data_logs_dir / 'distribution_report.json'}")
 
         if training_context:
-            self.console.print(f"\n  [dim]Tip: Reports include complete training context: mode, models trained, and benchmark results.[/dim]")
+            self.console.print(f"\n  [dim]💡 Reports include complete training context: mode, models trained, and benchmark results.[/dim]")
         else:
-            self.console.print(f"\n  [dim]Tip: Note: Data is currently PRE-SPLIT. The train/val/test split\n"
+            self.console.print(f"\n  [dim]💡 Note: Data is currently PRE-SPLIT. The train/val/test split\n"
                              f"     will be applied during model training according to your configuration.[/dim]")
 
         if warnings_count > 0:
-            self.console.print(f"\n[yellow][!]  {warnings_count} validation warning(s) detected across {datasets_with_warnings} dataset(s)[/yellow]")
+            self.console.print(f"\n[yellow]⚠️  {warnings_count} validation warning(s) detected across {datasets_with_warnings} dataset(s)[/yellow]")
             self.console.print(f"[dim]  View details in: {self.current_session_manager.warnings_log}[/dim]")
         else:
             self.console.print(f"\n[green]✓ All data validation checks passed[/green]")
 
     except Exception as e:
         self.logger.warning(f"Could not finalize training data session: {e}")
-        self.console.print(f"[yellow][!] Could not generate final reports: {e}[/yellow]")
+        self.console.print(f"[yellow]⚠️  Could not generate final reports: {e}[/yellow]")
 
 def _configure_data_splits(self, keys_to_train: List[str], all_keys_values: Dict[str, set],
                            training_approach: str, key_strategies: Dict[str, str],
@@ -6813,7 +6813,7 @@ def _configure_data_splits(self, keys_to_train: List[str], all_keys_values: Dict
     from rich.table import Table
     from rich import box
 
-    self.console.print("\n[bold]Data Split Configuration[/bold]\n")
+    self.console.print("\n[bold]📊 Data Split Configuration[/bold]\n")
     self.console.print("[dim]Configure how your data will be split for training, validation, and testing.[/dim]\n")
 
     # Tableau explicatif
@@ -6845,19 +6845,19 @@ def _configure_data_splits(self, keys_to_train: List[str], all_keys_values: Dict
     self.console.print()
 
     # Dataset size information
-    self.console.print(f"[bold]Dataset Size:[/bold] {total_samples:,} samples\n")
+    self.console.print(f"[bold]📈 Dataset Size:[/bold] {total_samples:,} samples\n")
 
     # Question 1: Use separate test set for final evaluation?
     # Provide recommendation based on dataset size
     if total_samples < 1000:
-        self.console.print("[yellow][!] With fewer than 1,000 samples, it's recommended to skip the separate test set.[/yellow]")
+        self.console.print("[yellow]⚠️  With fewer than 1,000 samples, it's recommended to skip the separate test set.[/yellow]")
         self.console.print("[dim]   Reason: You need as much data as possible for training and validation.[/dim]\n")
         use_test_set_default = False
     elif total_samples < 5000:
-        self.console.print("[dim]Tip: With your dataset size, a separate test set is optional but not critical.[/dim]\n")
+        self.console.print("[dim]💡 With your dataset size, a separate test set is optional but not critical.[/dim]\n")
         use_test_set_default = False
     else:
-        self.console.print("[dim]Your dataset is large enough to benefit from a separate test set.[/dim]\n")
+        self.console.print("[dim]✓ Your dataset is large enough to benefit from a separate test set.[/dim]\n")
         use_test_set_default = False
 
     use_test_set = Confirm.ask(
@@ -6927,7 +6927,7 @@ def _configure_uniform_splits(self, use_test_set: bool) -> Optional[Dict[str, fl
     from rich.prompt import FloatPrompt
 
     if use_test_set:
-        self.console.print("\n[bold]Configure Split Ratios (Train / Validation / Test)[/bold]\n")
+        self.console.print("\n[bold]📈 Configure Split Ratios (Train / Validation / Test)[/bold]\n")
         self.console.print("[dim]Ratios must sum to 1.0[/dim]\n")
 
         train_ratio = FloatPrompt.ask("  Training ratio", default=0.7)
@@ -6943,7 +6943,7 @@ def _configure_uniform_splits(self, use_test_set: bool) -> Optional[Dict[str, fl
         test_ratio = FloatPrompt.ask("  Test ratio", default=max(0.0, remaining_for_test))
 
     else:
-        self.console.print("\n[bold]Configure Split Ratios (Train / Validation)[/bold]\n")
+        self.console.print("\n[bold]📈 Configure Split Ratios (Train / Validation)[/bold]\n")
         self.console.print("[dim]Ratios must sum to 1.0. Validation will be used for training evaluation.[/dim]\n")
 
         train_ratio = FloatPrompt.ask("  Training ratio", default=0.8)
@@ -7093,7 +7093,7 @@ def _configure_custom_by_key(self, keys_to_train: List[str], all_keys_values: Di
 
     custom_by_key = {}
 
-    self.console.print("\n[bold cyan] Custom Configuration (per key)[/bold cyan]\n")
+    self.console.print("\n[bold cyan]⚙️  Custom Configuration (per key)[/bold cyan]\n")
 
     for key in keys_to_train:
         num_values = len(all_keys_values[key])
@@ -7127,7 +7127,7 @@ def _configure_custom_by_value(self, keys_to_train: List[str], all_keys_values: 
 
     custom_by_value = {}
 
-    self.console.print("\n[bold yellow] Custom Configuration (per value)[/bold yellow]\n")
+    self.console.print("\n[bold yellow]⚙️  Custom Configuration (per value)[/bold yellow]\n")
 
     for key in keys_to_train:
         values = sorted(all_keys_values[key])
@@ -7302,7 +7302,7 @@ def _validate_labels_before_file_creation(
         return [], False
 
     # Display warning with comprehensive table
-    self.console.print(f"\n[bold red][!]  INSUFFICIENT SAMPLES DETECTED (BEFORE FILE CREATION)[/bold red]\n")
+    self.console.print(f"\n[bold red]⚠️  INSUFFICIENT SAMPLES DETECTED (BEFORE FILE CREATION)[/bold red]\n")
     self.console.print(f"[yellow]The following labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]\n")
 
     # Create detailed table showing strategy per label
@@ -7321,7 +7321,7 @@ def _validate_labels_before_file_creation(
             label,
             str(count),
             strategy,
-            "BLOCKED"
+            "❌ BLOCKED"
         )
 
     self.console.print(table)
@@ -7338,7 +7338,7 @@ def _validate_labels_before_file_creation(
     )
 
     if not should_remove:
-        self.console.print("[yellow][FAIL] Training cancelled. Please annotate more samples or select different keys.[/yellow]")
+        self.console.print("[yellow]❌ Training cancelled. Please annotate more samples or select different keys.[/yellow]")
         return None, False
 
     # User approved removal
@@ -7535,7 +7535,7 @@ def _validate_and_filter_insufficient_labels(
         return str(input_file), False
 
     # Display warning
-    self.console.print(f"\n[bold red][!]  INSUFFICIENT SAMPLES DETECTED[/bold red]\n")
+    self.console.print(f"\n[bold red]⚠️  INSUFFICIENT SAMPLES DETECTED[/bold red]\n")
     if train_by_language:
         self.console.print(f"[yellow]The following language-specific labels have fewer than {min_samples} samples (minimum for train+validation split):[/yellow]")
         self.console.print(f"[dim]Note: Validation is language-aware because train_by_language=True[/dim]\n")
@@ -7551,7 +7551,7 @@ def _validate_and_filter_insufficient_labels(
         table.add_row(
             label,
             str(count),
-            "BLOCKED"
+            "❌ BLOCKED"
         )
 
     self.console.print(table)
@@ -7573,11 +7573,11 @@ def _validate_and_filter_insufficient_labels(
         )
 
         if not should_remove:
-            self.console.print("[yellow][FAIL] Training cancelled. Please fix dataset manually.[/yellow]")
+            self.console.print("[yellow]❌ Training cancelled. Please fix dataset manually.[/yellow]")
             raise ValueError(f"Dataset contains {len(insufficient_labels)} label(s) with insufficient samples (< {min_samples})")
 
     # Filter dataset
-    self.console.print(f"\n[yellow]Filtering dataset to remove insufficient labels...[/yellow]")
+    self.console.print(f"\n[yellow]🔄 Filtering dataset to remove insufficient labels...[/yellow]")
 
     filtered_records = []
     removed_count = 0
@@ -7660,7 +7660,7 @@ def _validate_and_filter_insufficient_labels(
             f"Dataset '{input_path.name}' has no samples after removing insufficient labels. "
             "Please annotate more data or adjust your label selection."
         )
-        self.console.print(f"[yellow][!] {msg}[/yellow]\n")
+        self.console.print(f"[yellow]⚠️ {msg}[/yellow]\n")
         self.logger.warning(msg, extra={"dataset": input_path.name, "path": str(input_path)})
         raise ValueError(msg)
 
@@ -7671,7 +7671,7 @@ def _validate_and_filter_insufficient_labels(
         for record in filtered_records:
             f.write(json.dumps(record, ensure_ascii=False) + '\n')
 
-    self.console.print(f"[green]Filtered dataset saved:[/green] {filtered_path.name}")
+    self.console.print(f"[green]✓ Filtered dataset saved:[/green] {filtered_path.name}")
     self.console.print(f"  • [cyan]Original samples:[/cyan] {len(records)}")
     self.console.print(f"  • [cyan]Filtered samples:[/cyan] {len(filtered_records)}")
 
@@ -7792,7 +7792,7 @@ def _validate_all_training_files_before_training(
     if not all_insufficient:
         return True, None
 
-    self.console.print(f"\n[bold red][!]  INSUFFICIENT SAMPLES DETECTED[/bold red]\n")
+    self.console.print(f"\n[bold red]⚠️  INSUFFICIENT SAMPLES DETECTED[/bold red]\n")
     if train_by_language:
         self.console.print(
             f"[yellow]Each language-specific label needs at least {min_samples} samples "
@@ -7811,7 +7811,7 @@ def _validate_all_training_files_before_training(
 
     for file_key, labels in sorted(all_insufficient.items()):
         for label, count in sorted(labels.items(), key=lambda item: item[1]):
-            table.add_row(file_key, label, str(count), "BLOCKED")
+            table.add_row(file_key, label, str(count), "❌ BLOCKED")
 
     self.console.print(table)
     self.console.print()
@@ -7820,10 +7820,10 @@ def _validate_all_training_files_before_training(
     self.console.print("  • [red]Cancel[/red]: Stop training and adjust the dataset manually\n")
 
     if not Confirm.ask("Remove insufficient labels automatically?", default=False):
-        self.console.print("[yellow][FAIL] Training cancelled. Please adjust your annotations.[/yellow]")
+        self.console.print("[yellow]❌ Training cancelled. Please adjust your annotations.[/yellow]")
         return False, "Insufficient samples for some labels"
 
-    self.console.print(f"\n[yellow]Filtering training datasets to remove insufficient labels...[/yellow]\n")
+    self.console.print(f"\n[yellow]🔄 Filtering training datasets to remove insufficient labels...[/yellow]\n")
     updated_files = 0
     empty_datasets: List[str] = []
     for file_key, file_path in files_to_validate:
@@ -7877,7 +7877,7 @@ def _validate_all_training_files_before_training(
                 f"Dataset '{file_key}' has no samples after removing insufficient labels. "
                 "Skipping this dataset."
             )
-            self.console.print(f"  [yellow][!] {warning_msg}[/yellow]")
+            self.console.print(f"  [yellow]⚠️ {warning_msg}[/yellow]")
             self.logger.warning(warning_msg, extra={"dataset": file_key, "path": str(file_path)})
             continue
 
@@ -7929,7 +7929,7 @@ def _validate_all_training_files_before_training(
 
         skipped_list = ", ".join(empty_datasets)
         self.console.print(
-            f"[yellow][!] Skipping {len(empty_datasets)} dataset(s) with no remaining samples: {skipped_list}[/yellow]\n"
+            f"[yellow]⚠️ Skipping {len(empty_datasets)} dataset(s) with no remaining samples: {skipped_list}[/yellow]\n"
         )
 
     self.console.print(f"\n[green]✓ Filtered {updated_files} training file(s)[/green]\n")
@@ -7947,7 +7947,7 @@ def _validate_split_ratios(self, train: float, validation: float, test: float) -
         train *= factor
         validation *= factor
         test *= factor
-        self.console.print(f"  [yellow][!] Ratios adjusted to sum to 1.0[/yellow]")
+        self.console.print(f"  [yellow]⚠️  Ratios adjusted to sum to 1.0[/yellow]")
 
     # Minimum values
     if train < 0.5:
@@ -8055,7 +8055,7 @@ def _collect_quick_mode_parameters(
     # Token length strategy selection
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
     token_step_label = resolve_step_label("token_strategy", "STEP 1", context=step_context)
-    self.console.print(f"[bold cyan]           {token_step_label}: Token Length Strategy                    [/bold cyan]")
+    self.console.print(f"[bold cyan]           📏 {token_step_label}: Token Length Strategy                    [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     # Get languages from metadata
@@ -8117,7 +8117,7 @@ def _collect_quick_mode_parameters(
                 docs_exceeding_512 = int(total_docs * pct_exceeding_512 / 100)
 
     # Show token length summary
-    self.console.print("[bold]Your Dataset Token Analysis:[/bold]\n")
+    self.console.print("[bold]📊 Your Dataset Token Analysis:[/bold]\n")
 
     stats_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.SIMPLE, expand=True)
     stats_table.add_column("Metric", style="cyan", no_wrap=True)
@@ -8140,7 +8140,7 @@ def _collect_quick_mode_parameters(
         self.console.print(stats_table)
         self.console.print()
 
-        self.console.print("[bold]Token Length Distribution:[/bold]\n")
+        self.console.print("[bold]📈 Token Length Distribution:[/bold]\n")
         dist_table = Table(show_header=True, header_style="bold magenta", border_style="blue", box=box.SIMPLE, expand=True)
         dist_table.add_column("Category", style="cyan", no_wrap=True)
         dist_table.add_column("Token Range", style="white", no_wrap=True)
@@ -8174,10 +8174,10 @@ def _collect_quick_mode_parameters(
     # Check if there are ANY documents exceeding 512 tokens
     if pct_exceeding_512 == 0.0:
         # No documents exceed 512 tokens - no strategy needed!
-        self.console.print("[bold green]Perfect! All documents fit within 512 tokens[/bold green]")
+        self.console.print("[bold green]✓ Perfect! All documents fit within 512 tokens[/bold green]")
         self.console.print("[dim]No special handling needed - you can use any standard BERT model.[/dim]\n")
 
-        self.console.print("[bold cyan]Why this matters:[/bold cyan]")
+        self.console.print("[bold cyan]📊 Why this matters:[/bold cyan]")
         self.console.print(f"  • [green]Maximum document length:[/green] {token_max:.0f} tokens (well below 512 limit)")
         self.console.print(f"  • [green]Mean document length:[/green] {token_mean:.0f} tokens")
         self.console.print(f"  • [green]95th percentile:[/green] {token_p95:.0f} tokens")
@@ -8204,16 +8204,16 @@ def _collect_quick_mode_parameters(
             rec_reason = f"{pct_exceeding_512:.1f}% exceed 512 tokens - long models strongly recommended"
 
         # Present 3 strategies
-        self.console.print("[bold yellow][!] Standard BERT models have a 512 token limit[/bold yellow]")
+        self.console.print("[bold yellow]⚠️  Standard BERT models have a 512 token limit[/bold yellow]")
         self.console.print("[dim]You need to choose how to handle longer documents:[/dim]\n")
 
         strategy_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED, expand=True)
         strategy_table.add_column("Strategy", style="cyan bold", no_wrap=True)
         strategy_table.add_column("Description", style="white", overflow="fold", ratio=1)
 
-        truncate_mark = " [green]RECOMMENDED[/green]" if recommended_strategy == "truncate" else ""
-        exclude_mark = " [green]RECOMMENDED[/green]" if recommended_strategy == "exclude" else ""
-        long_mark = " [green]RECOMMENDED[/green]" if recommended_strategy == "long_models" else ""
+        truncate_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "truncate" else ""
+        exclude_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "exclude" else ""
+        long_mark = " ✓ [green]RECOMMENDED[/green]" if recommended_strategy == "long_models" else ""
 
         # Calculate how many extra samples we'd get from splitting
         estimated_extra_samples = 0
@@ -8226,7 +8226,7 @@ def _collect_quick_mode_parameters(
 
         strategy_table.add_row(
             "1. Split/Chunk" + truncate_mark,
-            "Split long documents into 512-token chunks (with overlap)\n"
+            "✂️  Split long documents into 512-token chunks (with overlap)\n"
             f"• [green]Each chunk keeps the same label[/green] → More training data!\n"
             f"• Example: 1024-token doc → 2 samples (tokens 0-512, tokens 256-768)\n"
             f"• {extra_info}\n"
@@ -8236,7 +8236,7 @@ def _collect_quick_mode_parameters(
         )
         strategy_table.add_row(
             "2. Exclude" + exclude_mark,
-            f"Remove documents exceeding 512 tokens entirely\n"
+            f"🗑️  Remove documents exceeding 512 tokens entirely\n"
             f"• Would exclude {docs_exceeding_512:,} documents ({pct_exceeding_512:.1f}% of dataset)\n"
             f"• [red]Reduces training data significantly[/red]\n"
             f"• Model won't learn from long documents\n"
@@ -8244,7 +8244,7 @@ def _collect_quick_mode_parameters(
         )
         strategy_table.add_row(
             "3. Long Models" + long_mark,
-            "Use long-document models (up to 4096 tokens)\n"
+            "🔬 Use long-document models (up to 4096 tokens)\n"
             "• Preserves full document context in single sample\n"
             "• Better for tasks requiring full document understanding\n"
             "• Slower training (~15-30 min) and inference\n"
@@ -8254,7 +8254,7 @@ def _collect_quick_mode_parameters(
         self.console.print(strategy_table)
         self.console.print()
 
-        self.console.print(f"[bold yellow]Smart Recommendation:[/bold yellow] [cyan]{rec_reason}[/cyan]\n")
+        self.console.print(f"[bold yellow]💡 Smart Recommendation:[/bold yellow] [cyan]{rec_reason}[/cyan]\n")
 
         # Ask user to choose
         strategy_choice = Prompt.ask(
@@ -8272,15 +8272,15 @@ def _collect_quick_mode_parameters(
         if strategy_choice in ["1", "split", "chunk", "truncate"]:
             split_long_texts = True
             if docs_exceeding_512 > 0:
-                self.console.print(f"[green]Strategy: Split long documents into chunks (creates ~{estimated_extra_samples:,} extra samples)[/green]\n")
+                self.console.print(f"[green]✓ Strategy: Split long documents into chunks (creates ~{estimated_extra_samples:,} extra samples)[/green]\n")
             else:
-                self.console.print("[green]Strategy: Split long documents (if any) into chunks[/green]\n")
+                self.console.print("[green]✓ Strategy: Split long documents (if any) into chunks[/green]\n")
         elif strategy_choice in ["2", "exclude"]:
             exclude_long_texts = True
             self.console.print(f"[yellow]✓ Strategy: Exclude {docs_exceeding_512:,} documents >512 tokens ({pct_exceeding_512:.1f}% of dataset)[/yellow]\n")
         else:  # "3", "long", or "long_models"
             prefers_long_models = True
-            self.console.print("[green]Strategy: Use long-document models (up to 4096 tokens)[/green]\n")
+            self.console.print("[green]✓ Strategy: Use long-document models (up to 4096 tokens)[/green]\n")
 
     # Store choice in text_length_stats for later use
     text_length_stats['user_prefers_long_models'] = prefers_long_models
@@ -8292,7 +8292,7 @@ def _collect_quick_mode_parameters(
     if len(languages) > 1:
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
         multilingual_step_label = resolve_step_label("multilingual_strategy", "STEP 2", context=step_context)
-        self.console.print(f"[bold cyan]           {multilingual_step_label}: Multilingual Strategy                   [/bold cyan]")
+        self.console.print(f"[bold cyan]           🌍 {multilingual_step_label}: Multilingual Strategy                   [/bold cyan]")
         self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
         self.console.print(f"[bold]Your dataset contains multiple languages:[/bold] {', '.join(sorted(languages))}\n")
@@ -8303,7 +8303,7 @@ def _collect_quick_mode_parameters(
 
         strategy_table.add_row(
             "1. Multilingual Model",
-            "Train ONE model that handles all languages\n"
+            "🌐 Train ONE model that handles all languages\n"
             f"• Works across {', '.join(sorted(languages))} without distinction\n"
             "• Faster: Single training run\n"
             "• Good for: Cross-lingual tasks, similar performance needed across languages\n"
@@ -8312,7 +8312,7 @@ def _collect_quick_mode_parameters(
         )
         strategy_table.add_row(
             "2. One Model per Language",
-            "Train SEPARATE specialized models for each language\n"
+            "🎯 Train SEPARATE specialized models for each language\n"
             f"• {len(languages)} models total: one for each language\n"
             f"• Each model specialized for its language (e.g., CamemBERT for FR, BERT for EN)\n"
             "• Better performance: Language-specific models often outperform multilingual\n"
@@ -8340,7 +8340,7 @@ def _collect_quick_mode_parameters(
     # Model selection
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
     model_step_label = resolve_step_label("model_selection", "STEP 3", context=step_context)
-    self.console.print(f"[bold cyan]           {model_step_label}: Model Selection                         [/bold cyan]")
+    self.console.print(f"[bold cyan]           🤖 {model_step_label}: Model Selection                         [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     # Import model utilities
@@ -8355,7 +8355,7 @@ def _collect_quick_mode_parameters(
         """Interactive prompt to pick a model for a specific language/stage."""
         recommended_models = recommended_models or []
         if recommended_models:
-            self.console.print(f"[bold cyan]Top 10 Recommended Models for {lang} ({stage_label} stage):[/bold cyan]\n")
+            self.console.print(f"[bold cyan]🎯 Top 10 Recommended Models for {lang} ({stage_label} stage):[/bold cyan]\n")
 
             models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
             models_table.add_column("#", style="yellow", width=3, no_wrap=True)
@@ -8400,7 +8400,7 @@ def _collect_quick_mode_parameters(
                 continue
 
             if lower_input == 'all':
-                self.console.print(f"\n[bold cyan]ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
+                self.console.print(f"\n[bold cyan]📚 ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
                 all_models_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED, expand=True)
                 all_models_table.add_column("#", style="yellow", width=4, no_wrap=True)
                 all_models_table.add_column("Model ID", style="cyan", no_wrap=True)
@@ -8436,16 +8436,16 @@ def _collect_quick_mode_parameters(
                     )
 
                 self.console.print(all_models_table)
-                self.console.print(f"\n[dim]Tip: Green rows are part of your top recommendations for {lang}[/dim]")
+                self.console.print(f"\n[dim]💡 Green rows are part of your top recommendations for {lang}[/dim]")
                 continue
 
             if model_input.isdigit() and recommended_models:
                 idx = int(model_input) - 1
                 if 0 <= idx < len(recommended_models):
                     selected = recommended_models[idx]
-                    self.console.print(f"[green]Selected for {lang}: {selected}[/green]")
+                    self.console.print(f"[green]✓ Selected for {lang}: {selected}[/green]")
                     return selected
-                self.console.print(f"[yellow][!] Invalid selection. Using default: {default_model}[/yellow]")
+                self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
                 return default_model
 
             if model_input:
@@ -8460,7 +8460,7 @@ def _collect_quick_mode_parameters(
         """Prompt for a single global model selection (non per-language)."""
         recommended_models = recommended_models or []
         if recommended_models:
-            self.console.print(f"[bold cyan]Top 10 Recommended Models ({stage_label} stage):[/bold cyan]\n")
+            self.console.print(f"[bold cyan]🎯 Top 10 Recommended Models ({stage_label} stage):[/bold cyan]\n")
 
             models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
             models_table.add_column("#", style="yellow", width=3, no_wrap=True)
@@ -8505,7 +8505,7 @@ def _collect_quick_mode_parameters(
                 continue
 
             if lower_input == 'all':
-                self.console.print(f"\n[bold cyan]ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
+                self.console.print(f"\n[bold cyan]📚 ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
                 all_models_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED, expand=True)
                 all_models_table.add_column("#", style="yellow", width=4, no_wrap=True)
                 all_models_table.add_column("Model ID", style="cyan", no_wrap=True)
@@ -8547,9 +8547,9 @@ def _collect_quick_mode_parameters(
                 idx = int(model_input) - 1
                 if 0 <= idx < len(recommended_models):
                     selected = recommended_models[idx]
-                    self.console.print(f"[green]Selected model: {selected}[/green]")
+                    self.console.print(f"[green]✓ Selected model: {selected}[/green]")
                     return selected
-                self.console.print(f"[yellow][!] Invalid selection. Using default: {default_model}[/yellow]")
+                self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
                 return default_model
 
             if model_input:
@@ -8557,7 +8557,7 @@ def _collect_quick_mode_parameters(
             return default_model
 
     # ASK ABOUT BENCHMARK MODE
-    self.console.print("[bold]Benchmark Mode[/bold]")
+    self.console.print("[bold]🎯 Benchmark Mode[/bold]")
     self.console.print("  • [cyan]Compare multiple models[/cyan] before full training")
     self.console.print("  • [cyan]Test on selected categories[/cyan] with class imbalance analysis")
     self.console.print("  • [cyan]See which models perform best[/cyan] on your specific data")
@@ -8632,7 +8632,7 @@ def _collect_quick_mode_parameters(
         # Select one model for each language
         for lang in sorted(languages):
             self.console.print(f"\n[bold yellow]{'─'*60}[/bold yellow]")
-            self.console.print(f"[bold yellow]Selecting model for {lang} texts[/bold yellow]")
+            self.console.print(f"[bold yellow]🎯 Selecting model for {lang} texts[/bold yellow]")
             self.console.print(f"[bold yellow]{'─'*60}[/bold yellow]\n")
 
             # Get recommendations for this specific language
@@ -8645,7 +8645,7 @@ def _collect_quick_mode_parameters(
 
             if lang_recommended:
                 # Show top 10 models for this language
-                self.console.print(f"[bold cyan]Top 10 Recommended Models for {lang}:[/bold cyan]\n")
+                self.console.print(f"[bold cyan]🎯 Top 10 Recommended Models for {lang}:[/bold cyan]\n")
 
                 models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
                 models_table.add_column("#", style="yellow", width=3, no_wrap=True)
@@ -8677,7 +8677,7 @@ def _collect_quick_mode_parameters(
                     default_model = 'xlm-roberta-base'
 
             # Offer to display all models
-            self.console.print(f"\n[dim]Tip: Selection Options:[/dim]")
+            self.console.print(f"\n[dim]💡 Selection Options:[/dim]")
             self.console.print(f"[dim]  • Enter [cyan]1-10[/cyan] to select from Top 10 recommendations[/dim]")
             self.console.print(f"[dim]  • Enter [cyan]'info X'[/cyan] (e.g., 'info 1') to see full details of a model[/dim]")
             self.console.print(f"[dim]  • Enter [cyan]'all'[/cyan] to see ALL {len(MODEL_METADATA)} available models[/dim]")
@@ -8702,7 +8702,7 @@ def _collect_quick_mode_parameters(
             # Check if user wants to see all models
             if model_input.lower() == 'all':
                 # Show ALL models with complete characteristics
-                self.console.print(f"\n[bold cyan]ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
+                self.console.print(f"\n[bold cyan]📚 ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
 
                 all_models_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED, expand=True)
                 all_models_table.add_column("#", style="yellow", width=4, no_wrap=True)
@@ -8745,7 +8745,7 @@ def _collect_quick_mode_parameters(
 
                 self.console.print(all_models_table)
 
-                self.console.print(f"\n[dim]Tip: [bold green]Green models[/bold green] are in your Top 10 recommendations for {lang}[/dim]")
+                self.console.print(f"\n[dim]💡 [bold green]Green models[/bold green] are in your Top 10 recommendations for {lang}[/dim]")
                 self.console.print(f"\n[bold yellow]Select a model for {lang}:[/bold yellow]")
                 self.console.print(f"[dim]  • Enter the # number from the table[/dim]")
                 self.console.print(f"[dim]  • Or enter the model ID directly[/dim]")
@@ -8756,9 +8756,9 @@ def _collect_quick_mode_parameters(
                     idx = int(model_input_after_all) - 1
                     if 0 <= idx < len(sorted_model_ids):
                         lang_model = sorted_model_ids[idx]
-                        self.console.print(f"[green]Selected for {lang}: {lang_model}[/green]")
+                        self.console.print(f"[green]✓ Selected for {lang}: {lang_model}[/green]")
                     else:
-                        self.console.print(f"[yellow][!] Invalid selection. Using default: {default_model}[/yellow]")
+                        self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
                         lang_model = default_model
                 else:
                     lang_model = model_input_after_all
@@ -8766,9 +8766,9 @@ def _collect_quick_mode_parameters(
                 idx = int(model_input) - 1
                 if lang_recommended and 0 <= idx < len(lang_recommended):
                     lang_model = lang_recommended[idx]
-                    self.console.print(f"[green]Selected for {lang}: {lang_model}[/green]")
+                    self.console.print(f"[green]✓ Selected for {lang}: {lang_model}[/green]")
                 else:
-                    self.console.print(f"[yellow][!] Invalid selection. Using default: {default_model}[/yellow]")
+                    self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
                     lang_model = default_model
             else:
                 lang_model = model_input
@@ -8810,7 +8810,7 @@ def _collect_quick_mode_parameters(
 
         if recommended_models_list:
             # Show top 10 with detailed characteristics
-            self.console.print("[bold cyan]Top 10 Recommended Models:[/bold cyan]\n")
+            self.console.print("[bold cyan]🎯 Top 10 Recommended Models:[/bold cyan]\n")
 
             models_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
             models_table.add_column("#", style="yellow", width=3, no_wrap=True)
@@ -8845,7 +8845,7 @@ def _collect_quick_mode_parameters(
             default_model = preloaded_params['model_name']
 
         # Offer to display all models
-        self.console.print(f"\n[dim]Tip: Selection Options:[/dim]")
+        self.console.print(f"\n[dim]💡 Selection Options:[/dim]")
         self.console.print(f"[dim]  • Enter [cyan]1-10[/cyan] to select from Top 10 recommendations[/dim]")
         self.console.print(f"[dim]  • Enter [cyan]'info X'[/cyan] (e.g., 'info 1') to see full details of a model[/dim]")
         self.console.print(f"[dim]  • Enter [cyan]'all'[/cyan] to see ALL {len(MODEL_METADATA)} available models with complete characteristics[/dim]")
@@ -8870,7 +8870,7 @@ def _collect_quick_mode_parameters(
         # Check if user wants to see all models
         if model_input.lower() == 'all':
             # Show ALL models with complete characteristics
-            self.console.print(f"\n[bold cyan]ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
+            self.console.print(f"\n[bold cyan]📚 ALL {len(MODEL_METADATA)} Available Models:[/bold cyan]\n")
 
             all_models_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.ROUNDED, expand=True)
             all_models_table.add_column("#", style="yellow", width=4, no_wrap=True)
@@ -8915,7 +8915,7 @@ def _collect_quick_mode_parameters(
 
             self.console.print(all_models_table)
 
-            self.console.print(f"\n[dim]Tip: [bold green]Green models[/bold green] are in your Top 10 recommendations[/dim]")
+            self.console.print(f"\n[dim]💡 [bold green]Green models[/bold green] are in your Top 10 recommendations[/dim]")
             self.console.print(f"\n[bold yellow]Select a model:[/bold yellow]")
             self.console.print(f"[dim]  • Enter the # number from the table[/dim]")
             self.console.print(f"[dim]  • Or enter the model ID directly[/dim]")
@@ -8926,9 +8926,9 @@ def _collect_quick_mode_parameters(
                 idx = int(model_input_after_all) - 1
                 if 0 <= idx < len(sorted_model_ids):
                     model_name = sorted_model_ids[idx]
-                    self.console.print(f"[green]Selected: {model_name}[/green]")
+                    self.console.print(f"[green]✓ Selected: {model_name}[/green]")
                 else:
-                    self.console.print(f"[yellow][!] Invalid selection. Using default: {default_model}[/yellow]")
+                    self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
                     model_name = default_model
             else:
                 model_name = model_input_after_all
@@ -8936,9 +8936,9 @@ def _collect_quick_mode_parameters(
             idx = int(model_input) - 1
             if 0 <= idx < len(recommended_models_list):
                 model_name = recommended_models_list[idx]
-                self.console.print(f"[green]Selected: {model_name}[/green]")
+                self.console.print(f"[green]✓ Selected: {model_name}[/green]")
             else:
-                self.console.print(f"[yellow][!] Invalid selection. Using default: {default_model}[/yellow]")
+                self.console.print(f"[yellow]⚠️  Invalid selection. Using default: {default_model}[/yellow]")
                 model_name = default_model
         else:
             model_name = model_input
@@ -8961,7 +8961,7 @@ def _collect_quick_mode_parameters(
 
     if binary_stage_required:
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-        self.console.print("[bold cyan]           Hybrid Stage: One-vs-all Binary Model Selection[/bold cyan]")
+        self.console.print("[bold cyan]           ⚖️ Hybrid Stage: One-vs-all Binary Model Selection[/bold cyan]")
         self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
         reuse_for_binary = Confirm.ask(
@@ -8978,7 +8978,7 @@ def _collect_quick_mode_parameters(
                 onevsall_models_by_language = {}
                 for lang in sorted(languages):
                     self.console.print(f"\n[bold yellow]{'─'*60}[/bold yellow]")
-                    self.console.print(f"[bold yellow]Selecting binary model for {lang} (one-vs-all stage)[/bold yellow]")
+                    self.console.print(f"[bold yellow]🧪 Selecting binary model for {lang} (one-vs-all stage)[/bold yellow]")
                     self.console.print(f"[bold yellow]{'─'*60}[/bold yellow]\n")
 
                     lang_recommended = get_recommended_models(
@@ -9035,7 +9035,7 @@ def _collect_quick_mode_parameters(
     if hasattr(bundle, 'metadata') and bundle.metadata and bundle.metadata.get('multi_label'):
         # Show confirmation that multi-label is enabled
         self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-        self.console.print("[bold cyan]            Multi-Label Classification: ENABLED               [/bold cyan]")
+        self.console.print("[bold cyan]           🏷️  Multi-Label Classification: ENABLED               [/bold cyan]")
         self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
         self.console.print("[dim]Multi-label training will use:[/dim]")
@@ -9054,17 +9054,17 @@ def _collect_quick_mode_parameters(
             try:
                 multi_label_threshold = float(threshold_input)
                 if multi_label_threshold < 0 or multi_label_threshold > 1:
-                    self.console.print("[yellow][!] Threshold must be between 0 and 1. Using default 0.5[/yellow]")
+                    self.console.print("[yellow]⚠️  Threshold must be between 0 and 1. Using default 0.5[/yellow]")
                     multi_label_threshold = 0.5
             except ValueError:
-                self.console.print("[yellow][!] Invalid input. Using default 0.5[/yellow]")
+                self.console.print("[yellow]⚠️  Invalid input. Using default 0.5[/yellow]")
                 multi_label_threshold = 0.5
             bundle.metadata['multi_label_threshold'] = multi_label_threshold
 
     # Reinforced learning
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
     rl_step_label = resolve_step_label("reinforced_learning", "STEP 5", context=step_context)
-    self.console.print(f"[bold cyan]           {rl_step_label}: Reinforced Learning                      [/bold cyan]")
+    self.console.print(f"[bold cyan]           🎓 {rl_step_label}: Reinforced Learning                      [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     self.console.print("[bold]What is Reinforced Learning?[/bold]")
@@ -9073,12 +9073,12 @@ def _collect_quick_mode_parameters(
     self.console.print("  • [cyan]Adaptive parameters[/cyan]: Automatically adjusts learning rate, batch size, and epochs")
     self.console.print("  • [cyan]Loss correction[/cyan]: Applies class weights to the cross-entropy loss function\n")
 
-    self.console.print("[bold yellow][!]  Default Settings (Configurable):[/bold yellow]")
+    self.console.print("[bold yellow]⚠️  Default Settings (Configurable):[/bold yellow]")
     self.console.print("  • [yellow]F1 Threshold[/yellow]: 0.70 - Triggers reinforced learning when F1 < threshold")
     self.console.print("  • [yellow]Oversampling Factor[/yellow]: 2.0 - Minority class appears 2× more in training")
     self.console.print("  • [yellow]Loss Weight Factor[/yellow]: 2.0 - Minority class errors weighted 2× higher\n")
 
-    self.console.print("[bold]What These Parameters Do:[/bold]")
+    self.console.print("[bold]📊 What These Parameters Do:[/bold]")
     self.console.print("  • [green]F1 Threshold[/green]: Lower = More aggressive (activates earlier)")
     self.console.print("    Example: 0.50 → Triggers when model performs poorly")
     self.console.print("    Example: 0.80 → Triggers only for high-performing models")
@@ -9118,10 +9118,10 @@ def _collect_quick_mode_parameters(
         )
 
         if configure_rl:
-            self.console.print("\n[bold green] Manual Configuration[/bold green]\n")
+            self.console.print("\n[bold green]⚙️  Manual Configuration[/bold green]\n")
 
             # F1 Threshold
-            self.console.print("[bold]1⃣  F1 Activation Threshold[/bold]")
+            self.console.print("[bold]1️⃣  F1 Activation Threshold[/bold]")
             self.console.print("   [dim]When F1-score drops below this value, reinforced learning activates[/dim]")
             self.console.print("   • Recommended: [green]0.70[/green] (moderate)")
             self.console.print("   • Conservative: [yellow]0.50[/yellow] (only very poor models)")
@@ -9134,19 +9134,19 @@ def _collect_quick_mode_parameters(
             try:
                 rl_f1_threshold = float(f1_input)
                 if rl_f1_threshold < 0 or rl_f1_threshold > 1:
-                    self.console.print("[yellow][!] F1 must be between 0 and 1. Using default 0.70[/yellow]")
+                    self.console.print("[yellow]⚠️  F1 must be between 0 and 1. Using default 0.70[/yellow]")
                     rl_f1_threshold = 0.70
             except ValueError:
-                self.console.print("[yellow][!] Invalid input. Using default 0.70[/yellow]")
+                self.console.print("[yellow]⚠️  Invalid input. Using default 0.70[/yellow]")
                 rl_f1_threshold = 0.70
 
             # Oversampling Factor
-            self.console.print("\n[bold]2⃣  Minority Class Oversampling Factor[/bold]")
+            self.console.print("\n[bold]2️⃣  Minority Class Oversampling Factor[/bold]")
             self.console.print("   [dim]How many times to duplicate minority class samples during training[/dim]")
             self.console.print("   • Recommended: [green]2.0[/green] (doubles minority samples)")
             self.console.print("   • Light: [yellow]1.5[/yellow] (50% increase)")
             self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× minority samples)")
-            self.console.print("   • [red][!]  Values > 5.0 risk overfitting[/red]\n")
+            self.console.print("   • [red]⚠️  Values > 5.0 risk overfitting[/red]\n")
 
             oversample_input = Prompt.ask(
                 "Oversampling factor",
@@ -9155,21 +9155,21 @@ def _collect_quick_mode_parameters(
             try:
                 rl_oversample_factor = float(oversample_input)
                 if rl_oversample_factor < 1.0:
-                    self.console.print("[yellow][!] Factor must be ≥ 1.0. Using default 2.0[/yellow]")
+                    self.console.print("[yellow]⚠️  Factor must be ≥ 1.0. Using default 2.0[/yellow]")
                     rl_oversample_factor = 2.0
                 elif rl_oversample_factor > 5.0:
-                    self.console.print("[yellow][!] Warning: High values (>5.0) may cause overfitting[/yellow]")
+                    self.console.print("[yellow]⚠️  Warning: High values (>5.0) may cause overfitting[/yellow]")
             except ValueError:
-                self.console.print("[yellow][!] Invalid input. Using default 2.0[/yellow]")
+                self.console.print("[yellow]⚠️  Invalid input. Using default 2.0[/yellow]")
                 rl_oversample_factor = 2.0
 
             # Class Weight Factor
-            self.console.print("\n[bold]3⃣  Cross-Entropy Loss Weight Factor[/bold]")
+            self.console.print("\n[bold]3️⃣  Cross-Entropy Loss Weight Factor[/bold]")
             self.console.print("   [dim]Penalty multiplier for misclassifying minority class samples[/dim]")
             self.console.print("   • Recommended: [green]2.0[/green] (2× penalty for minority errors)")
             self.console.print("   • Light: [yellow]1.5[/yellow] (50% higher penalty)")
             self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× penalty)")
-            self.console.print("   • [red][!]  Values > 5.0 may destabilize training[/red]\n")
+            self.console.print("   • [red]⚠️  Values > 5.0 may destabilize training[/red]\n")
 
             weight_input = Prompt.ask(
                 "Loss weight factor",
@@ -9178,16 +9178,16 @@ def _collect_quick_mode_parameters(
             try:
                 rl_class_weight_factor = float(weight_input)
                 if rl_class_weight_factor < 1.0:
-                    self.console.print("[yellow][!] Factor must be ≥ 1.0. Using default 2.0[/yellow]")
+                    self.console.print("[yellow]⚠️  Factor must be ≥ 1.0. Using default 2.0[/yellow]")
                     rl_class_weight_factor = 2.0
                 elif rl_class_weight_factor > 5.0:
-                    self.console.print("[yellow][!] Warning: High values (>5.0) may destabilize training[/yellow]")
+                    self.console.print("[yellow]⚠️  Warning: High values (>5.0) may destabilize training[/yellow]")
             except ValueError:
-                self.console.print("[yellow][!] Invalid input. Using default 2.0[/yellow]")
+                self.console.print("[yellow]⚠️  Invalid input. Using default 2.0[/yellow]")
                 rl_class_weight_factor = 2.0
 
             # Reinforced Epochs
-            self.console.print("\n[bold]4⃣  Reinforced Learning Epochs[/bold]")
+            self.console.print("\n[bold]4️⃣  Reinforced Learning Epochs[/bold]")
             self.console.print("   [dim]Number of additional epochs to run when F1 < threshold[/dim]")
             self.console.print("   • Default: [green]Auto-calculated[/green] (8-20 epochs based on model type)")
             self.console.print("   • Manual: [yellow]Choose fixed number[/yellow] (applies to all models)\n")
@@ -9225,7 +9225,7 @@ def _collect_quick_mode_parameters(
             )
 
             if configure_rl_epochs:
-                self.console.print("\n[bold cyan]ℹ Reinforced Learning Epochs:[/bold cyan]")
+                self.console.print("\n[bold cyan]ℹ️  Reinforced Learning Epochs:[/bold cyan]")
                 self.console.print("[dim]These epochs will be used when F1 < {:.2f}[/dim]".format(rl_f1_threshold))
                 self.console.print("[dim]Auto-calculation typically uses 8-20 epochs based on model type[/dim]\n")
 
@@ -9234,15 +9234,15 @@ def _collect_quick_mode_parameters(
                     default=10
                 )
 
-                self.console.print(f"[green]Manual reinforced epochs set to: {manual_rl_epochs}[/green]\n")
+                self.console.print(f"[green]✓ Manual reinforced epochs set to: {manual_rl_epochs}[/green]\n")
             else:
-                self.console.print("[green]Reinforced learning epochs will be auto-calculated[/green]\n")
+                self.console.print("[green]✓ Reinforced learning epochs will be auto-calculated[/green]\n")
                 manual_rl_epochs = None
 
     # Epoch configuration
     self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
     epochs_step_label = resolve_step_label("epochs", "STEP 5", context=step_context)
-    self.console.print(f"[bold cyan]           {epochs_step_label}: Training Epochs                           [/bold cyan]")
+    self.console.print(f"[bold cyan]           ⏱️  {epochs_step_label}: Training Epochs                           [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     self.console.print("[bold]What are Epochs?[/bold]")
@@ -9255,14 +9255,14 @@ def _collect_quick_mode_parameters(
     self.console.print("  • [green]Medium dataset (1000-10000)[/green]: 5-10 epochs recommended")
     self.console.print("  • [green]Large dataset (>10000)[/green]: 3-5 epochs recommended\n")
 
-    self.console.print("[bold green]Automatic Best Model Checkpointing:[/bold green]")
+    self.console.print("[bold green]💾 Automatic Best Model Checkpointing:[/bold green]")
     self.console.print("  • [cyan]Don't worry about setting too many epochs![/cyan]")
     self.console.print("  • The [bold]BEST model[/bold] is automatically saved during training")
     self.console.print("  • System monitors [yellow]validation F1 score[/yellow] after each epoch")
     self.console.print("  • Only the checkpoint with [bold green]highest F1[/bold green] is kept")
     self.console.print("  • Early stopping prevents overfitting automatically\n")
 
-    self.console.print("[dim]Tip: Example: You set 15 epochs, but best F1 was at epoch 8 → Model from epoch 8 is used[/dim]\n")
+    self.console.print("[dim]💡 Example: You set 15 epochs, but best F1 was at epoch 8 → Model from epoch 8 is used[/dim]\n")
 
     # Use preloaded value if available
     default_epochs = preloaded_params.get('epochs', 10) if preloaded_params else 10
@@ -9428,7 +9428,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         self.logger.warning("  ⚠️  No session_id provided - will create new one (BAD!)")
     self.logger.info("="*80)
     if session_id:
-        self.console.print(f"\n[cyan]Session ID:[/cyan] [bold]{session_id}[/bold]")
+        self.console.print(f"\n[cyan]📂 Session ID:[/cyan] [bold]{session_id}[/bold]")
         self.console.print(f"[dim]All trained models will be saved to: models/{session_id}/normal_training/[/dim]\n")
         if session_metrics_dir is not None:
             self.console.print(f"[dim]Training metrics will be saved to: {session_metrics_dir}[/dim]\n")
@@ -9554,7 +9554,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             if was_filtered:
                 # Update bundle to use filtered file
                 bundle.primary_file = Path(filtered_file)
-                self.console.print(f"[green]Using filtered training dataset[/green]\n")
+                self.console.print(f"[green]✓ Using filtered training dataset[/green]\n")
         except ValueError as e:
             # User cancelled or validation failed
             self.console.print(f"[red]{e}[/red]")
@@ -9575,7 +9575,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
     # CRITICAL: Validate models_by_language type before using len()
     if models_by_language and not isinstance(models_by_language, dict):
-        self.console.print(f"[red][!]  ERROR: models_by_language has invalid type: {type(models_by_language)}[/red]")
+        self.console.print(f"[red]⚠️  ERROR: models_by_language has invalid type: {type(models_by_language)}[/red]")
         self.logger.error(f"models_by_language type error: {type(models_by_language)}, value: {models_by_language}")
         models_by_language = None  # Reset to None to prevent crash
 
@@ -9698,7 +9698,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     self.console.print(f"\n[cyan]✓ Using {training_approach_from_metadata} training (from dataset configuration)[/cyan]\n")
                 else:
                     # No previous choice - ask user
-                    self.console.print("\n[yellow]ℹ Detected multi-class classification:[/yellow]")
+                    self.console.print("\n[yellow]ℹ️  Detected multi-class classification:[/yellow]")
                     for group_name, labels in multiclass_groups.items():
                         value_names = [lbl[len(group_name)+1:] if lbl.startswith(group_name+'_') else lbl for lbl in labels]
                         self.console.print(f"  • {group_name}: {', '.join(value_names)}")
@@ -9714,7 +9714,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     )
 
                     if use_multiclass_training:
-                        self.console.print("[green]Will use multi-class training[/green]\n")
+                        self.console.print("[green]✓ Will use multi-class training[/green]\n")
                     else:
                         self.console.print("[yellow]✓ Will train separate binary classifiers[/yellow]\n")
                         multiclass_groups = None  # Don't pass to trainer
@@ -9750,7 +9750,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     if models_by_language:
         # User selected different models for each language
         needs_language_training = True
-        self.console.print(f"\n[yellow]Multi-language training enabled:[/yellow]")
+        self.console.print(f"\n[yellow]🌍 Multi-language training enabled:[/yellow]")
         self.console.print(f"[dim]Training with specialized models for each language:[/dim]")
         for lang in sorted(models_by_language.keys()):
             self.console.print(f"  • {lang.upper()}: {models_by_language[lang]}")
@@ -9760,7 +9760,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         needs_language_training = not is_multilingual and len(languages) > 1
 
         if needs_language_training:
-            self.console.print(f"\n[yellow]Multi-language training enabled:[/yellow]")
+            self.console.print(f"\n[yellow]🌍 Multi-language training enabled:[/yellow]")
             self.console.print(f"[dim]The model '{model_name}' is language-specific, so separate models will be trained for each language:[/dim]")
             for lang in sorted(languages):
                 self.console.print(f"  • {lang.upper()}")
@@ -9821,7 +9821,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
         # If no category files exist, create them from the JSONL file
         if not category_files:
-            self.console.print("\n[yellow]Creating binary datasets for one-vs-all training...[/yellow]")
+            self.console.print("\n[yellow]⚡ Creating binary datasets for one-vs-all training...[/yellow]")
 
             # Load the JSONL file to extract labels
             import json
@@ -9957,13 +9957,13 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 # Warn if too many filtered
                 total_filtered = len(filtered_empty_texts) + len(filtered_invalid_texts)
                 if total_filtered > 0:
-                    self.console.print(f"[yellow]    [!]  Filtered {total_filtered} invalid/empty texts[/yellow]")
+                    self.console.print(f"[yellow]    ⚠️  Filtered {total_filtered} invalid/empty texts[/yellow]")
 
-            self.console.print(f"[green]Created {len(category_files)} binary datasets[/green]\n")
+            self.console.print(f"[green]✓ Created {len(category_files)} binary datasets[/green]\n")
 
         if category_files:
             num_models_to_train = len(category_files)
-            self.console.print(f"\n[yellow][!]  One-vs-all requires training {num_models_to_train} separate binary models.[/yellow]")
+            self.console.print(f"\n[yellow]⚠️  One-vs-all requires training {num_models_to_train} separate binary models.[/yellow]")
 
             # ========== PARALLEL TRAINING OPTION ==========
             # Check if parallel training is available and beneficial using smart scheduler
@@ -9991,13 +9991,13 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     min_threshold = scheduler_config.min_tasks_for_parallel
                     recommended_threshold = scheduler_config.recommended_tasks_for_parallel
 
-                    self.console.print(f"\n[bold cyan]Parallel Training Available[/bold cyan]")
+                    self.console.print(f"\n[bold cyan]🚀 Parallel Training Available[/bold cyan]")
 
                     # Clear recommendation panel
                     from rich.panel import Panel
                     if strongly_recommended:
                         rec_text = (
-                            f"[bold green][OK] STRONGLY RECOMMENDED[/bold green]\n\n"
+                            f"[bold green]✅ STRONGLY RECOMMENDED[/bold green]\n\n"
                             f"You have [bold]{num_models_to_train} models[/bold] to train, which is ≥{recommended_threshold} models.\n"
                             f"Parallel training will provide [green]significant speedup[/green] by utilizing GPU + CPU workers simultaneously."
                         )
@@ -10006,7 +10006,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     else:
                         # Between min_threshold and recommended_threshold
                         rec_text = (
-                            f"[bold yellow][!] OPTIONAL - MARGINAL BENEFIT[/bold yellow]\n\n"
+                            f"[bold yellow]⚠️ OPTIONAL - MARGINAL BENEFIT[/bold yellow]\n\n"
                             f"You have [bold]{num_models_to_train} models[/bold] to train ({min_threshold}-{recommended_threshold-1} range).\n"
                             f"Parallel training offers [yellow]moderate speedup[/yellow], but overhead may reduce benefits.\n\n"
                             f"[dim]• Sequential (GPU-only) is often faster for <{recommended_threshold} models\n"
@@ -10015,14 +10015,14 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         rec_style = "yellow"
                         default_choice = False
 
-                    self.console.print(Panel(rec_text, title="Recommendation", border_style=rec_style))
+                    self.console.print(Panel(rec_text, title="📊 Recommendation", border_style=rec_style))
 
                     # Display resource allocation plan
                     from rich.table import Table
                     from rich import box
 
                     plan_table = Table(
-                        title="Resource Allocation Plan",
+                        title="📊 Resource Allocation Plan",
                         show_header=True,
                         header_style="bold magenta",
                         box=box.ROUNDED,
@@ -10036,7 +10036,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     if resource_plan.gpu_allocation:
                         g = resource_plan.gpu_allocation
                         plan_table.add_row(
-                            f"GPU {g.device_id.upper()}",
+                            f"🖥️ {g.device_id.upper()}",
                             "GPU (Priority)",
                             str(g.batch_size),
                             str(g.num_workers),
@@ -10044,7 +10044,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
                     for cpu in resource_plan.cpu_allocations:
                         plan_table.add_row(
-                            f"CPU {cpu.device_id}",
+                            f"💻 {cpu.device_id}",
                             "CPU",
                             str(cpu.batch_size),
                             str(cpu.num_workers),
@@ -10063,7 +10063,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     use_parallel_training = Confirm.ask(prompt_text, default=default_choice)
 
                     if use_parallel_training:
-                        self.console.print("[green]Parallel training enabled with smart task scheduling[/green]\n")
+                        self.console.print("[green]✓ Parallel training enabled with smart task scheduling[/green]\n")
 
                         # ========== SSH DISTRIBUTED TRAINING OPTION ==========
                         distributed_orchestrator = None
@@ -10213,7 +10213,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 # CRITICAL: Validate type before passing to avoid numpy type errors
                 if models_by_language:
                     if not isinstance(models_by_language, dict):
-                        self.console.print(f"[red][!]  ERROR: models_by_language has invalid type: {type(models_by_language)}[/red]")
+                        self.console.print(f"[red]⚠️  ERROR: models_by_language has invalid type: {type(models_by_language)}[/red]")
                         self.logger.error(f"one-vs-all: models_by_language type error: {type(models_by_language)}, value: {models_by_language}")
                     else:
                         category_config["models_by_language"] = models_by_language
@@ -10233,7 +10233,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         global_completed_epochs = max(global_completed_epochs, returned_epochs)
                     self.logger.debug(f"[EPOCH_TRACK] After one-vs-all category {category_name}: global_completed_epochs={global_completed_epochs}")
                     results_per_category[category_name] = category_result
-                    self.console.print(f"[green]Completed {category_name}: Accuracy={category_result.get('accuracy', 0):.4f}, F1={category_result.get('best_f1_macro', 0):.4f}[/green]")
+                    self.console.print(f"[green]✓ Completed {category_name}: Accuracy={category_result.get('accuracy', 0):.4f}, F1={category_result.get('best_f1_macro', 0):.4f}[/green]")
                 except Exception as exc:
                     self.console.print(f"[red]✗ Failed to train {category_name}: {exc}[/red]")
                     self.logger.exception(f"Training failed for {category_name}", exc_info=exc)
@@ -10284,7 +10284,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         multilabel_keys = bundle.metadata.get('multilabel_keys', [])
         onevsall_keys = bundle.metadata.get('onevsall_keys', [])
 
-        self.console.print(f"\n[cyan]Hybrid/Custom training:[/cyan]")
+        self.console.print(f"\n[cyan]🔀 Hybrid/Custom training:[/cyan]")
         self.console.print(f"  • {len(multiclass_keys)} keys with multi-class strategy")
         self.console.print(f"  • {len(multilabel_keys)} keys with multi-label strategy")
         self.console.print(f"  • {len(onevsall_keys)} keys with one-vs-all strategy\n")
@@ -10425,7 +10425,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         # Check for epoch checkpoints (model_epoch_X directories)
                         for subdir in model_dir.iterdir():
                             if subdir.is_dir() and subdir.name.startswith("model_epoch_"):
-                                self.console.print(f"[yellow]Cleaning up incomplete checkpoint: {subdir}[/yellow]")
+                                self.console.print(f"[yellow]🧹 Cleaning up incomplete checkpoint: {subdir}[/yellow]")
                                 shutil.rmtree(subdir)
                                 return True
                 return False
@@ -10686,7 +10686,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         onevsall_file, target_keys=onevsall_keys
                     )
                     all_hybrid_category_files.update(hybrid_binary_files)
-                    self.console.print(f"[green]Generated {len(hybrid_binary_files)} binary datasets[/green]")
+                    self.console.print(f"[green]✓ Generated {len(hybrid_binary_files)} binary datasets[/green]")
                 except Exception as e:
                     self.logger.warning(f"Could not pre-generate binary datasets: {e}")
                     # Will fall back to sequential generation later
@@ -10716,7 +10716,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 min_threshold = scheduler_config.min_tasks_for_parallel
                 recommended_threshold = scheduler_config.recommended_tasks_for_parallel
 
-                self.console.print(f"\n[bold cyan]Parallel Training Available for Hybrid Mode[/bold cyan]")
+                self.console.print(f"\n[bold cyan]🚀 Parallel Training Available for Hybrid Mode[/bold cyan]")
 
                 # Show breakdown
                 self.console.print(f"\n[bold]Models breakdown:[/bold]")
@@ -10728,7 +10728,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 from rich.panel import Panel
                 if strongly_recommended:
                     rec_text = (
-                        f"[bold green][OK] STRONGLY RECOMMENDED[/bold green]\n\n"
+                        f"[bold green]✅ STRONGLY RECOMMENDED[/bold green]\n\n"
                         f"You have [bold]{num_models_to_train} models[/bold] to train, which is ≥{recommended_threshold} models.\n"
                         f"Parallel training will provide [green]significant speedup[/green] by utilizing GPU + CPU workers simultaneously."
                     )
@@ -10736,7 +10736,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     default_choice = True
                 else:
                     rec_text = (
-                        f"[bold yellow][!] OPTIONAL - MARGINAL BENEFIT[/bold yellow]\n\n"
+                        f"[bold yellow]⚠️ OPTIONAL - MARGINAL BENEFIT[/bold yellow]\n\n"
                         f"You have [bold]{num_models_to_train} models[/bold] to train ({min_threshold}-{recommended_threshold-1} range).\n"
                         f"Parallel training offers [yellow]moderate speedup[/yellow], but overhead may reduce benefits.\n\n"
                         f"[dim]• Sequential (GPU-only) is often faster for <{recommended_threshold} models\n"
@@ -10745,7 +10745,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     rec_style = "yellow"
                     default_choice = False
 
-                self.console.print(Panel(rec_text, title="Recommendation", border_style=rec_style))
+                self.console.print(Panel(rec_text, title="📊 Recommendation", border_style=rec_style))
 
                 # Show resource plan
                 plan = hw_analyzer.create_resource_plan(model_name, num_models_to_train)
@@ -10754,7 +10754,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 from rich import box
 
                 plan_table = Table(
-                    title="Resource Allocation Plan",
+                    title="📊 Resource Allocation Plan",
                     show_header=True,
                     header_style="bold cyan",
                     box=box.ROUNDED,
@@ -10767,10 +10767,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
                 if plan.gpu_allocation:
                     g = plan.gpu_allocation
-                    plan_table.add_row(f"GPU {g.device_id.upper()}", "GPU (Priority)", str(g.batch_size), str(g.num_workers))
+                    plan_table.add_row(f"🖥️ {g.device_id.upper()}", "GPU (Priority)", str(g.batch_size), str(g.num_workers))
 
                 for c in plan.cpu_allocations:
-                    plan_table.add_row(f"CPU {c.device_id}", "CPU", str(c.batch_size), str(c.num_workers))
+                    plan_table.add_row(f"💻 {c.device_id}", "CPU", str(c.batch_size), str(c.num_workers))
 
                 self.console.print(plan_table)
                 self.console.print(f"\n[dim]Total: {plan.total_parallel_workers} workers available[/dim]")
@@ -10798,7 +10798,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         # EXECUTE PARALLEL TRAINING IF CHOSEN
         # ============================================================
         if use_parallel_training and all_hybrid_category_files:
-            self.console.print(f"\n[bold green]Starting Parallel Hybrid Training...[/bold green]")
+            self.console.print(f"\n[bold green]🚀 Starting Parallel Hybrid Training...[/bold green]")
             self.console.print(f"[dim]Training {len(all_hybrid_category_files)} models in parallel[/dim]\n")
 
             return self._run_parallel_training(
@@ -10837,7 +10837,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
         if already_trained_count > 0:
             models_remaining = global_total_models - already_trained_count
-            self.console.print(f"\n[bold cyan]RESUMING TRAINING SESSION[/bold cyan]")
+            self.console.print(f"\n[bold cyan]🔄 RESUMING TRAINING SESSION[/bold cyan]")
             self.console.print(f"[green]   ✓ {already_trained_count} models already trained (will be skipped)[/green]")
             self.console.print(f"[yellow]   ⏳ {models_remaining} models remaining to train[/yellow]\n")
 
@@ -10858,7 +10858,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # RESUME LOGIC: Check if model is already trained and skip if complete
             is_complete, existing_path = _is_model_already_trained(key_name, model_name, 'normal_training')
             if is_complete:
-                self.console.print(f"\n[green]⏭ Skipping '{key_name}' - already trained[/green]")
+                self.console.print(f"\n[green]⏭️  Skipping '{key_name}' - already trained[/green]")
                 self.console.print(f"[dim]   Model path: {existing_path}[/dim]")
                 # Register the existing model in results
                 key_bucket = results_per_key.setdefault(key_name, {})
@@ -10888,7 +10888,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 )
                 if was_filtered:
                     key_file_path = Path(validated_file)
-                    self.console.print(f"[green]Using filtered dataset for {key_name}[/green]")
+                    self.console.print(f"[green]✓ Using filtered dataset for {key_name}[/green]")
             except ValueError as e:
                 self.console.print(f"[red]✗ Failed to train {key_name}: {e}[/red]")
                 self.logger.error(f"Validation failed for {key_name}: {e}")
@@ -10942,7 +10942,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 total_training_time += float(key_result.get('training_time', 0.0) or 0.0)
                 key_bucket = results_per_key.setdefault(key_name, {})
                 key_bucket['multi_class'] = key_result
-                self.console.print(f"[green]Completed {key_name}: Accuracy={key_result.get('accuracy', 0):.4f}, F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
+                self.console.print(f"[green]✓ Completed {key_name}: Accuracy={key_result.get('accuracy', 0):.4f}, F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
             except Exception as exc:
                 self.console.print(f"[red]✗ Failed to train {key_name}: {exc}[/red]")
                 self.logger.exception(f"Training failed for {key_name}", exc_info=exc)
@@ -11004,7 +11004,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 total_training_time += float(key_result.get('training_time', 0.0) or 0.0)
                 key_bucket = results_per_key.setdefault(key_name, {})
                 key_bucket['multi_label'] = key_result
-                self.console.print(f"[green]Completed {key_name}: F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
+                self.console.print(f"[green]✓ Completed {key_name}: F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
             except Exception as exc:
                 self.console.print(f"[red]✗ Failed to train {key_name}: {exc}[/red]")
                 self.logger.exception(f"Training failed for {key_name}", exc_info=exc)
@@ -11046,7 +11046,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     )
                     if was_filtered:
                         onevsall_file = Path(validated_file)
-                        self.console.print(f"[green]Using filtered dataset for one-vs-all[/green]")
+                        self.console.print(f"[green]✓ Using filtered dataset for one-vs-all[/green]")
                 except ValueError as e:
                     self.console.print(f"[red]✗ Failed to validate one-vs-all file: {e}[/red]")
                     self.logger.error(f"Validation failed for one-vs-all: {e}")
@@ -11058,7 +11058,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     onevsall_label_display_map = label_display_map
 
             if not binary_category_files:
-                self.console.print("[yellow][!] No binary datasets available for one-vs-all keys[/yellow]")
+                self.console.print("[yellow]⚠️  No binary datasets available for one-vs-all keys[/yellow]")
             else:
                 self.console.print(f"[dim]  Training {len(binary_category_files)} binary models for one-vs-all[/dim]")
 
@@ -11076,7 +11076,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     # RESUME LOGIC: Check if binary model is already trained and skip if complete
                     is_complete, existing_path = _is_model_already_trained(label_name, model_name, 'normal_training')
                     if is_complete:
-                        self.console.print(f"\n[green]⏭ Skipping '{label_name}' - already trained[/green]")
+                        self.console.print(f"\n[green]⏭️  Skipping '{label_name}' - already trained[/green]")
                         self.console.print(f"[dim]   Model path: {existing_path}[/dim]")
                         onevsall_bucket[raw_value] = {
                             'skipped': True,
@@ -11103,7 +11103,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         )
                         if was_filtered:
                             dataset_path = Path(validated_file)
-                            self.console.print(f"[green]Using filtered dataset for {label_name}[/green]")
+                            self.console.print(f"[green]✓ Using filtered dataset for {label_name}[/green]")
                     except ValueError as e:
                         self.console.print(f"[red]✗ Failed to validate binary dataset for {label_name}: {e}[/red]")
                         self.logger.error(f"Validation failed for binary dataset {label_name}: {e}")
@@ -11187,14 +11187,14 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                                 'negative': display_info.get('negative_count'),
                                 'total': display_info.get('total_samples')
                             }
-                        self.console.print(f"[green]Completed {label_name}: Accuracy={label_result.get('accuracy', 0):.4f}, F1={label_result.get('best_f1_macro', 0):.4f}[/green]")
+                        self.console.print(f"[green]✓ Completed {label_name}: Accuracy={label_result.get('accuracy', 0):.4f}, F1={label_result.get('best_f1_macro', 0):.4f}[/green]")
                     except Exception as exc:
                         self.console.print(f"[red]✗ Failed to train {label_name}: {exc}[/red]")
                         self.logger.exception(f"Training failed for {label_name}", exc_info=exc)
                         onevsall_bucket[raw_value] = {'error': str(exc)}
                         current_model_index += 1
         else:
-            self.console.print("[yellow][!] Skipping one-vs-all training: dataset missing[/yellow]")
+            self.console.print("[yellow]⚠️  Skipping one-vs-all training: dataset missing[/yellow]")
 
         # Aggregate results
         successful_records = [rec for rec in trained_model_records if rec['f1'] > 0 or rec['accuracy'] > 0]
@@ -11284,7 +11284,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # PER-KEY MULTI-LABEL: Train ONE multi-label model PER KEY
             # ============================================================
             # Each key (e.g., themes, sentiment, parties) gets its own multi-label model
-            self.console.print(f"\n[magenta]Multi-Label Training: {len(key_files)} models (one per key)[/magenta]\n")
+            self.console.print(f"\n[magenta]🏷️ Multi-Label Training: {len(key_files)} models (one per key)[/magenta]\n")
 
             # Initialize global progress tracking
             import time
@@ -11318,7 +11318,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # ============================================================
             # PRE-VALIDATION PHASE: Validate ALL keys BEFORE training starts
             # ============================================================
-            self.console.print(f"\n[bold cyan]Pre-validation Phase: Checking all {len(key_files)} keys...[/bold cyan]\n")
+            self.console.print(f"\n[bold cyan]🔍 Pre-validation Phase: Checking all {len(key_files)} keys...[/bold cyan]\n")
 
             validated_key_files = {}  # {key_name: validated_file_path}
             keys_to_skip = []
@@ -11339,7 +11339,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     else:
                         self.console.print(f"    [green]✓ All labels valid for {key_name}[/green]")
                 except ValueError as e:
-                    self.console.print(f"    [yellow][!]  Skipping {key_name}: {e}[/yellow]")
+                    self.console.print(f"    [yellow]⚠️  Skipping {key_name}: {e}[/yellow]")
                     keys_to_skip.append(key_name)
                 except Exception as e:
                     self.logger.warning(f"Label validation failed for {key_name}: {e}")
@@ -11348,7 +11348,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # Update model counts after validation (some keys may be skipped)
             if keys_to_skip:
                 num_valid_keys = len(validated_key_files)
-                self.console.print(f"\n[yellow][!]  {len(keys_to_skip)} key(s) will be skipped due to insufficient samples[/yellow]")
+                self.console.print(f"\n[yellow]⚠️  {len(keys_to_skip)} key(s) will be skipped due to insufficient samples[/yellow]")
                 if num_valid_keys == 0:
                     self.console.print("[red]✗ No valid keys remaining for training[/red]")
                     return {
@@ -11368,9 +11368,9 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     global_max_epochs = global_total_models * (epochs + manual_rl_epochs)
                 else:
                     global_max_epochs = global_total_epochs
-                self.console.print(f"[cyan]Updated: {num_valid_keys} keys × {epochs} epochs = {global_total_models} models[/cyan]")
+                self.console.print(f"[cyan]📊 Updated: {num_valid_keys} keys × {epochs} epochs = {global_total_models} models[/cyan]")
 
-            self.console.print(f"\n[green][OK] Pre-validation complete. Ready to train {len(validated_key_files)} models.[/green]\n")
+            self.console.print(f"\n[green]✅ Pre-validation complete. Ready to train {len(validated_key_files)} models.[/green]\n")
 
             # ============================================================
             # CHECK FOR PARALLEL TRAINING OPTION (Smart Scheduler)
@@ -11398,13 +11398,13 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     min_threshold = scheduler_config.min_tasks_for_parallel
                     recommended_threshold = scheduler_config.recommended_tasks_for_parallel
 
-                    self.console.print(f"\n[bold cyan]Parallel Training Available[/bold cyan]")
+                    self.console.print(f"\n[bold cyan]🚀 Parallel Training Available[/bold cyan]")
 
                     # Clear recommendation panel
                     from rich.panel import Panel
                     if strongly_recommended:
                         rec_text = (
-                            f"[bold green][OK] STRONGLY RECOMMENDED[/bold green]\n\n"
+                            f"[bold green]✅ STRONGLY RECOMMENDED[/bold green]\n\n"
                             f"You have [bold]{num_models_to_train} models[/bold] to train, which is ≥{recommended_threshold} models.\n"
                             f"Parallel training will provide [green]significant speedup[/green] by utilizing GPU + CPU workers simultaneously."
                         )
@@ -11412,7 +11412,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         default_choice = True
                     else:
                         rec_text = (
-                            f"[bold yellow][!] OPTIONAL - MARGINAL BENEFIT[/bold yellow]\n\n"
+                            f"[bold yellow]⚠️ OPTIONAL - MARGINAL BENEFIT[/bold yellow]\n\n"
                             f"You have [bold]{num_models_to_train} models[/bold] to train ({min_threshold}-{recommended_threshold-1} range).\n"
                             f"Parallel training offers [yellow]moderate speedup[/yellow], but overhead may reduce benefits.\n\n"
                             f"[dim]• Sequential (GPU-only) is often faster for <{recommended_threshold} models\n"
@@ -11421,7 +11421,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         rec_style = "yellow"
                         default_choice = False
 
-                    self.console.print(Panel(rec_text, title="Recommendation", border_style=rec_style))
+                    self.console.print(Panel(rec_text, title="📊 Recommendation", border_style=rec_style))
 
                     # Show resource plan
                     plan = hw_analyzer.create_resource_plan(model_name, num_models_to_train)
@@ -11430,7 +11430,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     from rich import box
 
                     plan_table = Table(
-                        title="Resource Allocation Plan",
+                        title="📊 Resource Allocation Plan",
                         show_header=True,
                         header_style="bold cyan",
                         box=box.ROUNDED,
@@ -11443,10 +11443,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
                     if plan.gpu_allocation:
                         g = plan.gpu_allocation
-                        plan_table.add_row(f"GPU {g.device_id.upper()}", "GPU (Priority)", str(g.batch_size), str(g.num_workers))
+                        plan_table.add_row(f"🖥️ {g.device_id.upper()}", "GPU (Priority)", str(g.batch_size), str(g.num_workers))
 
                     for c in plan.cpu_allocations:
-                        plan_table.add_row(f"CPU {c.device_id}", "CPU", str(c.batch_size), str(c.num_workers))
+                        plan_table.add_row(f"💻 {c.device_id}", "CPU", str(c.batch_size), str(c.num_workers))
 
                     self.console.print(plan_table)
                     self.console.print(f"\n[dim]Total: {plan.total_parallel_workers} workers available[/dim]")
@@ -11557,7 +11557,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     self.logger.debug(f"[EPOCH_TRACK] After multi-label model {key_name}: global_completed_epochs={global_completed_epochs}")
                     results_per_key[key_name] = key_result
                     f1 = key_result.get('f1_macro') or key_result.get('best_f1_macro', 0)
-                    self.console.print(f"[green]Completed {key_name}: F1={f1:.4f}[/green]")
+                    self.console.print(f"[green]✓ Completed {key_name}: F1={f1:.4f}[/green]")
                 except Exception as exc:
                     self.console.print(f"[red]✗ Failed to train {key_name}: {exc}[/red]")
                     self.logger.exception(f"Training failed for {key_name}", exc_info=exc)
@@ -11580,9 +11580,9 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     'training_approach': 'multi-label-per-key'
                 }
 
-                self.console.print(f"\n[green][OK] Per-key multi-label training complete![/green]")
-                self.console.print(f"[cyan]  Models trained: {len(successful_results)}/{len(key_files)}[/cyan]")
-                self.console.print(f"[cyan]  Average F1 (macro): {avg_f1:.4f}[/cyan]")
+                self.console.print(f"\n[green]✅ Per-key multi-label training complete![/green]")
+                self.console.print(f"[cyan]  📊 Models trained: {len(successful_results)}/{len(key_files)}[/cyan]")
+                self.console.print(f"[cyan]  📊 Average F1 (macro): {avg_f1:.4f}[/cyan]")
 
                 # ============================================================
                 # GENERATE TRAINING SUMMARY CHART
@@ -11590,7 +11590,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 try:
                     from llm_tool.trainers.training_metrics_chart import generate_training_summary_chart
 
-                    self.console.print(f"\n[bold cyan]Generating Training Summary Chart...[/bold cyan]")
+                    self.console.print(f"\n[bold cyan]📊 Generating Training Summary Chart...[/bold cyan]")
 
                     # Calculate total training time
                     total_time = time.time() - global_start_time if global_start_time else sum(
@@ -11607,19 +11607,19 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     )
 
                     if summary_chart_path:
-                        self.console.print(f"[green]Training summary chart saved:[/green] {summary_chart_path}")
+                        self.console.print(f"[green]✓ Training summary chart saved:[/green] {summary_chart_path}")
                     else:
-                        self.console.print("[yellow][!] Could not generate summary chart[/yellow]")
+                        self.console.print("[yellow]⚠️  Could not generate summary chart[/yellow]")
 
                 except Exception as chart_exc:
                     self.logger.warning(f"Failed to generate training summary chart: {chart_exc}")
-                    self.console.print(f"[yellow][!] Summary chart generation failed: {chart_exc}[/yellow]")
+                    self.console.print(f"[yellow]⚠️  Summary chart generation failed: {chart_exc}[/yellow]")
 
                 # Generate comprehensive cross-model summary chart (enhanced version)
                 try:
                     from llm_tool.trainers.training_metrics_chart import generate_comprehensive_summary_chart
 
-                    self.console.print("\n[bold cyan]Generating Comprehensive Summary Chart...[/bold cyan]")
+                    self.console.print("\n[bold cyan]📊 Generating Comprehensive Summary Chart...[/bold cyan]")
 
                     # Determine session directory for disk scan
                     _session_dir = None
@@ -11639,13 +11639,13 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     )
 
                     if comp_chart_path:
-                        self.console.print(f"[green]Comprehensive summary chart saved:[/green] {comp_chart_path}")
+                        self.console.print(f"[green]✓ Comprehensive summary chart saved:[/green] {comp_chart_path}")
                     else:
-                        self.console.print("[yellow][!] Could not generate comprehensive summary chart[/yellow]")
+                        self.console.print("[yellow]⚠️  Could not generate comprehensive summary chart[/yellow]")
 
                 except Exception as comp_exc:
                     self.logger.warning(f"Failed to generate comprehensive summary chart: {comp_exc}")
-                    self.console.print(f"[yellow][!] Comprehensive chart failed: {comp_exc}[/yellow]")
+                    self.console.print(f"[yellow]⚠️  Comprehensive chart failed: {comp_exc}[/yellow]")
 
             else:
                 self.console.print("[red]All key trainings failed[/red]")
@@ -11661,7 +11661,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # ============================================================
             # SINGLE MODEL MULTI-LABEL: One model with all labels (legacy)
             # ============================================================
-            self.console.print(f"\n[magenta]True Multi-Label Training: Single model with sigmoid activation[/magenta]\n")
+            self.console.print(f"\n[magenta]🏷️ True Multi-Label Training: Single model with sigmoid activation[/magenta]\n")
 
             input_file_to_use = str(bundle.primary_file)
 
@@ -11677,7 +11677,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     )
                     if was_filtered:
                         input_file_to_use = filtered_file
-                        self.console.print(f"[green]Using filtered training dataset[/green]\n")
+                        self.console.print(f"[green]✓ Using filtered training dataset[/green]\n")
                 except ValueError as e:
                     self.console.print(f"[red]{e}[/red]")
                     return {
@@ -11749,13 +11749,13 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 global_completed_epochs = max(global_completed_epochs, returned_epochs)
             self.logger.debug(f"[EPOCH_TRACK] After true multi-label single model: global_completed_epochs={global_completed_epochs}")
 
-            self.console.print(f"\n[green][OK] True multi-label training complete![/green]")
+            self.console.print(f"\n[green]✅ True multi-label training complete![/green]")
             if result.get('f1_macro'):
-                self.console.print(f"[cyan]  F1 (macro): {result.get('f1_macro', 0):.4f}[/cyan]")
+                self.console.print(f"[cyan]  📊 F1 (macro): {result.get('f1_macro', 0):.4f}[/cyan]")
             if result.get('subset_accuracy'):
-                self.console.print(f"[cyan]  Subset Accuracy: {result.get('subset_accuracy', 0):.4f}[/cyan]")
+                self.console.print(f"[cyan]  📊 Subset Accuracy: {result.get('subset_accuracy', 0):.4f}[/cyan]")
             if result.get('hamming_loss') is not None:
-                self.console.print(f"[cyan]  Hamming Loss: {result.get('hamming_loss', 0):.4f}[/cyan]")
+                self.console.print(f"[cyan]  📊 Hamming Loss: {result.get('hamming_loss', 0):.4f}[/cyan]")
 
     elif training_approach_from_metadata == 'multi-class' and hasattr(bundle, 'training_files') and bundle.training_files:
         # Multi-class training with multiple keys: train ONE model PER KEY
@@ -11763,7 +11763,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         key_files = {k: v for k, v in bundle.training_files.items() if k != 'multilabel'}
 
         if key_files:
-            self.console.print(f"\n[cyan]Multi-class training: {len(key_files)} models (one per key)[/cyan]\n")
+            self.console.print(f"\n[cyan]🎯 Multi-class training: {len(key_files)} models (one per key)[/cyan]\n")
 
             # Initialize global progress tracking for multi-class training
             import time
@@ -11811,7 +11811,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # ============================================================
             # PRE-VALIDATION PHASE: Validate ALL keys BEFORE training starts
             # ============================================================
-            self.console.print(f"\n[bold cyan]Pre-validation Phase: Checking all {len(key_files)} keys...[/bold cyan]\n")
+            self.console.print(f"\n[bold cyan]🔍 Pre-validation Phase: Checking all {len(key_files)} keys...[/bold cyan]\n")
 
             validated_key_files = {}  # {key_name: validated_file_path}
             keys_to_skip = []
@@ -11832,7 +11832,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     else:
                         self.console.print(f"    [green]✓ All labels valid for {key_name}[/green]")
                 except ValueError as e:
-                    self.console.print(f"    [yellow][!]  Skipping {key_name}: {e}[/yellow]")
+                    self.console.print(f"    [yellow]⚠️  Skipping {key_name}: {e}[/yellow]")
                     keys_to_skip.append(key_name)
                 except Exception as e:
                     self.logger.warning(f"Label validation failed for {key_name}: {e}")
@@ -11844,7 +11844,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # Update model counts after validation (some keys may be skipped)
             if keys_to_skip:
                 num_valid_keys = len(validated_key_files)
-                self.console.print(f"\n[yellow][!]  {len(keys_to_skip)} key(s) will be skipped due to insufficient samples[/yellow]")
+                self.console.print(f"\n[yellow]⚠️  {len(keys_to_skip)} key(s) will be skipped due to insufficient samples[/yellow]")
                 if num_valid_keys == 0:
                     self.console.print("[red]✗ No valid keys remaining for training[/red]")
                     return {
@@ -11865,9 +11865,9 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     global_max_epochs = global_total_models * (epochs + manual_rl_epochs)
                 else:
                     global_max_epochs = global_total_epochs
-                self.console.print(f"[cyan]Updated: {num_valid_keys} keys × {epochs} epochs = {global_total_models} models[/cyan]")
+                self.console.print(f"[cyan]📊 Updated: {num_valid_keys} keys × {epochs} epochs = {global_total_models} models[/cyan]")
 
-            self.console.print(f"\n[green][OK] Pre-validation complete. Ready to train {len(key_files)} models.[/green]\n")
+            self.console.print(f"\n[green]✅ Pre-validation complete. Ready to train {len(key_files)} models.[/green]\n")
 
             # ============================================================
             # CHECK FOR PARALLEL TRAINING OPTION (MULTI-CLASS - Smart Scheduler)
@@ -11895,13 +11895,13 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     min_threshold = scheduler_config.min_tasks_for_parallel
                     recommended_threshold = scheduler_config.recommended_tasks_for_parallel
 
-                    self.console.print(f"\n[bold cyan]Parallel Training Available[/bold cyan]")
+                    self.console.print(f"\n[bold cyan]🚀 Parallel Training Available[/bold cyan]")
 
                     # Clear recommendation panel
                     from rich.panel import Panel
                     if strongly_recommended:
                         rec_text = (
-                            f"[bold green][OK] STRONGLY RECOMMENDED[/bold green]\n\n"
+                            f"[bold green]✅ STRONGLY RECOMMENDED[/bold green]\n\n"
                             f"You have [bold]{num_models_to_train} models[/bold] to train, which is ≥{recommended_threshold} models.\n"
                             f"Parallel training will provide [green]significant speedup[/green] by utilizing GPU + CPU workers simultaneously."
                         )
@@ -11909,7 +11909,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         default_choice = True
                     else:
                         rec_text = (
-                            f"[bold yellow][!] OPTIONAL - MARGINAL BENEFIT[/bold yellow]\n\n"
+                            f"[bold yellow]⚠️ OPTIONAL - MARGINAL BENEFIT[/bold yellow]\n\n"
                             f"You have [bold]{num_models_to_train} models[/bold] to train ({min_threshold}-{recommended_threshold-1} range).\n"
                             f"Parallel training offers [yellow]moderate speedup[/yellow], but overhead may reduce benefits.\n\n"
                             f"[dim]• Sequential (GPU-only) is often faster for <{recommended_threshold} models\n"
@@ -11918,7 +11918,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         rec_style = "yellow"
                         default_choice = False
 
-                    self.console.print(Panel(rec_text, title="Recommendation", border_style=rec_style))
+                    self.console.print(Panel(rec_text, title="📊 Recommendation", border_style=rec_style))
 
                     # Show resource plan
                     plan = hw_analyzer.create_resource_plan(model_name, num_models_to_train)
@@ -11927,7 +11927,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     from rich import box
 
                     plan_table = Table(
-                        title="Resource Allocation Plan",
+                        title="📊 Resource Allocation Plan",
                         show_header=True,
                         header_style="bold cyan",
                         box=box.ROUNDED,
@@ -11940,10 +11940,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
                     if plan.gpu_allocation:
                         g = plan.gpu_allocation
-                        plan_table.add_row(f"GPU {g.device_id.upper()}", "GPU (Priority)", str(g.batch_size), str(g.num_workers))
+                        plan_table.add_row(f"🖥️ {g.device_id.upper()}", "GPU (Priority)", str(g.batch_size), str(g.num_workers))
 
                     for c in plan.cpu_allocations:
-                        plan_table.add_row(f"CPU {c.device_id}", "CPU", str(c.batch_size), str(c.num_workers))
+                        plan_table.add_row(f"💻 {c.device_id}", "CPU", str(c.batch_size), str(c.num_workers))
 
                     self.console.print(plan_table)
                     self.console.print(f"\n[dim]Total: {plan.total_parallel_workers} workers available[/dim]")
@@ -12052,7 +12052,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         global_completed_epochs = max(global_completed_epochs, returned_epochs)
                     self.logger.debug(f"[EPOCH_TRACK] After multi-class key {key_name}: global_completed_epochs={global_completed_epochs}")
                     results_per_key[key_name] = key_result
-                    self.console.print(f"[green]Completed {key_name}: Accuracy={key_result.get('accuracy', 0):.4f}, F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
+                    self.console.print(f"[green]✓ Completed {key_name}: Accuracy={key_result.get('accuracy', 0):.4f}, F1={key_result.get('best_f1_macro', 0):.4f}[/green]")
                 except Exception as exc:
                     self.console.print(f"[red]✗ Failed to train {key_name}: {exc}[/red]")
                     self.logger.exception(f"Training failed for {key_name}", exc_info=exc)
@@ -12085,7 +12085,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     'error': 'All key trainings failed'
                 }
         else:
-            self.console.print("[yellow][!] No key files found, falling back to standard multi-label training[/yellow]")
+            self.console.print("[yellow]⚠️  No key files found, falling back to standard multi-label training[/yellow]")
 
             # ============================================================
             # CRITICAL: Validate and filter insufficient labels BEFORE training
@@ -12102,7 +12102,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     )
                     if was_filtered:
                         input_file_to_use = filtered_file
-                        self.console.print(f"[green]Using filtered training dataset[/green]\n")
+                        self.console.print(f"[green]✓ Using filtered training dataset[/green]\n")
                 except ValueError as e:
                     # User cancelled or validation failed
                     self.console.print(f"[red]{e}[/red]")
@@ -12202,7 +12202,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 if was_filtered:
                     # Update bundle to use filtered file
                     bundle.primary_file = Path(filtered_file)
-                    self.console.print(f"[green]Using filtered training dataset[/green]\n")
+                    self.console.print(f"[green]✓ Using filtered training dataset[/green]\n")
             except ValueError as e:
                 # User cancelled or validation failed
                 self.console.print(f"[red]{e}[/red]")
@@ -12460,7 +12460,7 @@ def _training_studio_show_benchmark_results(self, report: Dict[str, Any]) -> Non
     # Check if any language filtering was applied
     language_filtering_summary = report.get("language_filtering_summary", {})
     if language_filtering_summary:
-        self.console.print("\n[bold yellow][!] Language Filtering Applied During Benchmark[/bold yellow]")
+        self.console.print("\n[bold yellow]⚠ Language Filtering Applied During Benchmark[/bold yellow]")
         for category, filter_info in language_filtering_summary.items():
             if filter_info.get('filtered', False):
                 self.console.print(f"  • {category}: Dropped languages {', '.join(filter_info.get('languages_dropped', []))}")
@@ -13006,7 +13006,7 @@ def _get_intelligent_benchmark_models(self, languages: set, text_length_avg: flo
 
     text_len_info = "short" if text_length_avg < 150 else "medium" if text_length_avg < 350 else "long"
 
-    self.console.print(f"[dim]AI Selection: {lang_info} dataset, {text_len_info} texts (avg {text_length_avg:.0f} chars)[/dim]")
+    self.console.print(f"[dim]🤖 AI Selection: {lang_info} dataset, {text_len_info} texts (avg {text_length_avg:.0f} chars)[/dim]")
     self.console.print(f"[dim]   Scored {len(MODEL_LANGUAGE_MAP)} models → Selected top {len(final_models)} by intelligent criteria[/dim]")
 
     # Build model-to-language mapping for selected models
@@ -13019,7 +13019,7 @@ def _get_preselected_benchmark_models(self, languages: set, text_length_avg: flo
     Let user choose from pre-selected model categories.
     NOW INCLUDES ALL LANGUAGES SUPPORTED IN THE PACKAGE!
     """
-    self.console.print("\n[bold]Pre-Selected Model Categories[/bold]\n")
+    self.console.print("\n[bold]📋 Pre-Selected Model Categories[/bold]\n")
     self.console.print("[dim]Choose from curated model lists organized by language and characteristics[/dim]\n")
 
     categories = {}
@@ -13203,7 +13203,7 @@ def _get_preselected_benchmark_models(self, languages: set, text_length_avg: flo
         self.console.print(f"  [green]{i}.[/green] [cyan]{cat_name}:[/cyan] {model_list}")
 
     self.console.print(f"\n[dim]Total: {len(categories)} categories available[/dim]")
-    self.console.print("\n[yellow]Enter category names separated by commas[/yellow]")
+    self.console.print("\n[yellow]📝 Enter category names separated by commas[/yellow]")
     self.console.print("[dim]   Example: 'English,Multilingual' or 'French,Efficient'[/dim]\n")
 
     # Smart default based on detected languages
@@ -13240,7 +13240,7 @@ def _get_preselected_benchmark_models(self, languages: set, text_length_avg: flo
 
 def _get_custom_benchmark_models(self) -> List[str]:
     """Let user manually select models"""
-    self.console.print("\n[bold]✏ Custom Model Selection[/bold]\n")
+    self.console.print("\n[bold]✏️  Custom Model Selection[/bold]\n")
 
     all_models = self._flatten_trainer_models()
     self.console.print(f"[dim]Available models ({len(all_models)}):[/dim]")
@@ -13639,12 +13639,12 @@ def _resolve_training_metadata(self, session_dir: Path) -> Optional[Tuple[Path, 
 def _resume_training_studio(self, focus_session_id: Optional[str] = None):
     """Resume or relaunch training using saved parameters."""
 
-    self.console.print("\n[bold cyan]Resume/Relaunch Training[/bold cyan]\n")
+    self.console.print("\n[bold cyan]🔄 Resume/Relaunch Training[/bold cyan]\n")
     self.console.print("[dim]Load saved parameters from previous training sessions[/dim]\n")
 
     base_dir = get_training_logs_base()
     if not base_dir.exists():
-        self.console.print("[yellow][!] Training arena logs directory not found.[/yellow]")
+        self.console.print("[yellow]⚠️  Training arena logs directory not found.[/yellow]")
         self.console.print(f"[dim]Expected location: {base_dir}[/dim]")
         self.console.print("[dim]Complete a training first to create session history.[/dim]")
         self.console.print("\n[dim]Press Enter to continue...[/dim]")
@@ -13660,7 +13660,7 @@ def _resume_training_studio(self, focus_session_id: Optional[str] = None):
         return
 
     sessions_table = Table(
-        title="Previous Training Sessions (25 most recent)",
+        title="📚 Previous Training Sessions (25 most recent)",
         border_style="cyan",
         box=box.ROUNDED,
         expand=True,
@@ -13759,9 +13759,9 @@ def _resume_training_studio(self, focus_session_id: Optional[str] = None):
     is_recovered_session = metadata.get("_recovered", False)
 
     if is_recovered_session:
-        self.console.print("\n[yellow][!]  Recovered session: parameters may be incomplete.[/yellow]")
+        self.console.print("\n[yellow]⚠️  Recovered session: parameters may be incomplete.[/yellow]")
 
-    self.console.print("\n[bold cyan]Action Mode[/bold cyan]")
+    self.console.print("\n[bold cyan]🎯 Action Mode[/bold cyan]")
     self.console.print("  • [cyan]resume[/cyan]   - Continue incomplete training (if interrupted)")
     self.console.print("  • [cyan]relaunch[/cyan] - Start fresh with same parameters\n")
 
@@ -13825,7 +13825,7 @@ def _show_analysis_and_get_columns(self, analysis: Dict[str, Any], format_type: 
 
     # Show analysis issues
     if analysis['issues']:
-        self.console.print("\n[yellow][!]  Analysis Results:[/yellow]")
+        self.console.print("\n[yellow]⚠️  Analysis Results:[/yellow]")
         for issue in analysis['issues']:
             self.console.print(f"  {issue}")
 
@@ -13864,7 +13864,7 @@ def _show_analysis_and_get_columns(self, analysis: Dict[str, Any], format_type: 
     languages_found = set(analysis['languages_detected'].keys())
 
     if languages_found:
-        self.console.print(f"\n[bold]Languages Detected:[/bold]")
+        self.console.print(f"\n[bold]🌍 Languages Detected:[/bold]")
         for lang, count in analysis['languages_detected'].items():
             self.console.print(f"  • {lang.upper()}: {count} rows")
 
@@ -13876,7 +13876,7 @@ def _show_analysis_and_get_columns(self, analysis: Dict[str, Any], format_type: 
 
         if lang_confirmed:
             result['confirmed_languages'] = languages_found
-            self.console.print("[green]Languages confirmed[/green]")
+            self.console.print("[green]✓ Languages confirmed[/green]")
         else:
             self.console.print("\n[yellow]Please specify languages manually[/yellow]")
             manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
@@ -13891,14 +13891,14 @@ def _show_analysis_and_get_columns(self, analysis: Dict[str, Any], format_type: 
             result['lang'] = Prompt.ask("Language column (optional)", default=lang_column_default)
     else:
         # No language column detected - ask if user wants to apply language detection
-        self.console.print("\n[yellow]ℹ No language column detected in data[/yellow]")
+        self.console.print("\n[yellow]ℹ️  No language column detected in data[/yellow]")
         apply_lang_detection = Confirm.ask(
             "Would you like to apply automatic language detection on the text column?",
             default=True
         )
 
         if apply_lang_detection:
-            self.console.print("[cyan]Detecting languages from text content...[/cyan]")
+            self.console.print("[cyan]🔍 Detecting languages from text content...[/cyan]")
             self.console.print("[dim]  Language detection will be applied during training[/dim]")
             manual_langs = Prompt.ask(
                 "Expected language codes (optional, comma-separated, e.g., en,fr,de)",
@@ -13962,7 +13962,7 @@ def _get_long_document_model_recommendation(self, confirmed_languages: set) -> O
     if not suitable_models:
         suitable_models = LONG_DOCUMENT_MODELS  # Fallback to all
 
-    self.console.print(f"\n[bold]Long-Document Model Recommendations:[/bold]")
+    self.console.print(f"\n[bold]🤖 Long-Document Model Recommendations:[/bold]")
     for i, model_info in enumerate(suitable_models[:5], 1):
         self.console.print(f"  {i}. [cyan]{model_info['model']}[/cyan] - {model_info['reason']}")
 
@@ -13973,7 +13973,7 @@ def _get_long_document_model_recommendation(self, confirmed_languages: set) -> O
 
     if choice.isdigit() and 0 < int(choice) <= len(suitable_models):
         model_to_use = suitable_models[int(choice) - 1]['model']
-        self.console.print(f"[green]Selected: {model_to_use}[/green]")
+        self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")
         return model_to_use
     else:
         return choice
@@ -14125,7 +14125,7 @@ def _get_model_recommendation_from_languages(self, confirmed_languages: set) -> 
     if not recommendations:
         return None
 
-    self.console.print(f"\n[bold]Recommended Models for Your Languages:[/bold]")
+    self.console.print(f"\n[bold]🤖 Recommended Models for Your Languages:[/bold]")
     for i, rec in enumerate(recommendations[:5], 1):
         self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
 
@@ -14145,7 +14145,7 @@ def _get_model_recommendation_from_languages(self, confirmed_languages: set) -> 
         idx = int(model_choice) - 1
         if 0 <= idx < len(recommendations):
             model_to_use = recommendations[idx]['model']
-            self.console.print(f"[green]Selected: {model_to_use}[/green]")
+            self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")
             return model_to_use
         else:
             self.console.print("[yellow]Invalid selection, using first recommendation[/yellow]")
@@ -14269,12 +14269,12 @@ def _display_language_analysis_and_get_model(
 
     # Display language detection results
     if languages_found:
-        self.console.print(f"\n[bold]Languages Detected:[/bold]")
+        self.console.print(f"\n[bold]🌍 Languages Detected:[/bold]")
         for lang, count in analysis_results['languages_detected'].items():
             self.console.print(f"  • {lang.upper()}: {count} samples")
 
         # Display text statistics
-        self.console.print(f"\n[bold]Text Statistics:[/bold]")
+        self.console.print(f"\n[bold]📊 Text Statistics:[/bold]")
         self.console.print(f"  • Average length: {text_stats['avg_length']:.0f} characters")
         self.console.print(f"  • Max length: {text_stats['max_length']:.0f} characters")
         self.console.print(f"  • Median length: {text_stats['median_length']:.0f} characters")
@@ -14283,7 +14283,7 @@ def _display_language_analysis_and_get_model(
             self.console.print(f"  • Long documents (>512 tokens): {analysis_results['long_document_percentage']:.1f}%")
 
             if analysis_results['user_prefers_long_models']:
-                self.console.print("\n[yellow]Tip: Recommendation: Consider using long-document models (e.g., Longformer, BigBird)[/yellow]")
+                self.console.print("\n[yellow]💡 Recommendation: Consider using long-document models (e.g., Longformer, BigBird)[/yellow]")
 
         if interactive:
             # Confirm languages with user
@@ -14295,7 +14295,7 @@ def _display_language_analysis_and_get_model(
 
             if lang_confirmed:
                 confirmed_languages = languages_found
-                self.console.print("[green]Languages confirmed[/green]")
+                self.console.print("[green]✓ Languages confirmed[/green]")
             else:
                 # Ask user to specify languages manually
                 self.console.print("\n[yellow]Please specify languages manually[/yellow]")
@@ -14305,7 +14305,7 @@ def _display_language_analysis_and_get_model(
             confirmed_languages = languages_found
     else:
         # No languages detected - ask user
-        self.console.print("\n[yellow][!] No languages could be auto-detected[/yellow]")
+        self.console.print("\n[yellow]⚠️ No languages could be auto-detected[/yellow]")
 
         if interactive:
             manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)", default="en")
@@ -14317,7 +14317,7 @@ def _display_language_analysis_and_get_model(
     if confirmed_languages and interactive:
         # Consider long-document models if needed
         if analysis_results.get('user_prefers_long_models'):
-            self.console.print("\n[bold]Recommended Long-Document Models:[/bold]")
+            self.console.print("\n[bold]🤖 Recommended Long-Document Models:[/bold]")
 
             # Get multilingual long-doc models - MULTILINGUAL FIRST
             long_doc_recs = [
@@ -14336,19 +14336,19 @@ def _display_language_analysis_and_get_model(
                 choice = IntPrompt.ask("Select model (1-4)", default=1)
                 if 1 <= choice <= len(long_doc_recs):
                     model_to_use = long_doc_recs[choice - 1]['model']
-                    self.console.print(f"[green]Selected: {model_to_use}[/green]")
+                    self.console.print(f"[green]✓ Selected: {model_to_use}[/green]")
                     return confirmed_languages, model_to_use
 
         # Get standard model recommendations
         recommendations = LanguageNormalizer.recommend_models(confirmed_languages, self.available_trainer_models)
 
         if recommendations:
-            self.console.print(f"\n[bold]Recommended Models for Your Languages:[/bold]")
+            self.console.print(f"\n[bold]🤖 Recommended Models for Your Languages:[/bold]")
             for i, rec in enumerate(recommendations[:5], 1):
                 self.console.print(f"  {i}. [cyan]{rec['model']}[/cyan] - {rec['reason']}")
 
             # Store recommendations in bundle for later use, don't ask now
-            self.console.print(f"\n[dim]ℹ Model selection will be done when choosing the training mode[/dim]")
+            self.console.print(f"\n[dim]ℹ️  Model selection will be done when choosing the training mode[/dim]")
 
             # Use first recommendation as default, but don't force it
             model_to_use = recommendations[0]['model'] if recommendations else "bert-base-uncased"
@@ -14430,7 +14430,7 @@ def integrate_training_arena_in_annotator_factory(
         raise ValueError(f"Resolved text column '{selected_text_column}' not present in dataset columns {list(df.columns)}")
 
     # Display dataset confirmation (clean transition from Step 2/3 banner)
-    console.print("[green]Annotations loaded successfully![/green]")
+    console.print("[green]✓ Annotations loaded successfully![/green]")
     console.print(f"  [cyan]File:[/cyan] {csv_path}")
     console.print(f"  [cyan]Text column:[/cyan] '{selected_text_column}'")
     console.print(f"  [cyan]Annotation column:[/cyan] '{selected_annotation_column}'")
@@ -14470,7 +14470,7 @@ def integrate_training_arena_in_annotator_factory(
             f"(out of {total_text_rows:,} texts).[/dim]"
         )
     elif annotated_count == 0 and total_text_rows > 0:
-        console.print("[yellow][!] No annotated rows detected; analytics will use all texts.[/yellow]")
+        console.print("[yellow]⚠ No annotated rows detected; analytics will use all texts.[/yellow]")
 
     annotated_subset_df = df.loc[annotated_mask] if use_annotated_subset else None
     annotated_mask_series = annotated_mask if annotated_count > 0 else None
@@ -14643,7 +14643,7 @@ def integrate_training_arena_in_annotator_factory(
 
     if has_lang_column and languages_found_in_column:
         # Option 1: Language column exists - offer to use it or detect automatically
-        console.print("[bold]Languages Found in Column:[/bold]")
+        console.print("[bold]🌍 Languages Found in Column:[/bold]")
         for lang, count in analysis['languages_detected'].items():
             console.print(f"  • {lang.upper()}: {count:,} rows")
 
@@ -14658,15 +14658,15 @@ def integrate_training_arena_in_annotator_factory(
         if use_lang_column:
             confirmed_languages = languages_found_in_column
             lang_column = lang_column_candidate
-            console.print(f"[green]Using language column: {lang_column}[/green]")
+            console.print(f"[green]✓ Using language column: {lang_column}[/green]")
     else:
         # Option 2: No language column
         if not has_lang_column:
-            console.print("[yellow]No language column detected[/yellow]")
+            console.print("[yellow]ℹ️  No language column detected[/yellow]")
 
     # Automatic language detection from text content
     if apply_auto_detection:
-        console.print("\n[dim]Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
+        console.print("\n[dim]🔍 Analyzing ALL texts to detect languages (this may take a moment)...[/dim]")
 
         try:
             from llm_tool.utils.language_detector import LanguageDetector
@@ -14748,7 +14748,7 @@ def integrate_training_arena_in_annotator_factory(
                         language_distribution = lang_counts
                         total = sum(lang_counts.values())
 
-                        console.print(f"\n[bold]Languages Detected from Content ({total:,} texts analyzed):[/bold]")
+                        console.print(f"\n[bold]🌍 Languages Detected from Content ({total:,} texts analyzed):[/bold]")
 
                         # Create detailed table
                         lang_table = Table(border_style="cyan", show_header=True, header_style="bold", expand=True)
@@ -14782,7 +14782,7 @@ def integrate_training_arena_in_annotator_factory(
 
                         # Handle low-percentage languages if detected
                         if minority_languages:
-                            console.print(f"\n[yellow][!] Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
+                            console.print(f"\n[yellow]⚠ Warning: {len(minority_languages)} language(s) detected with very low percentage (< {LOW_PERCENTAGE_THRESHOLD}%):[/yellow]")
                             for lang, count in sorted(minority_languages.items(), key=lambda x: x[1], reverse=True):
                                 percentage = (count / total * 100)
                                 console.print(f"  • {lang.upper()}: {count} texts ({percentage:.2f}%)")
@@ -14801,7 +14801,7 @@ def integrate_training_arena_in_annotator_factory(
 
                             if minority_action == "correct":
                                 # Quick correction: force all minority languages to one language
-                                console.print("\n[bold cyan]Quick Language Correction[/bold cyan]\n")
+                                console.print("\n[bold cyan]🔧 Quick Language Correction[/bold cyan]\n")
 
                                 # Show available languages
                                 all_supported_langs = [
@@ -14878,21 +14878,21 @@ def integrate_training_arena_in_annotator_factory(
                                 confirmed_languages = set(majority_languages.keys())
                                 excluded_count = sum(minority_languages.values())
                                 console.print(f"\n[yellow]✗ Excluded {excluded_count} texts from {len(minority_languages)} low-percentage language(s)[/yellow]")
-                                console.print(f"[green]Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                                console.print(f"[green]✓ Final languages: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
 
                             elif minority_action == "keep":
-                                console.print("[yellow][!] Keeping all detected languages (including low-percentage ones)[/yellow]")
+                                console.print("[yellow]⚠ Keeping all detected languages (including low-percentage ones)[/yellow]")
 
                             elif minority_action == "select":
                                 # Manual selection of languages to keep
-                                console.print("\n[bold cyan]Language Selection:[/bold cyan]")
+                                console.print("\n[bold cyan]📝 Language Selection:[/bold cyan]")
                                 console.print(f"[dim]Select which languages to keep for training (from all {len(lang_counts)} detected)[/dim]\n")
 
                                 # Show all languages sorted by count
                                 console.print("[bold]All Detected Languages:[/bold]")
                                 for i, (lang, count) in enumerate(sorted(lang_counts.items(), key=lambda x: x[1], reverse=True), 1):
                                     percentage = (count / total * 100)
-                                    status = "[green]majority[/green]" if lang in majority_languages else "[yellow][!] minority[/yellow]"
+                                    status = "[green]✓ majority[/green]" if lang in majority_languages else "[yellow]⚠ minority[/yellow]"
                                     console.print(f"  {i:2d}. {lang.upper():5s} - {count:6,} texts ({percentage:5.2f}%) {status}")
 
                                 console.print("\n[bold yellow]Select languages to KEEP:[/bold yellow]")
@@ -14908,7 +14908,7 @@ def integrate_training_arena_in_annotator_factory(
                                     # Validate that selected languages exist
                                     invalid_langs = selected_set - set(lang_counts.keys())
                                     if invalid_langs:
-                                        console.print(f"[yellow][!] Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
+                                        console.print(f"[yellow]⚠ Warning: These languages were not detected: {', '.join(invalid_langs)}[/yellow]")
                                         selected_set = selected_set - invalid_langs
 
                                     # Exclude non-selected languages
@@ -14930,7 +14930,7 @@ def integrate_training_arena_in_annotator_factory(
                                     console.print(f"[dim]  → {kept_count:,} texts kept, {excluded_count:,} texts excluded[/dim]")
                                 else:
                                     # User pressed Enter - keep all
-                                    console.print("[green]Keeping all detected languages[/green]")
+                                    console.print("[green]✓ Keeping all detected languages[/green]")
 
                         # Final confirmation (allow override even after selection)
                         lang_list = ', '.join([l.upper() for l in sorted(confirmed_languages)])
@@ -14976,7 +14976,7 @@ def integrate_training_arena_in_annotator_factory(
                                         count = lang_series.str.lower().eq(lang).sum()
                                         language_distribution[lang] = count
 
-                                    console.print(f"[green]Using column '{lang_column}': {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                                    console.print(f"[green]✓ Using column '{lang_column}': {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
 
                             if not use_col:
                                 manual_langs = Prompt.ask("Enter language codes (comma-separated, e.g., en,fr,de)")
@@ -14993,9 +14993,9 @@ def integrate_training_arena_in_annotator_factory(
                                         if detected_languages_per_text[i] and detected_languages_per_text[i] not in confirmed_languages:
                                             detected_languages_per_text[i] = None
 
-                                console.print(f"[green]Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
+                                console.print(f"[green]✓ Manual override: {', '.join([l.upper() for l in sorted(confirmed_languages)])}[/green]")
                         else:
-                            console.print("[green]Languages confirmed from content analysis[/green]")
+                            console.print("[green]✓ Languages confirmed from content analysis[/green]")
 
                         # CRITICAL FIX: Add detected language column to DataFrame and save
                         if 'detected_languages_per_text' in locals() and detected_languages_per_text:
@@ -15016,9 +15016,9 @@ def integrate_training_arena_in_annotator_factory(
 
                                     # Save updated DataFrame back to CSV
                                     df.to_csv(csv_path, index=False)
-                                    console.print(f"[dim]Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
+                                    console.print(f"[dim]✓ Added 'language' column to dataset ({len([l for l in detected_languages_per_text if l])} texts with detected language)[/dim]")
                                 else:
-                                    console.print("[dim]Auto-detected languages available; existing language column preserved.[/dim]")
+                                    console.print("[dim]ℹ️  Auto-detected languages available; existing language column preserved.[/dim]")
                     else:
                         # Fallback: ask user
                         console.print("[yellow]Could not detect languages automatically[/yellow]")
@@ -15046,7 +15046,7 @@ def integrate_training_arena_in_annotator_factory(
     annotation_step = resolve_step_label("annotation_preview", "STEP 8", context=step_context)
     console.print(f"[bold cyan]  {annotation_step}:[/bold cyan] [bold white]Annotation Data Preview[/bold white]")
     console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    console.print("[dim]Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
+    console.print("[dim]🔍 Analyzing all annotation data to show you what labels/categories will be trained...[/dim]\n")
 
     # df already loaded above for language detection
 
@@ -15116,7 +15116,7 @@ def integrate_training_arena_in_annotator_factory(
 
     # Display comprehensive preview with Rich table
     if all_keys_values:
-        console.print(f"\n[bold cyan]Complete Annotation Data Preview[/bold cyan]")
+        console.print(f"\n[bold cyan]📊 Complete Annotation Data Preview[/bold cyan]")
         console.print(f"[dim]Analyzed {total_samples} samples ({malformed_count} malformed)[/dim]\n")
 
         preview_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
@@ -15162,12 +15162,12 @@ def integrate_training_arena_in_annotator_factory(
         console.print()
 
         # Show selection options
-        console.print("[bold]Training Options:[/bold]")
+        console.print("[bold]💡 Training Options:[/bold]")
         console.print("  [dim]• You can choose to train on [cyan]ALL[/cyan] keys/values[/dim]")
         console.print("  [dim]• Or select [cyan]specific keys[/cyan] to train (asked later)[/dim]")
         console.print("  [dim]• Or select [cyan]specific values[/cyan] for each key (asked later)[/dim]\n")
     else:
-        console.print("[yellow][!] No valid annotation data found[/yellow]\n")
+        console.print("[yellow]⚠️  No valid annotation data found[/yellow]\n")
 
     # Step 6.5: Value Filtering (Optional) - CRITICAL FOR DATA QUALITY
     if all_keys_values:
@@ -15175,7 +15175,7 @@ def integrate_training_arena_in_annotator_factory(
         value_filter_step = resolve_step_label("value_filter", "STEP 10", context=step_context)
         console.print(f"[bold cyan]  {value_filter_step}:[/bold cyan] [bold white]Value Filtering (Optional)[/bold white]")
         console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-        console.print("[dim]You can exclude specific values from your training data.[/dim]")
+        console.print("[dim]📋 You can exclude specific values from your training data.[/dim]")
         console.print("[dim]   For example: Remove 'null' values, or exclude rare categories.[/dim]\n")
 
         filter_values = Confirm.ask(
@@ -15187,7 +15187,7 @@ def integrate_training_arena_in_annotator_factory(
         rows_to_remove = []  # List of indices to remove from df
 
         if filter_values:
-            console.print("\n[bold]Value Filtering Configuration[/bold]\n")
+            console.print("\n[bold]🔍 Value Filtering Configuration[/bold]\n")
 
             # Ask for each key
             for key in sorted(all_keys_values.keys()):
@@ -15277,15 +15277,15 @@ def integrate_training_arena_in_annotator_factory(
                         invalid_excluded = [v for v in excluded_list if v not in values_set]
 
                         if invalid_excluded:
-                            console.print(f"[yellow][!] Warning: These values don't exist: {', '.join(invalid_excluded)}[/yellow]")
+                            console.print(f"[yellow]⚠️  Warning: These values don't exist: {', '.join(invalid_excluded)}[/yellow]")
 
                         if valid_excluded:
                             excluded_values[key] = valid_excluded
-                            console.print(f"[green]Will exclude: {', '.join(valid_excluded)}[/green]")
+                            console.print(f"[green]✓ Will exclude: {', '.join(valid_excluded)}[/green]")
 
             # Now filter the DataFrame based on excluded values
             if excluded_values:
-                console.print(f"\n[bold cyan]Filtering labels from dataset...[/bold cyan]")
+                console.print(f"\n[bold cyan]🔄 Filtering labels from dataset...[/bold cyan]")
                 console.print(f"[dim]Note: Removing excluded labels from samples, not the samples themselves.[/dim]\n")
 
                 original_count = len(df)
@@ -15353,7 +15353,7 @@ def integrate_training_arena_in_annotator_factory(
                 removed_count = 0
                 filtered_count = len(df)
 
-                console.print(f"[green]Label filtering complete:[/green]")
+                console.print(f"[green]✓ Label filtering complete:[/green]")
                 console.print(f"  • [cyan]Samples kept:[/cyan] {original_count} → {filtered_count}")
                 console.print(f"  • [cyan]Samples modified:[/cyan] {samples_modified}")
                 console.print(f"  • [cyan]Labels removed:[/cyan] {labels_removed_count}")
@@ -15409,7 +15409,7 @@ def integrate_training_arena_in_annotator_factory(
                         continue
 
                 # Display updated summary
-                console.print("[bold]Updated Data Summary:[/bold]")
+                console.print("[bold]📊 Updated Data Summary:[/bold]")
                 summary_table = Table(show_header=True, header_style="bold magenta", border_style="cyan", box=box.ROUNDED, expand=True)
                 summary_table.add_column("Key", style="yellow bold", no_wrap=True)
                 summary_table.add_column("Values (After Filtering)", style="white", ratio=1, overflow="fold")
@@ -15437,7 +15437,7 @@ def integrate_training_arena_in_annotator_factory(
                 console.print(summary_table)
                 console.print()
         else:
-            console.print("[dim]No values excluded - using all data[/dim]\n")
+            console.print("[dim]✓ No values excluded - using all data[/dim]\n")
 
     # Step 7: Training Strategy Selection (SIMPLIFIED)
     console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
@@ -15462,7 +15462,7 @@ def integrate_training_arena_in_annotator_factory(
 
     # Show sample annotation for context
     if real_example_data:
-        console.print("[bold]Example annotation from your data:[/bold]")
+        console.print("[bold]📄 Example annotation from your data:[/bold]")
         example_str = json.dumps(real_example_data, ensure_ascii=False, indent=2)
         console.print(f"[dim]{example_str}[/dim]\n")
 
@@ -15475,7 +15475,7 @@ def integrate_training_arena_in_annotator_factory(
     # Step 6a: Show all annotation keys and their values
     if all_keys_values:
         detected_keys = sorted(all_keys_values.keys())
-        console.print(f"[bold]Annotation Keys Detected in Your Data:[/bold]\n")
+        console.print(f"[bold]📝 Annotation Keys Detected in Your Data:[/bold]\n")
 
         # Show all keys and their values
         for key in detected_keys:
@@ -15508,7 +15508,7 @@ def integrate_training_arena_in_annotator_factory(
     if invalid_keys:
         from difflib import get_close_matches
 
-        console.print(f"\n[bold yellow][!]  Some keys need correction:[/bold yellow]")
+        console.print(f"\n[bold yellow]⚠️  Some keys need correction:[/bold yellow]")
 
         # Auto-correct using fuzzy matching
         corrected_keys = []
@@ -15527,7 +15527,7 @@ def integrate_training_arena_in_annotator_factory(
 
         # Show available keys for reference
         if len(corrected_keys) < len(keys_to_train):
-            console.print(f"\n[bold cyan]Tip: Available keys:[/bold cyan]")
+            console.print(f"\n[bold cyan]💡 Available keys:[/bold cyan]")
             for key in sorted(all_keys_values.keys()):
                 console.print(f"  • [green]{key}[/green]")
 
@@ -15542,7 +15542,7 @@ def integrate_training_arena_in_annotator_factory(
                 console.print("[yellow]Training cancelled. Please try again with correct key names.[/yellow]")
                 return None
         else:
-            console.print("[red][FAIL] No valid keys found after correction. Training cancelled.[/red]")
+            console.print("[red]❌ No valid keys found after correction. Training cancelled.[/red]")
             return None
 
     # Calculate total number of models for each approach
@@ -15556,7 +15556,7 @@ def integrate_training_arena_in_annotator_factory(
     # ALWAYS ask the training approach question, even for binary classification
     # User may want one-vs-all even with 2 values
     if True:  # Always ask
-        console.print(f"\n[bold cyan]Training Approach[/bold cyan]\n")
+        console.print(f"\n[bold cyan]🎯 Training Approach[/bold cyan]\n")
 
         if annotation_keys and len(annotation_keys) == 1:
             # Single key selected
@@ -15587,7 +15587,7 @@ def integrate_training_arena_in_annotator_factory(
 
             approach_table.add_row(
                 "multi-class",
-                f"Trains ONE model for '{selected_key}'\n\n"
+                f"🎯 Trains ONE model for '{selected_key}'\n\n"
                 f"• Chooses between all {num_unique_values} values\n"
                 f"• Example: '{values_list[0]}' vs '{values_list[1]}' vs ...\n"
                 f"• Predicts exactly ONE value per text\n"
@@ -15596,7 +15596,7 @@ def integrate_training_arena_in_annotator_factory(
             )
             approach_table.add_row(
                 "one-vs-all",
-                f"Trains {num_unique_values} binary models for '{selected_key}'\n\n"
+                f"⚡ Trains {num_unique_values} binary models for '{selected_key}'\n\n"
                 f"• Model 1: '{values_list[0]}' vs NOT '{values_list[0]}'\n"
                 f"• Model 2: '{values_list[1]}' vs NOT '{values_list[1]}'\n"
                 f"• ... (one model per value)\n"
@@ -15605,7 +15605,7 @@ def integrate_training_arena_in_annotator_factory(
             )
             approach_table.add_row(
                 "multi-label",
-                f"Trains ONE model with MULTIPLE labels per text\n\n"
+                f"🏷️  Trains ONE model with MULTIPLE labels per text\n\n"
                 f"• Uses sigmoid activation (independent probabilities)\n"
                 f"• Each text can have 0, 1, or many labels simultaneously\n"
                 f"• Threshold-based selection (default: 0.5)\n"
@@ -15630,7 +15630,7 @@ def integrate_training_arena_in_annotator_factory(
 
             approach_table.add_row(
                 "multi-class",
-                f"Trains ONE model PER KEY (not per value)\n\n"
+                f"🎯 Trains ONE model PER KEY (not per value)\n\n"
                 f"• {num_keys} models total (one per annotation key)\n"
                 f"• Each model learns ALL values of ITS key\n"
                 f"• Example: One model for 'political_party' learns BQ, CAQ, CPC, etc.\n"
@@ -15640,7 +15640,7 @@ def integrate_training_arena_in_annotator_factory(
             )
             approach_table.add_row(
                 "one-vs-all",
-                f"Trains ONE model PER VALUE (not per key)\n\n"
+                f"⚡ Trains ONE model PER VALUE (not per key)\n\n"
                 f"• {total_values_count} binary models total (one per unique value)\n"
                 f"• Each model: 'value X' vs NOT 'value X'\n"
                 f"• Example: Separate model for 'political_party_BQ' (binary: BQ or not)\n"
@@ -15650,7 +15650,7 @@ def integrate_training_arena_in_annotator_factory(
             )
             approach_table.add_row(
                 "multi-label",
-                f"Trains ONE model with MULTIPLE labels per text\n\n"
+                f"🏷️  Trains ONE model with MULTIPLE labels per text\n\n"
                 f"• {num_keys} models total (one per annotation key)\n"
                 f"• Uses sigmoid activation (independent probabilities)\n"
                 f"• Each text can have 0, 1, or many labels simultaneously\n"
@@ -15660,10 +15660,10 @@ def integrate_training_arena_in_annotator_factory(
             )
             approach_table.add_row(
                 "hybrid",
-                f"SMART: Choose multi-label OR adaptive multi-class/one-vs-all\n\n"
+                f"🔀 SMART: Choose multi-label OR adaptive multi-class/one-vs-all\n\n"
                 f"• You'll choose between:\n"
-                f"  -  [bold magenta]Multi-label[/bold magenta]: 1 model per key with sigmoid (overlapping labels)\n"
-                f"  - [bold green]Multi-class + Binary[/bold green]: Adaptive per key (≤5 vals → multi-class, >5 → one-vs-all)\n"
+                f"  - 🏷️  [bold magenta]Multi-label[/bold magenta]: 1 model per key with sigmoid (overlapping labels)\n"
+                f"  - 🎯 [bold green]Multi-class + Binary[/bold green]: Adaptive per key (≤5 vals → multi-class, >5 → one-vs-all)\n"
                 f"• For multi-class+binary on your data:\n"
                 f"  - {hybrid_multiclass_count} keys use multi-class ({', '.join([k for k, _ in keys_small[:3]])}{'...' if len(keys_small) > 3 else ''})\n"
                 f"  - {len(keys_large)} keys use one-vs-all ({', '.join([k for k, _ in keys_large[:3]])}{'...' if len(keys_large) > 3 else ''})\n"
@@ -15672,7 +15672,7 @@ def integrate_training_arena_in_annotator_factory(
             )
             approach_table.add_row(
                 "custom",
-                f"CUSTOM: You choose the strategy for EACH key individually\n\n"
+                f"⚙️  CUSTOM: You choose the strategy for EACH key individually\n\n"
                 f"• You'll be asked for each of the {num_keys} keys\n"
                 f"• Choose multi-class, one-vs-all, OR multi-label per key\n"
                 f"• Example: multi-class for 'sentiment', multi-label for 'themes'\n"
@@ -15708,11 +15708,11 @@ def integrate_training_arena_in_annotator_factory(
         if training_approach == "hybrid":
             # Ask user to choose between multi-label or multi-class+binary
             console.print("\n[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-            console.print("[bold cyan]  Hybrid Mode: Choose Your Strategy[/bold cyan]")
+            console.print("[bold cyan]  🔀 Hybrid Mode: Choose Your Strategy[/bold cyan]")
             console.print("[bold cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]\n")
 
             # Display detailed statistics per key/value to help user make informed decisions
-            console.print("[bold cyan]Detailed Statistics per Key/Value:[/bold cyan]")
+            console.print("[bold cyan]📊 Detailed Statistics per Key/Value:[/bold cyan]")
             console.print("[dim]This shows the number of instances for each value in each key.[/dim]\n")
 
             stats_table = Table(show_header=True, header_style="bold magenta", box=box.ROUNDED, padding=(0, 1), expand=True)
@@ -15767,7 +15767,7 @@ def integrate_training_arena_in_annotator_factory(
 
             hybrid_sub_table.add_row(
                 "multi-label",
-                f"[bold magenta]One model per key with sigmoid activation[/bold magenta]\n\n"
+                f"🏷️  [bold magenta]One model per key with sigmoid activation[/bold magenta]\n\n"
                 f"• Each text can have MULTIPLE labels simultaneously\n"
                 f"• Independent probabilities per label (BCEWithLogitsLoss)\n"
                 f"• Threshold-based selection (default: 0.5)\n"
@@ -15776,7 +15776,7 @@ def integrate_training_arena_in_annotator_factory(
             )
             hybrid_sub_table.add_row(
                 "multi-class+binary",
-                f"[bold green]Adaptive strategy per key[/bold green]\n\n"
+                f"🎯 [bold green]Adaptive strategy per key[/bold green]\n\n"
                 f"• Keys with ≤N values → Multi-class (mutually exclusive)\n"
                 f"• Keys with >N values → One-vs-all (binary per value)\n"
                 f"• You'll choose the threshold N (default: {default_threshold})\n"
@@ -15805,7 +15805,7 @@ def integrate_training_arena_in_annotator_factory(
                     key_strategies[key] = 'multi-label'
             else:
                 # multi-class+binary: Ask for threshold
-                console.print("\n[bold cyan]Multi-class + Binary Strategy Configuration:[/bold cyan]")
+                console.print("\n[bold cyan]📊 Multi-class + Binary Strategy Configuration:[/bold cyan]")
                 console.print("[dim]Choose the threshold N that determines which keys use multi-class vs one-vs-all.[/dim]")
                 console.print("[dim]Keys with ≤N values → multi-class (1 model), Keys with >N values → one-vs-all (N models)[/dim]\n")
 
@@ -15855,7 +15855,7 @@ def integrate_training_arena_in_annotator_factory(
 
         elif training_approach == "custom":
             # User chooses per key
-            console.print("\n[bold cyan] Custom Strategy Selection:[/bold cyan]")
+            console.print("\n[bold cyan]⚙️  Custom Strategy Selection:[/bold cyan]")
             console.print("[dim]Choose the training strategy for each key individually.[/dim]\n")
 
             total_custom_models = 0
@@ -15947,7 +15947,7 @@ def integrate_training_arena_in_annotator_factory(
     # Note: split_config will be stored in bundle.metadata after bundle is created
 
     # Step 6d: Label naming strategy
-    console.print("\n[bold] Label Naming Strategy:[/bold]")
+    console.print("\n[bold]🏷️  Label Naming Strategy:[/bold]")
     console.print("[dim]This determines how label names appear in your training files and model predictions.[/dim]\n")
 
     # Generate examples based on SELECTED keys (not random example data)
@@ -15998,7 +15998,7 @@ def integrate_training_arena_in_annotator_factory(
         "Only the value\n[dim](no prefix)[/dim]",
         "✓ Training [bold]single key only[/bold]\n"
         "✓ Values are unique across dataset\n"
-        "[!] [yellow]Can cause conflicts with multiple keys[/yellow]"
+        "⚠️  [yellow]Can cause conflicts with multiple keys[/yellow]"
     )
 
     console.print(strategy_table)
@@ -16006,7 +16006,7 @@ def integrate_training_arena_in_annotator_factory(
 
     # Show concrete transformation if we have examples
     if transformation_examples:
-        console.print("[bold]How Your Data Will Be Transformed:[/bold]\n")
+        console.print("[bold]📋 How Your Data Will Be Transformed:[/bold]\n")
 
         transform_table = Table(show_header=True, header_style="bold magenta", border_style="green", box=box.SIMPLE, expand=True)
         transform_table.add_column("Original (key → value)", style="cyan", no_wrap=True)
@@ -16025,11 +16025,11 @@ def integrate_training_arena_in_annotator_factory(
 
     # Show warning if multiple keys and value_only
     if len(keys_to_train) > 1:
-        console.print("[bold yellow]Recommendation:[/bold yellow]")
+        console.print("[bold yellow]💡 Recommendation:[/bold yellow]")
         console.print(f"[dim]You selected {len(keys_to_train)} keys. Use [bold cyan]key_value[/bold cyan] to avoid label conflicts.")
         console.print(f"[dim]Example: If both 'affiliation' and 'gender' have value 'no', they would conflict with [yellow]value_only[/yellow].[/dim]\n")
     else:
-        console.print("[dim]Tip: With a single key, both strategies work fine. [cyan]key_value[/cyan] is still recommended for consistency.[/dim]\n")
+        console.print("[dim]💡 With a single key, both strategies work fine. [cyan]key_value[/cyan] is still recommended for consistency.[/dim]\n")
 
     label_strategy = Prompt.ask("Label naming strategy", choices=["key_value", "value_only", "back"], default="key_value")
     if label_strategy == "back":
@@ -16079,7 +16079,7 @@ def integrate_training_arena_in_annotator_factory(
         )
     except Exception as e:
         logger.warning(f"Could not detect ID columns: {e}")
-        console.print(f"[yellow][!] Could not analyze ID columns[/yellow]")
+        console.print(f"[yellow]⚠ Could not analyze ID columns[/yellow]")
         console.print("[dim]An automatic ID will be generated[/dim]")
         id_column = None
 
@@ -16253,7 +16253,7 @@ def integrate_training_arena_in_annotator_factory(
         )
 
         if not can_continue:
-            console.print(f"\n[red][FAIL] Training stopped: {error_msg}[/red]\n")
+            console.print(f"\n[red]❌ Training stopped: {error_msg}[/red]\n")
             return {
                 "status": "cancelled",
                 "session_id": training_session_id,
@@ -16301,7 +16301,7 @@ def integrate_training_arena_in_annotator_factory(
 
     # Display where the training reports are saved (for Annotator Factory)
     if session_dirs and "session_root" in session_dirs and session_manager:
-        console.print("\n[bold cyan]Training Data Organization:[/bold cyan]")
+        console.print("\n[bold cyan]📂 Training Data Organization:[/bold cyan]")
         console.print(f"  [green]{session_dirs['session_root']}/[/green]")
         console.print(f"  ├── SESSION_SUMMARY.txt         [dim]# Complete training overview[/dim]")
         console.print(f"  ├── training_data/              [dim]# Datasets & analysis reports[/dim]")

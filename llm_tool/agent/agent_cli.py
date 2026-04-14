@@ -111,13 +111,13 @@ class AgentCLI:
         provider_table.add_column(width=3)
         provider_table.add_column()
 
-        provider_table.add_row("[bold cyan]1[/bold cyan]", "Ollama (local models)")
-        provider_table.add_row("[bold cyan]2[/bold cyan]", "Cloud OpenAI (GPT)")
-        provider_table.add_row("[bold cyan]3[/bold cyan]", "Cloud Anthropic (Claude)")
+        provider_table.add_row("[bold cyan]1[/bold cyan]", "🖥️  Ollama (local models)")
+        provider_table.add_row("[bold cyan]2[/bold cyan]", "☁️  OpenAI (GPT)")
+        provider_table.add_row("[bold cyan]3[/bold cyan]", "☁️  Anthropic (Claude)")
 
         self.console.print(Panel(
             provider_table,
-            title="[bold]Agent Configuration[/bold]",
+            title="[bold]⚙️  Agent Configuration[/bold]",
             border_style="cyan",
             padding=(1, 2),
         ))
@@ -174,7 +174,7 @@ class AgentCLI:
 
         self.console.print(Panel(
             model_table,
-            title="[bold]Select Ollama Model[/bold]",
+            title="[bold]🤖 Select Ollama Model[/bold]",
             border_style="cyan",
             padding=(1, 2),
         ))
@@ -227,7 +227,7 @@ class AgentCLI:
 
         self.console.print(Panel(
             model_table,
-            title=f"[bold]Select {provider.title()} Model[/bold]",
+            title=f"[bold]☁️  Select {provider.title()} Model[/bold]",
             border_style="cyan",
             padding=(1, 2),
         ))
@@ -754,7 +754,7 @@ class AgentCLI:
         if yt_match:
             url = yt_match.group(0).rstrip('.,;:!?)')
             self.console.print(
-                "\n[bold yellow]Auto-action:[/bold yellow] "
+                "\n[bold yellow]⚡ Auto-action:[/bold yellow] "
                 f"[dim]Detected YouTube URL → calling download_youtube_audio[/dim]"
             )
             return [ToolCall(
@@ -768,7 +768,7 @@ class AgentCLI:
         if tt_match:
             url = tt_match.group(0).rstrip('.,;:!?)')
             self.console.print(
-                "\n[bold yellow]Auto-action:[/bold yellow] "
+                "\n[bold yellow]⚡ Auto-action:[/bold yellow] "
                 f"[dim]Detected TikTok URL → calling download_tiktok_audio[/dim]"
             )
             return [ToolCall(
@@ -793,7 +793,7 @@ class AgentCLI:
                 if language:
                     args["language"] = language
                 self.console.print(
-                    "\n[bold yellow]Auto-action:[/bold yellow] "
+                    "\n[bold yellow]⚡ Auto-action:[/bold yellow] "
                     f"[dim]Transcription requested → calling transcribe_audio[/dim]"
                 )
                 return [ToolCall(
@@ -812,7 +812,7 @@ class AgentCLI:
                 if candidate.exists():
                     file_path = str(candidate)
             self.console.print(
-                "\n[bold yellow]Auto-action:[/bold yellow] "
+                "\n[bold yellow]⚡ Auto-action:[/bold yellow] "
                 f"[dim]Detected data file → calling analyze_dataset[/dim]"
             )
             return [ToolCall(
@@ -1096,22 +1096,22 @@ class AgentCLI:
         self.console.print(Align.center("[bright_magenta]╚══════╝[bright_yellow]╚══════╝[bright_green]╚═╝     ╚═╝       [bright_cyan]╚═╝    [bright_red]╚═════╝  [bright_blue]╚═════╝ [bright_white]╚══════╝"))
 
         self.console.print()
-        self.console.print(Align.center("[bold bright_yellow on blue]  LLM-powered Intelligent Annotation & Training Pipeline  [/bold bright_yellow on blue]"))
+        self.console.print(Align.center("[bold bright_yellow on blue]  🚀 LLM-powered Intelligent Annotation & Training Pipeline 🚀  [/bold bright_yellow on blue]"))
         self.console.print()
 
         # ── Pipeline flow with emojis ──
         pipeline_text = Text()
-        pipeline_text.append("Data ", style="bold bright_yellow on black")
+        pipeline_text.append("📊 Data ", style="bold bright_yellow on black")
         pipeline_text.append("→ ", style="bold white")
-        pipeline_text.append("LLM Annotation ", style="bold bright_green on black")
+        pipeline_text.append("🤖 LLM Annotation ", style="bold bright_green on black")
         pipeline_text.append("→ ", style="bold white")
-        pipeline_text.append("Clean ", style="bold bright_cyan on black")
+        pipeline_text.append("🧹 Clean ", style="bold bright_cyan on black")
         pipeline_text.append("→ ", style="bold white")
-        pipeline_text.append("Label ", style="bold bright_magenta on black")
+        pipeline_text.append("🎯 Label ", style="bold bright_magenta on black")
         pipeline_text.append("→ ", style="bold white")
-        pipeline_text.append("Train ", style="bold bright_red on black")
+        pipeline_text.append("🧠 Train ", style="bold bright_red on black")
         pipeline_text.append("→ ", style="bold white")
-        pipeline_text.append("Deploy ", style="bold bright_blue on black")
+        pipeline_text.append("📈 Deploy ", style="bold bright_blue on black")
 
         self.console.print(Align.center(pipeline_text))
         self.console.print()
@@ -1121,14 +1121,14 @@ class AgentCLI:
 
         # ── Welcome info panel ──
         info_table = Table(show_header=False, box=None, padding=(0, 2))
-        info_table.add_row("Version:", "[bright_green]1.0[/bright_green]")
-        info_table.add_row("Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
-        info_table.add_row("Features:", "[cyan]50+ BERT Models, 2 LLM Providers (OpenAI/Ollama), Parallel GPU/CPU, Reinforcement Learning[/cyan]")
-        info_table.add_row("Capabilities:", "[magenta]Multi-Label Classification, 100+ Languages, SQL/File I/O, Doccano/Label Studio Export[/magenta]")
+        info_table.add_row("📚 Version:", "[bright_green]1.0[/bright_green]")
+        info_table.add_row("👨‍💻 Author:", "[bright_yellow]Antoine Lemor[/bright_yellow]")
+        info_table.add_row("🚀 Features:", "[cyan]50+ BERT Models, 2 LLM Providers (OpenAI/Ollama), Parallel GPU/CPU, Reinforcement Learning[/cyan]")
+        info_table.add_row("🎯 Capabilities:", "[magenta]Multi-Label Classification, 100+ Languages, SQL/File I/O, Doccano/Label Studio Export[/magenta]")
 
         self.console.print(Panel(
             info_table,
-            title="[bold bright_cyan]Welcome to LLM Tool[/bold bright_cyan]",
+            title="[bold bright_cyan]✨ Welcome to LLM Tool ✨[/bold bright_cyan]",
             border_style="bright_blue",
             padding=(1, 2)
         ))
@@ -1136,7 +1136,7 @@ class AgentCLI:
 
         # ── Environment scan ──
         self._scanned_resources = {}
-        with self.console.status("[bold green]Scanning environment...", spinner="dots"):
+        with self.console.status("[bold green]🔍 Scanning environment...", spinner="dots"):
             self._scan_environment()
 
         self._display_scanned_resources()
@@ -1147,7 +1147,7 @@ class AgentCLI:
 
         # Model info line
         model_line = Text()
-        model_line.append("Active Model: ", style="bold white")
+        model_line.append("🤖 Active Model: ", style="bold white")
         model_line.append(self.config.provider.title(), style="bold cyan")
         model_line.append("/", style="dim")
         model_line.append(self.config.model, style="bold bright_green")
@@ -1158,12 +1158,12 @@ class AgentCLI:
         cap_table.add_column()
 
         capabilities = [
-            ("*", "Data Preparation - Audio Extraction (YouTube/TikTok/Local) → Whisper Transcription (75+ Languages) → NLP Pipeline"),
-            ("*", "LLM Annotation - Zero-Shot Annotation (OpenAI/Ollama) → Label Studio/Doccano Export"),
-            ("*", "Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models"),
-            ("*", "Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
-            ("*", "BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
-            ("*", "Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement"),
+            ("🎤", "Data Preparation - Audio Extraction (YouTube/TikTok/Local) → Whisper Transcription (75+ Languages) → NLP Pipeline"),
+            ("🎨", "LLM Annotation - Zero-Shot Annotation (OpenAI/Ollama) → Label Studio/Doccano Export"),
+            ("🏭", "Annotator Factory - LLM Annotations → Training Data → Fine-Tuned BERT Models"),
+            ("🎮", "Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
+            ("🤖", "BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
+            ("🔍", "Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement"),
         ]
 
         for icon, desc in capabilities:
@@ -1175,7 +1175,7 @@ class AgentCLI:
         # Commands line
         commands = Text()
         commands.append("\n")
-        commands.append("Just describe what you want to do in natural language", style="italic bright_yellow")
+        commands.append("💬 Just describe what you want to do in natural language", style="italic bright_yellow")
         commands.append("\n")
         commands.append("/help", style="bold cyan")
         commands.append("  ", style="")
@@ -1201,7 +1201,7 @@ class AgentCLI:
 
         panel = Panel(
             Group(model_line, Text(), cap_table, commands),
-            title="[bold]LLM Tool Agent[/bold]",
+            title="[bold]🤖 LLM Tool Agent[/bold]",
             subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None,
             border_style="cyan",
             padding=(1, 2),
@@ -1298,7 +1298,7 @@ class AgentCLI:
         # ═══════════════════════════════════════════════════════════════════
         all_llms = res.get("all_llms", {})
         llms_table = Table(
-            title="Available LLMs for Annotation",
+            title="🤖 Available LLMs for Annotation",
             border_style="cyan",
             show_lines=True,
             expand=False,
@@ -1318,7 +1318,7 @@ class AgentCLI:
                 model.name,
                 model.size or "N/A",
                 f"{model.context_length:,}" if model.context_length else "N/A",
-                "Ready",
+                "✓ Ready",
             )
 
         # Show API models (top 2 per provider)
@@ -1330,13 +1330,13 @@ class AgentCLI:
                     model.name,
                     "API",
                     f"{model.context_length:,}" if model.context_length else "N/A",
-                    "API Key" if model.requires_api_key else "Ready",
+                    "🔑 API Key" if model.requires_api_key else "✓ Ready",
                 )
 
         # ── Training models table ──
         trainer_models = res.get("trainer_models", {})
         trainer_table = Table(
-            title="Available Models for Training",
+            title="🏋️ Available Models for Training",
             border_style="magenta",
             show_lines=False,
             expand=False,
@@ -1382,7 +1382,7 @@ class AgentCLI:
         # ═══════════════════════════════════════════════════════════════════
         datasets = res.get("datasets", [])
         datasets_table = Table(
-            title="Detected Datasets",
+            title="📊 Detected Datasets",
             border_style="yellow",
             show_lines=False,
             expand=True,
@@ -1432,7 +1432,7 @@ class AgentCLI:
         # 3) Supported Formats & Databases
         # ═══════════════════════════════════════════════════════════════════
         all_formats_text = Text(justify="center")
-        all_formats_text.append("Supported Formats: ", style="bold cyan")
+        all_formats_text.append("📦 Supported Formats: ", style="bold cyan")
         all_formats_text.append("CSV", style="cyan bold")
         all_formats_text.append(" • ", style="dim")
         all_formats_text.append("JSON/JSONL", style="green bold")
@@ -1444,7 +1444,7 @@ class AgentCLI:
         all_formats_text.append("RData", style="yellow bold")
         all_formats_text.append(" • ", style="dim")
         all_formats_text.append("TSV", style="blue bold")
-        all_formats_text.append("\nDatabases: ", style="bold cyan")
+        all_formats_text.append("\n💾 Databases: ", style="bold cyan")
         all_formats_text.append("PostgreSQL", style="blue bold")
         all_formats_text.append(" • ", style="dim")
         all_formats_text.append("MySQL", style="yellow bold")

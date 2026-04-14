@@ -930,7 +930,7 @@ class ParallelTrainingDisplay:
 
             # Create progress task for this model
             if self._progress is not None:
-                device_icon = "GPU" if device == "gpu" else "CPU"
+                device_icon = "🖥️" if device == "gpu" else "💻"
                 # Use full category name if expand_labels is enabled
                 cat_display = category if self.expand_labels else (
                     category[:self.max_label_width - 2] + ".." if len(category) > self.max_label_width else category
@@ -1340,31 +1340,31 @@ class ParallelTrainingDisplay:
 
             # Row 1: Progress and Elapsed Time
             resource_table.add_row(
-                "Progress:",
+                "📊 Progress:",
                 f"{self.completed_models}/{self.total_models} ({global_pct:.1f}%)",
-                "Elapsed:",
+                "⏱️ Elapsed:",
                 self._format_time(elapsed),
             )
 
             # Row 2: Workers and ETA (remaining time)
             resource_table.add_row(
-                "GPU Workers:",
+                "🖥️ GPU Workers:",
                 f"[green]{gpu_running}[/green] active",
-                "ETA:",
+                "⏳ ETA:",
                 eta_str,
             )
 
             # Row 3: CPU workers and Total estimated time
             resource_table.add_row(
-                "CPU Workers:",
+                "💻 CPU Workers:",
                 f"[cyan]{cpu_running}[/cyan] active",
-                "Total:",
+                "🕐 Total:",
                 f"[bold]{total_str}[/bold]" if total_str != "calculating..." else total_str,
             )
 
             # Row 4: Best F1
             resource_table.add_row(
-                "Best F1:",
+                "🏆 Best F1:",
                 f"[bold green]{self.best_f1_overall:.4f}[/bold green]" if self.best_f1_overall > 0 else "-",
                 "",
                 "",
@@ -1375,17 +1375,17 @@ class ParallelTrainingDisplay:
                 cpu_color = "green" if self._cpu_percent < 70 else ("yellow" if self._cpu_percent < 90 else "red")
                 mem_color = "green" if self._memory_percent < 70 else ("yellow" if self._memory_percent < 90 else "red")
                 resource_table.add_row(
-                    "CPU Usage:",
+                    "🔲 CPU Usage:",
                     f"[{cpu_color}]{self._cpu_percent:.1f}%[/{cpu_color}]",
-                    "Memory:",
+                    "💾 Memory:",
                     f"[{mem_color}]{self._memory_used_gb:.1f}GB ({self._memory_percent:.1f}%)[/{mem_color}]",
                 )
 
             # Row 5: Queue info
             resource_table.add_row(
-                "Queued:",
+                "📋 Queued:",
                 f"[dim]{total_queued}[/dim] models",
-                "Running:",
+                "🔄 Running:",
                 f"[bold]{total_running}[/bold] total",
             )
 
@@ -1395,14 +1395,14 @@ class ParallelTrainingDisplay:
                 cpu_share = self._scheduler_info.get('optimal_cpu_share', 0)
                 speed_ratio = self._scheduler_info.get('speed_ratio', 5.0)
                 resource_table.add_row(
-                    "Smart Scheduler:",
+                    "🧠 Smart Scheduler:",
                     f"GPU ~{gpu_share} / CPU ~{cpu_share}",
-                    "Speed Ratio:",
+                    "⚡ Speed Ratio:",
                     f"{speed_ratio:.1f}x",
                 )
 
             if self.failed_models > 0:
-                resource_table.add_row("[FAIL] Failed:", f"[red]{self.failed_models}[/red]", "", "")
+                resource_table.add_row("❌ Failed:", f"[red]{self.failed_models}[/red]", "", "")
 
             # ========== ACTIVE MODELS TABLE (ENHANCED with dynamic widths) ==========
             models_table = Table(
@@ -1438,7 +1438,7 @@ class ParallelTrainingDisplay:
 
             # Show all active models with full category names
             for m in active_models:
-                dev = "GPU" if m.device == "gpu" else "CPU"
+                dev = "🖥️" if m.device == "gpu" else "💻"
                 # Use full category name (wrapping handled by column)
                 cat = m.category
 
@@ -1658,7 +1658,7 @@ class ParallelTrainingDisplay:
 
             return Panel(
                 Group(*elements),
-                title="[bold blue]PARALLEL TRAINING DASHBOARD[/bold blue]",
+                title="[bold blue]🚀 PARALLEL TRAINING DASHBOARD[/bold blue]",
                 subtitle=f"[dim]{total_running} running | {total_queued} queued | {self.completed_models} done | {self.failed_models} failed[/dim]",
                 border_style="bold blue",
                 box=box.HEAVY,
@@ -1706,7 +1706,7 @@ class ParallelTrainingDisplay:
                 f"[{f1_style}]{m.f1_macro:.4f}[/{f1_style}]",
                 f"{m.accuracy:.4f}",
                 str(m.best_epoch),
-                "GPU" if m.device == "gpu" else "CPU",
+                "🖥️ GPU" if m.device == "gpu" else "💻 CPU",
             )
 
         self.console.print(summary)
@@ -1714,7 +1714,7 @@ class ParallelTrainingDisplay:
         if self.best_f1_overall > 0:
             self.console.print()
             self.console.print(Panel(
-                f"[bold green]Best Model:[/bold green] {self.best_category}\n"
+                f"[bold green]🏆 Best Model:[/bold green] {self.best_category}\n"
                 f"[cyan]F1 Score:[/cyan] {self.best_f1_overall:.4f}",
                 border_style="green",
             ))
@@ -2139,8 +2139,8 @@ class ParallelTrainingManager:
 
         logger.info(f"📁 Models directory: {self.models_dir}")
         logger.info(f"📁 Logs directory: {self.logs_base_dir}")
-        self.console.print(f"[cyan]Models directory:[/cyan] {self.models_dir}")
-        self.console.print(f"[cyan]Logs directory:[/cyan] {self.logs_base_dir}")
+        self.console.print(f"[cyan]📁 Models directory:[/cyan] {self.models_dir}")
+        self.console.print(f"[cyan]📁 Logs directory:[/cyan] {self.logs_base_dir}")
 
         # Initialize components
         self.display = ParallelTrainingDisplay(self.console)
@@ -2183,7 +2183,7 @@ class ParallelTrainingManager:
         from rich.table import Table
 
         table = Table(
-            title="Resource Allocation Plan",
+            title="📊 Resource Allocation Plan",
             show_header=True,
             header_style="bold magenta",
             box=box.ROUNDED,
@@ -2196,10 +2196,10 @@ class ParallelTrainingManager:
 
         if plan.gpu_allocation:
             g = plan.gpu_allocation
-            table.add_row(f"{g.device_id.upper()}", "GPU", str(g.batch_size), str(g.num_workers), "-")
+            table.add_row(f"🖥️ {g.device_id.upper()}", "GPU", str(g.batch_size), str(g.num_workers), "-")
 
         for c in plan.cpu_allocations:
-            table.add_row(f"{c.device_id}", "CPU", str(c.batch_size), str(c.num_workers), str(c.threads_per_worker or "-"))
+            table.add_row(f"💻 {c.device_id}", "CPU", str(c.batch_size), str(c.num_workers), str(c.threads_per_worker or "-"))
 
         self.console.print(table)
         self.console.print(f"\n[bold]Total parallel workers:[/bold] {plan.total_parallel_workers}")
@@ -2255,7 +2255,7 @@ class ParallelTrainingManager:
 
         # Log resource allocation (BEFORE Live display starts)
         logger.info(f"[PARALLEL] Resource allocation: {num_gpu_workers} GPU + {num_cpu_workers} CPU = {total_workers} workers")
-        self.console.print(f"[cyan]Workers: {num_gpu_workers} GPU + {num_cpu_workers} CPU = {total_workers} parallel[/cyan]")
+        self.console.print(f"[cyan]📊 Workers: {num_gpu_workers} GPU + {num_cpu_workers} CPU = {total_workers} parallel[/cyan]")
 
         # Show smart scheduler info BEFORE Live display starts
         try:
@@ -2267,7 +2267,7 @@ class ParallelTrainingManager:
                 speed_ratio = temp_scheduler.speed_tracker.get_speed_ratio()
                 optimal_cpu = temp_scheduler.cutoff_calculator.calculate_optimal_cpu_share(total_tasks, num_cpu_workers)
                 gpu_share = total_tasks - optimal_cpu
-                self.console.print(f"[cyan]Smart Scheduler: GPU ~{gpu_share} tasks, CPU ~{optimal_cpu} tasks (ratio: {speed_ratio:.1f}x)[/cyan]")
+                self.console.print(f"[cyan]🧠 Smart Scheduler: GPU ~{gpu_share} tasks, CPU ~{optimal_cpu} tasks (ratio: {speed_ratio:.1f}x)[/cyan]")
         except Exception as e:
             logger.debug(f"Could not show scheduler preview: {e}")
 
@@ -2801,7 +2801,7 @@ class ParallelTrainingManager:
             best_model_info = ""
             if intelligent_selection and intelligent_selection.get('best_model'):
                 best_model_info = (
-                    f"\n[bold]Best Model:[/bold]\n"
+                    f"\n[bold]🏆 Best Model:[/bold]\n"
                     f"  [green]{intelligent_selection['best_model']}[/green]\n"
                     f"  [dim]Combined Score:[/dim] {intelligent_selection.get('best_combined_score', 0):.4f}\n"
                     f"  [dim]F1 Macro:[/dim] {intelligent_selection.get('best_f1_macro', 0):.4f}\n"
@@ -2809,11 +2809,11 @@ class ParallelTrainingManager:
 
             # Store summary panel for printing AFTER display.stop() to prevent duplication
             self._final_summary_panel = Panel(
-                f"[bold green][OK] Training Complete[/bold green]\n\n"
+                f"[bold green]✅ Training Complete[/bold green]\n\n"
                 f"[cyan]Models trained:[/cyan] {success_count} success, {error_count} errors\n"
                 f"[cyan]Total time:[/cyan] {self._format_time(total_time)}"
                 f"{best_model_info}\n"
-                f"[bold]Output locations:[/bold]\n"
+                f"[bold]📁 Output locations:[/bold]\n"
                 f"  [dim]Models:[/dim] {self.models_dir}\n"
                 f"  [dim]Logs:[/dim]   {self.logs_base_dir}\n"
                 f"    ├── metrics/  (training.csv, best.csv, metrics.json)\n"

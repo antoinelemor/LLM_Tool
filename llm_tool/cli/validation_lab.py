@@ -308,7 +308,7 @@ class ValidationLabController:
     def _prompt_session_choice(self, records: List[SummaryRecord], default_session_id: str) -> Optional[str]:
         options = {str(index + 1): index for index in range(len(records))}
         if RICH_AVAILABLE and self.console:
-            table = Table(title="Validation Lab Sessions", border_style="cyan", expand=True)
+            table = Table(title="📂 Validation Lab Sessions", border_style="cyan", expand=True)
             table.add_column("#", justify="right", style="cyan", width=4)
             table.add_column("Session", style="white")
             table.add_column("Status", style="green", no_wrap=True)
@@ -386,7 +386,7 @@ class ValidationLabController:
             return []
 
         if RICH_AVAILABLE and self.console:
-            table = Table(title=f"Validation Candidates (session: {session_id})", border_style="green")
+            table = Table(title=f"📊 Validation Candidates (session: {session_id})", border_style="green")
             table.add_column("#", justify="right", style="cyan", width=4)
             table.add_column("Source", style="cyan")
             table.add_column("Session", style="white")
@@ -413,7 +413,7 @@ class ValidationLabController:
         else:
             print(f"\n=== Validation Candidates (session: {session_id}) ===")
             for idx, item in enumerate(candidates, 1):
-                status = "[OK]" if item.export_exists else "[!] missing"
+                status = "✅" if item.export_exists else "⚠️ missing"
                 print(
                     f"{idx}. {item.source}: {item.session_name or item.session_id} · "
                     f"{item.dataset or '-'} · {item.export_label} -> {item.export_path} ({status})"

@@ -254,22 +254,22 @@ class GlobalProgressTracker:
         )
 
         # Add global task (all models, all epochs)
-        mode_label = {
-            "training": "[TRAIN]",
-            "benchmark": "[BENCH]",
-            "multi-label": "[TARGET]",
-            "multi-class": "[MULTI]"
-        }.get(self.mode, "[TRAIN]")
+        mode_emoji = {
+            "training": "🏋️",
+            "benchmark": "⚡",
+            "multi-label": "🎯",
+            "multi-class": "🔢"
+        }.get(self.mode, "🏋️")
 
         self.global_task_id = self.progress.add_task(
-            f"{mode_label} TOTAL PROGRESS: 0/{self.total_models} models",
+            f"{mode_emoji} TOTAL PROGRESS: 0/{self.total_models} models",
             total=self.total_epochs,
             completed=0
         )
 
         # Add current model task
         self.model_task_id = self.progress.add_task(
-            "Current Model: Waiting...",
+            "📊 Current Model: Waiting...",
             total=100,
             completed=0
         )
@@ -375,7 +375,7 @@ class GlobalProgressTracker:
             self.progress.update(
                 self.global_task_id,
                 completed=self.completed_epochs,
-                description=f"{'[BENCH]' if self.mode == 'benchmark' else '[TRAIN]'} TOTAL PROGRESS: {self.current_model_idx}/{self.total_models} models"
+                description=f"{'⚡' if self.mode == 'benchmark' else '🏋️'} TOTAL PROGRESS: {self.current_model_idx}/{self.total_models} models"
             )
 
             model_progress = (epoch / self.current_epochs) * 100
@@ -415,7 +415,7 @@ class GlobalProgressTracker:
             self.progress.update(
                 self.model_task_id,
                 completed=100,
-                description=f"[OK] {self.current_model_name}: Complete"
+                description=f"✅ {self.current_model_name}: Complete"
             )
 
             self._update_display(force=True)
@@ -424,7 +424,7 @@ class GlobalProgressTracker:
             if self.current_model_start_time:
                 elapsed = time.time() - self.current_model_start_time
             self.console.print(
-                f"[green]OK[/green] {self.current_model_name or 'Model'} "
+                f"[green]✔[/green] {self.current_model_name or 'Model'} "
                 f"complete in {self._format_time(elapsed)}"
             )
 
@@ -438,12 +438,12 @@ class GlobalProgressTracker:
             self.progress.update(
                 self.global_task_id,
                 completed=self.total_epochs,
-                description=f"[DONE] COMPLETE: {self.total_models} models trained"
+                description=f"✨ COMPLETE: {self.total_models} models trained"
             )
             self._update_display(force=True)
         elif self.disable_console_ui:
             self.console.print(
-                f"[green]OK[/green] Training complete for {self.total_models} model(s)."
+                f"[green]✔[/green] Training complete for {self.total_models} model(s)."
             )
 
         # Stop live display
@@ -455,7 +455,7 @@ class GlobalProgressTracker:
 
     def _get_model_description(self) -> str:
         """Get description for current model task."""
-        parts = [f"Model {self.current_model_idx}/{self.total_models}"]
+        parts = [f"📊 Model {self.current_model_idx}/{self.total_models}"]
 
         if self.current_model_name:
             parts.append(f"{self.current_model_name}")
@@ -478,26 +478,26 @@ class GlobalProgressTracker:
         stats_table.add_column(style="white")
 
         # Add statistics
-        stats_table.add_row("Total Models:", f"{self.total_models}")
-        stats_table.add_row("Total Epochs:", f"{self.total_epochs}")
-        stats_table.add_row("[OK] Completed Epochs:", f"{self.completed_epochs}/{self.total_epochs}")
+        stats_table.add_row("📈 Total Models:", f"{self.total_models}")
+        stats_table.add_row("🔢 Total Epochs:", f"{self.total_epochs}")
+        stats_table.add_row("✅ Completed Epochs:", f"{self.completed_epochs}/{self.total_epochs}")
 
         if self.completed_epochs > 0:
             completion_pct = (self.completed_epochs / self.total_epochs) * 100
-            stats_table.add_row("Overall Progress:", f"{completion_pct:.1f}%")
+            stats_table.add_row("📊 Overall Progress:", f"{completion_pct:.1f}%")
 
         # Timing info
         if self.start_time:
             elapsed = time.time() - self.start_time
-            stats_table.add_row("Elapsed Time:", self._format_time(elapsed))
+            stats_table.add_row("⏱️ Elapsed Time:", self._format_time(elapsed))
 
             if self.estimated_remaining > 0:
-                stats_table.add_row("Est. Remaining:", self._format_time(self.estimated_remaining))
+                stats_table.add_row("⏳ Est. Remaining:", self._format_time(self.estimated_remaining))
 
         # Current model metrics (if available)
         if self.current_model_name and self.current_epoch > 0:
             stats_table.add_row("", "")  # Spacer
-            stats_table.add_row("[TARGET] Current Model:", self.current_model_name)
+            stats_table.add_row("🎯 Current Model:", self.current_model_name)
             if self.current_category:
                 stats_table.add_row("  Category:", self.current_category)
             if self.current_language:
@@ -527,15 +527,15 @@ class GlobalProgressTracker:
         }
 
         titles = {
-            "training": "TRAINING PROGRESS",
-            "benchmark": "BENCHMARK PROGRESS",
-            "multi-label": "MULTI-LABEL TRAINING PROGRESS",
-            "multi-class": "MULTI-CLASS TRAINING PROGRESS"
+            "training": "🏋️ TRAINING PROGRESS",
+            "benchmark": "⚡ BENCHMARK PROGRESS",
+            "multi-label": "🎯 MULTI-LABEL TRAINING PROGRESS",
+            "multi-class": "🔢 MULTI-CLASS TRAINING PROGRESS"
         }
 
         return Panel(
             group,
-            title=titles.get(self.mode, "TRAINING PROGRESS"),
+            title=titles.get(self.mode, "🏋️ TRAINING PROGRESS"),
             border_style=border_colors.get(self.mode, "bold blue"),
             box=box.HEAVY
         )
@@ -588,12 +588,12 @@ class RichProgressManager:
 
     # Phase definitions with emojis
     PHASES = {
-        'initialization': {'icon': '*', 'label': 'Initialization'},
-        'annotation': {'icon': '*', 'label': 'Annotation'},
-        'validation': {'icon': '*', 'label': 'Validation'},
-        'training': {'icon': '*', 'label': 'Training'},
-        'evaluation': {'icon': '*', 'label': 'Evaluation'},
-        'deployment': {'icon': '*', 'label': 'Deployment'}
+        'initialization': {'icon': '⚙️', 'label': 'Initialization'},
+        'annotation': {'icon': '✍️', 'label': 'Annotation'},
+        'validation': {'icon': '✅', 'label': 'Validation'},
+        'training': {'icon': '🏋️', 'label': 'Training'},
+        'evaluation': {'icon': '📊', 'label': 'Evaluation'},
+        'deployment': {'icon': '🚀', 'label': 'Deployment'}
     }
 
     def __init__(self, show_json_every: int = 10, compact_mode: bool = True):
@@ -664,9 +664,9 @@ class RichProgressManager:
             alerts_table.add_column(width=2, justify="center")
             alerts_table.add_column()
             for warn in self.recent_warnings[-3:]:
-                alerts_table.add_row("[yellow]![/yellow]", warn)
+                alerts_table.add_row("[yellow]⚠[/yellow]", warn)
             for err in self.recent_errors[-3:]:
-                alerts_table.add_row("[red]x[/red]", err)
+                alerts_table.add_row("[red]✖[/red]", err)
             alerts_panel = Panel(
                 alerts_table,
                 title="[bold yellow]Alerts[/bold yellow]",
@@ -686,7 +686,7 @@ class RichProgressManager:
 
         return Panel(
             Group(*renderables),
-            title="Annotation Progress",
+            title="📊 Annotation Progress",
             border_style="bright_cyan",
             box=box.HEAVY
         )
@@ -851,7 +851,7 @@ class RichProgressManager:
         msg = f"{icon} {label}: {progress:.1f}% - {message}"
         self.console.print(msg)
         if error:
-            self.console.print(f"[red]! {error}[/red]")
+            self.console.print(f"[red]⚠ {error}[/red]")
 
     def pause_for_training(self):
         """Pause progress display for training phase"""
@@ -864,7 +864,7 @@ class RichProgressManager:
             try:
                 self.progress.update(
                     self.overall_task_id,
-                    description="Pausing for training..."
+                    description="⏸ Pausing for training..."
                 )
                 self._refresh_progress(force=True)
                 time.sleep(0.5)
@@ -916,7 +916,7 @@ class RichProgressManager:
 
                 self.progress.start()
                 self.overall_task_id = self.progress.add_task(
-                    "Reprise",
+                    "🚀 Reprise",
                     total=100,
                     completed=max(0.0, min(self.state.current_progress, 100.0))
                 )
@@ -943,7 +943,7 @@ class RichProgressManager:
                 self.progress.update(
                     self.overall_task_id,
                     completed=100,
-                    description="[DONE] Pipeline Complete"
+                    description="✨ Pipeline Complete"
                 )
                 self._refresh_progress(force=True)
                 time.sleep(0.2)
@@ -1106,7 +1106,7 @@ class RichProgressManager:
 
             panel = Panel(
                 syntax,
-                title=f"[bold cyan]Preview #{self.state.json_count}[/bold cyan]",
+                title=f"[bold cyan]📝 Preview #{self.state.json_count}[/bold cyan]",
                 border_style="cyan",
                 expand=False,
                 width=panel_width
@@ -1154,10 +1154,10 @@ class RichProgressManager:
             table.add_column()
 
             for msg in self.recent_warnings[-3:]:
-                table.add_row("[yellow]![/yellow]", msg)
+                table.add_row("[yellow]⚠[/yellow]", msg)
 
             for msg in self.recent_errors[-3:]:
-                table.add_row("[red]x[/red]", msg)
+                table.add_row("[red]✖[/red]", msg)
 
             body = table
 
@@ -1252,7 +1252,7 @@ class RichProgressManager:
         target_console.print(
             Panel(
                 stats,
-                title="[bold yellow]Pipeline Summary[/bold yellow]",
+                title="[bold yellow]📊 Pipeline Summary[/bold yellow]",
                 border_style="yellow",
                 expand=False
             )
@@ -1262,7 +1262,7 @@ class RichProgressManager:
         if not samples:
             return
 
-        target_console.print("\n[bold cyan]Sample Annotations:[/bold cyan]")
+        target_console.print("\n[bold cyan]📝 Sample Annotations:[/bold cyan]")
         for i, sample in enumerate(samples, 1):
             try:
                 json_str = json.dumps(sample, indent=2, ensure_ascii=False)
