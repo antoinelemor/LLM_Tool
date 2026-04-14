@@ -252,14 +252,14 @@ class PipelineController:
         """Run the complete pipeline synchronously"""
         try:
             # Initialize
-            self._report_progress('initialization', 0, '🔍 Initializing pipeline...')
+            self._report_progress('initialization', 0, ' Initializing pipeline...')
             self.initialize_pipeline(config)
             self._report_progress('initialization', 0, '✓ Pipeline initialized')
 
             # Only import modules that we actually need based on config
             # This avoids loading heavy modules that might cause issues
             self.logger.info("[PIPELINE] Importing required modules...")
-            self._report_progress('initialization', 0, '📦 Loading modules...')
+            self._report_progress('initialization', 0, ' Loading modules...')
 
             # Phase 1: Annotation (synchronous to avoid asyncio conflicts with Ollama)
             if config.get('run_annotation', True):
@@ -275,21 +275,21 @@ class PipelineController:
                 start_pct = 0
                 end_pct = 50 if run_training else 100
 
-                self._report_progress('annotation', start_pct, '🤖 Starting annotation...')
+                self._report_progress('annotation', start_pct, ' Starting annotation...')
                 self.logger.info("[PIPELINE] Calling _run_annotation_phase_sync()...")
                 self._run_annotation_phase_sync(config)
                 self._report_progress('annotation', end_pct, '✓ Annotation completed')
 
             # Phase 1.5: Prepare training data from annotations (if training is enabled)
             if config.get('run_training', False) and self.state.annotation_results:
-                self._report_progress('preparation', 55, '🔄 Converting annotations to training format...')
+                self._report_progress('preparation', 55, ' Converting annotations to training format...')
                 self.logger.info("[PIPELINE] Preparing training data from annotations...")
                 self._prepare_training_data_from_annotations(config)
                 self._report_progress('preparation', 60, '✓ Training data prepared')
 
             # Phase 2: Validation
             if config.get('run_validation', False):
-                self._report_progress('validation', 65, '🔍 Validating annotations...')
+                self._report_progress('validation', 65, ' Validating annotations...')
                 if self._validation_module is None:
                     self.logger.info("[IMPORT] Importing AnnotationValidator...")
                     from ..validators.annotation_validator import AnnotationValidator
@@ -299,7 +299,7 @@ class PipelineController:
 
             # Phase 3: Training
             if config.get('run_training', False):
-                self._report_progress('training', 70, '🏋️  Starting model training...')
+                self._report_progress('training', 70, '️  Starting model training...')
                 if self._training_module is None:
                     self.logger.info("[IMPORT] Setting environment variables to prevent mutex issues...")
                     # CRITICAL: Set environment variables BEFORE importing PyTorch to prevent mutex locks
@@ -319,7 +319,7 @@ class PipelineController:
 
             # Phase 4: Deployment
             if config.get('run_deployment', False):
-                self._report_progress('deployment', 96, '📦 Deploying model...')
+                self._report_progress('deployment', 96, ' Deploying model...')
                 asyncio.run(self._run_deployment_phase(config))
                 self._report_progress('deployment', 98, '✓ Deployment completed')
 
@@ -369,7 +369,7 @@ class PipelineController:
                     'total': total,
                     'message': message
                 }
-                self._report_progress('annotation', progress_pct, f'🤖 {message}', subtask_info)
+                self._report_progress('annotation', progress_pct, f' {message}', subtask_info)
 
             # Pass progress_manager if available (for warnings/errors display)
             progress_manager = getattr(self, 'progress_manager', None)
@@ -487,7 +487,7 @@ class PipelineController:
                 from ..trainers.multi_label_trainer import MultiLabelTrainer, TrainingConfig as MultiLabelTrainingConfig
 
                 self.logger.info("Using MultiLabelTrainer for multi-file training")
-                print(f"\n🏋️ Training multi-label model...")
+                print(f"\n️ Training multi-label model...")
 
                 # Prepare training config for MultiLabelTrainer
                 model_name = config.get('training_model_type') or config.get('training_annotation_model')
@@ -513,9 +513,9 @@ class PipelineController:
                 # Load and train on all files
                 all_results = {}
                 for idx, (key, file_path) in enumerate(training_files.items(), 1):
-                    print(f"\n📊 Training model {idx}/{len(training_files)} for: {key}")
+                    print(f"\n Training model {idx}/{len(training_files)} for: {key}")
                     self._report_progress('training', 70 + (25 * (idx - 1) / len(training_files)),
-                                        f'🏋️ Training {key} ({idx}/{len(training_files)})')
+                                        f'️ Training {key} ({idx}/{len(training_files)})')
 
                     # Load samples for this label
                     samples = ml_trainer.load_multi_label_data(
@@ -581,7 +581,7 @@ class PipelineController:
                             'phase': PipelinePhase.TRAINING,
                             'warning': warning_msg
                         })
-                        self._report_progress('training', 70, '⚠️ Training skipped (labels missing)')
+                        self._report_progress('training', 70, '[!] Training skipped (labels missing)')
                         return
                 except Exception as exc:
                     warning_msg = (
@@ -594,11 +594,11 @@ class PipelineController:
                         'phase': PipelinePhase.TRAINING,
                         'warning': warning_msg
                     })
-                    self._report_progress('training', 70, '⚠️ Training skipped (data unavailable)')
+                    self._report_progress('training', 70, '[!] Training skipped (data unavailable)')
                     return
 
             # Report progress
-            self._report_progress('training', 75, '🏋️ Training model...')
+            self._report_progress('training', 75, '️ Training model...')
 
             # Run training synchronously (blocking)
             self.logger.info("Starting synchronous model training...")
@@ -648,14 +648,14 @@ class PipelineController:
                 if training_strategy == 'single-label':
                     # Train one model per annotation key
                     self.logger.info(f"Training {len(training_files)} models (one per annotation key)...")
-                    print(f"\n📊 Training {len(training_files)} separate models for multi-label classification")
+                    print(f"\n Training {len(training_files)} separate models for multi-label classification")
 
                     model_idx = 0
                     num_models = len(training_files)
 
                     for annotation_key, input_data in training_files.items():
                         model_idx += 1
-                        print(f"\n🏋️  Training model {model_idx}/{num_models} for annotation key: '{annotation_key}'")
+                        print(f"\n️  Training model {model_idx}/{num_models} for annotation key: '{annotation_key}'")
                         self.logger.info(f"Training model for key '{annotation_key}': {input_data}")
 
                         # Report training progress for this model
@@ -667,7 +667,7 @@ class PipelineController:
                             'message': f"Training model for '{annotation_key}'"
                         }
                         self._report_progress('training', base_progress,
-                            f'🏋️  Training model {model_idx}/{num_models}: {annotation_key}',
+                            f'️  Training model {model_idx}/{num_models}: {annotation_key}',
                             subtask_info)
 
                         # Prepare training configuration for this key
@@ -688,7 +688,7 @@ class PipelineController:
                         subtask_info['current'] = 100
                         subtask_info['message'] = f"✓ Model '{annotation_key}' trained"
                         self._report_progress('training', 70 + (25 * model_idx / num_models),
-                            f'🏋️  Completed {model_idx}/{num_models} models',
+                            f'️  Completed {model_idx}/{num_models} models',
                             subtask_info)
 
                     # Store all results
@@ -703,7 +703,7 @@ class PipelineController:
                     # Train one multi-label model with all labels
                     input_data = training_files['multilabel']
                     self.logger.info(f"Training multi-label model: {input_data}")
-                    print(f"\n🏋️  Training single multi-label model")
+                    print(f"\n️  Training single multi-label model")
 
                     training_config = self._prepare_training_config(config, input_data)
 

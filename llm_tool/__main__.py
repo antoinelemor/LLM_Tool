@@ -217,7 +217,7 @@ def run_interactive_mode(args):
         except ImportError:
             # Fallback to simple CLI
             logging.info("Advanced CLI unavailable, using simple CLI")
-            logging.info("💡 For advanced features, install: pip install rich pandas psutil")
+            logging.info(" For advanced features, install: pip install rich pandas psutil")
             from .cli.main_cli import LLMToolCLI
             cli = LLMToolCLI()
     else:

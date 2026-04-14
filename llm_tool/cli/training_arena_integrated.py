@@ -5519,7 +5519,7 @@ def _run_benchmark_mode(
             import datetime
             benchmark_session_id = datetime.datetime.now().strftime("training_session_%Y%m%d_%H%M%S")
             self.current_session_id = benchmark_session_id
-            self.logger.warning(f"⚠️  Created new session_id for benchmark (expected to reuse existing): {benchmark_session_id}")
+            self.logger.warning(f"[!]  Created new session_id for benchmark (expected to reuse existing): {benchmark_session_id}")
 
         # CRITICAL: Display session information to user
         session_manager = getattr(self, 'current_session_manager', None)
@@ -5543,7 +5543,7 @@ def _run_benchmark_mode(
         # training is interrupted or user chooses to exit benchmark early
         # ============================================================
         try:
-            self.logger.info("💾 Saving initial benchmark metadata for session tracking...")
+            self.logger.info(" Saving initial benchmark metadata for session tracking...")
 
             # Build comprehensive benchmark configuration for metadata
             benchmark_model_config = {
@@ -6473,7 +6473,7 @@ def _run_benchmark_mode(
         # This ensures the benchmark-only session is fully tracked
         # ============================================================
         try:
-            self.logger.info("💾 Updating benchmark metadata with final results...")
+            self.logger.info(" Updating benchmark metadata with final results...")
 
             # Extract best model from results
             best_model = comparison_df.iloc[0]['model'] if not comparison_df.empty else None
@@ -9422,10 +9422,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             fallback_metrics_dir = get_training_metrics_dir(session_id) / "normal_training"
             self.logger.info(f"  Logs will be saved to: {fallback_metrics_dir}")
     elif session_id:
-        self.logger.warning("  ⚠️  session_id provided but differs from self.current_session_id")
+        self.logger.warning("  [!]  session_id provided but differs from self.current_session_id")
         self.logger.info(f"  Models will be saved to: models/{session_id}/normal_training/")
     else:
-        self.logger.warning("  ⚠️  No session_id provided - will create new one (BAD!)")
+        self.logger.warning("  [!]  No session_id provided - will create new one (BAD!)")
     self.logger.info("="*80)
     if session_id:
         self.console.print(f"\n[cyan]Session ID:[/cyan] [bold]{session_id}[/bold]")
@@ -11308,7 +11308,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 global_max_epochs = global_total_epochs
 
             self.logger.info("=" * 80)
-            self.logger.info("🏷️ PER-KEY MULTI-LABEL TRAINING")
+            self.logger.info("️ PER-KEY MULTI-LABEL TRAINING")
             self.logger.info(f"  Model: {model_name}")
             self.logger.info(f"  Keys: {list(key_files.keys())}")
             self.logger.info(f"  Total models: {global_total_models}")
@@ -11702,7 +11702,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 global_max_epochs = global_total_epochs
 
             self.logger.info("=" * 80)
-            self.logger.info("🏷️ TRUE MULTI-LABEL TRAINING (SINGLE MODEL)")
+            self.logger.info("️ TRUE MULTI-LABEL TRAINING (SINGLE MODEL)")
             self.logger.info(f"  Model: {model_name}")
             self.logger.info(f"  Input: {input_file_to_use}")
             self.logger.info(f"  Mode: Single model with BCEWithLogitsLoss + sigmoid")
@@ -13240,7 +13240,7 @@ def _get_preselected_benchmark_models(self, languages: set, text_length_avg: flo
 
 def _get_custom_benchmark_models(self) -> List[str]:
     """Let user manually select models"""
-    self.console.print("\n[bold]✏ Custom Model Selection[/bold]\n")
+    self.console.print("\n[bold] Custom Model Selection[/bold]\n")
 
     all_models = self._flatten_trainer_models()
     self.console.print(f"[dim]Available models ({len(all_models)}):[/dim]")

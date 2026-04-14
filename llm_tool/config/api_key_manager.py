@@ -325,11 +325,11 @@ class APIKeyManager:
             The API key entered by user
         """
         try:
-            print(f"\n🔑 Enter API key for {provider}")
+            print(f"\n Enter API key for {provider}")
             if HAS_CRYPTOGRAPHY:
                 print("   (Will be stored securely using encryption)")
             else:
-                print("   ⚠️  WARNING: Will be stored in plain text. Install 'cryptography' for secure storage.")
+                print("   [!]  WARNING: Will be stored in plain text. Install 'cryptography' for secure storage.")
 
             api_key = getpass(f"{provider.upper()} API Key: ")
 

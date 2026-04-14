@@ -134,10 +134,10 @@ class DeviceStatsColumn(ProgressColumn):
             rate = stats.get("rate", 0)
             if device.upper() in ("MPS", "CUDA", "GPU"):
                 style = "bold green"
-                icon = "⚡"
+                icon = ""
             else:
                 style = "cyan"
-                icon = "🔧"
+                icon = ""
             parts.append(f"{icon}{device.upper()}: {processed:,} ({rate:.1f}/s)")
         return Text(" | ".join(parts), style="dim")
 
@@ -270,13 +270,13 @@ class InferenceProgressManager:
         # Show worker configuration
         worker_info_parts = []
         if self.n_gpu_workers > 0:
-            worker_info_parts.append(f"⚡ {self.n_gpu_workers} GPU")
+            worker_info_parts.append(f" {self.n_gpu_workers} GPU")
         if self.n_cpu_workers > 0:
-            worker_info_parts.append(f"🔧 {self.n_cpu_workers} CPU")
+            worker_info_parts.append(f" {self.n_cpu_workers} CPU")
 
         if worker_info_parts:
             worker_info = " + ".join(worker_info_parts)
-            self.console.print(f"[dim]🔄 Loading model into workers: {worker_info}...[/dim]")
+            self.console.print(f"[dim] Loading model into workers: {worker_info}...[/dim]")
 
         self.progress.start()
         self.main_task = self.progress.add_task(
@@ -294,7 +294,7 @@ class InferenceProgressManager:
             self.worker_totals[worker_id] = self.chunk_size
             self.worker_chunk_base[worker_id] = 0
             self.worker_tasks[worker_id] = self.worker_progress.add_task(
-                f"⚡ [green]{worker_id}[/green] [dim](loading)[/dim]",
+                f" [green]{worker_id}[/green] [dim](loading)[/dim]",
                 total=self.chunk_size,
                 rate=0.0
             )
@@ -304,7 +304,7 @@ class InferenceProgressManager:
             self.worker_totals[worker_id] = self.chunk_size
             self.worker_chunk_base[worker_id] = 0
             self.worker_tasks[worker_id] = self.worker_progress.add_task(
-                f"🔧 [cyan]{worker_id}[/cyan] [dim](loading)[/dim]",
+                f" [cyan]{worker_id}[/cyan] [dim](loading)[/dim]",
                 total=self.chunk_size,
                 rate=0.0
             )
@@ -338,14 +338,14 @@ class InferenceProgressManager:
         self.console.print(f"  [dim]{self.model_name}[/dim]")
         self.console.print(f"  [cyan]{self.total_texts:,} texts[/cyan] in [yellow]{total_time:.1f}s[/yellow] @ [green]{overall_rate:.1f}/s[/green]")
         if gpu_processed > 0:
-            self.console.print(f"  ⚡ GPU: {gpu_processed:,} • 🔧 CPU: {cpu_processed:,}")
+            self.console.print(f"   GPU: {gpu_processed:,} •  CPU: {cpu_processed:,}")
         self.console.print()
 
     def _show_final_stats(self):
         """Display final statistics for each worker."""
         if self.worker_stats_cache:
             total_time = time.time() - self.start_time
-            self.console.print("\n[bold]📊 Per-Worker Statistics:[/bold]")
+            self.console.print("\n[bold] Per-Worker Statistics:[/bold]")
 
             # Group workers by type (GPU first, then CPU)
             gpu_workers = [(k, v) for k, v in sorted(self.worker_stats_cache.items()) if k.startswith("gpu")]
@@ -354,12 +354,12 @@ class InferenceProgressManager:
             for worker_id, stats in gpu_workers + cpu_workers:
                 processed = stats.get("processed", 0)
                 rate = stats.get("rate", 0)
-                icon = "⚡" if worker_id.startswith("gpu") else "🔧"
+                icon = "" if worker_id.startswith("gpu") else ""
                 style = "green" if worker_id.startswith("gpu") else "cyan"
                 self.console.print(f"  {icon} [{style}]{worker_id}[/{style}]: {processed:,} texts @ {rate:.1f} texts/sec")
 
             overall_rate = self.total_texts / total_time if total_time > 0 else 0
-            self.console.print(f"  📈 [bold]Overall:[/bold] {self.total_texts:,} texts in {total_time:.1f}s @ {overall_rate:.1f} texts/sec")
+            self.console.print(f"   [bold]Overall:[/bold] {self.total_texts:,} texts in {total_time:.1f}s @ {overall_rate:.1f} texts/sec")
 
     def on_workers_initialized(self, stats: InferenceProgress):
         """Called when workers have finished loading models and are ready."""
@@ -398,7 +398,7 @@ class InferenceProgressManager:
             self.progress.advance(self.main_task, processed)
 
         # Create or update worker-specific progress bar
-        icon = "⚡" if worker_id.startswith("gpu") else "🔧"
+        icon = "" if worker_id.startswith("gpu") else ""
         style = "green" if worker_id.startswith("gpu") else "cyan"
 
         if worker_id not in self.worker_tasks:
@@ -491,7 +491,7 @@ class InferenceProgressManager:
 
     def show_warning(self, message: str):
         """Display a warning message."""
-        self.console.print(f"[yellow]⚠ {message}[/yellow]")
+        self.console.print(f"[yellow][!] {message}[/yellow]")
 
     def show_error(self, message: str):
         """Display an error message."""
@@ -533,7 +533,7 @@ class GlobalAnnotationProgress:
 
         # Create global progress bar with model tracking
         self.progress = Progress(
-            TextColumn("[bold blue]🌐 Global[/bold blue]"),
+            TextColumn("[bold blue] Global[/bold blue]"),
             BarColumn(bar_width=50, style="blue", complete_style="green"),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[cyan]{task.completed:,}/{task.total:,}[/cyan] texts"),
@@ -560,7 +560,7 @@ class GlobalAnnotationProgress:
             total_models=self.total_models,
         )
         self.console.print(
-            f"\n[bold]📊 Processing {self.total_models} model{'s' if self.total_models > 1 else ''} "
+            f"\n[bold] Processing {self.total_models} model{'s' if self.total_models > 1 else ''} "
             f"• {self.total_texts:,} total texts[/bold]\n"
         )
 
@@ -574,7 +574,7 @@ class GlobalAnnotationProgress:
         total_time = time.time() - self.start_time
         overall_rate = self.processed_texts / total_time if total_time > 0 else 0
 
-        self.console.print(f"\n[bold]📈 Multi-Model Summary:[/bold]")
+        self.console.print(f"\n[bold] Multi-Model Summary:[/bold]")
         self.console.print(f"  • [cyan]Total models processed:[/cyan] {len(self.model_names)}")
         self.console.print(f"  • [cyan]Total texts annotated:[/cyan] {self.processed_texts:,}")
         self.console.print(f"  • [cyan]Total time:[/cyan] {total_time:.1f}s")
@@ -830,7 +830,7 @@ class BERTAnnotationStudio:
     def _prompt_session_name(self) -> str:
         if self.console:
             self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
-            self.console.print("[bold cyan]           📝 Session Name Configuration                       [/bold cyan]")
+            self.console.print("[bold cyan]            Session Name Configuration                       [/bold cyan]")
             self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
             self.console.print("[bold]Give this session a descriptive identifier.[/bold]")
             self.console.print("  • [green]Traceability:[/green] link annotations, exports, and metrics")
@@ -871,9 +871,9 @@ class BERTAnnotationStudio:
                         options_table.add_column("Option", style="cyan", width=8)
                         options_table.add_column("Description", style="white")
                         options_table.add_row("[bold cyan]1[/bold cyan]", "🆕 Start new session (recommended)")
-                        options_table.add_row("[bold cyan]2[/bold cyan]", "🔄 Resume existing session")
-                        options_table.add_row("[bold cyan]3[/bold cyan]", "📚 View session history")
-                        options_table.add_row("[bold cyan]0[/bold cyan]", "⬅️  Back")
+                        options_table.add_row("[bold cyan]2[/bold cyan]", " Resume existing session")
+                        options_table.add_row("[bold cyan]3[/bold cyan]", " View session history")
+                        options_table.add_row("[bold cyan]0[/bold cyan]", "<-  Back")
                         panel = Panel(options_table, title="[bold]Annotation Studio Navigator[/bold]", border_style="cyan")
                         self.console.print(panel)
                     else:
@@ -1164,7 +1164,7 @@ class BERTAnnotationStudio:
 
         try:
             # ------------------------- STEP 1 -------------------------
-            self._render_step_header(1, "Select Trained Models", "🎯 Pick the fine-tuned checkpoints you want to apply.")
+            self._render_step_header(1, "Select Trained Models", " Pick the fine-tuned checkpoints you want to apply.")
             step_key = "select_models"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 1, saved_step)
@@ -1184,7 +1184,7 @@ class BERTAnnotationStudio:
                 )
 
             # ------------------------- STEP 2 -------------------------
-            self._render_step_header(2, "Configure Pipeline", "⚙️ Order models, set priorities, optionally enable reduction.")
+            self._render_step_header(2, "Configure Pipeline", " Order models, set priorities, optionally enable reduction.")
             step_key = "configure_pipeline"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 2, saved_step)
@@ -1204,7 +1204,7 @@ class BERTAnnotationStudio:
                 )
 
             # ------------------------- STEP 3 -------------------------
-            self._render_step_header(3, "Choose Dataset", "📁 Load the texts you want to annotate.")
+            self._render_step_header(3, "Choose Dataset", " Load the texts you want to annotate.")
             step_key = "select_dataset"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 3, saved_step)
@@ -1245,7 +1245,7 @@ class BERTAnnotationStudio:
                     )
 
             # ------------------------- STEP 4 -------------------------
-            self._render_step_header(4, "Inspect & Map Columns", "🔍 Tell the studio where the text and identifiers live.")
+            self._render_step_header(4, "Inspect & Map Columns", " Tell the studio where the text and identifiers live.")
             step_key = "map_columns"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 4, saved_step)
@@ -1283,7 +1283,7 @@ class BERTAnnotationStudio:
                 return
 
             # ------------------------- STEP 5 -------------------------
-            self._render_step_header(5, "Name Output Columns", "📝 Define how prediction columns will be named.")
+            self._render_step_header(5, "Name Output Columns", " Define how prediction columns will be named.")
             step_key = "output_columns"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 5, saved_step)
@@ -1316,7 +1316,7 @@ class BERTAnnotationStudio:
                 )
 
             # ------------------------- STEP 6 -------------------------
-            self._render_step_header(6, "Language Detection", "🌍 Verify language compatibility for your dataset.")
+            self._render_step_header(6, "Language Detection", " Verify language compatibility for your dataset.")
             step_key = "language_detection"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 6, saved_step)
@@ -1337,7 +1337,7 @@ class BERTAnnotationStudio:
                 )
 
             # ------------------------- STEP 7 -------------------------
-            self._render_step_header(7, "Text Correction", "✏️ Optional text preprocessing and correction hooks.")
+            self._render_step_header(7, "Text Correction", "️ Optional text preprocessing and correction hooks.")
             step_key = "text_correction"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 7, saved_step)
@@ -1356,7 +1356,7 @@ class BERTAnnotationStudio:
                 )
 
             # ------------------------- STEP 8 -------------------------
-            self._render_step_header(8, "Annotation Options", "⚡ Parallelism, batching strategy, and dataset coverage.")
+            self._render_step_header(8, "Annotation Options", " Parallelism, batching strategy, and dataset coverage.")
             step_key = "annotation_options"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 8, saved_step)
@@ -1374,7 +1374,7 @@ class BERTAnnotationStudio:
             # ------------------------- STEP 9 -------------------------
             self._render_step_header(
                 9, "Doccano Validation Sample",
-                "🔬 Annotate a sample and push to Doccano for human validation.",
+                " Annotate a sample and push to Doccano for human validation.",
             )
             step_key = "doccano_validation"
             saved_step = self.session_manager.get_step_data(step_key)
@@ -1419,7 +1419,7 @@ class BERTAnnotationStudio:
                         return
 
             # ------------------------- STEP 10 -------------------------
-            self._render_step_header(10, "Export Options", "💾 Choose what gets written to disk.")
+            self._render_step_header(10, "Export Options", " Choose what gets written to disk.")
             step_key = "export_options"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 10, saved_step)
@@ -1431,7 +1431,7 @@ class BERTAnnotationStudio:
                 self.session_manager.save_step(step_key, export_config, summary="Export destinations configured")
 
             # ------------------------- STEP 11 -------------------------
-            self._render_step_header(11, "Review & Launch", "🚀 Final checks before the annotation run.")
+            self._render_step_header(11, "Review & Launch", " Final checks before the annotation run.")
             step_key = "review_launch"
             saved_step = self.session_manager.get_step_data(step_key)
             reuse = self._determine_step_reuse(step_key, 11, saved_step)
@@ -2596,7 +2596,7 @@ class BERTAnnotationStudio:
 
     def _display_column_preview(self, plan: List[Dict[str, Any]]) -> None:
         """Display a preview of all columns that will be created by the annotation pipeline."""
-        self.console.print("\n[bold cyan]📋 Column Preview - All columns that will be created:[/bold cyan]")
+        self.console.print("\n[bold cyan] Column Preview - All columns that will be created:[/bold cyan]")
         self.console.print("[dim]This shows exactly what columns will be added to your dataset.[/dim]\n")
 
         preview_table = Table(
@@ -2938,7 +2938,7 @@ class BERTAnnotationStudio:
 
         self.console.print("\n[cyan]Pick one or several trained checkpoints. You can run them sequentially or cascade them later.[/cyan]")
         self.console.print("[cyan]Tip: combine a high-recall model with specialised models to refine positives.[/cyan]")
-        self.console.print("\n[bold]🎯 Selection Mode:[/bold]")
+        self.console.print("\n[bold] Selection Mode:[/bold]")
         self.console.print("[dim]Select the model(s) that will be used to annotate your texts.[/dim]")
         self.console.print("[dim]You can chain multiple models: each will add its dedicated columns.[/dim]")
 
@@ -3591,7 +3591,7 @@ class BERTAnnotationStudio:
 
             if self.console:
                 self.console.print(
-                    f"[dim]📦 Created aggregated column '{combined_col}' "
+                    f"[dim] Created aggregated column '{combined_col}' "
                     f"combining {len(models)} one-vs-all predictions[/dim]"
                 )
 
@@ -3695,7 +3695,7 @@ class BERTAnnotationStudio:
             except Exception as exc:
                 self.logger.debug("Tokenizer load failed for %s: %s", candidate, exc)
 
-        self.console.print("[yellow]⚠ Unable to load tokenizer for token analysis.[/yellow]")
+        self.console.print("[yellow][!] Unable to load tokenizer for token analysis.[/yellow]")
         return None
 
     def _analyze_languages(
@@ -3734,7 +3734,7 @@ class BERTAnnotationStudio:
         if detector.method is None:
             detected_series = pd.Series(["UNKNOWN"] * len(df), index=df.index)
         else:
-            self.console.print("\n[bold cyan]🔍 Language detection in progress...[/bold cyan]")
+            self.console.print("\n[bold cyan] Language detection in progress...[/bold cyan]")
             self.console.print(f"[cyan]Analyzing {len(texts):,} texts to detect their language.[/cyan]\n")
             show_progress = HAS_TQDM and len(texts) > 0
             detections = detector.detect_batch(
@@ -3792,16 +3792,16 @@ class BERTAnnotationStudio:
         text_stats = analysis_results.get('text_length_stats', {})
 
         if languages_detected:
-            self.console.print("\n[bold]🌍 Languages Detected:[/bold]")
+            self.console.print("\n[bold] Languages Detected:[/bold]")
             total = sum(languages_detected.values())
             for lang, count in sorted(languages_detected.items(), key=lambda item: -item[1]):
                 share = (count / total * 100) if total else 0
                 self.console.print(f"  • {lang.upper()}: {count} samples ({share:.1f}%)")
         else:
-            self.console.print("\n[yellow]⚠ Unable to detect languages automatically for this dataset.[/yellow]")
+            self.console.print("\n[yellow][!] Unable to detect languages automatically for this dataset.[/yellow]")
 
         if text_stats:
-            self.console.print("\n[bold]📊 Text Statistics:[/bold]")
+            self.console.print("\n[bold] Text Statistics:[/bold]")
             self.console.print(f"  • Average length: {text_stats.get('avg_length', 0):.0f} characters")
             self.console.print(f"  • Median length: {text_stats.get('median_length', 0):.0f} characters")
             self.console.print(f"  • Max length: {text_stats.get('max_length', 0):.0f} characters")
@@ -3810,7 +3810,7 @@ class BERTAnnotationStudio:
         if long_pct:
             self.console.print(f"  • Long documents (>512 tokens): {long_pct:.1f}%")
             if analysis_results.get('user_prefers_long_models'):
-                self.console.print("[yellow]💡 Consider long-context models (Longformer, BigBird, etc.).[/yellow]")
+                self.console.print("[yellow] Consider long-context models (Longformer, BigBird, etc.).[/yellow]")
 
     def _detect_factory_context(self, data_source: Dict[str, Any], df: pd.DataFrame) -> bool:
         """Return True when running inside an Annotator Factory workflow."""
@@ -3885,12 +3885,12 @@ class BERTAnnotationStudio:
 
             if self.console and completed_prefixes:
                 self.console.print(
-                    f"\n[cyan]📂 Found existing annotations file with {len(completed_prefixes)} completed model(s)[/cyan]"
+                    f"\n[cyan] Found existing annotations file with {len(completed_prefixes)} completed model(s)[/cyan]"
                 )
 
         except Exception as e:
             if self.console:
-                self.console.print(f"[yellow]⚠ Could not read existing output file: {e}[/yellow]")
+                self.console.print(f"[yellow][!] Could not read existing output file: {e}[/yellow]")
 
         return completed_prefixes, existing_df
 
@@ -3941,7 +3941,7 @@ class BERTAnnotationStudio:
             return pipeline_plan, None, False
 
         if self.console:
-            self.console.print(f"\n[bold yellow]🔄 Resume Detection[/bold yellow]")
+            self.console.print(f"\n[bold yellow] Resume Detection[/bold yellow]")
             self.console.print(f"  • Completed models: [green]{len(skipped)}[/green]")
             self.console.print(f"  • Remaining models: [cyan]{len(remaining)}[/cyan]")
 
@@ -4033,7 +4033,7 @@ class BERTAnnotationStudio:
         )
         series = analysis_df[text_column].fillna("").astype(str)
         if series.empty:
-            self.console.print("[yellow]⚠ Unable to calculate lengths (empty column).[/yellow]")
+            self.console.print("[yellow][!] Unable to calculate lengths (empty column).[/yellow]")
             return
 
         total_rows = len(df[text_column])
@@ -4089,7 +4089,7 @@ class BERTAnnotationStudio:
                     word_counts.extend(result[1])
 
         if not char_lengths:
-            self.console.print("[yellow]⚠ Unable to calculate lengths (empty column).[/yellow]")
+            self.console.print("[yellow][!] Unable to calculate lengths (empty column).[/yellow]")
             return
 
         lengths = np.asarray(char_lengths, dtype=np.int64)
@@ -4181,7 +4181,7 @@ class BERTAnnotationStudio:
 
         if over_512 > 10 or (token_percentiles_values is not None and token_percentiles_values[3] > 512):
             self.console.print(
-                "[yellow]⚠ A significant proportion of texts exceeds 512 tokens: consider a long-context model (Longformer, BigBird, LED...).[/yellow]"
+                "[yellow][!] A significant proportion of texts exceeds 512 tokens: consider a long-context model (Longformer, BigBird, LED...).[/yellow]"
             )
 
     def _is_unique_series(self, series: pd.Series) -> bool:
@@ -4318,12 +4318,12 @@ class BERTAnnotationStudio:
                 duplicates = int(df[current_id].duplicated(keep=False).sum())
                 missing = int(df[current_id].isna().sum())
                 self.console.print(
-                    f"[yellow]⚠ Column '{current_id}' is not usable yet "
+                    f"[yellow][!] Column '{current_id}' is not usable yet "
                     f"(duplicates: {duplicates:,}, missing: {missing:,}).[/yellow]"
                 )
                 current_id = None
             else:
-                self.console.print("[yellow]⚠ A unique identifier is required for each row.[/yellow]")
+                self.console.print("[yellow][!] A unique identifier is required for each row.[/yellow]")
 
             options = [
                 ("1", "Choose another column"),
@@ -4349,7 +4349,7 @@ class BERTAnnotationStudio:
                 cols_input = Prompt.ask("Columns to combine (comma-separated)")
                 cols = [c.strip() for c in cols_input.split(",") if c.strip() in df.columns]
                 if len(cols) < 2:
-                    self.console.print("[red]❌ Select at least two valid columns.[/red]")
+                    self.console.print("[red] Select at least two valid columns.[/red]")
                     continue
                 new_col = "combined_id"
                 base_name = new_col
@@ -4362,7 +4362,7 @@ class BERTAnnotationStudio:
                     current_id = new_col
                     self.console.print(f"[green]✓ Column '{new_col}' created from {', '.join(cols)}[/green]")
                 else:
-                    self.console.print("[red]❌ Combination is not unique. Try another combination.[/red]")
+                    self.console.print("[red] Combination is not unique. Try another combination.[/red]")
                     df.drop(columns=[new_col], inplace=True)
             elif choice == "3":
                 base_name = "llm_annotation_id"
@@ -4412,11 +4412,11 @@ class BERTAnnotationStudio:
             detector = LanguageDetector()
             if detector.method is None:
                 self.console.print(
-                    "[yellow]⚠ No language detection module available. All rows will be marked as UNKNOWN.[/yellow]"
+                    "[yellow][!] No language detection module available. All rows will be marked as UNKNOWN.[/yellow]"
                 )
                 series = pd.Series(['UNKNOWN'] * len(df), index=df.index)
             else:
-                self.console.print("\n[bold cyan]🔍 Language detection in progress...[/bold cyan]")
+                self.console.print("\n[bold cyan] Language detection in progress...[/bold cyan]")
                 self.console.print(f"[cyan]Analyzing {len(df):,} texts to detect their language.[/cyan]\n")
                 texts_list = df[text_column].fillna("").astype(str).tolist()
                 show_progress = HAS_TQDM and len(texts_list) > 0
@@ -4482,7 +4482,7 @@ class BERTAnnotationStudio:
                 added += 1
 
         if added:
-            self.console.print("\n[bold cyan]📝 Preview: Rows that WILL be annotated[/bold cyan]")
+            self.console.print("\n[bold cyan] Preview: Rows that WILL be annotated[/bold cyan]")
             self.console.print("[dim]These examples show rows whose language matches the model(s) you selected.[/dim]")
             self._print_table(sample_table)
 
@@ -4557,7 +4557,7 @@ class BERTAnnotationStudio:
         gpu_name = resources.gpu.device_names[0] if gpu_available and resources.gpu.device_names else "—"
 
         # Display comprehensive summary
-        summary = Table(title="⚡ Parallelisation Configuration", box=box.ROUNDED, show_lines=True)
+        summary = Table(title=" Parallelisation Configuration", box=box.ROUNDED, show_lines=True)
         summary.add_column("#", style="dim", width=3)
         summary.add_column("Parameter", style="cyan", width=20)
         summary.add_column("Value", style="green", width=15)
@@ -4579,7 +4579,7 @@ class BERTAnnotationStudio:
         self._print_table(summary)
 
         # System info
-        self.console.print(f"\n[bold]💻 System Resources:[/bold]")
+        self.console.print(f"\n[bold] System Resources:[/bold]")
         self.console.print(f"  • CPU: {total_cpus} cores")
         self.console.print(f"  • RAM: {available_memory_gb:.1f} GB available / {total_memory_gb:.1f} GB total")
         if gpu_available:
@@ -4589,7 +4589,7 @@ class BERTAnnotationStudio:
             else:
                 self.console.print(f"  • GPU: {gpu_name}")
 
-        self.console.print("\n[dim]💡 Tips:[/dim]")
+        self.console.print("\n[dim] Tips:[/dim]")
         self.console.print("[dim]  • Batch size: larger = faster but uses more memory[/dim]")
         self.console.print("[dim]  • CPU workers: more workers = faster but uses more RAM (~1.5GB per worker)[/dim]")
         self.console.print("[dim]  • GPU batch: increase if you have GPU memory to spare[/dim]")
@@ -4600,7 +4600,7 @@ class BERTAnnotationStudio:
         action_table.add_column("Option", style="cyan", width=4)
         action_table.add_column("Action", style="white")
         action_table.add_row("1", "✓ Accept this configuration")
-        action_table.add_row("2", "✎ Modify parameters")
+        action_table.add_row("2", " Modify parameters")
         action_table.add_row("3", "← Go back and choose another strategy")
         self._print_table(action_table)
 
@@ -4612,7 +4612,7 @@ class BERTAnnotationStudio:
             return False
 
         # User wants to modify - show editable parameters
-        self.console.print("\n[bold cyan]✎ Modify Configuration[/bold cyan]")
+        self.console.print("\n[bold cyan] Modify Configuration[/bold cyan]")
         self.console.print("[dim]Press Enter to keep the current value, or type a new value.[/dim]\n")
 
         # Device mode
@@ -4698,8 +4698,8 @@ class BERTAnnotationStudio:
     def _select_data_source(self) -> Optional[Dict[str, Any]]:
         """Select data source"""
         source_choices = [
-            "📁 Local file (CSV, TSV, Excel, JSON, JSONL, Parquet, RData/RDS)",
-            "🗄️  SQL database (PostgreSQL/MySQL/SQLite/SQL Server/Custom)",
+            " Local file (CSV, TSV, Excel, JSON, JSONL, Parquet, RData/RDS)",
+            "  SQL database (PostgreSQL/MySQL/SQLite/SQL Server/Custom)",
             "← Back"
         ]
 
@@ -4732,7 +4732,7 @@ class BERTAnnotationStudio:
         detected_datasets = detector.scan_directory(data_dir)
 
         if detected_datasets:
-            self.console.print(f"\n[bold cyan]📊 Found {len(detected_datasets)} dataset(s) in {data_dir}:[/bold cyan]\n")
+            self.console.print(f"\n[bold cyan] Found {len(detected_datasets)} dataset(s) in {data_dir}:[/bold cyan]\n")
 
             # Create table with dataset preview
             datasets_table = Table(title="Available Datasets", border_style="cyan", show_header=True, box=box.ROUNDED)
@@ -4804,7 +4804,7 @@ class BERTAnnotationStudio:
                     return None
         else:
             # No datasets detected - ask for manual path
-            self.console.print("[yellow]⚠ No datasets auto-detected in data directory[/yellow]")
+            self.console.print("[yellow][!] No datasets auto-detected in data directory[/yellow]")
             file_path = Prompt.ask("\n[cyan]File path[/cyan]")
             file_path = Path(file_path).expanduser()
 
@@ -5179,7 +5179,7 @@ class BERTAnnotationStudio:
                 )
 
             self._print_table(overview_table)
-            self.console.print("\n[bold]💡 Helpful Suggestions[/bold] [dim](auto-detected candidates)[/dim]")
+            self.console.print("\n[bold] Helpful Suggestions[/bold] [dim](auto-detected candidates)[/dim]")
             self.console.print("[dim]You can pick any column from the overview above; these are just shortcuts.[/dim]\n")
 
             text_candidates = analysis.get('text_column_candidates', []) if analysis else []
@@ -5222,23 +5222,23 @@ class BERTAnnotationStudio:
                 top_text = text_candidates[0]
                 text_column_default = top_text['name']
                 suggestions_table.add_row(
-                    "📝 Text column",
+                    " Text column",
                     top_text['name'],
                     f"Avg length ≈ {top_text.get('avg_length', 0):.0f} characters",
                 )
             else:
-                suggestions_table.add_row("📝 Text column", "—", "No strong text-like column detected")
+                suggestions_table.add_row(" Text column", "—", "No strong text-like column detected")
 
             if id_candidates:
                 top_id = id_candidates[0]
                 suggestions_table.add_row(
-                    "🔑 ID column",
+                    " ID column",
                     top_id['name'],
                     f"{top_id['unique_ratio']*100:.1f}% unique values ({top_id['dtype']})",
                 )
             else:
                 suggestions_table.add_row(
-                    "🔑 ID column",
+                    " ID column",
                     "—",
                     "No fully unique column found (you can create one next)",
                 )
@@ -5521,7 +5521,7 @@ class BERTAnnotationStudio:
         if not language_counts:
             language_counts = {'en': 1}
             analysis_results['languages_detected'] = language_counts
-            self.console.print("[yellow]⚠ Unable to confidently detect language, defaulting to English.[/yellow]")
+            self.console.print("[yellow][!] Unable to confidently detect language, defaulting to English.[/yellow]")
 
         self._present_language_analysis(analysis_results)
 
@@ -5578,7 +5578,7 @@ class BERTAnnotationStudio:
         skipped_count = len(language_series) - eligible_count
 
         if languages_detected_sorted:
-            self.console.print("\n[bold]📊 Language Distribution & Model Coverage[/bold]")
+            self.console.print("\n[bold] Language Distribution & Model Coverage[/bold]")
             self.console.print("[dim]Each model will only annotate rows in its supported language(s).[/dim]\n")
 
             for lang in languages_detected_sorted:
@@ -5648,7 +5648,7 @@ class BERTAnnotationStudio:
 
                 if primary_lang not in languages_supported:
                     self.console.print(
-                        f"\n[yellow]⚠ Note: Your primary language ({primary_lang}) doesn't match the model language(s) ({model_lang_str}).[/yellow]"
+                        f"\n[yellow][!] Note: Your primary language ({primary_lang}) doesn't match the model language(s) ({model_lang_str}).[/yellow]"
                     )
                     self.console.print(
                         f"[yellow]  Only rows in {model_lang_str} will receive annotations. This is normal for multilingual datasets.[/yellow]"
@@ -6425,7 +6425,7 @@ class BERTAnnotationStudio:
 
                         if self.console:
                             self.console.print(
-                                f"  [dim]💾 Saved intermediate results ({entry_idx + 1}/{len(pipeline_plan)} models)[/dim]"
+                                f"  [dim] Saved intermediate results ({entry_idx + 1}/{len(pipeline_plan)} models)[/dim]"
                             )
 
             finally:
@@ -6532,7 +6532,7 @@ class BERTAnnotationStudio:
             # ============================================================
             try:
                 if self.console:
-                    self.console.print("\n[bold cyan]📊 Generating BERT Annotation Metrics Charts...[/bold cyan]")
+                    self.console.print("\n[bold cyan] Generating BERT Annotation Metrics Charts...[/bold cyan]")
 
                 chart_output_dir = output_path.parent
 
@@ -6568,7 +6568,7 @@ class BERTAnnotationStudio:
                     except Exception as chart_model_exc:
                         self.logger.warning(f"Failed to generate chart for model {entry_idx}: {chart_model_exc}")
                         if self.console:
-                            self.console.print(f"  [yellow]⚠️  Chart failed for model {entry_idx}: {chart_model_exc}[/yellow]")
+                            self.console.print(f"  [yellow][!]  Chart failed for model {entry_idx}: {chart_model_exc}[/yellow]")
 
                 if self.console:
                     self.console.print("[green]✓ Annotation metrics charts generated[/green]")
@@ -6576,7 +6576,7 @@ class BERTAnnotationStudio:
             except Exception as chart_exc:
                 self.logger.warning(f"Failed to generate annotation metrics charts: {chart_exc}")
                 if self.console:
-                    self.console.print(f"[yellow]⚠️  Chart generation failed: {chart_exc}[/yellow]")
+                    self.console.print(f"[yellow][!]  Chart generation failed: {chart_exc}[/yellow]")
 
             return True
 

@@ -279,13 +279,13 @@ def format_imbalance_summary(metrics: Dict) -> str:
 
     if gini < 0.2 and ratio < 2:
         level = "[green]Balanced[/green]"
-        emoji = "⚖️"
+        emoji = ""
     elif gini < 0.4 and ratio < 5:
         level = "[yellow]Moderate[/yellow]"
-        emoji = "📊"
+        emoji = ""
     else:
         level = "[red]Imbalanced[/red]"
-        emoji = "⚠️"
+        emoji = "[!]"
 
     return (
         f"{emoji} {level} | "

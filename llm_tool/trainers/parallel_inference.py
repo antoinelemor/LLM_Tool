@@ -1098,7 +1098,7 @@ def parallel_predict(
                         # Store by index to preserve original order
                         indexed_outputs[idx] = chunk_array
                     except Exception as e:
-                        print(f"⚠️ Chunk {idx} failed: {e}", file=sys.stderr)
+                        print(f"[!] Chunk {idx} failed: {e}", file=sys.stderr)
                         failed_chunks.append(idx)
 
                     async_results[idx] = None
@@ -1132,7 +1132,7 @@ def parallel_predict(
         pool.join()
 
         if failed_chunks:
-            print(f"⚠️ {len(failed_chunks)} chunk(s) failed during inference", file=sys.stderr)
+            print(f"[!] {len(failed_chunks)} chunk(s) failed during inference", file=sys.stderr)
 
         if outputs:
             result = np.vstack(outputs)

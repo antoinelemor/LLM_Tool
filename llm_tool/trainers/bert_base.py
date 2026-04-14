@@ -2384,7 +2384,7 @@ class BertBase(BertABC):
         }
         for key, value in params_to_check.items():
             if value is not None and isinstance(value, (np.integer, np.floating, np.ndarray)):
-                self.logger.warning(f"  ⚠️ NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
+                self.logger.warning(f"  [!] NUMPY TYPE DETECTED: {key} = type={type(value)}, value={value}")
         self.logger.debug("=" * 80)
 
         # Show VS Code configuration message once (avoids spam from worker processes)
@@ -2822,7 +2822,7 @@ class BertBase(BertABC):
         if use_gradient_checkpointing and hasattr(model, 'gradient_checkpointing_enable'):
             model.gradient_checkpointing_enable()
             if not suppress_display:
-                self.logger.info(f"💾 Gradient Checkpointing ENABLED (model has {model_params/1e6:.0f}M params, device={device_type})")
+                self.logger.info(f" Gradient Checkpointing ENABLED (model has {model_params/1e6:.0f}M params, device={device_type})")
 
         # torch.compile for PyTorch 2.0+ (can provide up to 2x speedup)
         # Note: May have issues with some models/backends, so we catch errors
@@ -2838,7 +2838,7 @@ class BertBase(BertABC):
                     model = torch.compile(model, mode='reduce-overhead')
                     use_torch_compile = True
                     if not suppress_display:
-                        self.logger.info(f"⚡ torch.compile ENABLED (CUDA reduce-overhead)")
+                        self.logger.info(f" torch.compile ENABLED (CUDA reduce-overhead)")
                 elif device_type == 'mps':
                     # MPS: Disable torch.compile entirely - inductor backend causes OOM
                     # The inductor backend materializes huge attention tensors (e.g., 256x12x512x512)
@@ -2846,7 +2846,7 @@ class BertBase(BertABC):
                     # This affects all transformer models on MPS, not just DeBERTa.
                     # See: PyTorch issue with MPS inductor memory fragmentation
                     if not suppress_display:
-                        self.logger.info(f"⚠️ torch.compile SKIPPED on MPS (inductor backend causes OOM)")
+                        self.logger.info(f"[!] torch.compile SKIPPED on MPS (inductor backend causes OOM)")
             except Exception as e:
                 self.logger.debug(f"torch.compile not available: {e}")
 
@@ -2854,10 +2854,10 @@ class BertBase(BertABC):
         if device_type == 'mps':
             # Note: PYTORCH_MPS_HIGH_WATERMARK_RATIO and PYTORCH_ENABLE_MPS_FALLBACK
             # are set at module import time (before torch import) for proper effect
-            compile_status = "torch.compile ✅" if use_torch_compile else "torch.compile ❌"
-            gc_status = "gradient_checkpointing ✅" if use_gradient_checkpointing else "gradient_checkpointing ❌"
+            compile_status = "torch.compile ✅" if use_torch_compile else "torch.compile "
+            gc_status = "gradient_checkpointing ✅" if use_gradient_checkpointing else "gradient_checkpointing "
             if not suppress_display:
-                self.logger.info(f"🍎 MPS: {model_params/1e6:.0f}M params, {gc_status}, {compile_status}")
+                self.logger.info(f" MPS: {model_params/1e6:.0f}M params, {gc_status}, {compile_status}")
 
         optimizer = AdamW(model.parameters(), lr=lr, eps=1e-8)
         scheduler = get_linear_schedule_with_warmup(
@@ -2884,12 +2884,12 @@ class BertBase(BertABC):
             use_mps_amp = False
 
         if use_amp:
-            self.logger.info(f"🚀 Mixed Precision Training ENABLED (FP16) - Memory savings ~50%, Speed boost ~30-40%")
+            self.logger.info(f" Mixed Precision Training ENABLED (FP16) - Memory savings ~50%, Speed boost ~30-40%")
         elif use_mps_amp:
-            self.logger.info(f"🚀 MPS Autocast ENABLED - Optimized for Apple Silicon")
+            self.logger.info(f" MPS Autocast ENABLED - Optimized for Apple Silicon")
 
         if gradient_accumulation_steps > 1:
-            self.logger.info(f"📊 Gradient Accumulation: {gradient_accumulation_steps} steps (effective batch size: {len(train_dataloader.dataset) // len(train_dataloader) * gradient_accumulation_steps})")
+            self.logger.info(f" Gradient Accumulation: {gradient_accumulation_steps} steps (effective batch size: {len(train_dataloader.dataset) // len(train_dataloader) * gradient_accumulation_steps})")
 
         train_loss_values = []
         val_loss_values = []
@@ -2940,9 +2940,9 @@ class BertBase(BertABC):
                 if not suppress_display:
                     self.logger.info(f"✓ Extracted languages from language_info: {detected_languages}")
             else:
-                self.logger.warning(f"⚠️ language_info has {len(language_info)} items but no valid languages after filtering")
+                self.logger.warning(f"[!] language_info has {len(language_info)} items but no valid languages after filtering")
         else:
-            self.logger.warning(f"⚠️ No languages detected: track_languages={track_languages}, language_info={f'{len(language_info)} items' if language_info else 'None'}, self.detected_languages={self.detected_languages if hasattr(self, 'detected_languages') else 'N/A'}")
+            self.logger.warning(f"[!] No languages detected: track_languages={track_languages}, language_info={f'{len(language_info)} items' if language_info else 'None'}, self.detected_languages={self.detected_languages if hasattr(self, 'detected_languages') else 'N/A'}")
 
         # Initialize Rich Live Display
         display = TrainingDisplay(
@@ -2997,9 +2997,9 @@ class BertBase(BertABC):
                 num_samples_val=num_val_samples,
             )
             if not suppress_display:
-                self.logger.info(f"📊 Training metrics chart initialized: {charts_dir}")
+                self.logger.info(f" Training metrics chart initialized: {charts_dir}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Could not initialize training chart: {e}")
+            self.logger.warning(f"[!] Could not initialize training chart: {e}")
             training_chart = None
 
         # =============== Loss Function Setup ===============
@@ -3016,12 +3016,12 @@ class BertBase(BertABC):
                     clip=asl_clip
                 )
                 if not suppress_display:
-                    self.logger.info(f"🎯 Asymmetric Loss (SOTA): γ-={asl_gamma_neg}, γ+={asl_gamma_pos}, clip={asl_clip}")
+                    self.logger.info(f" Asymmetric Loss (SOTA): γ-={asl_gamma_neg}, γ+={asl_gamma_pos}, clip={asl_clip}")
             else:
                 # Standard BCE loss for multi-label
                 asl_criterion = None
                 if not suppress_display:
-                    self.logger.info(f"📊 Multi-label BCE Loss (pos_weight: {'enabled' if pos_weight is not None else 'disabled'})")
+                    self.logger.info(f" Multi-label BCE Loss (pos_weight: {'enabled' if pos_weight is not None else 'disabled'})")
         else:
             asl_criterion = None
 
@@ -4180,11 +4180,11 @@ class BertBase(BertABC):
                 try:
                     # Generate final chart (will include best epoch marker)
                     final_chart_path = training_chart._generate_chart()
-                    self.logger.info(f"📊 Final training chart saved: {final_chart_path}")
+                    self.logger.info(f" Final training chart saved: {final_chart_path}")
 
                     # Save metrics as JSON for analysis
                     json_path = training_chart.save_metrics_json()
-                    self.logger.info(f"📊 Training metrics JSON saved: {json_path}")
+                    self.logger.info(f" Training metrics JSON saved: {json_path}")
                 except Exception as e:
                     self.logger.warning(f"Failed to save final training chart: {e}")
 
@@ -4357,7 +4357,7 @@ class BertBase(BertABC):
                 import numpy as np
                 if isinstance(best_f1_scores, (np.integer, np.floating)):
                     # Scalar - wrap in list
-                    self.logger.warning(f"⚠️ best_f1_scores is a scalar {type(best_f1_scores)}: {best_f1_scores}")
+                    self.logger.warning(f"[!] best_f1_scores is a scalar {type(best_f1_scores)}: {best_f1_scores}")
                     best_f1_scores = [float(best_f1_scores)]
                     best_precision = [float(best_precision)]
                     best_recall = [float(best_recall)]
@@ -4376,7 +4376,7 @@ class BertBase(BertABC):
                     try:
                         f1_scores_len = len(best_f1_scores)
                     except TypeError as e:
-                        self.logger.error(f"❌ ERROR: Cannot get len() of best_f1_scores: type={type(best_f1_scores)}, value={best_f1_scores}")
+                        self.logger.error(f" ERROR: Cannot get len() of best_f1_scores: type={type(best_f1_scores)}, value={best_f1_scores}")
                         raise TypeError(f"Cannot get len() of best_f1_scores: type={type(best_f1_scores)}, value={best_f1_scores}") from e
 
                     if f1_scores_len >= 2:
@@ -5420,11 +5420,11 @@ class BertBase(BertABC):
                 # Load the best model from disk (the one with highest F1)
                 self.model = self.load_model(best_model_path)
                 self.model.to(self.device)
-                self.logger.info(f"📦 Loaded best model from: {best_model_path}")
+                self.logger.info(f" Loaded best model from: {best_model_path}")
             else:
                 # Fallback: use current model in memory (last epoch)
                 self.model = model
-                self.logger.warning(f"⚠️ No saved model found, using last epoch model in memory")
+                self.logger.warning(f"[!] No saved model found, using last epoch model in memory")
 
             # ========== RE-ENABLE GARBAGE COLLECTION ==========
             if gc_was_enabled:
@@ -5444,10 +5444,10 @@ class BertBase(BertABC):
         if best_model_path and os.path.exists(best_model_path):
             self.model = self.load_model(best_model_path)
             self.model.to(self.device)
-            self.logger.info(f"📦 Loaded best model from: {best_model_path}")
+            self.logger.info(f" Loaded best model from: {best_model_path}")
         else:
             self.model = model
-            self.logger.warning(f"⚠️ No saved model found, using last epoch model in memory")
+            self.logger.warning(f"[!] No saved model found, using last epoch model in memory")
         return best_metric_val, best_model_path, best_scores
 
     def predict(
@@ -5563,7 +5563,7 @@ class BertBase(BertABC):
                 return self.model_sequence_classifier.from_pretrained(model_path)
         except Exception as e:
             # Fallback: try loading without specifying num_labels
-            self.logger.warning(f"⚠️ Could not load with num_labels={target_num_labels}, trying default: {e}")
+            self.logger.warning(f"[!] Could not load with num_labels={target_num_labels}, trying default: {e}")
             return self.model_sequence_classifier.from_pretrained(model_path)
 
     def _detect_num_labels_from_model(self, model_path: str) -> int | None:

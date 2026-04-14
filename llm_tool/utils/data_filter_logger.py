@@ -309,12 +309,12 @@ class DataFilterLogger:
     def print_session_summary(self):
         """Print a human-readable summary of filtering in this session"""
         print("\n" + "="*60)
-        print("📋 DATA FILTERING SUMMARY")
+        print(" DATA FILTERING SUMMARY")
         print("="*60)
         print(f"Total items filtered: {self.session_stats['total_filtered']}")
 
         if self.session_stats['filters_by_reason']:
-            print("\n🔍 Filtering by reason:")
+            print("\n Filtering by reason:")
             for reason, count in sorted(
                 self.session_stats['filters_by_reason'].items(),
                 key=lambda x: x[1],
@@ -323,7 +323,7 @@ class DataFilterLogger:
                 print(f"  • {reason}: {count} items")
 
         if self.session_stats['filters_by_location']:
-            print("\n📍 Filtering by location:")
+            print("\n Filtering by location:")
             for location, count in sorted(
                 self.session_stats['filters_by_location'].items(),
                 key=lambda x: x[1],
@@ -331,7 +331,7 @@ class DataFilterLogger:
             ):
                 print(f"  • {location}: {count} items")
 
-        print(f"\n📄 Detailed log: {self.current_session_file}")
+        print(f"\n Detailed log: {self.current_session_file}")
         print("="*60 + "\n")
 
 

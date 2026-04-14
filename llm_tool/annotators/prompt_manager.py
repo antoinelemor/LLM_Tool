@@ -158,18 +158,18 @@ class PromptManager:
         folder_path = input("Folder path: ").strip()
 
         while not os.path.isdir(folder_path):
-            print(f"⚠ Directory not found: {folder_path}")
+            print(f"[!] Directory not found: {folder_path}")
             folder_path = input("Folder path: ").strip()
 
         # Find all .txt files in the folder
         txt_files = sorted([f for f in os.listdir(folder_path) if f.endswith('.txt')])
 
         if not txt_files:
-            print(f"❌ No .txt files found in {folder_path}")
+            print(f" No .txt files found in {folder_path}")
             return []
 
         # Display found files
-        print(f"\n📂 Found {len(txt_files)} prompt files:")
+        print(f"\n Found {len(txt_files)} prompt files:")
         for i, filename in enumerate(txt_files, 1):
             print(f"  {i}. {filename}")
 
@@ -199,16 +199,16 @@ class PromptManager:
 
                     list_of_prompts.append((full_prompt, expected_keys, prefix_word))
                 else:
-                    print(f"⚠ No JSON keys detected in {filename}, skipping...")
+                    print(f"[!] No JSON keys detected in {filename}, skipping...")
 
             except Exception as e:
-                print(f"❌ Error loading {filename}: {e}")
+                print(f" Error loading {filename}: {e}")
                 continue
 
         if list_of_prompts:
             print(f"\n✓ Successfully loaded {len(list_of_prompts)} prompts")
         else:
-            print("\n❌ No valid prompts could be loaded")
+            print("\n No valid prompts could be loaded")
 
         return list_of_prompts
 
@@ -331,7 +331,7 @@ class PromptManager:
     def _prompt_user_yes_no(self, question: str) -> bool:
         """Display a yes/no question to the user"""
         while True:
-            choice = input(f"\n❓ {question} (yes/no): ").strip().lower()
+            choice = input(f"\n? {question} (yes/no): ").strip().lower()
             if choice in ['yes', 'y', 'oui', 'o']:
                 print("✓ Yes selected")
                 return True
@@ -339,4 +339,4 @@ class PromptManager:
                 print("✗ No selected")
                 return False
             else:
-                print("⚠ Please answer with 'yes' or 'no'.")
+                print("[!] Please answer with 'yes' or 'no'.")
