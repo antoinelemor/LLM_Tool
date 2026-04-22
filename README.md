@@ -78,7 +78,7 @@ As a social science researcher, you might have:
 - ✅ **Local-first** annotate with any open-source model via Ollama (Llama, Gemma, Mistral, Nemotron, etc.), no API key needed
 - ✅ **Cloud option** also supports OpenAI GPT models when needed
 - ✅ **Automatic resource detection** detects your GPU (NVIDIA CUDA, AMD ROCm, Apple MPS), CPU, and RAM to adapt batch sizes and parallelism
-- ✅ **End-to-end pipeline** local LLM annotation → BERT training → production classifier, validated in a forthcoming paper (Lemor et al., 2025)
+- ✅ **End-to-end pipeline** local LLM annotation → BERT training → production classifier, validated in the [technical paper](https://doi.org/10.31235/osf.io/6q8yg_v2) (Lemor et al., 2025)
 - ✅ **Interactive CLI** guides you through every step, no coding required
 - ✅ **Research-oriented design** supports inter-annotator agreement, stratified sampling, and quality metrics
 - ✅ **Multilingual support** covers 75+ languages with automatic detection
@@ -1836,7 +1836,7 @@ Contributions are welcome! Please:
 
 ## 📚 Citation
 
-A paper validating the full local LLM → BERT training pipeline is currently under review. The pipeline was tested with large open-source models running locally via Ollama (Nemotron 42 GB, GPT-OSS:120B 65 GB, Gemma 3:27B 17 GB), confirming that open-source local models can produce training data of sufficient quality to train competitive BERT classifiers.
+A [technical paper](https://doi.org/10.31235/osf.io/6q8yg_v2) validating the full local LLM → BERT training pipeline is available on SocArXiv. The pipeline was tested with large open-source models running locally via Ollama (Nemotron 42 GB, GPT-OSS:120B 65 GB, Gemma 3:27B 17 GB), confirming that open-source local models can produce training data of sufficient quality to train competitive BERT classifiers.
 
 If you use LLM Tool in your research, please cite:
 

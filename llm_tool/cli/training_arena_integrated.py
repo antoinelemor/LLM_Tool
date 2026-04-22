@@ -3657,7 +3657,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 stats_table.add_column("Instances", style="cyan", no_wrap=True, justify="right")
                 stats_table.add_column("% of Key", style="green", no_wrap=True, justify="right")
 
-                for key in sorted(keys_to_train):
+                for key in keys_to_train:
                     key_counts = value_counts_by_key.get(key, {})
                     total_for_key = sum(key_counts.values()) if key_counts else 0
                     sorted_values = sorted(key_counts.items(), key=lambda x: x[1], reverse=True)
@@ -10852,7 +10852,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             if 'global_completed_epochs' in metrics and metrics['global_completed_epochs'] is not None:
                 global_completed_epochs = metrics['global_completed_epochs']
 
-        for key_name in sorted(key_files.keys()):
+        for key_name in key_files.keys():
             key_file_path = key_files[key_name]
 
             # RESUME LOGIC: Check if model is already trained and skip if complete
@@ -10953,7 +10953,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         # Train multi-label keys (one model per key with sigmoid activation)
         multilabel_key_files = {k: v for k, v in bundle.training_files.items() if k in multilabel_keys}
 
-        for key_name in sorted(multilabel_key_files.keys()):
+        for key_name in multilabel_key_files.keys():
             key_file_path = multilabel_key_files[key_name]
 
             # RESUME LOGIC: Check if model is already trained and skip if complete
@@ -11062,7 +11062,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             else:
                 self.console.print(f"[dim]  Training {len(binary_category_files)} binary models for one-vs-all[/dim]")
 
-                for label_name in sorted(binary_category_files.keys()):
+                for label_name in binary_category_files.keys():
                     dataset_path = Path(binary_category_files[label_name])
                     if '_' in label_name:
                         key_prefix, raw_value = label_name.split('_', 1)
@@ -11323,7 +11323,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             validated_key_files = {}  # {key_name: validated_file_path}
             keys_to_skip = []
 
-            for key_name, key_file_path in sorted(key_files.items()):
+            for key_name, key_file_path in key_files.items():
                 self.console.print(f"  Validating [cyan]{key_name}[/cyan]...")
                 try:
                     filtered_file, was_filtered = self._validate_and_filter_insufficient_labels(
@@ -11505,7 +11505,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                 if 'global_completed_epochs' in metrics and metrics['global_completed_epochs'] is not None:
                     global_completed_epochs = metrics['global_completed_epochs']
 
-            for idx, (key_name, input_file_to_use) in enumerate(sorted(validated_key_files.items()), 1):
+            for idx, (key_name, input_file_to_use) in enumerate(validated_key_files.items(), 1):
                 self.console.print(f"\n[bold magenta]Training multi-label model for key '{key_name}'[/bold magenta] ({Path(input_file_to_use).name})")
 
                 # Create config for this key's multi-label model
@@ -11816,7 +11816,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             validated_key_files = {}  # {key_name: validated_file_path}
             keys_to_skip = []
 
-            for key_name, key_file_path in sorted(key_files.items()):
+            for key_name, key_file_path in key_files.items():
                 self.console.print(f"  Validating [cyan]{key_name}[/cyan]...")
                 try:
                     filtered_file, was_filtered = self._validate_and_filter_insufficient_labels(
@@ -15721,7 +15721,7 @@ def integrate_training_arena_in_annotator_factory(
             stats_table.add_column("Instances", style="cyan", no_wrap=True, justify="right")
             stats_table.add_column("% of Key", style="green", no_wrap=True, justify="right")
 
-            for key in sorted(keys_to_train):
+            for key in keys_to_train:
                 key_counts = value_counts_by_key.get(key, {})
                 total_for_key = sum(key_counts.values()) if key_counts else 0
                 sorted_values = sorted(key_counts.items(), key=lambda x: x[1], reverse=True)
