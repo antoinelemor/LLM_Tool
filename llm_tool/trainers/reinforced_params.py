@@ -30,9 +30,12 @@ Author:
 Antoine Lemor
 """
 
-def get_reinforced_params(model_name: str, best_f1_1: float, original_lr: float = 5e-5, num_classes: int = 2, class_f1_scores: list = None):
+def get_reinforced_params(model_name: str, best_f1_1: float, original_lr: float = 5e-5,
+                          num_classes: int = 2, class_f1_scores: list = None,
+                          class_pos_ratios: list = None):
     """
-    Get intelligent reinforced training parameters based on model and performance
+    Get intelligent reinforced training parameters based on model, performance,
+    and optionally the actual data distribution.
 
     Args:
         model_name: Name of the model
@@ -40,6 +43,9 @@ def get_reinforced_params(model_name: str, best_f1_1: float, original_lr: float 
         original_lr: Original learning rate used in normal training
         num_classes: Number of classes (2 for binary, >2 for multi-class)
         class_f1_scores: List of F1 scores for each class (for multi-class)
+        class_pos_ratios: List of per-class frequency ratios from training data (e.g., [0.85, 0.15] for binary).
+                          When provided, class weights are derived from actual data distribution
+                          combined with F1 performance, instead of arbitrary F1-only thresholds.
 
     Returns:
         dict: Reinforced training parameters
@@ -118,24 +124,52 @@ def get_reinforced_params(model_name: str, best_f1_1: float, original_lr: float 
         params['augmentation_prob'] = 0.2
         params['mixup_alpha'] = 0.2  # Use mixup for better generalization
 
+    # Override class_1_weight with distribution-aware weight when data ratios are available
+    if class_pos_ratios is not None and num_classes == 2:
+        pos_ratio = max(class_pos_ratios[1], 1e-6)
+        base_weight = min((1.0 - pos_ratio) / pos_ratio, 100.0)
+        # Scale by F1 severity: bad F1 on a rare class needs more correction
+        if best_f1_1 == 0.0:
+            severity = 1.5
+        elif best_f1_1 < 0.3:
+            severity = 1.3
+        elif best_f1_1 < 0.5:
+            severity = 1.1
+        else:
+            severity = 1.0
+        params['class_1_weight'] = min(base_weight * severity, 100.0)
+
     # Calculate class weights for multi-class
     if num_classes > 2 and class_f1_scores is not None:
-        # For multi-class: calculate weight for each class based on its F1 score
-        # Classes with lower F1 get higher weights
-        class_weights = []
-        for f1 in class_f1_scores:
-            if f1 == 0.0:
-                # Class completely failed - needs strong rebalancing
-                class_weights.append(params['class_1_weight'])
-            elif f1 < 0.3:
-                # Very poor performance - moderate rebalancing
-                class_weights.append(params['class_1_weight'] * 0.8)
-            elif f1 < 0.5:
-                # Below average - light rebalancing
-                class_weights.append(params['class_1_weight'] * 0.6)
-            else:
-                # Decent performance - minimal rebalancing
-                class_weights.append(1.0)
+        if class_pos_ratios is not None:
+            # Distribution-aware: combine frequency ratio with F1 severity
+            mean_ratio = sum(class_pos_ratios) / len(class_pos_ratios)
+            class_weights = []
+            for i, f1 in enumerate(class_f1_scores):
+                ratio_i = max(class_pos_ratios[i], 1e-6)
+                distribution_factor = mean_ratio / ratio_i  # rare classes get higher weight
+                if f1 == 0.0:
+                    f1_severity = 2.0
+                elif f1 < 0.3:
+                    f1_severity = 1.5
+                elif f1 < 0.5:
+                    f1_severity = 1.2
+                else:
+                    f1_severity = 1.0
+                w = min(max(distribution_factor * f1_severity, 0.5), 100.0)
+                class_weights.append(w)
+        else:
+            # Legacy: F1-only weights (no distribution info)
+            class_weights = []
+            for f1 in class_f1_scores:
+                if f1 == 0.0:
+                    class_weights.append(params['class_1_weight'])
+                elif f1 < 0.3:
+                    class_weights.append(params['class_1_weight'] * 0.8)
+                elif f1 < 0.5:
+                    class_weights.append(params['class_1_weight'] * 0.6)
+                else:
+                    class_weights.append(1.0)
 
         params['class_weights'] = class_weights
     else:
@@ -143,6 +177,139 @@ def get_reinforced_params(model_name: str, best_f1_1: float, original_lr: float 
         params['class_weights'] = None
 
     return params
+
+
+def get_multi_label_reinforced_params(
+    model_name: str,
+    label_f1_scores: list,
+    label_pos_ratios: list,
+    label_names: list = None,
+    original_lr: float = 5e-5,
+    reinforced_f1_threshold: float = 0.7,
+    max_pos_weight: float = 100.0,
+):
+    """
+    Derive per-label reinforced training parameters for multi-label classification.
+
+    Unlike get_reinforced_params() which treats all labels uniformly, this function
+    analyses each label independently based on its F1 score AND positive ratio,
+    then produces per-label strategies (gamma, pos_weight, freeze mask).
+
+    Parameters
+    ----------
+    model_name : str
+        Model name for architecture-specific adjustments
+    label_f1_scores : list of float
+        Per-label F1 scores from initial training
+    label_pos_ratios : list of float
+        Positive ratio per label (e.g., 0.053 for 5.3% positive)
+    label_names : list of str, optional
+        Label names for logging
+    original_lr : float
+        Learning rate from initial training
+    reinforced_f1_threshold : float
+        F1 threshold below which a label is considered underperforming
+    max_pos_weight : float
+        Cap for pos_weight to prevent training instability (default: 100)
+
+    Returns
+    -------
+    dict with keys:
+        underperforming_labels, per_label_gamma_neg, per_label_pos_weight,
+        freeze_mask, n_epochs, learning_rate, should_use_asl, label_tiers
+    """
+    import math
+
+    num_labels = len(label_f1_scores)
+    if label_names is None:
+        label_names = [str(i) for i in range(num_labels)]
+
+    underperforming = []
+    per_label_gamma_neg = []
+    per_label_pos_weight = []
+    freeze_mask = []
+    label_tiers = {0: [], 1: [], 2: [], 3: []}
+
+    for i in range(num_labels):
+        f1 = label_f1_scores[i]
+        pos_ratio = max(label_pos_ratios[i], 1e-6)
+
+        # Base gamma from label rarity: rarer labels need stronger negative down-weighting
+        gamma = min(max(4.0 + math.log10(1.0 / pos_ratio), 4.0), 8.0)
+
+        # pos_weight = neg/pos, capped
+        pw = min((1.0 - pos_ratio) / pos_ratio, max_pos_weight)
+
+        if f1 >= reinforced_f1_threshold:
+            # Tier 0: label is performing well — freeze during RL
+            label_tiers[0].append(i)
+            freeze_mask.append(True)
+        elif f1 < 0.2 or (f1 == 0.0 and pos_ratio < 0.01):
+            # Tier 3: critical — F1 near zero on a rare label
+            label_tiers[3].append(i)
+            underperforming.append(i)
+            freeze_mask.append(False)
+            gamma = min(gamma + 1.0, 8.0)  # boost gamma further
+        elif pos_ratio < 0.05:
+            # Tier 2: severe — underperforming AND rare
+            label_tiers[2].append(i)
+            underperforming.append(i)
+            freeze_mask.append(False)
+            gamma = min(gamma + 0.5, 8.0)
+        else:
+            # Tier 1: mild — underperforming but not rare
+            label_tiers[1].append(i)
+            underperforming.append(i)
+            freeze_mask.append(False)
+
+        per_label_gamma_neg.append(gamma)
+        per_label_pos_weight.append(pw)
+
+    # Epochs determined by worst tier present
+    if label_tiers[3]:
+        n_epochs = 15
+    elif label_tiers[2]:
+        n_epochs = 10
+    elif label_tiers[1]:
+        n_epochs = 8
+    else:
+        n_epochs = 0
+
+    # Learning rate adjusted by average severity of underperforming labels
+    if underperforming:
+        avg_f1_under = sum(label_f1_scores[i] for i in underperforming) / len(underperforming)
+        if avg_f1_under == 0.0:
+            lr_mult = 1.5
+        elif avg_f1_under < 0.3:
+            lr_mult = 1.3
+        else:
+            lr_mult = 1.2
+    else:
+        lr_mult = 1.0
+    learning_rate = original_lr * lr_mult
+
+    # Model-specific adjustments
+    model_lower = model_name.lower()
+    if 'xlm' in model_lower and 'roberta' in model_lower:
+        n_epochs = min(20, int(n_epochs * 1.3))
+    elif 'albert' in model_lower:
+        n_epochs = min(20, n_epochs * 2)
+        learning_rate *= 0.7
+
+    # Use ASL when any label has < 10% positive ratio
+    should_use_asl = any(r < 0.1 for r in label_pos_ratios)
+
+    return {
+        'underperforming_labels': underperforming,
+        'per_label_gamma_neg': per_label_gamma_neg,
+        'per_label_pos_weight': per_label_pos_weight,
+        'freeze_mask': freeze_mask,
+        'n_epochs': n_epochs,
+        'learning_rate': learning_rate,
+        'should_use_asl': should_use_asl,
+        'label_tiers': label_tiers,
+        'label_names': label_names,
+    }
 
 
 def get_early_stopping_params(model_name: str):

@@ -147,6 +147,10 @@ class TrainingConfig:
     rl_class_weight_factor: float = 2.0  # Class weight factor for reinforced learning
     # NEW: Training approach for chart labeling
     training_approach: Optional[str] = None  # Override training approach (e.g., 'multi-label', 'one-vs-all', 'multi-class')
+    # Distribution-aware multi-label training (per-label adaptive gamma, weighted sampling, label masking in RL)
+    distribution_aware: bool = True  # Auto-compute per-label pos_weight and adaptive ASL gamma from data
+    use_asymmetric_loss: bool = True  # Use Adaptive ASL by default for multi-label (SOTA)
+    class_weight_method: str = 'pos_neg_ratio'  # Method for compute_multi_label_class_weights
 
 
 @dataclass
@@ -1252,6 +1256,9 @@ class MultiLabelTrainer:
             category_name=label_key or label_value,  # Use label key or value as category
             # NEW: Training approach for chart labeling (use passed value or config value)
             training_approach=training_approach or self.config.training_approach,
+            # Distribution-aware multi-label: per-label adaptive gamma, weighted sampling, label masking in RL
+            distribution_aware=self.config.distribution_aware if self.config.multi_label else False,
+            use_asymmetric_loss=self.config.use_asymmetric_loss if self.config.multi_label else False,
         )
 
         # CRITICAL FIX: Use last_training_summary from model for complete metrics

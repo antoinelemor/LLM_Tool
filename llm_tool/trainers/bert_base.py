@@ -517,6 +517,82 @@ class AsymmetricLossOptimized(torch.nn.Module):
         return loss.sum(dim=1).mean()
 
 
+class AdaptiveAsymmetricLoss(AsymmetricLoss):
+    """
+    ASL with per-label adaptive gamma_neg based on label frequency.
+
+    For multi-label problems with heterogeneous class imbalance, a single
+    gamma_neg is suboptimal: rare labels (0.1% positive) need much stronger
+    negative down-weighting than common labels (5%+). This variant accepts
+    a tensor of gamma_neg values, one per label.
+
+    Parameters
+    ----------
+    gamma_neg_per_label : list or torch.Tensor
+        Per-label focusing parameter for negatives, shape (num_labels,).
+        Typical formula: clip(4.0 + log10(1/pos_ratio), 4.0, 8.0)
+    gamma_pos : float
+        Focusing parameter for positives (default: 1.0)
+    clip : float
+        Probability margin for hard negative mining (default: 0.05)
+    reduction : str
+        'mean' returns scalar; 'none' returns (batch, num_labels) for label masking
+    """
+
+    def __init__(
+        self,
+        gamma_neg_per_label,
+        gamma_pos: float = 1.0,
+        clip: float = 0.05,
+        eps: float = 1e-8,
+        disable_torch_grad_focal_loss: bool = True,
+        reduction: str = 'mean',
+    ):
+        super().__init__(
+            gamma_neg=4.0, gamma_pos=gamma_pos, clip=clip, eps=eps,
+            disable_torch_grad_focal_loss=disable_torch_grad_focal_loss,
+        )
+        if isinstance(gamma_neg_per_label, torch.Tensor):
+            self.gamma_neg_per_label = gamma_neg_per_label.float()
+        else:
+            self.gamma_neg_per_label = torch.tensor(gamma_neg_per_label, dtype=torch.float32)
+        self.reduction = reduction
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        probs = torch.sigmoid(logits)
+        probs_neg = 1 - probs
+
+        # Asymmetric clipping for negatives
+        if self.clip > 0:
+            probs_neg = (probs_neg + self.clip).clamp(max=1)
+
+        # Cross-entropy terms
+        loss_pos = targets * torch.log(probs.clamp(min=self.eps))
+        loss_neg = (1 - targets) * torch.log(probs_neg.clamp(min=self.eps))
+        loss = loss_pos + loss_neg
+
+        # Asymmetric focal weighting with per-label gamma_neg
+        if self.disable_torch_grad_focal_loss:
+            torch.set_grad_enabled(False)
+
+        pt_pos = probs * targets
+        pt_neg = probs_neg * (1 - targets)
+        focal_weight_pos = (1 - pt_pos).pow(self.gamma_pos)
+        # Per-label gamma: (num_labels,) broadcast over (batch, num_labels)
+        gamma_neg = self.gamma_neg_per_label.to(logits.device)
+        focal_weight_neg = (1 - pt_neg).pow(gamma_neg.unsqueeze(0))
+        focal_weight = focal_weight_pos * targets + focal_weight_neg * (1 - targets)
+
+        if self.disable_torch_grad_focal_loss:
+            torch.set_grad_enabled(True)
+
+        loss = -loss * focal_weight
+
+        if self.reduction == 'none':
+            return loss  # (batch, num_labels) for label masking in RL
+        return loss.sum(dim=1).mean()
+
+
 def compute_multi_label_class_weights(labels: np.ndarray, method: str = 'inverse_freq') -> torch.Tensor:
     """
     Compute class weights for multi-label classification.
@@ -1530,6 +1606,50 @@ class BertBase(BertABC):
         forward_signature = inspect.signature(model.forward)
         return 'token_type_ids' in forward_signature.parameters
 
+    @staticmethod
+    def _build_weighted_sampler(labels: np.ndarray, num_labels: int, multi_label: bool):
+        """
+        Build a WeightedRandomSampler from label distribution.
+
+        Samples with rare labels are drawn more frequently, compensating
+        for class imbalance at the data level.
+
+        Parameters
+        ----------
+        labels : np.ndarray
+            Labels array — multi-hot (N, num_labels) for multi-label, or (N,) indices.
+        num_labels : int
+            Number of labels.
+        multi_label : bool
+            Whether this is a multi-label problem.
+
+        Returns
+        -------
+        WeightedRandomSampler
+        """
+        from torch.utils.data import WeightedRandomSampler
+
+        if multi_label:
+            if labels.ndim == 1:
+                labels_onehot = np.eye(num_labels)[labels]
+            else:
+                labels_onehot = labels
+            label_frequencies = labels_onehot.sum(axis=0) + 1e-6
+            label_weights = 1.0 / label_frequencies
+            sample_weights = (labels_onehot * label_weights).sum(axis=1)
+            sample_weights = sample_weights / sample_weights.max()
+            sample_weights = sample_weights.tolist()
+        else:
+            class_sample_count = np.bincount(labels)
+            weight_per_class = 1.0 / class_sample_count
+            sample_weights = [weight_per_class[t] for t in labels]
+
+        return WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True,
+        )
+
     # ------------------------------------------------------------------
     # Internal helpers shared with enhanced variants
     # ------------------------------------------------------------------
@@ -2257,6 +2377,7 @@ class BertBase(BertABC):
             hyperparameters: Optional[TrainingHyperparameters] = None,  # Complete hyperparameters for reproducibility
             category_name: Optional[str] = None,  # Category being trained (e.g., "political_parties_long")
             training_approach: Optional[str] = None,  # Override training approach (e.g., 'multi-label', 'one-vs-all', 'multi-class')
+            distribution_aware: bool = False,  # Auto-compute per-label pos_weight and adaptive ASL gamma from data (multi-label only)
     ) -> Tuple[Any, Any, Any, Any]:
         """
         Train, evaluate, and (optionally) save a BERT model. This method also logs training and validation
@@ -3007,7 +3128,37 @@ class BertBase(BertABC):
         self.logger.info(f"[BERT_BASE TRAIN] multi_label={multi_label}, threshold={multi_label_threshold}, num_labels={num_labels}")
 
         # Initialize loss criterion once (reused across all batches)
-        if multi_label:
+        # For multi-label with distribution_aware=True, compute per-label adaptive gamma
+        # and use AdaptiveAsymmetricLoss instead of uniform ASL
+        ml_reinforced = None  # Will be set during reinforced learning trigger if needed
+        if multi_label and distribution_aware:
+            train_labels_np = train_dataloader.dataset.tensors[2].numpy()
+            if train_labels_np.ndim == 2:
+                pos_ratios = train_labels_np.mean(axis=0)
+                gamma_neg_per_label = np.clip(
+                    4.0 + np.log10(1.0 / np.clip(pos_ratios, 1e-6, 1.0)), 4.0, 8.0
+                )
+                asl_criterion = AdaptiveAsymmetricLoss(
+                    gamma_neg_per_label=gamma_neg_per_label,
+                    gamma_pos=asl_gamma_pos,
+                    clip=asl_clip,
+                )
+                if pos_weight is None:
+                    pos_weight = compute_multi_label_class_weights(train_labels_np, method='pos_neg_ratio')
+                if not suppress_display:
+                    self.logger.info(f" Adaptive ASL (distribution-aware): per-label gamma_neg in [{gamma_neg_per_label.min():.2f}, {gamma_neg_per_label.max():.2f}]")
+                # Also activate WeightedRandomSampler for initial training
+                sampler = self._build_weighted_sampler(train_labels_np, num_labels, multi_label=True)
+                train_dataloader = DataLoader(
+                    train_dataloader.dataset, sampler=sampler,
+                    batch_size=train_dataloader.batch_size,
+                    num_workers=0, pin_memory=False,
+                )
+                if not suppress_display:
+                    self.logger.info(f" WeightedRandomSampler enabled from initial training")
+            else:
+                asl_criterion = None
+        elif multi_label:
             if use_asymmetric_loss:
                 # SOTA: Asymmetric Loss for multi-label classification
                 asl_criterion = AsymmetricLoss(
@@ -3016,7 +3167,7 @@ class BertBase(BertABC):
                     clip=asl_clip
                 )
                 if not suppress_display:
-                    self.logger.info(f" Asymmetric Loss (SOTA): γ-={asl_gamma_neg}, γ+={asl_gamma_pos}, clip={asl_clip}")
+                    self.logger.info(f" Asymmetric Loss (SOTA): gamma_neg={asl_gamma_neg}, gamma_pos={asl_gamma_pos}, clip={asl_clip}")
             else:
                 # Standard BCE loss for multi-label
                 asl_criterion = None
@@ -3024,6 +3175,29 @@ class BertBase(BertABC):
                     self.logger.info(f" Multi-label BCE Loss (pos_weight: {'enabled' if pos_weight is not None else 'disabled'})")
         else:
             asl_criterion = None
+            # Distribution-aware for binary/multi-class: compute pos_weight and weighted sampler
+            if distribution_aware:
+                try:
+                    train_labels_np = train_dataloader.dataset.tensors[2].numpy()
+                    if num_labels == 2:
+                        n_pos = int((train_labels_np == 1).sum())
+                        n_neg = int((train_labels_np == 0).sum())
+                        if n_pos > 0:
+                            pw = min(n_neg / n_pos, 100.0)
+                            pos_weight = torch.tensor([pw], dtype=torch.float32)
+                            if not suppress_display:
+                                self.logger.info(f" Distribution-aware pos_weight: {pw:.1f} (pos={n_pos}, neg={n_neg})")
+                    # WeightedRandomSampler for initial training
+                    sampler = self._build_weighted_sampler(train_labels_np, num_labels, multi_label=False)
+                    train_dataloader = DataLoader(
+                        train_dataloader.dataset, sampler=sampler,
+                        batch_size=train_dataloader.batch_size,
+                        num_workers=0, pin_memory=False,
+                    )
+                    if not suppress_display:
+                        self.logger.info(f" WeightedRandomSampler enabled from initial training")
+                except Exception:
+                    pass  # Fallback silently to standard training
 
         # Start Live display - this will remain fixed and update in place
         # Use transient=True to clear the display when context exits (prevents stacking)
@@ -4401,16 +4575,38 @@ class BertBase(BertABC):
                         reinforced_f1_threshold=reinforced_f1_threshold
                     )
                 elif multi_label:
-                    # Multi-label: trigger based on per-label F1 scores
-                    # Each label is treated independently (sigmoid activation)
-                    worst_f1 = min(best_f1_scores) if len(best_f1_scores) > 0 else 0.0
-                    avg_f1 = sum(best_f1_scores) / len(best_f1_scores) if len(best_f1_scores) > 0 else 0.0
-
-                    # For multi-label, we're more lenient since some labels may have very few positive samples
-                    # Trigger if worst label F1 < threshold * 0.5 or average F1 < threshold
-                    should_trigger = worst_f1 < (reinforced_f1_threshold * 0.5) or avg_f1 < reinforced_f1_threshold
-                    trigger_score = worst_f1
-                    trigger_reason = f"Multi-label: worst F1={worst_f1:.2f}, avg F1={avg_f1:.2f}"
+                    # Multi-label: per-label intelligent analysis
+                    if distribution_aware:
+                        from .reinforced_params import get_multi_label_reinforced_params
+                        train_labels_np = train_dataloader.dataset.tensors[2].numpy()
+                        label_pos_ratios = train_labels_np.mean(axis=0).tolist() if train_labels_np.ndim == 2 else [0.5] * num_labels
+                        label_names_list = class_names or [str(i) for i in range(num_labels)]
+                        ml_reinforced = get_multi_label_reinforced_params(
+                            model_name=self.model_name,
+                            label_f1_scores=list(best_f1_scores),
+                            label_pos_ratios=label_pos_ratios,
+                            label_names=label_names_list,
+                            original_lr=lr,
+                            reinforced_f1_threshold=reinforced_f1_threshold,
+                        )
+                        should_trigger = len(ml_reinforced['underperforming_labels']) > 0
+                        worst_f1 = min(best_f1_scores) if len(best_f1_scores) > 0 else 0.0
+                        trigger_score = worst_f1
+                        n_under = len(ml_reinforced['underperforming_labels'])
+                        trigger_reason = f"Multi-label (distribution-aware): {n_under}/{num_labels} labels underperforming, worst F1={worst_f1:.2f}"
+                        if should_trigger and not suppress_display:
+                            tiers = ml_reinforced['label_tiers']
+                            names = ml_reinforced['label_names']
+                            for tier_id in [3, 2, 1]:
+                                if tiers[tier_id]:
+                                    tier_names = [names[i] for i in tiers[tier_id]]
+                                    self.logger.info(f"  Tier {tier_id}: {', '.join(tier_names)}")
+                    else:
+                        worst_f1 = min(best_f1_scores) if len(best_f1_scores) > 0 else 0.0
+                        avg_f1 = sum(best_f1_scores) / len(best_f1_scores) if len(best_f1_scores) > 0 else 0.0
+                        should_trigger = worst_f1 < (reinforced_f1_threshold * 0.5) or avg_f1 < reinforced_f1_threshold
+                        trigger_score = worst_f1
+                        trigger_reason = f"Multi-label: worst F1={worst_f1:.2f}, avg F1={avg_f1:.2f}"
                 else:
                     # Multi-class: trigger if ANY class has low F1
                     worst_f1 = min(best_f1_scores) if len(best_f1_scores) > 0 else 0.0
@@ -4518,38 +4714,7 @@ class BertBase(BertABC):
                     # Extract dataset from train_dataloader and apply WeightedRandomSampler
                     dataset = train_dataloader.dataset
                     labels = dataset.tensors[2].numpy()
-
-                    if multi_label:
-                        # Multi-label: labels are multi-hot vectors (e.g., [0, 1, 1, 0])
-                        # Weight samples by inverse frequency of their active labels
-                        # This gives more weight to samples with rare label combinations
-                        if labels.ndim == 1:
-                            # Labels are indices, convert to one-hot for analysis
-                            labels_onehot = np.eye(num_labels)[labels]
-                        else:
-                            labels_onehot = labels
-
-                        # Calculate per-label frequencies
-                        label_frequencies = labels_onehot.sum(axis=0) + 1e-6  # Avoid division by zero
-                        label_weights = 1.0 / label_frequencies
-
-                        # For each sample, sum the weights of its active labels
-                        # Samples with rare labels get higher weights
-                        sample_weights = (labels_onehot * label_weights).sum(axis=1)
-                        # Normalize to avoid extreme values
-                        sample_weights = sample_weights / sample_weights.max()
-                        sample_weights = sample_weights.tolist()
-                    else:
-                        # Single-label: use standard bincount approach
-                        class_sample_count = np.bincount(labels)
-                        weight_per_class = 1.0 / class_sample_count
-                        sample_weights = [weight_per_class[t] for t in labels]
-
-                    sampler = WeightedRandomSampler(
-                        weights=sample_weights,
-                        num_samples=len(sample_weights),
-                        replacement=True
-                    )
+                    sampler = self._build_weighted_sampler(labels, num_labels, multi_label)
 
                     # Build new train dataloader with optimized settings for reinforced learning
                     # Use same batch size as main training (already optimized for GPU/MPS)
@@ -4594,12 +4759,22 @@ class BertBase(BertABC):
                         trigger_metric = worst_f1
                     else:
                         trigger_metric = best_f1_1
+                    # Extract training data distribution for distribution-aware RL
+                    rl_class_pos_ratios = None
+                    if distribution_aware and not multi_label:
+                        try:
+                            rl_train_labels = train_dataloader.dataset.tensors[2].numpy()
+                            rl_counts = np.bincount(rl_train_labels, minlength=num_labels)
+                            rl_class_pos_ratios = (rl_counts / rl_counts.sum()).tolist()
+                        except Exception:
+                            pass  # Fallback to F1-only weights
                     reinforced_params = get_reinforced_params(
                         model_name_for_params,
                         trigger_metric,
                         lr,
                         num_classes=num_labels,
-                        class_f1_scores=list(best_f1_scores) if (multi_label or num_labels > 2) else None
+                        class_f1_scores=list(best_f1_scores) if (multi_label or num_labels > 2) else None,
+                        class_pos_ratios=rl_class_pos_ratios,
                     )
                     advanced_techniques = should_use_advanced_techniques(trigger_metric)
 
@@ -4676,13 +4851,31 @@ class BertBase(BertABC):
                         running_loss = 0.0
 
                         # Select appropriate loss function based on multi_label mode
-                        if multi_label:
-                            # Multi-label: Use BCEWithLogitsLoss (sigmoid + BCE)
-                            # pos_weight can be derived from class distribution if needed
+                        if multi_label and ml_reinforced is not None and ml_reinforced.get('should_use_asl'):
+                            # Distribution-aware: AdaptiveASL with per-label gamma + label masking
+                            rl_criterion = AdaptiveAsymmetricLoss(
+                                gamma_neg_per_label=ml_reinforced['per_label_gamma_neg'],
+                                gamma_pos=asl_gamma_pos,
+                                clip=asl_clip,
+                                reduction='none',  # For per-label freeze masking
+                            )
+                            rl_freeze_mask = ml_reinforced.get('freeze_mask')
+                        elif multi_label and ml_reinforced is not None:
+                            # Distribution-aware but without ASL: weighted BCE
+                            pw_tensor = torch.tensor(ml_reinforced['per_label_pos_weight'], dtype=torch.float32)
+                            rl_criterion = torch.nn.BCEWithLogitsLoss(
+                                pos_weight=pw_tensor.to(self.device),
+                                reduction='none',
+                            )
+                            rl_freeze_mask = ml_reinforced.get('freeze_mask')
+                        elif multi_label:
+                            # Fallback: unweighted BCE (legacy behavior)
                             rl_criterion = torch.nn.BCEWithLogitsLoss()
+                            rl_freeze_mask = None
                         else:
                             # Single-label (binary/multi-class): Use CrossEntropyLoss
                             rl_criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor.to(self.device))
+                            rl_freeze_mask = None
 
                         # Zero gradients at start of epoch (for gradient accumulation)
                         optimizer.zero_grad()
@@ -4741,6 +4934,18 @@ class BertBase(BertABC):
                                     loss = rl_criterion(logits, b_labels_onehot)
                                 else:
                                     loss = rl_criterion(logits, b_labels)
+
+                            # Apply per-label freeze masking for distribution-aware RL
+                            if multi_label and rl_freeze_mask is not None and loss.dim() > 0:
+                                train_mask = torch.tensor(
+                                    [0.0 if freeze else 1.0 for freeze in rl_freeze_mask],
+                                    device=loss.device,
+                                )
+                                if loss.dim() == 2:
+                                    # (batch, num_labels) -> mask labels, then reduce
+                                    loss = (loss * train_mask.unsqueeze(0)).sum(dim=1).mean()
+                                elif loss.dim() == 1:
+                                    loss = loss.mean()
 
                             # Scale loss for gradient accumulation
                             loss = loss / gradient_accumulation_steps

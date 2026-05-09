@@ -675,6 +675,166 @@ def _run_parallel_training(
         }
 
 
+def _display_training_diagnostic(self, bundle, quick_params=None):
+    """Display data distribution diagnostic and training strategy before final confirmation."""
+    import math
+    from rich.table import Table
+    from rich import box
+
+    training_approach = bundle.metadata.get('training_approach', 'one-vs-all')
+    is_multi_label = bundle.metadata.get('multi_label', False)
+    value_counts = bundle.metadata.get('value_counts_by_key', {})
+    rl_threshold = 0.70
+    if quick_params:
+        rl_threshold = quick_params.get('rl_f1_threshold', 0.70)
+
+    if not value_counts:
+        return  # No distribution data available
+
+    self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+    self.console.print("[bold cyan]           Data Distribution Diagnostic                       [/bold cyan]")
+    self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+
+    approach_display = {
+        'one-vs-all': 'One-vs-All Binary',
+        'multi-label': 'True Multi-Label',
+        'multi-class': 'Multi-Class',
+    }.get(training_approach, training_approach)
+
+    n_categories = len(value_counts)
+    self.console.print(f"  Training Approach: [bold]{approach_display}[/bold] ({n_categories} categories)\n")
+
+    if training_approach in ('one-vs-all', 'multi-label'):
+        # For one-vs-all and multi-label, each category is a binary classification
+        diag_table = Table(
+            show_header=True, header_style="bold", border_style="dim",
+            box=box.SIMPLE_HEAVY, expand=True,
+        )
+        diag_table.add_column("Category", style="cyan", no_wrap=True)
+        diag_table.add_column("Positive", justify="right")
+        diag_table.add_column("Total", justify="right")
+        diag_table.add_column("Ratio", justify="right")
+        diag_table.add_column("Gamma", justify="right")
+        diag_table.add_column("Strategy", style="dim")
+
+        for key, counts in sorted(value_counts.items(), key=lambda x: -sum(x[1].values())):
+            # Detect the "positive" count from various label formats:
+            # Binary numeric: {0: N, 1: M} or {'0': N, '1': M}
+            # Binary text: {'yes': M, 'no': N} or {'true': M, 'false': N}
+            # Prefixed: {'political_yes': M, 'political_no': N}
+            # Detected: {'detected_yes': M, 'detected_no': N}
+            # Multi-value: {'value_A': N, 'value_B': M} — fallback to minority
+            total = sum(counts.values())
+            if total == 0:
+                continue
+
+            pos_count = 0
+            neg_count_explicit = 0
+            for k, v in counts.items():
+                k_str = str(k).lower().strip()
+                # Match positive indicators
+                if k_str in ('1', 'yes', 'true', 'positive', 'oui') or \
+                   k_str.endswith('_yes') or k_str.endswith('_true') or \
+                   k_str.endswith('_1') or k_str.startswith('yes_') or \
+                   'yes' in k_str.split('_'):
+                    pos_count += v
+                # Match negative indicators
+                elif k_str in ('0', 'no', 'false', 'negative', 'non') or \
+                     k_str.endswith('_no') or k_str.endswith('_false') or \
+                     k_str.endswith('_0') or k_str.startswith('no_') or \
+                     'no' in k_str.split('_'):
+                    neg_count_explicit += v
+
+            # Fallback: if no positive key matched
+            if pos_count == 0:
+                if neg_count_explicit > 0:
+                    # Found negatives but no positives — positives = total - negatives
+                    pos_count = total - neg_count_explicit
+                elif len(counts) == 2:
+                    # Binary with unknown labels — take the minority as positive
+                    pos_count = min(counts.values())
+                elif len(counts) > 2:
+                    # Multi-value: can't determine positive, skip ratio
+                    pos_count = 0
+
+            pos_ratio = pos_count / total if total > 0 else 0
+            neg_count = total - pos_count
+
+            if pos_count == 0:
+                ratio_str = "n/a"
+                gamma_str = "n/a"
+                strategy = "no positives"
+                style = "red"
+            else:
+                ratio = neg_count / pos_count
+                ratio_str = f"1:{ratio:.0f}"
+                gamma = min(max(4.0 + math.log10(1.0 / max(pos_ratio, 1e-6)), 4.0), 8.0)
+                gamma_str = f"{gamma:.1f}"
+
+                if pos_count < 50:
+                    strategy = "fragile (< 50 samples)"
+                    style = "red"
+                elif pos_count < 100:
+                    strategy = "weights + focal"
+                    style = "yellow"
+                elif ratio > 50:
+                    strategy = "ASL + WeightedSampler"
+                    style = "yellow"
+                else:
+                    strategy = "standard"
+                    style = "green"
+
+            diag_table.add_row(
+                key,
+                f"[{style}]{pos_count:,}[/{style}]",
+                f"{total:,}",
+                f"[{style}]{ratio_str}[/{style}]",
+                gamma_str,
+                strategy,
+            )
+
+        self.console.print(diag_table)
+
+    elif training_approach == 'multi-class':
+        # Multi-class: show distribution per class
+        diag_table = Table(
+            show_header=True, header_style="bold", border_style="dim",
+            box=box.SIMPLE_HEAVY, expand=True,
+        )
+        diag_table.add_column("Class", style="cyan", no_wrap=True)
+        diag_table.add_column("Count", justify="right")
+        diag_table.add_column("Percentage", justify="right")
+        diag_table.add_column("Status")
+
+        for key, counts in value_counts.items():
+            total = sum(counts.values())
+            for class_name, count in sorted(counts.items(), key=lambda x: -x[1]):
+                pct = count / total * 100 if total > 0 else 0
+                if pct < 5:
+                    status = "[yellow]minority[/yellow]"
+                elif pct > 60:
+                    status = "[yellow]majority[/yellow]"
+                else:
+                    status = "[green]balanced[/green]"
+                diag_table.add_row(str(class_name), f"{count:,}", f"{pct:.1f}%", status)
+
+        self.console.print(diag_table)
+
+    # Strategy summary
+    self.console.print("\n  [bold]Imbalance Handling Strategy:[/bold]")
+    self.console.print("  [green]✓[/green] Distribution-aware training (automatic)")
+    if training_approach in ('one-vs-all', 'multi-label'):
+        self.console.print("    - AdaptiveAsymmetricLoss with per-label gamma")
+        self.console.print("    - WeightedRandomSampler from initial training")
+        self.console.print("    - Reinforced learning: per-label freeze masking")
+    else:
+        self.console.print("    - CrossEntropyLoss with distribution-based class weights")
+        self.console.print("    - WeightedRandomSampler from initial training")
+    self.console.print(f"\n  Reinforced learning triggers if F1 < [cyan]{rl_threshold:.2f}[/cyan]")
+    self.console.print("    - Well-performing labels frozen during RL (no catastrophic forgetting)")
+    self.console.print("    - Underperforming labels get boosted weights + more epochs\n")
+
+
 def _training_studio_confirm_and_execute(
     self,
     bundle: TrainingDataBundle,
@@ -849,6 +1009,9 @@ def _training_studio_confirm_and_execute(
         self.console.print("     • Resume capability if training is interrupted")
         self.console.print("     • Complete parameter tracking for reproducibility")
         self.console.print("     • Access via 'Resume/Relaunch Training' option\n")
+
+    # STEP 3.5: Distribution diagnostic before final confirmation
+    self._display_training_diagnostic(bundle, quick_params)
 
     # STEP 4: Start training
     confirm_start = Confirm.ask(
