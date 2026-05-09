@@ -3224,7 +3224,18 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                         value_counts_by_key[key] = {}
                     counts_for_key = value_counts_by_key[key]
 
-                    if isinstance(value, list):
+                    if isinstance(value, dict):
+                        # Nested annotation format (e.g., {"detected": "yes", "subcategories": [...]})
+                        if 'detected' in value:
+                            detected = str(value['detected']).lower().strip()
+                            all_keys_values[key].add(detected)
+                            counts_for_key[detected] = counts_for_key.get(detected, 0) + 1
+                        else:
+                            for sub_key, sub_val in value.items():
+                                sub_str = str(sub_val)
+                                all_keys_values[key].add(sub_str)
+                                counts_for_key[sub_str] = counts_for_key.get(sub_str, 0) + 1
+                    elif isinstance(value, list):
                         for v in value:
                             if v is not None and v != '':
                                 v_str = str(v)
@@ -15556,7 +15567,17 @@ def integrate_training_arena_in_annotator_factory(
                                 value_counts_by_key[key] = {}
                             counts_for_key = value_counts_by_key[key]
 
-                            if isinstance(value, list):
+                            if isinstance(value, dict):
+                                if 'detected' in value:
+                                    detected = str(value['detected']).lower().strip()
+                                    all_keys_values[key].add(detected)
+                                    counts_for_key[detected] = counts_for_key.get(detected, 0) + 1
+                                else:
+                                    for sub_key, sub_val in value.items():
+                                        sub_str = str(sub_val)
+                                        all_keys_values[key].add(sub_str)
+                                        counts_for_key[sub_str] = counts_for_key.get(sub_str, 0) + 1
+                            elif isinstance(value, list):
                                 for v in value:
                                     if v is not None and v != '':
                                         v_str = str(v)

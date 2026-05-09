@@ -48,6 +48,73 @@ from .data_filter_logger import get_filter_logger
 logger = logging.getLogger(__name__)
 
 
+def _flatten_nested_annotation(key: str, value: dict, label_strategy: str = "key_value") -> List[str]:
+    """
+    Extract flat training labels from a nested annotation structure.
+
+    Supports the common LLM annotation format where each key maps to a dict
+    with 'detected' (yes/no) and optional 'subcategories' (list of strings):
+
+        {"nationalism": {"detected": "yes", "subcategories": ["nation_threat", "nation_vital"]}}
+
+    For detected=yes, produces:
+        - key_value strategy: ["nationalism_yes"] + ["nation_threat_yes", "nation_vital_yes"]
+        - value_only strategy: ["yes"] + ["nation_threat", "nation_vital"]
+
+    For detected=no, produces:
+        - key_value strategy: ["nationalism_no"]
+        - value_only strategy: ["no"]
+
+    Also handles generic nested dicts without 'detected' key by iterating sub-keys.
+
+    Parameters
+    ----------
+    key : str
+        The parent annotation key (e.g., "nationalism")
+    value : dict
+        The nested annotation value
+    label_strategy : str
+        "key_value" or "value_only"
+
+    Returns
+    -------
+    list of str
+        Flat label strings for this annotation key
+    """
+    labels = []
+
+    if 'detected' in value:
+        # Standard LLM annotation format: {"detected": "yes/no", "subcategories": [...]}
+        detected = str(value['detected']).lower().strip()
+        if label_strategy == "key_value":
+            labels.append(f"{key}_{detected}")
+        else:
+            labels.append(detected)
+
+        # Add subcategories as separate labels (only when detected)
+        if detected in ('yes', 'true', '1', 'oui') and 'subcategories' in value:
+            subcats = value.get('subcategories', [])
+            if isinstance(subcats, list):
+                for sc in subcats:
+                    sc_clean = str(sc).strip()
+                    if sc_clean:
+                        if label_strategy == "key_value":
+                            labels.append(f"{sc_clean}_yes")
+                        else:
+                            labels.append(sc_clean)
+    else:
+        # Generic nested dict: iterate sub-keys as labels
+        for sub_key, sub_value in value.items():
+            sub_str = str(sub_value).strip()
+            if sub_str and sub_str.lower() not in ('', 'none'):
+                if label_strategy == "key_value":
+                    labels.append(f"{key}_{sub_key}_{sub_str}")
+                else:
+                    labels.append(f"{sub_key}_{sub_str}")
+
+    return labels
+
+
 def _clean_label_value(value: Any) -> Optional[str]:
     """
     Clean a label value by removing trailing punctuation and whitespace.
@@ -563,7 +630,11 @@ class AnnotationToTrainingConverter:
                         continue
 
                     # Create labels based on strategy and add to flat list
-                    if isinstance(value, list):
+                    if isinstance(value, dict):
+                        # Nested annotation format (e.g., {"detected": "yes", "subcategories": [...]})
+                        nested_labels = _flatten_nested_annotation(key, value, label_strategy)
+                        all_labels.extend(nested_labels)
+                    elif isinstance(value, list):
                         # Filter out empty values but keep 'null' as valid
                         # Clean each value to remove trailing punctuation (e.g., "null," -> "null")
                         clean_values = [_clean_label_value(v) for v in value]
@@ -800,7 +871,31 @@ class AnnotationToTrainingConverter:
                 # Process valid values
                 # CRITICAL: Preserve 'null' (string) as a valid class value
                 # Also clean trailing punctuation (e.g., "null," -> "null")
-                if isinstance(value, list):
+                if isinstance(value, dict):
+                    # Nested annotation format (e.g., {"detected": "yes", "subcategories": [...]})
+                    # For single-key mode, extract the primary label (detected value)
+                    if 'detected' in value:
+                        detected = str(value['detected']).lower().strip()
+                        if label_strategy == "key_value":
+                            label_string = f"{annotation_key}_{detected}"
+                        else:
+                            label_string = detected
+                    else:
+                        # Generic nested dict: use first sub-key value
+                        first_sub = next(iter(value.values()), None)
+                        cleaned_sub = _clean_label_value(first_sub)
+                        if not cleaned_sub:
+                            filtered_items.append({
+                                'index': idx,
+                                'reason': 'empty_nested_value',
+                                'key': annotation_key
+                            })
+                            continue
+                        if label_strategy == "key_value":
+                            label_string = f"{annotation_key}_{cleaned_sub}"
+                        else:
+                            label_string = cleaned_sub
+                elif isinstance(value, list):
                     # For lists, keep 'null' as a valid value, clean trailing punctuation
                     clean_values = [_clean_label_value(v) for v in value]
                     clean_values = [v for v in clean_values if v is not None and v != '']
