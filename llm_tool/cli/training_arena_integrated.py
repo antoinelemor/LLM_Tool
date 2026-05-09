@@ -680,6 +680,7 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
     import math
     from rich.table import Table
     from rich import box
+    from collections import Counter
 
     training_approach = bundle.metadata.get('training_approach', 'one-vs-all')
     is_multi_label = bundle.metadata.get('multi_label', False)
@@ -687,6 +688,48 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
     rl_threshold = 0.70
     if quick_params:
         rl_threshold = quick_params.get('rl_f1_threshold', 0.70)
+
+    # Fallback: if value_counts_by_key is not available, compute from the training JSONL
+    if not value_counts and bundle.primary_file:
+        try:
+            import json
+            from pathlib import Path
+            primary = Path(bundle.primary_file) if not isinstance(bundle.primary_file, Path) else bundle.primary_file
+            if primary.exists() and primary.suffix == '.jsonl':
+                label_counter = Counter()
+                total_samples = 0
+                with open(primary, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        try:
+                            record = json.loads(line)
+                            total_samples += 1
+                            labels = record.get('labels', [])
+                            if isinstance(labels, list):
+                                for label in labels:
+                                    label_counter[label] += 1
+                        except (json.JSONDecodeError, KeyError):
+                            continue
+                if label_counter and total_samples > 0:
+                    # Group by key prefix (e.g., "themes_nationalism" -> key="themes")
+                    key_groups = {}
+                    for label, count in label_counter.items():
+                        parts = label.split('_', 1)
+                        key = parts[0] if len(parts) > 1 else 'labels'
+                        value = parts[1] if len(parts) > 1 else label
+                        if key not in key_groups:
+                            key_groups[key] = {}
+                        key_groups[key][value] = count
+                    # For multi-label, add negative counts (total - positive)
+                    for key, counts in key_groups.items():
+                        for value in list(counts.keys()):
+                            counts[value] = counts[value]
+                        # Add 'no' count as complement for each label
+                    value_counts = key_groups
+                    # Also store in metadata for later use
+                    bundle.metadata['value_counts_by_key'] = value_counts
+                    bundle.metadata['_total_samples'] = total_samples
+        except Exception:
+            pass  # Silently fall back
 
     if not value_counts:
         return  # No distribution data available
@@ -704,6 +747,9 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
     n_categories = len(value_counts)
     self.console.print(f"  Training Approach: [bold]{approach_display}[/bold] ({n_categories} categories)\n")
 
+    # Get total samples for multi-label JSONL fallback
+    total_samples_override = bundle.metadata.get('_total_samples', 0)
+
     if training_approach in ('one-vs-all', 'multi-label'):
         # For one-vs-all and multi-label, each category is a binary classification
         diag_table = Table(
@@ -718,43 +764,81 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
         diag_table.add_column("Strategy", style="dim")
 
         for key, counts in sorted(value_counts.items(), key=lambda x: -sum(x[1].values())):
-            # Detect the "positive" count from various label formats:
-            # Binary numeric: {0: N, 1: M} or {'0': N, '1': M}
-            # Binary text: {'yes': M, 'no': N} or {'true': M, 'false': N}
-            # Prefixed: {'political_yes': M, 'political_no': N}
-            # Detected: {'detected_yes': M, 'detected_no': N}
-            # Multi-value: {'value_A': N, 'value_B': M} — fallback to minority
+            # Detect if this is a multi-label JSONL format (labels like {"themes": {"nationalism": 5328, ...}})
+            # vs binary format ({"nationalism": {"yes": 5328, "no": 94672}})
+            is_multilabel_counts = False
+            if total_samples_override > 0:
+                # Values are label counts from JSONL, each value is a positive label
+                # None of the keys should match yes/no/0/1 patterns
+                sample_keys = [str(k).lower() for k in counts.keys()]
+                if not any(k in ('yes', 'no', '0', '1', 'true', 'false') for k in sample_keys):
+                    is_multilabel_counts = True
+
+            if is_multilabel_counts:
+                # Multi-label JSONL: each value name is a label, count is how many samples have it
+                # Display each label as a row
+                for label_name, label_count in sorted(counts.items(), key=lambda x: -x[1]):
+                    total = total_samples_override
+                    pos_count = label_count
+                    pos_ratio = pos_count / total if total > 0 else 0
+                    neg_count = total - pos_count
+
+                    if pos_count == 0:
+                        continue
+                    ratio = neg_count / pos_count
+                    ratio_str = f"1:{ratio:.0f}"
+                    gamma = min(max(4.0 + math.log10(1.0 / max(pos_ratio, 1e-6)), 4.0), 8.0)
+                    gamma_str = f"{gamma:.1f}"
+
+                    if pos_count < 50:
+                        strategy = "fragile (< 50 samples)"
+                        style = "red"
+                    elif pos_count < 100:
+                        strategy = "weights + focal"
+                        style = "yellow"
+                    elif ratio > 50:
+                        strategy = "ASL + WeightedSampler"
+                        style = "yellow"
+                    else:
+                        strategy = "standard"
+                        style = "green"
+
+                    diag_table.add_row(
+                        f"  {label_name}",
+                        f"[{style}]{pos_count:,}[/{style}]",
+                        f"{total:,}",
+                        f"[{style}]{ratio_str}[/{style}]",
+                        gamma_str,
+                        strategy,
+                    )
+                continue  # Skip the standard per-key processing below
+
             total = sum(counts.values())
             if total == 0:
                 continue
 
+            # Detect the "positive" count from various label formats
             pos_count = 0
             neg_count_explicit = 0
             for k, v in counts.items():
                 k_str = str(k).lower().strip()
-                # Match positive indicators
                 if k_str in ('1', 'yes', 'true', 'positive', 'oui') or \
                    k_str.endswith('_yes') or k_str.endswith('_true') or \
                    k_str.endswith('_1') or k_str.startswith('yes_') or \
                    'yes' in k_str.split('_'):
                     pos_count += v
-                # Match negative indicators
                 elif k_str in ('0', 'no', 'false', 'negative', 'non') or \
                      k_str.endswith('_no') or k_str.endswith('_false') or \
                      k_str.endswith('_0') or k_str.startswith('no_') or \
                      'no' in k_str.split('_'):
                     neg_count_explicit += v
 
-            # Fallback: if no positive key matched
             if pos_count == 0:
                 if neg_count_explicit > 0:
-                    # Found negatives but no positives — positives = total - negatives
                     pos_count = total - neg_count_explicit
                 elif len(counts) == 2:
-                    # Binary with unknown labels — take the minority as positive
                     pos_count = min(counts.values())
                 elif len(counts) > 2:
-                    # Multi-value: can't determine positive, skip ratio
                     pos_count = 0
 
             pos_ratio = pos_count / total if total > 0 else 0
@@ -9256,32 +9340,24 @@ def _collect_quick_mode_parameters(
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
     self.console.print("[bold]What is Reinforced Learning?[/bold]")
-    self.console.print("  • [cyan]Adaptive retraining[/cyan]: If model underperforms (F1 < threshold), additional training cycles activate")
-    self.console.print("  • [cyan]Minority class oversampling[/cyan]: Duplicates minority class samples during training")
-    self.console.print("  • [cyan]Adaptive parameters[/cyan]: Automatically adjusts learning rate, batch size, and epochs")
-    self.console.print("  • [cyan]Loss correction[/cyan]: Applies class weights to the cross-entropy loss function\n")
+    self.console.print("  • [cyan]Distribution-aware training[/cyan]: Analyzes class imbalance from your data automatically")
+    self.console.print("  • [cyan]Adaptive loss function[/cyan]: Per-label gamma scaling (rare classes get stronger correction)")
+    self.console.print("  • [cyan]Weighted sampling[/cyan]: Samples with rare labels are drawn more frequently from the start")
+    self.console.print("  • [cyan]Per-label reinforcement[/cyan]: Only underperforming labels get retrained; good labels are frozen\n")
 
-    self.console.print("[bold yellow][!]  Default Settings (Configurable):[/bold yellow]")
-    self.console.print("  • [yellow]F1 Threshold[/yellow]: 0.70 - Triggers reinforced learning when F1 < threshold")
-    self.console.print("  • [yellow]Oversampling Factor[/yellow]: 2.0 - Minority class appears 2× more in training")
-    self.console.print("  • [yellow]Loss Weight Factor[/yellow]: 2.0 - Minority class errors weighted 2× higher\n")
+    self.console.print("[bold]How it works:[/bold]")
+    self.console.print("  1. [green]Initial training[/green]: AdaptiveAsymmetricLoss with per-label gamma + WeightedRandomSampler")
+    self.console.print("  2. [green]Evaluation[/green]: Per-label F1 analysis after initial epochs")
+    self.console.print("  3. [green]Reinforcement[/green]: If any label F1 < threshold, targeted retraining activates:")
+    self.console.print("     - Labels performing well are [bold]frozen[/bold] (no catastrophic forgetting)")
+    self.console.print("     - Underperforming labels get boosted gamma + more epochs")
+    self.console.print("     - Epochs and learning rate adapt to severity\n")
 
-    self.console.print("[bold]What These Parameters Do:[/bold]")
-    self.console.print("  • [green]F1 Threshold[/green]: Lower = More aggressive (activates earlier)")
-    self.console.print("    Example: 0.50 → Triggers when model performs poorly")
-    self.console.print("    Example: 0.80 → Triggers only for high-performing models")
-    self.console.print("  • [green]Oversampling Factor[/green]: How many times to duplicate minority samples")
-    self.console.print("    Example: 3.0 → Minority class appears 3× in each epoch")
-    self.console.print("  • [green]Loss Weight Factor[/green]: Penalty multiplier for minority class errors")
-    self.console.print("    Example: 3.0 → Model penalized 3× more for missing minority samples\n")
+    self.console.print("[bold yellow]  Default: F1 Threshold = 0.70[/bold yellow]")
+    self.console.print("  [dim]Reinforced learning triggers when any label's F1 drops below this value.[/dim]")
+    self.console.print("  [dim]The distribution diagnostic (shown before training starts) will detail the strategy per label.[/dim]\n")
 
-    self.console.print("[bold red]Risks & Considerations:[/bold red]")
-    self.console.print("  • [yellow]Longer training time[/yellow] (can add 50-100% more time)")
-    self.console.print("  • [yellow]Potential overfitting[/yellow] if dataset is very small (<500 samples)")
-    self.console.print("  • [yellow]May not help[/yellow] if data quality or quantity is insufficient")
-    self.console.print("  • [yellow]High oversampling[/yellow] (>5.0) can cause memorization of minority class\n")
-
-    self.console.print("[yellow]Note:[/yellow] [dim]Compatible with ALL models (BERT, RoBERTa, DeBERTa, etc.)[/dim]\n")
+    self.console.print("[yellow]Note:[/yellow] [dim]Compatible with ALL models and modes (binary, multi-class, multi-label).[/dim]\n")
 
     # Use preloaded value if available
     default_reinforced = preloaded_params.get('reinforced_learning', False) if preloaded_params else False
@@ -9309,10 +9385,11 @@ def _collect_quick_mode_parameters(
             self.console.print("\n[bold green] Manual Configuration[/bold green]\n")
 
             # F1 Threshold
-            self.console.print("[bold]1⃣  F1 Activation Threshold[/bold]")
-            self.console.print("   [dim]When F1-score drops below this value, reinforced learning activates[/dim]")
+            self.console.print("[bold]F1 Activation Threshold[/bold]")
+            self.console.print("   [dim]When any label's F1-score drops below this value, reinforced learning activates for that label[/dim]")
+            self.console.print("   [dim]Other parameters (gamma, weights, epochs) are computed automatically from your data distribution[/dim]")
             self.console.print("   • Recommended: [green]0.70[/green] (moderate)")
-            self.console.print("   • Conservative: [yellow]0.50[/yellow] (only very poor models)")
+            self.console.print("   • Conservative: [yellow]0.50[/yellow] (only very poor labels)")
             self.console.print("   • Aggressive: [yellow]0.85[/yellow] (triggers early)\n")
 
             f1_input = Prompt.ask(
@@ -9328,57 +9405,11 @@ def _collect_quick_mode_parameters(
                 self.console.print("[yellow][!] Invalid input. Using default 0.70[/yellow]")
                 rl_f1_threshold = 0.70
 
-            # Oversampling Factor
-            self.console.print("\n[bold]2⃣  Minority Class Oversampling Factor[/bold]")
-            self.console.print("   [dim]How many times to duplicate minority class samples during training[/dim]")
-            self.console.print("   • Recommended: [green]2.0[/green] (doubles minority samples)")
-            self.console.print("   • Light: [yellow]1.5[/yellow] (50% increase)")
-            self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× minority samples)")
-            self.console.print("   • [red][!]  Values > 5.0 risk overfitting[/red]\n")
-
-            oversample_input = Prompt.ask(
-                "Oversampling factor",
-                default="2.0"
-            )
-            try:
-                rl_oversample_factor = float(oversample_input)
-                if rl_oversample_factor < 1.0:
-                    self.console.print("[yellow][!] Factor must be ≥ 1.0. Using default 2.0[/yellow]")
-                    rl_oversample_factor = 2.0
-                elif rl_oversample_factor > 5.0:
-                    self.console.print("[yellow][!] Warning: High values (>5.0) may cause overfitting[/yellow]")
-            except ValueError:
-                self.console.print("[yellow][!] Invalid input. Using default 2.0[/yellow]")
-                rl_oversample_factor = 2.0
-
-            # Class Weight Factor
-            self.console.print("\n[bold]3⃣  Cross-Entropy Loss Weight Factor[/bold]")
-            self.console.print("   [dim]Penalty multiplier for misclassifying minority class samples[/dim]")
-            self.console.print("   • Recommended: [green]2.0[/green] (2× penalty for minority errors)")
-            self.console.print("   • Light: [yellow]1.5[/yellow] (50% higher penalty)")
-            self.console.print("   • Heavy: [yellow]4.0[/yellow] (4× penalty)")
-            self.console.print("   • [red][!]  Values > 5.0 may destabilize training[/red]\n")
-
-            weight_input = Prompt.ask(
-                "Loss weight factor",
-                default="2.0"
-            )
-            try:
-                rl_class_weight_factor = float(weight_input)
-                if rl_class_weight_factor < 1.0:
-                    self.console.print("[yellow][!] Factor must be ≥ 1.0. Using default 2.0[/yellow]")
-                    rl_class_weight_factor = 2.0
-                elif rl_class_weight_factor > 5.0:
-                    self.console.print("[yellow][!] Warning: High values (>5.0) may destabilize training[/yellow]")
-            except ValueError:
-                self.console.print("[yellow][!] Invalid input. Using default 2.0[/yellow]")
-                rl_class_weight_factor = 2.0
-
             # Reinforced Epochs
-            self.console.print("\n[bold]4⃣  Reinforced Learning Epochs[/bold]")
-            self.console.print("   [dim]Number of additional epochs to run when F1 < threshold[/dim]")
-            self.console.print("   • Default: [green]Auto-calculated[/green] (8-20 epochs based on model type)")
-            self.console.print("   • Manual: [yellow]Choose fixed number[/yellow] (applies to all models)\n")
+            self.console.print("\n[bold]Reinforced Learning Epochs[/bold]")
+            self.console.print("   [dim]Number of additional epochs when labels underperform[/dim]")
+            self.console.print("   • Default: [green]Auto-calculated[/green] (8-15 epochs based on severity)")
+            self.console.print("   • Manual: [yellow]Choose fixed number[/yellow]\n")
 
             use_auto_epochs = Confirm.ask(
                 "Use auto-calculated epochs?",
@@ -9393,30 +9424,26 @@ def _collect_quick_mode_parameters(
                 )
 
             # Summary
-            self.console.print("\n[bold green]✓ Reinforced Learning Configuration:[/bold green]")
+            self.console.print("\n[bold green]Reinforced Learning Configuration:[/bold green]")
             self.console.print(f"  • F1 Threshold: [cyan]{rl_f1_threshold:.2f}[/cyan]")
-            self.console.print(f"  • Oversampling Factor: [cyan]{rl_oversample_factor:.1f}×[/cyan]")
-            self.console.print(f"  • Loss Weight Factor: [cyan]{rl_class_weight_factor:.1f}×[/cyan]")
+            self.console.print(f"  • Loss weights: [cyan]Auto (distribution-aware)[/cyan]")
+            self.console.print(f"  • Sampling: [cyan]WeightedRandomSampler (from initial training)[/cyan]")
             if manual_rl_epochs:
                 self.console.print(f"  • Reinforced Epochs: [cyan]{manual_rl_epochs}[/cyan] (manual)")
             else:
-                self.console.print(f"  • Reinforced Epochs: [cyan]Auto-calculated[/cyan]")
+                self.console.print(f"  • Reinforced Epochs: [cyan]Auto (8-15 based on severity)[/cyan]")
             self.console.print()
         else:
-            self.console.print("\n[green]✓ Using recommended defaults (F1=0.70, Oversample=2.0×, Weight=2.0×)[/green]\n")
+            self.console.print("\n[green]Reinforced learning enabled (distribution-aware, F1 threshold=0.70)[/green]\n")
 
-            # Ask if user wants to configure RL epochs manually (like in benchmark mode)
+            # Ask if user wants to configure RL epochs manually
             configure_rl_epochs = Confirm.ask(
                 "[bold yellow]Configure reinforced learning epochs manually?[/bold yellow]\n"
-                "[dim](Default: auto-calculated based on model performance)[/dim]",
+                "[dim](Default: auto-calculated based on label severity)[/dim]",
                 default=False
             )
 
             if configure_rl_epochs:
-                self.console.print("\n[bold cyan]ℹ Reinforced Learning Epochs:[/bold cyan]")
-                self.console.print("[dim]These epochs will be used when F1 < {:.2f}[/dim]".format(rl_f1_threshold))
-                self.console.print("[dim]Auto-calculation typically uses 8-20 epochs based on model type[/dim]\n")
-
                 manual_rl_epochs = IntPrompt.ask(
                     "[bold yellow]Reinforced epochs[/bold yellow]",
                     default=10
