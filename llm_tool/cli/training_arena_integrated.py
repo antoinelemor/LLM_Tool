@@ -780,21 +780,45 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
         diag_table.add_column("Strategy", style="dim")
 
         for key, counts in sorted(value_counts.items(), key=lambda x: -sum(x[1].values())):
-            # Detect if this is a multi-label JSONL format (labels like {"themes": {"nationalism": 5328, ...}})
+            # Detect if this is a multi-label format where each value is a label name
+            # (e.g., {"themes": {"nationalism": 5328, "authority": 3213}})
             # vs binary format ({"nationalism": {"yes": 5328, "no": 94672}})
-            is_multilabel_counts = False
-            if total_samples_override > 0:
-                # Values are label counts from JSONL, each value is a positive label
-                # None of the keys should match yes/no/0/1 patterns
-                sample_keys = [str(k).lower() for k in counts.keys()]
-                if not any(k in ('yes', 'no', '0', '1', 'true', 'false') for k in sample_keys):
-                    is_multilabel_counts = True
+            sample_keys = [str(k).lower() for k in counts.keys()]
+            has_binary_keys = any(k in ('yes', 'no', '0', '1', 'true', 'false', 'oui', 'non') or
+                                  k.endswith('_yes') or k.endswith('_no')
+                                  for k in sample_keys)
+            is_multilabel_counts = (not has_binary_keys and len(counts) > 2)
 
             if is_multilabel_counts:
-                # Multi-label JSONL: each value name is a label, count is how many samples have it
+                # Multi-label: each value name is a label, count is how many samples have it
+                # Total samples: try multiple sources for robustness
+                total_for_display = total_samples_override
+                if total_for_display == 0:
+                    # Try various metadata keys
+                    for meta_key in ('_total_samples', 'total_samples', 'num_samples', 'total_rows'):
+                        val = bundle.metadata.get(meta_key, 0)
+                        if val and val > 0:
+                            total_for_display = val
+                            break
+                if total_for_display == 0:
+                    # Try bundle attributes
+                    for attr in ('annotated_rows', 'total_rows', 'num_rows'):
+                        val = getattr(bundle, attr, 0)
+                        if val and val > 0:
+                            total_for_display = val
+                            break
+                if total_for_display == 0 and bundle.primary_file:
+                    # Count lines in primary file as last resort
+                    try:
+                        from pathlib import Path
+                        pf = Path(bundle.primary_file) if not isinstance(bundle.primary_file, Path) else bundle.primary_file
+                        if pf.exists():
+                            total_for_display = sum(1 for _ in open(pf)) - (1 if pf.suffix == '.csv' else 0)
+                    except Exception:
+                        pass
                 # Display each label as a row
                 for label_name, label_count in sorted(counts.items(), key=lambda x: -x[1]):
-                    total = total_samples_override
+                    total = total_for_display if total_for_display > 0 else sum(counts.values())
                     pos_count = label_count
                     pos_ratio = pos_count / total if total > 0 else 0
                     neg_count = total - pos_count
