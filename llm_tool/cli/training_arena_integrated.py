@@ -9358,23 +9358,19 @@ def _collect_quick_mode_parameters(
     self.console.print(f"[bold cyan]           {rl_step_label}: Reinforced Learning                      [/bold cyan]")
     self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
 
-    self.console.print("[bold]What is Reinforced Learning?[/bold]")
-    self.console.print("  • [cyan]Distribution-aware training[/cyan]: Analyzes class imbalance from your data automatically")
-    self.console.print("  • [cyan]Adaptive loss function[/cyan]: Per-label gamma scaling (rare classes get stronger correction)")
-    self.console.print("  • [cyan]Weighted sampling[/cyan]: Samples with rare labels are drawn more frequently from the start")
-    self.console.print("  • [cyan]Per-label reinforcement[/cyan]: Only underperforming labels get retrained; good labels are frozen\n")
+    self.console.print("[bold]Reinforced learning is a two-phase training system:[/bold]\n")
 
-    self.console.print("[bold]How it works:[/bold]")
-    self.console.print("  1. [green]Initial training[/green]: AdaptiveAsymmetricLoss with per-label gamma + WeightedRandomSampler")
-    self.console.print("  2. [green]Evaluation[/green]: Per-label F1 analysis after initial epochs")
-    self.console.print("  3. [green]Reinforcement[/green]: If any label F1 < threshold, targeted retraining activates:")
-    self.console.print("     - Labels performing well are [bold]frozen[/bold] (no catastrophic forgetting)")
-    self.console.print("     - Underperforming labels get boosted gamma + more epochs")
-    self.console.print("     - Epochs and learning rate adapt to severity\n")
+    self.console.print("[bold cyan]  Phase 1 - Distribution-aware initial training[/bold cyan]")
+    self.console.print("  Applied from the very first epoch:")
+    self.console.print("    - AdaptiveAsymmetricLoss: per-label gamma scaled by class rarity")
+    self.console.print("    - WeightedRandomSampler: rare labels drawn more frequently")
+    self.console.print("    - This alone handles most class imbalance issues\n")
 
-    self.console.print("[bold yellow]  Default: F1 Threshold = 0.70[/bold yellow]")
-    self.console.print("  [dim]Reinforced learning triggers when any label's F1 drops below this value.[/dim]")
-    self.console.print("  [dim]The distribution diagnostic (shown before training starts) will detail the strategy per label.[/dim]\n")
+    self.console.print("[bold cyan]  Phase 2 - Targeted reinforcement (additional epochs)[/bold cyan]")
+    self.console.print("  After initial training, per-label F1 is evaluated:")
+    self.console.print("    - Labels performing well are [bold]frozen[/bold] (protected from forgetting)")
+    self.console.print("    - Underperforming labels get boosted gamma + extra epochs")
+    self.console.print("    - Learning rate and epochs adapt to severity\n")
 
     self.console.print("[yellow]Note:[/yellow] [dim]Compatible with ALL models and modes (binary, multi-class, multi-label).[/dim]\n")
 
@@ -9382,7 +9378,8 @@ def _collect_quick_mode_parameters(
     default_reinforced = preloaded_params.get('reinforced_learning', False) if preloaded_params else False
 
     enable_reinforced_learning = Confirm.ask(
-        "[bold yellow]Enable reinforced learning?[/bold yellow]",
+        "[bold yellow]Enable distribution-aware training (Phase 1)?[/bold yellow]\n"
+        "[dim]Recommended for imbalanced data. Adaptive loss + weighted sampling from the start.[/dim]",
         default=default_reinforced
     )
 
@@ -9390,27 +9387,40 @@ def _collect_quick_mode_parameters(
     rl_f1_threshold = 0.70
     rl_oversample_factor = 2.0
     rl_class_weight_factor = 2.0
-    manual_rl_epochs = None  # Initialize here to avoid UnboundLocalError
-    force_reinforced = False  # Force RL to run regardless of F1
+    manual_rl_epochs = None
+    force_reinforced = False
 
     if enable_reinforced_learning:
-        # Ask if user wants to force RL from the start
-        force_reinforced = Confirm.ask(
-            "\n[bold cyan]Force reinforced learning after initial training?[/bold cyan]\n"
-            "[dim]If yes, RL always runs after the initial epochs (no F1 threshold check).\n"
-            "If no, RL only triggers when labels underperform (F1 < threshold).[/dim]",
-            default=False
+        # Ask about Phase 2
+        self.console.print("\n[bold]Phase 2 - Reinforcement after initial training:[/bold]")
+        self.console.print("  [cyan]always[/cyan]  : Always run extra reinforcement epochs after initial training")
+        self.console.print("  [cyan]auto[/cyan]    : Only if any label F1 < threshold (default: 0.70)")
+        self.console.print("  [cyan]skip[/cyan]    : No Phase 2 -- only use distribution-aware Phase 1\n")
+
+        phase2_choice = Prompt.ask(
+            "[bold yellow]Reinforcement mode[/bold yellow]",
+            choices=["always", "auto", "skip"],
+            default="auto"
         )
 
-        if force_reinforced:
-            self.console.print("[green]  RL will run after initial training regardless of F1 scores.[/green]\n")
+        if phase2_choice == "always":
+            force_reinforced = True
+            self.console.print("\n[green]  Phase 2 will always run after initial training.[/green]\n")
+        elif phase2_choice == "skip":
+            # Keep distribution-aware Phase 1, disable Phase 2
+            enable_reinforced_learning = False  # Disable RL trigger
+            self.console.print("\n[green]  Phase 1 (distribution-aware) only. No additional reinforcement epochs.[/green]\n")
+        else:
+            self.console.print(f"\n[green]  Phase 2 triggers if any label F1 < 0.70.[/green]\n")
 
-        # Ask if user wants to configure parameters
-        configure_rl = Confirm.ask(
-            "\n[bold cyan]Configure reinforced learning parameters manually?[/bold cyan]\n"
-            "[dim](Choose 'n' to use recommended defaults)[/dim]",
-            default=False
-        )
+        # Only ask for manual config if Phase 2 is active
+        configure_rl = False
+        if phase2_choice != "skip":
+            configure_rl = Confirm.ask(
+                "\n[bold cyan]Configure reinforced learning parameters manually?[/bold cyan]\n"
+                "[dim](Choose 'n' to use recommended defaults)[/dim]",
+                default=False
+            )
 
         if configure_rl:
             self.console.print("\n[bold green] Manual Configuration[/bold green]\n")
@@ -9515,6 +9525,11 @@ def _collect_quick_mode_parameters(
 
     epochs = IntPrompt.ask("[bold yellow]Number of epochs[/bold yellow]", default=default_epochs)
 
+    # distribution_aware is True whenever the user enables any form of RL (Phase 1 or Phase 2)
+    # Even "skip" (Phase 1 only) still uses distribution-aware training
+    distribution_aware_enabled = enable_reinforced_learning or force_reinforced or \
+        ('phase2_choice' in dir() and phase2_choice == 'skip')
+
     # Prepare return dict
     result = {
         'model_name': model_name,
@@ -9526,6 +9541,7 @@ def _collect_quick_mode_parameters(
         'rl_class_weight_factor': rl_class_weight_factor,
         'manual_rl_epochs': manual_rl_epochs if manual_rl_epochs else None,
         'force_reinforced': force_reinforced,
+        'distribution_aware': distribution_aware_enabled,
     }
 
     # Include models_by_language if training per-language
@@ -10029,13 +10045,16 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     }
 
     # Add reinforced learning parameters if enabled
-    if enable_reinforced_learning and quick_params:
-        extra_config["rl_f1_threshold"] = quick_params.get('rl_f1_threshold', 0.70)
-        extra_config["rl_oversample_factor"] = quick_params.get('rl_oversample_factor', 2.0)
-        extra_config["rl_class_weight_factor"] = quick_params.get('rl_class_weight_factor', 2.0)
-        # Pass manual reinforced epochs if configured
-        if quick_params.get('manual_rl_epochs') is not None:
-            extra_config["reinforced_epochs"] = quick_params['manual_rl_epochs']
+    if quick_params:
+        if enable_reinforced_learning or quick_params.get('force_reinforced', False):
+            extra_config["rl_f1_threshold"] = quick_params.get('rl_f1_threshold', 0.70)
+            extra_config["rl_oversample_factor"] = quick_params.get('rl_oversample_factor', 2.0)
+            extra_config["rl_class_weight_factor"] = quick_params.get('rl_class_weight_factor', 2.0)
+            if quick_params.get('manual_rl_epochs') is not None:
+                extra_config["reinforced_epochs"] = quick_params['manual_rl_epochs']
+        # Distribution-aware training (Phase 1) — independent of Phase 2
+        if quick_params.get('distribution_aware', False):
+            extra_config["distribution_aware"] = True
 
     # Add models_by_language if user selected per-language models
     if models_by_language:
