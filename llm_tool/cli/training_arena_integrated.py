@@ -2447,36 +2447,50 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
 
     formats_table.add_row(
         "llm-json",
-        "CSV/JSON with LLM annotations in a column\n✓ JSON objects containing labels/categories\n✓ Output from LLM annotation tools",
-        "{'category': 'Tech', 'sentiment': 'pos'}"
-    )
-    formats_table.add_row(
-        "[dim]category-csv[/dim]",
-        "[dim]Simple CSV with text and label columns\n✓ Most common format\n✓ One row = one sample with its label[/dim]",
-        "[dim]text,label\n'Hello',positive[/dim]"
-    )
-    formats_table.add_row(
-        "[dim]binary-long[/dim]",
-        "[dim]Long-format CSV with binary labels\n✓ Multiple rows per sample\n✓ Each row = one category with 0/1 value[/dim]",
-        "[dim]id,text,category,value\n1,'Hi',pos,1[/dim]"
-    )
-    formats_table.add_row(
-        "[dim]jsonl-single[/dim]",
-        "[dim]JSONL file for single-label tasks\n✓ One JSON object per line\n✓ Each sample has one label only[/dim]",
-        "[dim]{'text':'Hi','label':'positive'}[/dim]"
-    )
-    formats_table.add_row(
-        "[dim]jsonl-multi[/dim]",
-        "[dim]JSONL file for multi-label tasks\n✓ One JSON object per line\n✓ Each sample can have multiple labels[/dim]",
-        "[dim]{'text':'Hi','labels':['pos','friendly']}[/dim]"
+        "CSV with a JSON annotation column\n"
+        "✓ Output from LLM annotation pipelines\n"
+        "✓ Supports three JSON structures:",
+        ""
     )
 
     self.console.print(formats_table)
+
+    # Show supported JSON structures in detail
+    json_table = Table(show_header=True, header_style="bold", border_style="dim", box=box.SIMPLE, expand=True, padding=(0, 2))
+    json_table.add_column("Structure", style="cyan", no_wrap=True, width=22)
+    json_table.add_column("JSON Example", style="white", ratio=2)
+    json_table.add_column("Use Case", style="dim", ratio=1)
+
+    json_table.add_row(
+        "Flat scalars",
+        '{"sentiment": "positive", "topic": "economy"}',
+        "Simple classification\nOne value per key"
+    )
+    json_table.add_row(
+        "Flat lists",
+        '{"themes": ["nationalism", "authority"]}',
+        "Multi-label classification\nMultiple values per key"
+    )
+    json_table.add_row(
+        "Nested (detected)",
+        '{"nationalism": {"detected": "yes",\n "subcategories": ["nation_threat"]}}',
+        "LLM annotations with\ndetection + subcategories\n(auto-flattened)"
+    )
+    self.console.print(json_table)
+    self.console.print()
+    self.console.print("[dim]  All three structures are auto-detected and handled transparently.[/dim]")
+    self.console.print("[dim]  Nested annotations are flattened: detected -> yes/no label, subcategories -> individual labels.[/dim]")
     self.console.print()
 
-    # Add development notice for experimental formats
-    self.console.print("[yellow][!] Note:[/yellow] [bold red]category-csv, binary-long, jsonl-single, and jsonl-multi are currently under development and NOT accessible.[/bold red]")
-    self.console.print("[dim]      These formats will be enabled in a future release after thorough testing.[/dim]")
+    # Development notice for other formats
+    other_formats = Table(show_header=False, border_style="dim", box=box.SIMPLE, expand=True, padding=(0, 1))
+    other_formats.add_column("", style="dim")
+    other_formats.add_column("", style="dim")
+    other_formats.add_row("[dim]category-csv[/dim]", "[dim]Simple text,label CSV (under development)[/dim]")
+    other_formats.add_row("[dim]binary-long[/dim]", "[dim]Long-format with binary 0/1 values (under development)[/dim]")
+    other_formats.add_row("[dim]jsonl-single[/dim]", "[dim]JSONL for single-label (under development)[/dim]")
+    other_formats.add_row("[dim]jsonl-multi[/dim]", "[dim]JSONL for multi-label (under development)[/dim]")
+    self.console.print(other_formats)
     self.console.print()
 
     format_choice = Prompt.ask(

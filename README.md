@@ -1040,14 +1040,20 @@ Select option [1/2] (2): 2
 ```
 
 **Step 2: Load Training Data**
+
+The Training Arena accepts CSV files with a **text column** and a **JSON annotation column**. Three JSON annotation structures are supported and auto-detected:
+
+| Structure | Example | Use Case |
+|---|---|---|
+| **Flat scalars** | `{"sentiment": "positive", "topic": "economy"}` | Simple classification (one value per key) |
+| **Flat lists** | `{"themes": ["nationalism", "authority"]}` | Multi-label (multiple values per key) |
+| **Nested (detected)** | `{"nationalism": {"detected": "yes", "subcategories": ["nation_threat"]}}` | LLM annotations with detection + subcategories |
+
+Nested annotations are automatically flattened: the `detected` field becomes a yes/no label, and each subcategory becomes an individual label. All three structures can be mixed in the same dataset.
+
+Supported file formats: CSV, JSON, JSONL, Excel, Parquet.
+
 ```
-📂 Load Training Dataset
-
-Format requirements:
-  - Must have a text column
-  - Must have a label column
-  - Supported formats: CSV, JSON, JSONL, Excel, Parquet
-
 Enter path to dataset: data/hate_speech_labeled.csv
 
 ✓ Loaded 2,000 rows
