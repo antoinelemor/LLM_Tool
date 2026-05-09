@@ -489,10 +489,16 @@ def _run_parallel_training(
         rl_f1_threshold = quick_params.get('rl_f1_threshold', 0.7)
         rl_oversample_factor = quick_params.get('rl_oversample_factor', 2.0)
         rl_class_weight_factor = quick_params.get('rl_class_weight_factor', 2.0)
+        # Force reinforced: set threshold to 1.0 so RL always triggers
+        if quick_params.get('force_reinforced', False):
+            rl_f1_threshold = 1.0
 
     # Log reinforced learning status
     if enable_reinforced_learning:
-        rl_info = f"RL enabled (threshold={rl_f1_threshold}, epochs={manual_rl_epochs or 'auto'})"
+        if quick_params and quick_params.get('force_reinforced', False):
+            rl_info = f"RL enabled (FORCED - will always run, epochs={manual_rl_epochs or 'auto'})"
+        else:
+            rl_info = f"RL enabled (threshold={rl_f1_threshold}, epochs={manual_rl_epochs or 'auto'})"
         self.console.print(f"[dim]{rl_info}[/dim]")
 
     # Determine per-language training configuration
@@ -710,22 +716,32 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
                         except (json.JSONDecodeError, KeyError):
                             continue
                 if label_counter and total_samples > 0:
-                    # Group by key prefix (e.g., "themes_nationalism" -> key="themes")
+                    # Use annotation keys from metadata if available to group correctly
+                    annotation_keys = set()
+                    all_keys_vals = bundle.metadata.get('all_keys_values', {})
+                    if all_keys_vals:
+                        annotation_keys = set(all_keys_vals.keys())
+
                     key_groups = {}
                     for label, count in label_counter.items():
-                        parts = label.split('_', 1)
-                        key = parts[0] if len(parts) > 1 else 'labels'
-                        value = parts[1] if len(parts) > 1 else label
+                        # Try to match against known annotation keys
+                        matched_key = None
+                        if annotation_keys:
+                            for ak in annotation_keys:
+                                if label.startswith(ak + '_'):
+                                    matched_key = ak
+                                    break
+                        if matched_key:
+                            key = matched_key
+                            value = label[len(matched_key) + 1:]
+                        else:
+                            # Fallback: use the full label as both key and value
+                            key = 'labels'
+                            value = label
                         if key not in key_groups:
                             key_groups[key] = {}
                         key_groups[key][value] = count
-                    # For multi-label, add negative counts (total - positive)
-                    for key, counts in key_groups.items():
-                        for value in list(counts.keys()):
-                            counts[value] = counts[value]
-                        # Add 'no' count as complement for each label
                     value_counts = key_groups
-                    # Also store in metadata for later use
                     bundle.metadata['value_counts_by_key'] = value_counts
                     bundle.metadata['_total_samples'] = total_samples
         except Exception:
@@ -1001,11 +1017,14 @@ def _training_studio_confirm_and_execute(
 
             # Reinforced learning display
             if quick_params['reinforced_learning']:
+                force_rl = quick_params.get('force_reinforced', False)
+                rl_thresh = quick_params.get('rl_f1_threshold', 0.70)
+                mode_str = 'FORCED (always runs)' if force_rl else f'Conditional (F1 < {rl_thresh:.2f})'
                 rl_details = (
-                    f"Yes\n"
-                    f"  • F1 Threshold: {quick_params.get('rl_f1_threshold', 0.70):.2f}\n"
-                    f"  • Oversample: {quick_params.get('rl_oversample_factor', 2.0):.1f}×\n"
-                    f"  • Loss Weight: {quick_params.get('rl_class_weight_factor', 2.0):.1f}×"
+                    f"Yes (distribution-aware)\n"
+                    f"  • Mode: {mode_str}\n"
+                    f"  • Loss: AdaptiveAsymmetricLoss (per-label gamma)\n"
+                    f"  • Sampling: WeightedRandomSampler"
                 )
                 config_table.add_row("Reinforced Learning", rl_details)
             else:
@@ -9372,8 +9391,20 @@ def _collect_quick_mode_parameters(
     rl_oversample_factor = 2.0
     rl_class_weight_factor = 2.0
     manual_rl_epochs = None  # Initialize here to avoid UnboundLocalError
+    force_reinforced = False  # Force RL to run regardless of F1
 
     if enable_reinforced_learning:
+        # Ask if user wants to force RL from the start
+        force_reinforced = Confirm.ask(
+            "\n[bold cyan]Force reinforced learning after initial training?[/bold cyan]\n"
+            "[dim]If yes, RL always runs after the initial epochs (no F1 threshold check).\n"
+            "If no, RL only triggers when labels underperform (F1 < threshold).[/dim]",
+            default=False
+        )
+
+        if force_reinforced:
+            self.console.print("[green]  RL will run after initial training regardless of F1 scores.[/green]\n")
+
         # Ask if user wants to configure parameters
         configure_rl = Confirm.ask(
             "\n[bold cyan]Configure reinforced learning parameters manually?[/bold cyan]\n"
@@ -9493,7 +9524,8 @@ def _collect_quick_mode_parameters(
         'rl_f1_threshold': rl_f1_threshold,
         'rl_oversample_factor': rl_oversample_factor,
         'rl_class_weight_factor': rl_class_weight_factor,
-        'manual_rl_epochs': manual_rl_epochs if manual_rl_epochs else None
+        'manual_rl_epochs': manual_rl_epochs if manual_rl_epochs else None,
+        'force_reinforced': force_reinforced,
     }
 
     # Include models_by_language if training per-language
