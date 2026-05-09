@@ -1868,6 +1868,12 @@ class ModelTrainer:
             # CRITICAL: Enable true multi-label classification with BCEWithLogitsLoss + sigmoid
             ml_config.multi_label = True
             ml_config.multi_label_threshold = config.get('multi_label_threshold', 0.5)
+            # Distribution-aware training parameters
+            ml_config.distribution_aware = config.get('distribution_aware', True)
+            ml_config.use_asymmetric_loss = config.get('use_asymmetric_loss', True)
+            # Reinforced learning parameters
+            ml_config.reinforced_learning = config.get('reinforced_learning', False)
+            ml_config.rl_f1_threshold = config.get('rl_f1_threshold', 0.7)
             # Pass manual reinforced epochs if provided
             if 'reinforced_epochs' in config and config['reinforced_epochs'] is not None:
                 ml_config.reinforced_epochs = config['reinforced_epochs']
@@ -2960,6 +2966,13 @@ class ModelTrainer:
             asl_clip=asl_clip,
             # CRITICAL: Pass training_approach for correct chart labeling
             training_approach=config.get('training_approach', 'multi-label'),
+            # Distribution-aware training (AdaptiveASL + WeightedRandomSampler)
+            distribution_aware=config.get('distribution_aware', False),
+            # Reinforced learning parameters
+            reinforced_learning=config.get('reinforced_learning', False),
+            reinforced_f1_threshold=config.get('rl_f1_threshold', 0.7),
+            rl_f1_threshold=config.get('rl_f1_threshold', 0.7),
+            reinforced_epochs=config.get('reinforced_epochs'),
         )
 
         # ========== STEP 9: Evaluate ==========
