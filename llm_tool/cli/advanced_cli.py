@@ -932,12 +932,18 @@ class AdvancedCLI:
                         ]
 
                         for model_name in tokenizer_models:
+                            # Try local cache first, then download if needed
                             try:
                                 tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
                                 break
+                            except Exception:
+                                pass
+                            try:
+                                tokenizer = AutoTokenizer.from_pretrained(model_name)
+                                break
                             except Exception as model_error:
                                 tokenizer_error = model_error
-                                self.logger.debug(f"Could not load {model_name} tokenizer locally: {model_error}")
+                                self.logger.debug(f"Could not load {model_name} tokenizer: {model_error}")
 
                     if tokenizer is None and display_results and self.console:
                         warning_msg = "[yellow][!] Unable to load a Hugging Face tokenizer locally."
