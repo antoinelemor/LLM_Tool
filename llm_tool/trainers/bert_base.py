@@ -577,7 +577,7 @@ class AdaptiveAsymmetricLoss(AsymmetricLoss):
 
 
 def compute_multi_label_class_weights(labels: np.ndarray, method: str = 'inverse_freq',
-                                       max_weight: float = 100.0) -> torch.Tensor:
+                                       max_weight: float = 10.0) -> torch.Tensor:
     """
     Compute class weights for multi-label classification.
 
@@ -621,9 +621,13 @@ def compute_multi_label_class_weights(labels: np.ndarray, method: str = 'inverse
         weights = weights / weights.mean()
 
     elif method == 'pos_neg_ratio':
-        # Raw neg/pos ratio — NOT normalized (for BCEWithLogitsLoss pos_weight)
-        # pos_weight > 1 increases recall for that class
-        weights = neg_counts / pos_counts.clip(min=1)
+        # Sqrt of neg/pos ratio for BCEWithLogitsLoss pos_weight.
+        # Raw ratios (17-100) are too aggressive and cause the model to over-predict positives.
+        # Sqrt dampens extreme ratios while preserving relative ordering:
+        #   ratio 1:17 -> sqrt(17) = 4.1,  ratio 1:74 -> sqrt(74) = 8.6
+        # Capped at max_weight for stability.
+        raw_ratios = neg_counts / pos_counts.clip(min=1)
+        weights = np.sqrt(raw_ratios)
         weights = np.clip(weights, 1.0, max_weight)
 
     else:
