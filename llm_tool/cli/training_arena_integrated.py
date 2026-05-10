@@ -692,8 +692,12 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
     is_multi_label = bundle.metadata.get('multi_label', False)
     value_counts = bundle.metadata.get('value_counts_by_key', {})
     rl_threshold = 0.70
+    phase1_enabled = False
+    phase2_enabled = False
     if quick_params:
         rl_threshold = quick_params.get('rl_f1_threshold', 0.70)
+        phase1_enabled = quick_params.get('distribution_aware', False)
+        phase2_enabled = quick_params.get('reinforced_learning', False) or quick_params.get('force_reinforced', False)
 
     # Fallback: if value_counts_by_key is not available, compute from the training JSONL
     if not value_counts and bundle.primary_file:
@@ -834,10 +838,13 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
                         strategy = "fragile (< 50 samples)"
                         style = "red"
                     elif pos_count < 100:
-                        strategy = "weights + focal"
+                        strategy = "may underperform"
+                        style = "yellow"
+                    elif ratio > 50 and phase1_enabled:
+                        strategy = "pos_weight + WeightedSampler"
                         style = "yellow"
                     elif ratio > 50:
-                        strategy = "ASL + WeightedSampler"
+                        strategy = "imbalanced (Phase 1 off)"
                         style = "yellow"
                     else:
                         strategy = "standard"
@@ -945,18 +952,18 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
         self.console.print(diag_table)
 
     # Strategy summary
-    self.console.print("\n  [bold]Imbalance Handling Strategy:[/bold]")
-    self.console.print("  [green]✓[/green] Distribution-aware training (automatic)")
-    if training_approach in ('one-vs-all', 'multi-label'):
-        self.console.print("    - AdaptiveAsymmetricLoss with per-label gamma")
-        self.console.print("    - WeightedRandomSampler from initial training")
-        self.console.print("    - Reinforced learning: per-label freeze masking")
+    self.console.print("\n  [bold]Training Strategy:[/bold]")
+    if phase1_enabled:
+        self.console.print("  [green]✓[/green] Phase 1: Distribution-aware (pos_weight + WeightedSampler)")
     else:
-        self.console.print("    - CrossEntropyLoss with distribution-based class weights")
-        self.console.print("    - WeightedRandomSampler from initial training")
-    self.console.print(f"\n  Reinforced learning triggers if F1 < [cyan]{rl_threshold:.2f}[/cyan]")
-    self.console.print("    - Well-performing labels frozen during RL (no catastrophic forgetting)")
-    self.console.print("    - Underperforming labels get boosted weights + more epochs\n")
+        self.console.print("  [dim]  Phase 1: Off (standard BCE/ASL loss, no weighted sampling)[/dim]")
+    if phase2_enabled:
+        self.console.print(f"  [green]✓[/green] Phase 2: Reinforced learning (triggers if F1 < {rl_threshold:.2f})")
+        self.console.print("    - Well-performing labels frozen during RL")
+        self.console.print("    - Underperforming labels get boosted weights + more epochs")
+    else:
+        self.console.print("  [dim]  Phase 2: Off[/dim]")
+    self.console.print()
 
 
 def _training_studio_confirm_and_execute(
