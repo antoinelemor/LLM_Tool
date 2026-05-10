@@ -4862,6 +4862,14 @@ class BertBase(BertABC):
                         num_training_steps=total_steps
                     )
 
+                    # Freeze classifier head weights for well-performing labels
+                    # This prevents indirect degradation via encoder gradient updates
+                    rl_frozen_label_indices = None
+                    if multi_label and ml_reinforced is not None and ml_reinforced.get('freeze_mask'):
+                        frozen_indices = [i for i, freeze in enumerate(ml_reinforced['freeze_mask']) if freeze]
+                        if frozen_indices:
+                            rl_frozen_label_indices = frozen_indices
+
                     # Track reinforced training time
                     reinforced_start_time = time.time()
 
@@ -4989,6 +4997,21 @@ class BertBase(BertABC):
                                 scaler.scale(loss).backward()
                             else:
                                 loss.backward()
+
+                            # Zero gradients for frozen label classifier heads
+                            # This prevents indirect degradation of well-performing labels
+                            # via shared encoder weight updates
+                            if rl_frozen_label_indices:
+                                # Find the classifier layer (last linear layer)
+                                classifier = None
+                                for name, param in model.named_parameters():
+                                    if 'classifier' in name and param.grad is not None:
+                                        if param.dim() == 2 and param.shape[0] == num_labels:
+                                            # Weight matrix: (num_labels, hidden_size)
+                                            param.grad[rl_frozen_label_indices] = 0
+                                        elif param.dim() == 1 and param.shape[0] == num_labels:
+                                            # Bias vector: (num_labels,)
+                                            param.grad[rl_frozen_label_indices] = 0
 
                             # =============== Gradient Accumulation (Reinforced) ===============
                             if (step + 1) % gradient_accumulation_steps == 0 or (step + 1) == len(new_train_dataloader):
