@@ -576,7 +576,8 @@ class AdaptiveAsymmetricLoss(AsymmetricLoss):
         return loss.sum(dim=1).mean()
 
 
-def compute_multi_label_class_weights(labels: np.ndarray, method: str = 'inverse_freq') -> torch.Tensor:
+def compute_multi_label_class_weights(labels: np.ndarray, method: str = 'inverse_freq',
+                                       max_weight: float = 100.0) -> torch.Tensor:
     """
     Compute class weights for multi-label classification.
 
@@ -586,9 +587,13 @@ def compute_multi_label_class_weights(labels: np.ndarray, method: str = 'inverse
         Multi-hot encoded labels, shape (num_samples, num_classes)
     method : str
         Weighting method:
-        - 'inverse_freq': 1 / frequency (common)
+        - 'inverse_freq': 1 / frequency, normalized to mean=1 (for CrossEntropyLoss)
         - 'effective_samples': Uses effective number of samples (recommended for long-tail)
-        - 'sqrt_inverse': sqrt(1/frequency) (balanced approach)
+        - 'sqrt_inverse': sqrt(1/frequency), normalized to mean=1
+        - 'pos_neg_ratio': neg/pos ratio, NOT normalized, capped at max_weight
+          (for BCEWithLogitsLoss pos_weight — must stay as raw ratios)
+    max_weight : float
+        Maximum weight cap to prevent training instability (default: 100)
 
     Returns
     -------
@@ -602,30 +607,27 @@ def compute_multi_label_class_weights(labels: np.ndarray, method: str = 'inverse
     neg_counts = num_samples - pos_counts
 
     if method == 'inverse_freq':
-        # Simple inverse frequency weighting
         weights = num_samples / (num_classes * pos_counts.clip(min=1))
+        weights = weights / weights.mean()
 
     elif method == 'effective_samples':
-        # Effective number of samples (Class-Balanced Loss)
-        # Reference: "Class-Balanced Loss Based on Effective Number of Samples"
-        beta = 0.9999  # Typical value
+        beta = 0.9999
         effective_num = 1.0 - np.power(beta, pos_counts)
         weights = (1.0 - beta) / effective_num.clip(min=1e-8)
+        weights = weights / weights.mean()
 
     elif method == 'sqrt_inverse':
-        # Square root of inverse frequency (more balanced)
         weights = np.sqrt(num_samples / (num_classes * pos_counts.clip(min=1)))
+        weights = weights / weights.mean()
 
     elif method == 'pos_neg_ratio':
-        # Weight by positive/negative ratio (for BCE weighting)
+        # Raw neg/pos ratio — NOT normalized (for BCEWithLogitsLoss pos_weight)
+        # pos_weight > 1 increases recall for that class
         weights = neg_counts / pos_counts.clip(min=1)
+        weights = np.clip(weights, 1.0, max_weight)
 
     else:
-        # Default to uniform weights
         weights = np.ones(num_classes)
-
-    # Normalize weights to have mean of 1
-    weights = weights / weights.mean()
 
     return torch.tensor(weights, dtype=torch.float32)
 
