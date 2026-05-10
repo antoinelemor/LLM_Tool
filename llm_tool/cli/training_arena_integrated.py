@@ -4397,13 +4397,17 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             if bundle:
                 bundle.metadata['training_approach'] = 'one-vs-all'
                 bundle.metadata['original_strategy'] = 'single-label'
+                # Filter metadata to only include selected annotation keys
+                selected_keys = set(annotation_keys) if annotation_keys else set(all_keys_values.keys())
                 bundle.metadata['all_keys_values'] = {
                     key: sorted(list(values))
                     for key, values in all_keys_values.items()
+                    if key in selected_keys
                 }
                 bundle.metadata['value_counts_by_key'] = {
                     key: {val: int(count) for val, count in counts.items()}
                     for key, counts in value_counts_by_key.items()
+                    if key in selected_keys
                 }
         elif 'training_approach' in locals() and training_approach == "multi-label":
             # True multi-label: one model with sigmoid activation for multiple labels per text
@@ -4426,13 +4430,17 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 bundle.metadata['training_approach'] = 'multi-label'
                 bundle.metadata['multi_label'] = True
                 bundle.metadata['multi_label_threshold'] = 0.5
+                # Filter metadata to only include selected annotation keys
+                selected_keys = set(annotation_keys) if annotation_keys else set(all_keys_values.keys())
                 bundle.metadata['all_keys_values'] = {
                     key: sorted(list(values))
                     for key, values in all_keys_values.items()
+                    if key in selected_keys
                 }
                 bundle.metadata['value_counts_by_key'] = {
                     key: {val: int(count) for val, count in counts.items()}
                     for key, counts in value_counts_by_key.items()
+                    if key in selected_keys
                 }
         else:
             # Standard mode (can be multi-class, hybrid, or custom)
@@ -4471,13 +4479,21 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 bundle.metadata['categories'] = keys_to_train
             elif 'annotation_keys' in locals() and annotation_keys:
                 bundle.metadata['categories'] = annotation_keys
+            # Filter metadata to only include selected annotation keys
+            selected_keys = None
+            if 'annotation_keys' in locals() and annotation_keys:
+                selected_keys = set(annotation_keys)
+            elif 'keys_to_train' in locals() and keys_to_train:
+                selected_keys = set(keys_to_train)
             bundle.metadata['all_keys_values'] = {
                 key: sorted(list(values))
                 for key, values in all_keys_values.items()
+                if selected_keys is None or key in selected_keys
             }
             bundle.metadata['value_counts_by_key'] = {
                 key: {val: int(count) for val, count in counts.items()}
                 for key, counts in value_counts_by_key.items()
+                if selected_keys is None or key in selected_keys
             }
             # Store source file and annotation column for benchmark mode
             bundle.metadata['source_file'] = str(csv_path)
