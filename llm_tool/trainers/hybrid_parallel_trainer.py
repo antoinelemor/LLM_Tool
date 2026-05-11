@@ -572,8 +572,9 @@ def _cpu_worker_process(
         multi_label=worker_config.get('multi_label', False),
         multi_label_threshold=worker_config.get('multi_label_threshold', 0.5),
         # Propagate tokenizer-aware filter knobs so MultiLabelTrainer
-        # applies the Exclude strategy uniformly across CPU/GPU workers.
+        # applies the Split/Exclude strategy uniformly across CPU/GPU workers.
         exclude_long_texts=bool(worker_config.get('exclude_long_texts', False)),
+        split_long_texts=bool(worker_config.get('split_long_texts', False)),
         max_length=int(worker_config.get('max_length', 512) or 512),
     )
 
@@ -1046,6 +1047,7 @@ def _train_on_gpu(
             training_approach=task.config.get('training_approach'),
             # Propagate tokenizer-aware filter knobs to the GPU worker too.
             exclude_long_texts=bool(task.config.get('exclude_long_texts', False)),
+            split_long_texts=bool(task.config.get('split_long_texts', False)),
             max_length=int(task.config.get('max_length', 512) or 512),
         )
 

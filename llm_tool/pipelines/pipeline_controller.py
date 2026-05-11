@@ -506,9 +506,10 @@ class PipelineController:
                     auto_split=True,
                     split_ratio=1.0 - config.get('validation_split', 0.2),
                     stratified=True,
-                    # Forward the Exclude strategy so this pipeline path obeys
-                    # the same flag every other training path now respects.
+                    # Forward Split/Exclude so this pipeline path obeys the
+                    # same flags every other training path now respects.
                     exclude_long_texts=bool(config.get('exclude_long_texts', False)),
+                    split_long_texts=bool(config.get('split_long_texts', False)),
                     max_length=int(config.get('max_length', 512) or 512),
                 )
 

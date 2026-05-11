@@ -336,6 +336,99 @@ def filter_long_texts_in_dataframe(
     return df.loc[keep_mask].reset_index(drop=True)
 
 
+def split_long_texts_in_dataframe(
+    df: 'pd.DataFrame',
+    *,
+    text_column: str,
+    model_name: str,
+    max_length: int,
+    logger: Optional[logging.Logger] = None,
+    split_name: str = '',
+    id_column: Optional[str] = None,
+) -> 'pd.DataFrame':
+    """Chunk rows whose tokenised length exceeds ``max_length`` into multiple
+    rows of at most ``max_length`` tokens each.
+
+    Each chunk inherits all non-text columns from the parent row, including
+    labels. Texts that already fit are kept untouched. When ``id_column`` is
+    provided and present in ``df``, chunk IDs are suffixed with ``_chunk_{i}``
+    so downstream code can still trace a chunk back to its source row.
+
+    Implementation detail: the helper uses the *content* tokenisation
+    (``add_special_tokens=False``) to decide where to cut, then reserves two
+    slots in the budget for the CLS/SEP tokens that BertBase adds back during
+    its own encode step. So the chunk size we actually emit is
+    ``max_length - 2``. If, after re-tokenising the decoded chunk, BertBase
+    still finds it over budget, the runtime warning in
+    ``BertBase._prepare_inputs`` will flag it as a final safety net.
+
+    Raises
+    ------
+    RuntimeError
+        If the tokenizer cannot be loaded. We never silently fall back —
+        unchunked oversize samples would re-introduce the truncation bug.
+    """
+    if not model_name or max_length is None:
+        return df
+    if max_length < 8:
+        raise ValueError(f"max_length must be >= 8 for chunking, got {max_length}")
+    log = logger if logger is not None else logging.getLogger(__name__)
+    try:
+        from transformers import AutoTokenizer  # type: ignore
+        tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    except Exception as exc:
+        raise RuntimeError(
+            f"split_long_texts was requested but the tokenizer for "
+            f"{model_name!r} could not be loaded ({exc}). Refusing to "
+            f"keep the dataset without applying the chunker."
+        ) from exc
+
+    chunk_size = int(max_length) - 2  # leave 2 slots for CLS/SEP at encode time
+
+    new_rows = []
+    n_parents_chunked = 0
+    n_chunks_emitted = 0
+    longest_seen = 0
+    id_col = id_column if id_column and id_column in df.columns else None
+
+    for _, row in df.iterrows():
+        text = row[text_column]
+        if not isinstance(text, str) or not text.strip():
+            new_rows.append(row)
+            continue
+        ids = tok.encode(text, add_special_tokens=False, truncation=False)
+        if len(ids) <= chunk_size:
+            new_rows.append(row)
+            continue
+        if len(ids) > longest_seen:
+            longest_seen = len(ids)
+        n_parents_chunked += 1
+        # Slice in disjoint chunks (no overlap by default).
+        for chunk_idx, start in enumerate(range(0, len(ids), chunk_size)):
+            chunk_ids = ids[start:start + chunk_size]
+            chunk_text = tok.decode(chunk_ids, skip_special_tokens=True).strip()
+            if not chunk_text:
+                continue
+            new_row = row.copy()
+            new_row[text_column] = chunk_text
+            if id_col is not None:
+                base_id = row[id_col]
+                new_row[id_col] = f"{base_id}_chunk_{chunk_idx}"
+            new_rows.append(new_row)
+            n_chunks_emitted += 1
+
+    if n_parents_chunked > 0:
+        import pandas as _pd_local  # noqa: F401
+        log.info(
+            "Split-long-texts [%s]: chunked %d parent row(s) into %d chunks "
+            "(max_length=%d, longest parent=%d tokens).",
+            split_name or 'split', n_parents_chunked, n_chunks_emitted,
+            int(max_length), longest_seen,
+        )
+
+    return df.__class__(new_rows).reset_index(drop=True)
+
+
 @dataclass
 class TrainingConfig:
     """Configuration for model training"""
@@ -374,6 +467,11 @@ class TrainingConfig:
     # at load time (using the actual tokenizer of ``model_name``). Only honoured by
     # the multi-label path that routes through MultiLabelTrainer.load_multi_label_data.
     exclude_long_texts: bool = False
+    # When True, samples whose tokenized length exceeds ``max_length`` are
+    # split into multiple chunks (with the actual tokenizer of ``model_name``).
+    # Each chunk inherits the parent's labels. Mutually exclusive with
+    # ``exclude_long_texts``; if both flags are True, split wins.
+    split_long_texts: bool = False
 
 
 @dataclass
@@ -1191,23 +1289,42 @@ class ModelTrainer:
                 log_filtered_samples=5
             )
 
-        # Tokenizer-aware "Exclude long texts" filter. This is the single-label /
-        # per-language / one-vs-all binary path. Honors TrainingConfig.exclude_long_texts
-        # so that the same flag works across every training mode.
-        if bool(getattr(self.config, 'exclude_long_texts', False)) and model_name:
-            _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
+        # Tokenizer-aware "Split" or "Exclude" strategy at load time. This is
+        # the single-label / per-language / one-vs-all binary path. Split wins
+        # over Exclude when both flags are set.
+        _ml_single = int(getattr(self.config, 'max_length', 512) or 512)
+        if bool(getattr(self.config, 'split_long_texts', False)) and model_name:
+            train_df = split_long_texts_in_dataframe(
+                train_df, text_column='text', model_name=model_name,
+                max_length=_ml_single, logger=self.logger, split_name='train',
+            )
+            val_df = split_long_texts_in_dataframe(
+                val_df, text_column='text', model_name=model_name,
+                max_length=_ml_single, logger=self.logger, split_name='val',
+            )
+            if len(test_df) > 0:
+                test_df = split_long_texts_in_dataframe(
+                    test_df, text_column='text', model_name=model_name,
+                    max_length=_ml_single, logger=self.logger, split_name='test',
+                )
+            if len(train_df) == 0 or len(val_df) == 0:
+                raise RuntimeError(
+                    "Split-long-texts produced an empty train or val split: "
+                    "aborting training."
+                )
+        elif bool(getattr(self.config, 'exclude_long_texts', False)) and model_name:
             train_df = filter_long_texts_in_dataframe(
                 train_df, text_column='text', model_name=model_name,
-                max_length=_ex_max, logger=self.logger, split_name='train',
+                max_length=_ml_single, logger=self.logger, split_name='train',
             )
             val_df = filter_long_texts_in_dataframe(
                 val_df, text_column='text', model_name=model_name,
-                max_length=_ex_max, logger=self.logger, split_name='val',
+                max_length=_ml_single, logger=self.logger, split_name='val',
             )
             if len(test_df) > 0:
                 test_df = filter_long_texts_in_dataframe(
                     test_df, text_column='text', model_name=model_name,
-                    max_length=_ex_max, logger=self.logger, split_name='test',
+                    max_length=_ml_single, logger=self.logger, split_name='test',
                 )
             if len(train_df) == 0 or len(val_df) == 0:
                 raise RuntimeError(
@@ -1974,6 +2091,7 @@ class ModelTrainer:
             # silently use its dataclass defaults and re-introduce the truncation bug.
             ml_config.max_length = int(getattr(self.config, 'max_length', 512) or 512)
             ml_config.exclude_long_texts = bool(getattr(self.config, 'exclude_long_texts', False))
+            ml_config.split_long_texts = bool(getattr(self.config, 'split_long_texts', False))
             # CRITICAL: Enable true multi-label classification with BCEWithLogitsLoss + sigmoid
             ml_config.multi_label = True
             ml_config.multi_label_threshold = config.get('multi_label_threshold', 0.5)
@@ -2872,15 +2990,28 @@ class ModelTrainer:
 
         self.logger.info(f"  Loaded {len(df)} samples")
 
-        # ========== STEP 1a: Optional tokenizer-aware exclusion ==========
-        # This path (true multi-label) bypasses both load_multi_label_data and
-        # MultiLabelTrainer entirely, so the filter must live here too.
-        if bool(getattr(self.config, 'exclude_long_texts', False)) and model_name:
+        # ========== STEP 1a: Optional tokenizer-aware Split or Exclude ==========
+        # Split wins if both flags are set: chunking preserves more data.
+        _ml = int(getattr(self.config, 'max_length', 512) or 512)
+        if bool(getattr(self.config, 'split_long_texts', False)) and model_name:
+            df = split_long_texts_in_dataframe(
+                df,
+                text_column=text_column,
+                model_name=model_name,
+                max_length=_ml,
+                logger=self.logger,
+                split_name='true multi-label',
+            )
+            if len(df) == 0:
+                raise RuntimeError(
+                    "Split-long-texts produced an empty dataframe: aborting training."
+                )
+        elif bool(getattr(self.config, 'exclude_long_texts', False)) and model_name:
             df = filter_long_texts_in_dataframe(
                 df,
                 text_column=text_column,
                 model_name=model_name,
-                max_length=int(getattr(self.config, 'max_length', 512) or 512),
+                max_length=_ml,
                 logger=self.logger,
                 split_name='true multi-label',
             )

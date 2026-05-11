@@ -154,10 +154,10 @@ class BenchmarkConfig:
     # GPU Optimization parameters
     fp16: bool = False  # Enable mixed precision training (FP16) for memory savings and speed
     gradient_accumulation_steps: int = 1  # Accumulate gradients over N steps
-    # Tokenizer-aware "Exclude long texts" strategy: drop samples whose
-    # tokenised length exceeds max_length before training. Mirrors the
-    # behaviour of the normal training paths.
+    # Tokenizer-aware "Exclude" / "Split" strategy at load time. Mirrors the
+    # behaviour of the normal training paths. When both are set, Split wins.
     exclude_long_texts: bool = False
+    split_long_texts: bool = False
     max_length: int = 512
 
 
@@ -523,12 +523,54 @@ class BenchmarkRunner:
 
             self.logger.info(f"✓ Filtered to {len(train_texts)} train + {len(test_texts)} test samples")
 
-        # Tokenizer-aware "Exclude long texts" filter for benchmark runs.
-        # Mirrors what the main training paths do: drop samples whose
-        # tokenised length exceeds max_length so BertBase never has to
-        # truncate. We use the model's own tokenizer (already loaded above)
-        # to avoid a redundant download.
-        if getattr(self.config, 'exclude_long_texts', False):
+        # Tokenizer-aware Split (preferred when both flags are on) or
+        # Exclude strategy for benchmark runs. Mirrors what the main
+        # training paths do so BertBase never has to truncate. We use the
+        # model's own tokenizer (already loaded above) to avoid a redundant
+        # download.
+        if getattr(self.config, 'split_long_texts', False):
+            _sp_max = int(getattr(self.config, 'max_length', 512) or 512)
+            _sp_tok = getattr(model, 'tokenizer', None)
+            if _sp_tok is None:
+                raise RuntimeError(
+                    "Benchmark split_long_texts requested but the model has "
+                    "no tokenizer attached; cannot apply chunker safely."
+                )
+            chunk_size = _sp_max - 2
+            def _chunk(texts_list, labels_list, langs_list=None, name='train'):
+                new_texts, new_labels, new_langs = [], [], None if langs_list is None else []
+                n_parents = 0
+                n_chunks = 0
+                for i, (t, lbl) in enumerate(zip(texts_list, labels_list)):
+                    ids = _sp_tok.encode(t, add_special_tokens=False, truncation=False)
+                    if len(ids) <= chunk_size:
+                        new_texts.append(t)
+                        new_labels.append(lbl)
+                        if langs_list is not None:
+                            new_langs.append(langs_list[i])
+                        continue
+                    n_parents += 1
+                    for start in range(0, len(ids), chunk_size):
+                        chunk_ids = ids[start:start + chunk_size]
+                        chunk_text = _sp_tok.decode(chunk_ids, skip_special_tokens=True).strip()
+                        if not chunk_text:
+                            continue
+                        new_texts.append(chunk_text)
+                        new_labels.append(lbl)
+                        if langs_list is not None:
+                            new_langs.append(langs_list[i])
+                        n_chunks += 1
+                if n_parents > 0:
+                    self.logger.info(
+                        "Split-long-texts [benchmark %s]: chunked %d parents into %d chunks (max_length=%d).",
+                        name, n_parents, n_chunks, _sp_max,
+                    )
+                return new_texts, new_labels, new_langs
+            train_texts, train_labels, _ = _chunk(train_texts, train_labels, name='train')
+            test_texts, test_labels, test_languages = _chunk(
+                test_texts, test_labels, test_languages, name='test',
+            )
+        elif getattr(self.config, 'exclude_long_texts', False):
             _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
             _ex_tok = getattr(model, 'tokenizer', None)
             if _ex_tok is None:

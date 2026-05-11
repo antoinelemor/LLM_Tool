@@ -331,6 +331,77 @@ class MultiLabelTrainer:
 
         return cleaned or "MULTI"
 
+    def _split_long_samples(
+        self,
+        samples: List['MultiLabelSample'],
+        tokenizer_name: str,
+        max_length: int,
+        *,
+        split_name: str = '',
+    ) -> List['MultiLabelSample']:
+        """Chunk samples whose tokenised length exceeds ``max_length``.
+
+        Each chunk inherits labels/lang/metadata from its parent. Sample IDs
+        get a ``_chunk_{i}`` suffix when present. Texts that already fit are
+        kept untouched. Raises if the tokenizer cannot be loaded — silent skip
+        would re-introduce the truncation bug this method exists to fix.
+        """
+        try:
+            from transformers import AutoTokenizer  # type: ignore
+            tok = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
+        except Exception as exc:
+            raise RuntimeError(
+                f"split_long_texts was requested but the tokenizer for "
+                f"{tokenizer_name!r} could not be loaded ({exc}). Refusing to "
+                f"keep the dataset without applying the chunker."
+            ) from exc
+        chunk_size = int(max_length) - 2  # leave room for CLS/SEP at encode time
+        if chunk_size < 8:
+            raise ValueError(
+                f"max_length must be >= 10 for chunking, got {max_length}."
+            )
+        n_parents = 0
+        n_chunks_emitted = 0
+        longest_seen = 0
+        out: List['MultiLabelSample'] = []
+        for s in samples:
+            text = s.text or ""
+            if not text.strip():
+                out.append(s)
+                continue
+            ids = tok.encode(text, add_special_tokens=False, truncation=False)
+            if len(ids) <= chunk_size:
+                out.append(s)
+                continue
+            if len(ids) > longest_seen:
+                longest_seen = len(ids)
+            n_parents += 1
+            for chunk_idx, start in enumerate(range(0, len(ids), chunk_size)):
+                chunk_ids = ids[start:start + chunk_size]
+                chunk_text = tok.decode(chunk_ids, skip_special_tokens=True).strip()
+                if not chunk_text:
+                    continue
+                new_id = (
+                    f"{s.id}_chunk_{chunk_idx}"
+                    if getattr(s, 'id', None) is not None else None
+                )
+                out.append(MultiLabelSample(
+                    text=chunk_text,
+                    labels=dict(s.labels) if isinstance(s.labels, dict) else s.labels,
+                    id=new_id,
+                    lang=getattr(s, 'lang', None),
+                    metadata=getattr(s, 'metadata', None),
+                ))
+                n_chunks_emitted += 1
+        if n_parents > 0:
+            self.logger.info(
+                "Split-long-texts [%s]: chunked %d parent sample(s) into %d "
+                "chunks (max_length=%d, longest parent=%d tokens).",
+                split_name or 'split', n_parents, n_chunks_emitted,
+                int(max_length), longest_seen,
+            )
+        return out
+
     def _filter_long_samples(
         self,
         samples: List['MultiLabelSample'],
@@ -385,7 +456,9 @@ class MultiLabelTrainer:
                               lang_field: Optional[str] = 'lang',
                               labels_dict_field: Optional[str] = 'labels',
                               exclude_tokenizer_name: Optional[str] = None,
-                              exclude_max_length: Optional[int] = None) -> List[MultiLabelSample]:
+                              exclude_max_length: Optional[int] = None,
+                              split_tokenizer_name: Optional[str] = None,
+                              split_max_length: Optional[int] = None) -> List[MultiLabelSample]:
         """
         Load multi-label data from JSONL or JSON file.
 
@@ -467,6 +540,19 @@ class MultiLabelTrainer:
                         if self.verbose:
                             self.logger.warning(f"Line {line_num}: Error - {e}")
                         continue
+
+        # Apply the tokenizer-aware Split strategy AFTER parsing. Split wins
+        # over Exclude when both are passed (it preserves more data).
+        if (
+            split_tokenizer_name
+            and isinstance(split_max_length, int)
+            and split_max_length > 0
+        ):
+            samples = self._split_long_samples(
+                samples, split_tokenizer_name, split_max_length, split_name='load',
+            )
+            # When Split was applied, every sample now fits — skip exclude.
+            exclude_tokenizer = None
 
         # Apply the tokenizer-aware exclusion AFTER parsing so that the dropped
         # count is reported against the actual sample set (not raw lines).
@@ -1088,26 +1174,34 @@ class MultiLabelTrainer:
         if self.verbose:
             self.logger.info(f"Training model: {model_name}")
 
-        # Tokenizer-aware "Exclude long texts" filter. This method is the entry
-        # point used by SSH workers, parallel trainers, one-vs-all binary
-        # training, and any other caller that hands us samples directly. Apply
-        # the filter here so every path is covered, not only train()/load_*.
-        if (
-            getattr(self.config, 'exclude_long_texts', False)
-            and self.config.model_name
-            and (train_samples or val_samples)
-        ):
+        # Tokenizer-aware "Split" or "Exclude" strategy. This method is the
+        # entry point used by SSH workers, parallel trainers, one-vs-all
+        # binary training, and any other caller that hands us samples directly.
+        # Split wins over Exclude when both flags are set (preserves more data).
+        if self.config.model_name and (train_samples or val_samples):
             _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
-            if train_samples:
-                train_samples = self._filter_long_samples(
-                    train_samples, self.config.model_name, _ex_max,
-                    split_name=f'{label_name}/train',
-                )
-            if val_samples:
-                val_samples = self._filter_long_samples(
-                    val_samples, self.config.model_name, _ex_max,
-                    split_name=f'{label_name}/val',
-                )
+            if getattr(self.config, 'split_long_texts', False):
+                if train_samples:
+                    train_samples = self._split_long_samples(
+                        train_samples, self.config.model_name, _ex_max,
+                        split_name=f'{label_name}/train',
+                    )
+                if val_samples:
+                    val_samples = self._split_long_samples(
+                        val_samples, self.config.model_name, _ex_max,
+                        split_name=f'{label_name}/val',
+                    )
+            elif getattr(self.config, 'exclude_long_texts', False):
+                if train_samples:
+                    train_samples = self._filter_long_samples(
+                        train_samples, self.config.model_name, _ex_max,
+                        split_name=f'{label_name}/train',
+                    )
+                if val_samples:
+                    val_samples = self._filter_long_samples(
+                        val_samples, self.config.model_name, _ex_max,
+                        split_name=f'{label_name}/val',
+                    )
 
         # Determine device to use (if force_device is set, use it)
         target_device = None
@@ -1557,14 +1651,21 @@ class MultiLabelTrainer:
             if self.verbose:
                 self.logger.info(f"Loading data from {data_file}")
 
-            # Tokenizer-aware "exclude long texts" filter, configured upstream by
-            # the CLI when the user picked the Exclude strategy. We forward
-            # (model_name, max_length) so the loader drops oversized samples.
+            # Tokenizer-aware "Split" or "Exclude" strategy, configured upstream
+            # by the CLI. Split wins when both are on. We forward (model_name,
+            # max_length) so the loader chunks or drops oversized samples.
             _exclude_tok: Optional[str] = None
             _exclude_max: Optional[int] = None
-            if getattr(self.config, 'exclude_long_texts', False) and self.config.model_name:
-                _exclude_tok = self.config.model_name
-                _exclude_max = int(getattr(self.config, 'max_length', 512) or 512)
+            _split_tok: Optional[str] = None
+            _split_max: Optional[int] = None
+            if self.config.model_name:
+                _ml = int(getattr(self.config, 'max_length', 512) or 512)
+                if getattr(self.config, 'split_long_texts', False):
+                    _split_tok = self.config.model_name
+                    _split_max = _ml
+                elif getattr(self.config, 'exclude_long_texts', False):
+                    _exclude_tok = self.config.model_name
+                    _exclude_max = _ml
 
             # Check if it's a JSON file with train/val splits
             if data_file.endswith('.json'):
@@ -1576,8 +1677,15 @@ class MultiLabelTrainer:
                     train_samples = self._convert_to_samples(data['train'])
                     val_samples = self._convert_to_samples(data['val'])
                     auto_split = False  # Don't split again
-                    # Apply the exclude filter on pre-split data as well.
-                    if _exclude_tok and _exclude_max:
+                    # Apply Split or Exclude on pre-split data as well.
+                    if _split_tok and _split_max:
+                        train_samples = self._split_long_samples(
+                            train_samples, _split_tok, _split_max, split_name='train'
+                        )
+                        val_samples = self._split_long_samples(
+                            val_samples, _split_tok, _split_max, split_name='val'
+                        )
+                    elif _exclude_tok and _exclude_max:
                         train_samples = self._filter_long_samples(
                             train_samples, _exclude_tok, _exclude_max, split_name='train'
                         )
@@ -1590,6 +1698,8 @@ class MultiLabelTrainer:
                         data_file,
                         exclude_tokenizer_name=_exclude_tok,
                         exclude_max_length=_exclude_max,
+                        split_tokenizer_name=_split_tok,
+                        split_max_length=_split_max,
                     )
                     train_samples = all_samples
             else:
@@ -1598,6 +1708,8 @@ class MultiLabelTrainer:
                     data_file,
                     exclude_tokenizer_name=_exclude_tok,
                     exclude_max_length=_exclude_max,
+                    split_tokenizer_name=_split_tok,
+                    split_max_length=_split_max,
                 )
                 train_samples = all_samples
 
@@ -1607,23 +1719,30 @@ class MultiLabelTrainer:
         if val_samples and not isinstance(val_samples[0], MultiLabelSample):
             val_samples = self._convert_to_samples(val_samples)
 
-        # Tokenizer-aware "exclude long texts" filter when callers hand us
-        # samples directly (bypassing load_multi_label_data). Without this,
-        # the path used by ModelTrainer.train -> in-memory split -> our train()
-        # silently skipped the filter and left oversized texts in place.
-        if (
-            getattr(self.config, 'exclude_long_texts', False)
-            and self.config.model_name
-        ):
+        # Tokenizer-aware "Split" or "Exclude" strategy at the in-memory entry
+        # point. Split wins when both flags are set (preserves more data).
+        # Without this, paths used by ModelTrainer.train -> in-memory split
+        # -> our train() silently kept oversized texts in place.
+        if self.config.model_name and (train_samples or val_samples):
             _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
-            if train_samples:
-                train_samples = self._filter_long_samples(
-                    train_samples, self.config.model_name, _ex_max, split_name='train',
-                )
-            if val_samples:
-                val_samples = self._filter_long_samples(
-                    val_samples, self.config.model_name, _ex_max, split_name='val',
-                )
+            if getattr(self.config, 'split_long_texts', False):
+                if train_samples:
+                    train_samples = self._split_long_samples(
+                        train_samples, self.config.model_name, _ex_max, split_name='train',
+                    )
+                if val_samples:
+                    val_samples = self._split_long_samples(
+                        val_samples, self.config.model_name, _ex_max, split_name='val',
+                    )
+            elif getattr(self.config, 'exclude_long_texts', False):
+                if train_samples:
+                    train_samples = self._filter_long_samples(
+                        train_samples, self.config.model_name, _ex_max, split_name='train',
+                    )
+                if val_samples:
+                    val_samples = self._filter_long_samples(
+                        val_samples, self.config.model_name, _ex_max, split_name='val',
+                    )
 
         # Handle splitting if needed
         if auto_split and (val_samples is None or len(val_samples) == 0):

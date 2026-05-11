@@ -6198,11 +6198,14 @@ def _run_benchmark_mode(
                 config.batch_size = _get_optimal_batch_size(model_id)
                 config.early_stopping_patience = max(2, benchmark_epochs // 5)
                 config.output_dir = str(model_output_dir)
-                # Propagate the Exclude strategy chosen at the Token Length step
-                # so benchmark runs honour it like the main training does.
+                # Propagate the Split/Exclude strategy chosen at the Token
+                # Length step so benchmark runs honour it like the main training.
                 if hasattr(bundle, 'metadata') and bundle.metadata:
                     config.exclude_long_texts = bool(
                         bundle.metadata.get('exclude_long_texts', False)
+                    )
+                    config.split_long_texts = bool(
+                        bundle.metadata.get('split_long_texts', False)
                     )
 
                 trainer = ModelTrainer(config=config)
@@ -8612,13 +8615,15 @@ def _collect_quick_mode_parameters(
 
         strategy_table.add_row(
             "1. Split/Chunk" + truncate_mark,
-            "Split long documents into 512-token chunks (with overlap)\n"
-            f"• [green]Each chunk keeps the same label[/green] → More training data!\n"
-            f"• Example: 1024-token doc → 2 samples (tokens 0-512, tokens 256-768)\n"
+            "Split long documents into 512-token chunks (no overlap)\n"
+            f"• [green]Each chunk inherits the parent labels[/green] → more training data\n"
+            f"• Example: 1024-token doc → 2 samples (tokens 0-510, 510-1020)\n"
             f"• {extra_info}\n"
-            f"• Fastest training (~5-10 min)\n"
+            f"• [yellow]Label noise risk[/yellow]: if a doc has >=3 labels, every chunk\n"
+            f"  inherits all of them even if only one is present in that chunk.\n"
+            f"  Prefer Exclude for short, multi-thematic documents.\n"
             f"• Works with all standard models (BERT, RoBERTa, CamemBERT, etc.)\n"
-            f"• [bold]No information loss[/bold] - all text is used"
+            f"• [bold]No data loss[/bold] - all text reaches the model"
         )
         strategy_table.add_row(
             "2. Exclude" + exclude_mark,
@@ -10275,17 +10280,9 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         training_config.exclude_long_texts = bool(
             bundle.metadata.get('exclude_long_texts', False)
         )
-        # Fail fast on the "Split" strategy: it has the same "stored-but-never-
-        # applied" history as exclude. Refusing to start is safer than running
-        # with a silently inert flag.
-        # Skip this check when resuming at RL — we don't re-tokenize data.
-        _is_skip_to_rl = model_config.get('skip_to_rl', False) if model_config else False
-        if bundle.metadata.get('split_long_texts', False) and not _is_skip_to_rl:
-            raise NotImplementedError(
-                "The 'Split long texts into chunks' strategy is configured but "
-                "not implemented in this codebase. Re-run dataset configuration "
-                "and choose 'Exclude long texts' or 'Use a long-document model'."
-            )
+        training_config.split_long_texts = bool(
+            bundle.metadata.get('split_long_texts', False)
+        )
 
     # Multi-label classification settings from bundle metadata
     if hasattr(bundle, 'metadata') and bundle.metadata:
@@ -10339,6 +10336,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         # ModelTrainer.train() re-applies setattr only for keys present in
         # that dict, so we must include them here.
         "exclude_long_texts": bool(training_config.exclude_long_texts),
+        "split_long_texts": bool(training_config.split_long_texts),
         "max_length": int(training_config.max_length),
     }
 

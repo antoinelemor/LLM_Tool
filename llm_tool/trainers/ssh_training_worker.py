@@ -306,9 +306,10 @@ def run_training(task_config: Dict[str, Any]) -> Dict[str, Any]:
         multi_label=multi_label,
         multi_label_threshold=multi_label_threshold,
         training_approach=training_approach,
-        # Propagate tokenizer-aware filter from the task config so that remote
-        # workers honour the "Exclude long texts" strategy chosen in the CLI.
+        # Propagate tokenizer-aware filter from the task config so remote
+        # workers honour the Split/Exclude strategy chosen in the CLI.
         exclude_long_texts=bool(task_config.get('exclude_long_texts', False)),
+        split_long_texts=bool(task_config.get('split_long_texts', False)),
         max_length=int(task_config.get('max_length', 512) or 512),
     )
 
