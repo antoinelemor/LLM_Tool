@@ -5231,7 +5231,11 @@ class BertBase(BertABC):
                                     continue
 
                                 lang_preds = val_preds[lang_indices]
-                                lang_labels = np.array(eval_labels)[lang_indices]
+                                # Use concatenated labels (not the raw list of batch arrays)
+                                if multi_label:
+                                    lang_labels = eval_labels_arr[lang_indices]
+                                else:
+                                    lang_labels = eval_labels_concat[lang_indices]
 
                                 # Force all labels to be included in the report
                                 lang_report = classification_report(lang_labels, lang_preds, labels=all_labels_range,
@@ -5514,7 +5518,10 @@ class BertBase(BertABC):
                                 best_model_path = temp_reinforced_path
 
                                 # Update best_scores
-                                best_scores = precision_recall_fscore_support(eval_labels, val_preds, average=None, zero_division=0)
+                                best_scores = precision_recall_fscore_support(
+                                    eval_labels_arr if multi_label else eval_labels_concat,
+                                    val_preds, average=None, zero_division=0
+                                )
 
                                 # Update best_models.csv with reinforced model
                                 with open(best_models_csv, mode='a', newline='', encoding='utf-8') as f:
