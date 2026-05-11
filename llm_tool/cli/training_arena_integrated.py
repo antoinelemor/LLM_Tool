@@ -9552,10 +9552,23 @@ def _collect_quick_mode_parameters(
                     else:
                         self.console.print("[dim]Keeping default max_length=512.[/dim]\n")
                 else:
-                    self.console.print(
-                        f"[dim]Token analysis: max observed = {token_max} tokens. "
-                        f"Default max_length=512 is already optimal.[/dim]\n"
-                    )
+                    # recommended == 512 (or capped to 512). Make it explicit that
+                    # this is only about the max_length knob and that any user-
+                    # selected Exclude/Split strategy from STEP 1 is independent.
+                    if exclude_long_texts and n_excluded_sim > 0:
+                        self.console.print(
+                            f"[dim]On the kept subset, max observed = {token_max} tokens. "
+                            f"max_length=512 is the smallest safe bucket — no further "
+                            f"reduction possible. The {n_excluded_sim:,} long text(s) flagged "
+                            f"above will still be excluded by the Exclude strategy when "
+                            f"training starts.[/dim]\n"
+                        )
+                    else:
+                        self.console.print(
+                            f"[dim]Token analysis: max observed = {token_max} tokens. "
+                            f"max_length=512 is the smallest safe bucket — no further "
+                            f"reduction possible.[/dim]\n"
+                        )
         except Exception as exc:
             # Hard rule: never let this analysis break the training flow.
             # On any unexpected error, log and keep the default 512.
