@@ -1586,6 +1586,24 @@ class MultiLabelTrainer:
         if val_samples and not isinstance(val_samples[0], MultiLabelSample):
             val_samples = self._convert_to_samples(val_samples)
 
+        # Tokenizer-aware "exclude long texts" filter when callers hand us
+        # samples directly (bypassing load_multi_label_data). Without this,
+        # the path used by ModelTrainer.train -> in-memory split -> our train()
+        # silently skipped the filter and left oversized texts in place.
+        if (
+            getattr(self.config, 'exclude_long_texts', False)
+            and self.config.model_name
+        ):
+            _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
+            if train_samples:
+                train_samples = self._filter_long_samples(
+                    train_samples, self.config.model_name, _ex_max, split_name='train',
+                )
+            if val_samples:
+                val_samples = self._filter_long_samples(
+                    val_samples, self.config.model_name, _ex_max, split_name='val',
+                )
+
         # Handle splitting if needed
         if auto_split and (val_samples is None or len(val_samples) == 0):
             if self.verbose:

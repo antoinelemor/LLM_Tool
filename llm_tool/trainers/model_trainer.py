@@ -1872,6 +1872,13 @@ class ModelTrainer:
             ml_config.model_class = BertBase  # Force BertBase to ensure run_training_enhanced is used
             # Use the model specified by the user
             ml_config.model_name = config.get('model_name', self.config.model_name)
+            # Propagate tokenizer-aware settings so MultiLabelTrainer can honor them.
+            # exclude_long_texts is the user's "Exclude" strategy from the Token
+            # Length step; max_length feeds both BertBase tokenization and the
+            # filter threshold. Without forwarding these, MultiLabelTrainer would
+            # silently use its dataclass defaults and re-introduce the truncation bug.
+            ml_config.max_length = int(getattr(self.config, 'max_length', 512) or 512)
+            ml_config.exclude_long_texts = bool(getattr(self.config, 'exclude_long_texts', False))
             # CRITICAL: Enable true multi-label classification with BCEWithLogitsLoss + sigmoid
             ml_config.multi_label = True
             ml_config.multi_label_threshold = config.get('multi_label_threshold', 0.5)
