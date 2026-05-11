@@ -681,7 +681,7 @@ def _run_parallel_training(
         }
 
 
-def _display_training_diagnostic(self, bundle, quick_params=None):
+def _display_training_diagnostic(self, bundle, quick_params=None, preloaded_config=None):
     """Display data distribution diagnostic and training strategy before final confirmation."""
     import math
     from rich.table import Table
@@ -698,6 +698,44 @@ def _display_training_diagnostic(self, bundle, quick_params=None):
         rl_threshold = quick_params.get('rl_f1_threshold', 0.70)
         phase1_enabled = quick_params.get('distribution_aware', False)
         phase2_enabled = quick_params.get('reinforced_learning', False) or quick_params.get('force_reinforced', False)
+    elif preloaded_config:
+        # Resume mode: extract from preloaded config
+        rl_threshold = preloaded_config.get('rl_f1_threshold', 0.70)
+        phase1_enabled = preloaded_config.get('distribution_aware', False)
+        phase2_enabled = preloaded_config.get('use_reinforcement', False) or preloaded_config.get('skip_to_rl', False)
+
+    # Filter value_counts to only labels that exist in the JSONL (fixes stale metadata from old sessions)
+    if value_counts and bundle.primary_file:
+        try:
+            import json as json_mod
+            from pathlib import Path
+            pf = Path(bundle.primary_file) if not isinstance(bundle.primary_file, Path) else bundle.primary_file
+            if pf.exists() and pf.suffix == '.jsonl':
+                # Read actual label prefixes from first 100 lines
+                actual_prefixes = set()
+                with open(pf, 'r', encoding='utf-8') as f:
+                    for i, line in enumerate(f):
+                        if i >= 100:
+                            break
+                        try:
+                            record = json_mod.loads(line)
+                            for label in record.get('labels', []):
+                                # Extract prefix: "themes_long_agriculture" -> "themes_long"
+                                parts = label.rsplit('_', 1)
+                                if len(parts) > 1:
+                                    # Try known prefixes from value_counts keys
+                                    for vc_key in value_counts:
+                                        if label.startswith(vc_key + '_'):
+                                            actual_prefixes.add(vc_key)
+                                            break
+                        except (json_mod.JSONDecodeError, KeyError):
+                            continue
+                if actual_prefixes:
+                    filtered = {k: v for k, v in value_counts.items() if k in actual_prefixes}
+                    if filtered:
+                        value_counts = filtered
+        except Exception:
+            pass
 
     # Fallback: if value_counts_by_key is not available, compute from the training JSONL
     if not value_counts and bundle.primary_file:
@@ -1145,7 +1183,7 @@ def _training_studio_confirm_and_execute(
         self.console.print("     • Access via 'Resume/Relaunch Training' option\n")
 
     # STEP 3.5: Distribution diagnostic before final confirmation
-    self._display_training_diagnostic(bundle, quick_params)
+    self._display_training_diagnostic(bundle, quick_params, preloaded_config=preloaded_config)
 
     # STEP 4: Start training
     confirm_start = Confirm.ask(
