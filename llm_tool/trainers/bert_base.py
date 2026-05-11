@@ -4929,6 +4929,18 @@ class BertBase(BertABC):
                         self.global_total_epochs += n_epochs_reinforced
                         display.global_total_epochs = self.global_total_epochs
 
+                    # Backup pre-RL model so original is preserved
+                    if best_model_path is not None:
+                        import shutil
+                        pre_rl_backup = best_model_path + "_pre_rl"
+                        if not os.path.exists(pre_rl_backup):
+                            try:
+                                shutil.copytree(best_model_path, pre_rl_backup)
+                                if not suppress_display:
+                                    self.logger.info(f" Pre-RL model backed up to: {pre_rl_backup}")
+                            except Exception as e:
+                                self.logger.warning(f"Could not backup pre-RL model: {e}")
+
                     # Load best model as starting point (suppress logs to avoid interfering with Rich display)
                     if best_model_path is not None:
                         model_state = torch.load(os.path.join(best_model_path, WEIGHTS_NAME), map_location=self.device)
