@@ -4741,6 +4741,8 @@ class BertBase(BertABC):
                             label_names=label_names_list,
                             original_lr=lr,
                             reinforced_f1_threshold=reinforced_f1_threshold,
+                            label_precisions=list(best_precision),
+                            label_recalls=list(best_recall),
                         )
                         should_trigger = len(ml_reinforced['underperforming_labels']) > 0
                         worst_f1 = min(best_f1_scores) if len(best_f1_scores) > 0 else 0.0
@@ -4788,6 +4790,8 @@ class BertBase(BertABC):
                             label_names=label_names_list,
                             original_lr=lr,
                             reinforced_f1_threshold=reinforced_f1_threshold,
+                            label_precisions=list(best_precision),
+                            label_recalls=list(best_recall),
                         )
                         n_under = len(ml_reinforced['underperforming_labels'])
                         if not suppress_display:

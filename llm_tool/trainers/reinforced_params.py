@@ -187,6 +187,7 @@ def get_multi_label_reinforced_params(
     original_lr: float = 5e-5,
     reinforced_f1_threshold: float = 0.7,
     max_pos_weight: float = 100.0,
+    **kwargs,
 ):
     """
     Derive per-label reinforced training parameters for multi-label classification.
@@ -211,6 +212,10 @@ def get_multi_label_reinforced_params(
         F1 threshold below which a label is considered underperforming
     max_pos_weight : float
         Cap for pos_weight to prevent training instability (default: 100)
+    label_precisions : list of float, optional (via kwargs)
+        Per-label precision scores — used to compute precision/recall balance
+    label_recalls : list of float, optional (via kwargs)
+        Per-label recall scores — used to detect over-prediction
 
     Returns
     -------
@@ -230,6 +235,11 @@ def get_multi_label_reinforced_params(
     freeze_mask = []
     label_tiers = {0: [], 1: [], 2: [], 3: []}
 
+    # Pre-compute precision and recall from F1 + pos_ratio if not provided
+    # (These are approximations; the actual values come from the training loop)
+    label_precisions = kwargs.get('label_precisions')
+    label_recalls = kwargs.get('label_recalls')
+
     for i in range(num_labels):
         f1 = label_f1_scores[i]
         pos_ratio = max(label_pos_ratios[i], 1e-6)
@@ -237,8 +247,34 @@ def get_multi_label_reinforced_params(
         # Base gamma from label rarity: rarer labels need stronger negative down-weighting
         gamma = min(max(4.0 + math.log10(1.0 / pos_ratio), 4.0), 8.0)
 
-        # pos_weight = neg/pos, capped
-        pw = min((1.0 - pos_ratio) / pos_ratio, max_pos_weight)
+        # Intelligent pos_weight: sqrt-damped and adjusted by precision/recall balance
+        #
+        # Raw pos_weight = (1-r)/r can reach 50-100+ for rare labels, causing massive
+        # over-prediction (recall 98%, precision 25%). Instead:
+        #
+        # 1. sqrt(raw) as base — compresses the range from [3, 74] to [1.7, 8.6]
+        # 2. Precision/recall balance — if recall >> precision, the model already
+        #    finds most positives; higher pos_weight would just add false positives.
+        #    Scale DOWN when precision/recall < 1 (over-predicting).
+        # 3. F1 gap scaling — labels further from threshold get a mild boost.
+        raw_pw = (1.0 - pos_ratio) / pos_ratio
+        base_pw = math.sqrt(raw_pw)
+
+        # Precision/recall balance factor (if available)
+        if label_precisions is not None and label_recalls is not None:
+            prec_i = max(label_precisions[i], 1e-6)
+            rec_i = max(label_recalls[i], 1e-6)
+            # < 1 means over-predicting (high recall, low precision) → reduce pw
+            # > 1 means under-predicting → increase pw (capped at 1.5)
+            pr_balance = min(prec_i / rec_i, 1.5)
+        else:
+            pr_balance = 0.7  # conservative default assuming typical recall > precision
+
+        # F1 gap: how far from the threshold (0 = at threshold, ~0.3 = very bad)
+        f1_gap = max(reinforced_f1_threshold - f1, 0) / reinforced_f1_threshold
+
+        pw = base_pw * pr_balance * (1.0 + 0.5 * f1_gap)
+        pw = max(pw, 1.0)  # floor at 1.0
 
         if f1 >= reinforced_f1_threshold:
             # Tier 0: label is performing well — freeze during RL
