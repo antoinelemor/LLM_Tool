@@ -3186,6 +3186,10 @@ class BertBase(BertABC):
         # and use AdaptiveAsymmetricLoss instead of uniform ASL
         ml_reinforced = None  # Will be set during reinforced learning trigger if needed
         all_labels_range = list(range(num_labels))  # Needed for classification_report in both normal and RL paths
+        # Initialize hyperparameter tracking for CSV output (used in both normal and RL paths)
+        hp_learning_rate = lr
+        hp_batch_size = train_dataloader.batch_size
+        hp_warmup_ratio = 0.1
         if multi_label and distribution_aware:
             train_labels_np = train_dataloader.dataset.tensors[2].numpy()
             if train_labels_np.ndim == 2:
