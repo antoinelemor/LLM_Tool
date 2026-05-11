@@ -4931,7 +4931,6 @@ class BertBase(BertABC):
 
                     # Backup pre-RL model so original is preserved
                     if best_model_path is not None:
-                        import shutil
                         pre_rl_backup = best_model_path + "_pre_rl"
                         if not os.path.exists(pre_rl_backup):
                             try:
