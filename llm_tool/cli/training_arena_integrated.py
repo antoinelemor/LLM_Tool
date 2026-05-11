@@ -10320,7 +10320,15 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         "reinforced_learning": enable_reinforced_learning,  # CRITICAL: Pass reinforced learning setting
         "train_by_language": needs_language_training,
         "confirmed_languages": list(languages) if languages else None,  # Pass all detected languages
-        "training_approach": training_approach_from_metadata  # CRITICAL: Pass training approach to prevent multiclass auto-detection for one-vs-all
+        "training_approach": training_approach_from_metadata,  # CRITICAL: Pass training approach to prevent multiclass auto-detection for one-vs-all
+        # CRITICAL: Carry the tokenizer-aware filter knobs into every
+        # trainer.train({...}) call below. Setting them on training_config
+        # alone is not enough — several training paths build an inline dict
+        # (e.g. the true multi-label single-model branch at ~12273) and
+        # ModelTrainer.train() re-applies setattr only for keys present in
+        # that dict, so we must include them here.
+        "exclude_long_texts": bool(training_config.exclude_long_texts),
+        "max_length": int(training_config.max_length),
     }
 
     # Add reinforced learning parameters if enabled
