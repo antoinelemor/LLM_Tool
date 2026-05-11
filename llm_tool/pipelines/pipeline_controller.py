@@ -505,7 +505,11 @@ class PipelineController:
                     output_dir=config.get('output_dir', str(self.settings.paths.models_dir / 'trained_models')),
                     auto_split=True,
                     split_ratio=1.0 - config.get('validation_split', 0.2),
-                    stratified=True
+                    stratified=True,
+                    # Forward the Exclude strategy so this pipeline path obeys
+                    # the same flag every other training path now respects.
+                    exclude_long_texts=bool(config.get('exclude_long_texts', False)),
+                    max_length=int(config.get('max_length', 512) or 512),
                 )
 
                 ml_trainer = MultiLabelTrainer(config=ml_config, verbose=True)

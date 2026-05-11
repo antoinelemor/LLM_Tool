@@ -154,6 +154,11 @@ class BenchmarkConfig:
     # GPU Optimization parameters
     fp16: bool = False  # Enable mixed precision training (FP16) for memory savings and speed
     gradient_accumulation_steps: int = 1  # Accumulate gradients over N steps
+    # Tokenizer-aware "Exclude long texts" strategy: drop samples whose
+    # tokenised length exceeds max_length before training. Mirrors the
+    # behaviour of the normal training paths.
+    exclude_long_texts: bool = False
+    max_length: int = 512
 
 
 @dataclass
@@ -517,6 +522,50 @@ class BenchmarkRunner:
                 test_languages = safe_tolist(test_df_filtered['language'], column_name='language')
 
             self.logger.info(f"✓ Filtered to {len(train_texts)} train + {len(test_texts)} test samples")
+
+        # Tokenizer-aware "Exclude long texts" filter for benchmark runs.
+        # Mirrors what the main training paths do: drop samples whose
+        # tokenised length exceeds max_length so BertBase never has to
+        # truncate. We use the model's own tokenizer (already loaded above)
+        # to avoid a redundant download.
+        if getattr(self.config, 'exclude_long_texts', False):
+            _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
+            _ex_tok = getattr(model, 'tokenizer', None)
+            if _ex_tok is None:
+                raise RuntimeError(
+                    "Benchmark exclude_long_texts requested but the model has "
+                    "no tokenizer attached; cannot apply filter safely."
+                )
+            def _drop_long(texts_list, labels_list, langs_list=None, name='train'):
+                lengths = np.asarray([
+                    len(_ex_tok.encode(t, add_special_tokens=True, truncation=False))
+                    for t in texts_list
+                ])
+                keep = lengths <= _ex_max
+                n_dropped = int((~keep).sum())
+                if n_dropped > 0:
+                    longest = int(lengths[~keep].max())
+                    pct = 100.0 * n_dropped / max(len(texts_list), 1)
+                    self.logger.info(
+                        "Exclude-long-texts [benchmark %s]: dropped %d/%d (%.2f%%) "
+                        "exceeding %d tokens (longest dropped: %d).",
+                        name, n_dropped, len(texts_list), pct, _ex_max, longest,
+                    )
+                kept_texts = [t for t, k in zip(texts_list, keep) if k]
+                kept_labels = [l for l, k in zip(labels_list, keep) if k]
+                kept_langs = (
+                    [l for l, k in zip(langs_list, keep) if k]
+                    if langs_list is not None else None
+                )
+                return kept_texts, kept_labels, kept_langs
+            train_texts, train_labels, _ = _drop_long(train_texts, train_labels, name='train')
+            test_texts, test_labels, test_languages = _drop_long(
+                test_texts, test_labels, test_languages, name='test',
+            )
+            if not train_texts or not test_texts:
+                raise RuntimeError(
+                    "Exclude-long-texts left an empty train or test split in benchmark."
+                )
 
         train_loader = model.encode(
             train_texts,

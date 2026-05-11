@@ -266,6 +266,76 @@ def set_detected_languages_on_model(model, train_samples=None, val_samples=None,
     return detected_languages
 
 
+def filter_long_texts_in_dataframe(
+    df: 'pd.DataFrame',
+    *,
+    text_column: str,
+    model_name: str,
+    max_length: int,
+    logger: Optional[logging.Logger] = None,
+    split_name: str = '',
+) -> 'pd.DataFrame':
+    """Drop rows whose tokenised length exceeds ``max_length``.
+
+    Centralised helper used by every training path that needs to honour
+    ``TrainingConfig.exclude_long_texts``. Loads the model's tokenizer once,
+    batch-encodes the text column, and returns a filtered DataFrame. Raises
+    on tokenizer load failure rather than silently keeping long samples.
+
+    Parameters
+    ----------
+    df:
+        DataFrame to filter (modified copy is returned; input not mutated).
+    text_column:
+        Column holding the raw text.
+    model_name:
+        HF model id whose tokenizer measures the true token length.
+    max_length:
+        Maximum tokenised length to keep.
+    logger:
+        Optional logger; falls back to module logger.
+    split_name:
+        Short label (e.g. ``"train"``) used in the INFO log line.
+    """
+    if not model_name or max_length is None:
+        return df
+    log = logger if logger is not None else logging.getLogger(__name__)
+    try:
+        from transformers import AutoTokenizer  # type: ignore
+        tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    except Exception as exc:
+        raise RuntimeError(
+            f"exclude_long_texts was requested but the tokenizer for "
+            f"{model_name!r} could not be loaded ({exc}). Refusing to "
+            f"keep the dataset without applying the filter."
+        ) from exc
+    texts = df[text_column].astype(str).tolist()
+    if not texts:
+        return df
+    encoded = tok(
+        texts,
+        add_special_tokens=True,
+        truncation=False,
+        padding=False,
+        return_attention_mask=False,
+        return_token_type_ids=False,
+    )
+    lengths = np.asarray([len(ids) for ids in encoded['input_ids']])
+    keep_mask = lengths <= int(max_length)
+    n_before = len(df)
+    n_dropped = int((~keep_mask).sum())
+    if n_dropped > 0:
+        longest_dropped = int(lengths[~keep_mask].max())
+        pct = 100.0 * n_dropped / max(n_before, 1)
+        log.info(
+            "Exclude-long-texts [%s]: dropped %d/%d samples (%.2f%%) "
+            "exceeding %d tokens (longest dropped: %d).",
+            split_name or 'split', n_dropped, n_before, pct,
+            int(max_length), longest_dropped,
+        )
+    return df.loc[keep_mask].reset_index(drop=True)
+
+
 @dataclass
 class TrainingConfig:
     """Configuration for model training"""
@@ -1120,6 +1190,31 @@ class ModelTrainer:
                 text_column='text',
                 log_filtered_samples=5
             )
+
+        # Tokenizer-aware "Exclude long texts" filter. This is the single-label /
+        # per-language / one-vs-all binary path. Honors TrainingConfig.exclude_long_texts
+        # so that the same flag works across every training mode.
+        if bool(getattr(self.config, 'exclude_long_texts', False)) and model_name:
+            _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
+            train_df = filter_long_texts_in_dataframe(
+                train_df, text_column='text', model_name=model_name,
+                max_length=_ex_max, logger=self.logger, split_name='train',
+            )
+            val_df = filter_long_texts_in_dataframe(
+                val_df, text_column='text', model_name=model_name,
+                max_length=_ex_max, logger=self.logger, split_name='val',
+            )
+            if len(test_df) > 0:
+                test_df = filter_long_texts_in_dataframe(
+                    test_df, text_column='text', model_name=model_name,
+                    max_length=_ex_max, logger=self.logger, split_name='test',
+                )
+            if len(train_df) == 0 or len(val_df) == 0:
+                raise RuntimeError(
+                    "Exclude-long-texts left an empty train or val split: "
+                    "either lower max_length, increase the data, or pick a "
+                    "different strategy at the Token Length step."
+                )
 
         # Now extract texts as strings
         train_texts = train_df['text'].astype(str).str.strip().tolist()
@@ -2779,46 +2874,16 @@ class ModelTrainer:
 
         # ========== STEP 1a: Optional tokenizer-aware exclusion ==========
         # This path (true multi-label) bypasses both load_multi_label_data and
-        # MultiLabelTrainer entirely, so the filter must live here too. Without
-        # it, exclude_long_texts=True from the CLI was silently inert and
-        # BertBase truncated thousands of long sequences instead.
-        if (
-            bool(getattr(self.config, 'exclude_long_texts', False))
-            and model_name
-        ):
-            _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
-            try:
-                from transformers import AutoTokenizer  # type: ignore
-                _ex_tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-            except Exception as exc:
-                raise RuntimeError(
-                    f"exclude_long_texts was requested but the tokenizer for "
-                    f"{model_name!r} could not be loaded ({exc}). Refusing to "
-                    f"start training without applying the filter."
-                ) from exc
-            n_before = len(df)
-            texts_for_check = df[text_column].astype(str).tolist()
-            # Fast path: batch-encode with truncation disabled to measure true lengths.
-            encoded = _ex_tok(
-                texts_for_check,
-                add_special_tokens=True,
-                truncation=False,
-                padding=False,
-                return_attention_mask=False,
-                return_token_type_ids=False,
+        # MultiLabelTrainer entirely, so the filter must live here too.
+        if bool(getattr(self.config, 'exclude_long_texts', False)) and model_name:
+            df = filter_long_texts_in_dataframe(
+                df,
+                text_column=text_column,
+                model_name=model_name,
+                max_length=int(getattr(self.config, 'max_length', 512) or 512),
+                logger=self.logger,
+                split_name='true multi-label',
             )
-            lengths = np.asarray([len(ids) for ids in encoded['input_ids']])
-            keep_mask = lengths <= _ex_max
-            n_dropped = int((~keep_mask).sum())
-            if n_dropped > 0:
-                longest_dropped = int(lengths[~keep_mask].max())
-                pct = 100.0 * n_dropped / max(n_before, 1)
-                self.logger.info(
-                    "Exclude-long-texts [true multi-label]: dropped %d/%d samples "
-                    "(%.2f%%) exceeding %d tokens (longest dropped: %d).",
-                    n_dropped, n_before, pct, _ex_max, longest_dropped,
-                )
-            df = df.loc[keep_mask].reset_index(drop=True)
             if len(df) == 0:
                 raise RuntimeError(
                     "Exclude-long-texts removed every row: aborting training."

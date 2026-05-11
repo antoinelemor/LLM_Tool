@@ -6198,6 +6198,12 @@ def _run_benchmark_mode(
                 config.batch_size = _get_optimal_batch_size(model_id)
                 config.early_stopping_patience = max(2, benchmark_epochs // 5)
                 config.output_dir = str(model_output_dir)
+                # Propagate the Exclude strategy chosen at the Token Length step
+                # so benchmark runs honour it like the main training does.
+                if hasattr(bundle, 'metadata') and bundle.metadata:
+                    config.exclude_long_texts = bool(
+                        bundle.metadata.get('exclude_long_texts', False)
+                    )
 
                 trainer = ModelTrainer(config=config)
 

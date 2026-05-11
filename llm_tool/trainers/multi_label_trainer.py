@@ -1088,6 +1088,27 @@ class MultiLabelTrainer:
         if self.verbose:
             self.logger.info(f"Training model: {model_name}")
 
+        # Tokenizer-aware "Exclude long texts" filter. This method is the entry
+        # point used by SSH workers, parallel trainers, one-vs-all binary
+        # training, and any other caller that hands us samples directly. Apply
+        # the filter here so every path is covered, not only train()/load_*.
+        if (
+            getattr(self.config, 'exclude_long_texts', False)
+            and self.config.model_name
+            and (train_samples or val_samples)
+        ):
+            _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
+            if train_samples:
+                train_samples = self._filter_long_samples(
+                    train_samples, self.config.model_name, _ex_max,
+                    split_name=f'{label_name}/train',
+                )
+            if val_samples:
+                val_samples = self._filter_long_samples(
+                    val_samples, self.config.model_name, _ex_max,
+                    split_name=f'{label_name}/val',
+                )
+
         # Determine device to use (if force_device is set, use it)
         target_device = None
         if self.config.force_device:
