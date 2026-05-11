@@ -10248,7 +10248,9 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         # Fail fast on the "Split" strategy: it has the same "stored-but-never-
         # applied" history as exclude. Refusing to start is safer than running
         # with a silently inert flag.
-        if bundle.metadata.get('split_long_texts', False):
+        # Skip this check when resuming at RL — we don't re-tokenize data.
+        _is_skip_to_rl = model_config.get('skip_to_rl', False) if model_config else False
+        if bundle.metadata.get('split_long_texts', False) and not _is_skip_to_rl:
             raise NotImplementedError(
                 "The 'Split long texts into chunks' strategy is configured but "
                 "not implemented in this codebase. Re-run dataset configuration "

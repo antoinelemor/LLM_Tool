@@ -3292,6 +3292,37 @@ class BertBase(BertABC):
                         np.array(rl_state['best_support']),
                     )
                     best_model_path = rl_state['best_model_path']
+                    # If saved path no longer exists (moved during previous completion), find the final model
+                    if not os.path.exists(best_model_path):
+                        found = False
+                        # 1. Try model_category_dir/save_model_as (standard final location)
+                        if save_model_as and model_category_dir:
+                            candidate = os.path.join(model_category_dir, save_model_as)
+                            if os.path.exists(candidate):
+                                best_model_path = candidate
+                                found = True
+                                self.logger.info(f" Model found at final location: {best_model_path}")
+                        # 2. Try parent of original path (fallback)
+                        if not found:
+                            parent_dir = os.path.dirname(best_model_path)
+                            if save_model_as and parent_dir:
+                                candidate = os.path.join(parent_dir, save_model_as)
+                                if os.path.exists(candidate):
+                                    best_model_path = candidate
+                                    found = True
+                                    self.logger.info(f" Model found in original parent: {best_model_path}")
+                        # 3. Try pre_rl backup
+                        if not found:
+                            pre_rl = best_model_path + "_pre_rl"
+                            if os.path.exists(pre_rl):
+                                best_model_path = pre_rl
+                                found = True
+                                self.logger.info(f" Using pre-RL backup: {best_model_path}")
+                        if not found:
+                            self.logger.error(f" Could not find model at any expected location")
+                            skip_to_rl = False
+                    # Restore best epoch index for metadata
+                    best_epoch_index = rl_state.get('best_epoch', 0)
                     # Force RL to trigger
                     reinforced_learning = True
                     self._reinforced_already_triggered = False
@@ -4491,14 +4522,17 @@ class BertBase(BertABC):
                 # Ensure parent directory exists before moving
                 os.makedirs(model_category_dir, exist_ok=True)
 
-                # Remove existing final path if any
-                if os.path.exists(final_path):
-                    shutil.rmtree(final_path)
-                shutil.move(best_model_path, final_path)
-                best_model_path = final_path
-
-                # Log model save confirmation
-                self.logger.info(f"✅ Best model saved to: {final_path}")
+                # Skip move if already at final location (e.g., resume_rl)
+                if os.path.normpath(best_model_path) != os.path.normpath(final_path):
+                    # Remove existing final path if any
+                    if os.path.exists(final_path):
+                        shutil.rmtree(final_path)
+                    shutil.move(best_model_path, final_path)
+                    best_model_path = final_path
+                    # Log model save confirmation
+                    self.logger.info(f"✅ Best model saved to: {final_path}")
+                else:
+                    best_model_path = final_path
             elif save_model_as is not None and best_model_path is None:
                 # Save current model as fallback
                 final_path = os.path.join(model_category_dir, save_model_as)
@@ -4731,6 +4765,34 @@ class BertBase(BertABC):
                     should_trigger = worst_f1 < (reinforced_f1_threshold * 0.7) or avg_f1 < reinforced_f1_threshold
                     trigger_score = worst_f1
                     trigger_reason = f"Multi-class: worst F1={worst_f1:.2f}, avg F1={avg_f1:.2f}"
+
+                # When skip_to_rl is active, force trigger — user explicitly requested RL
+                if skip_to_rl:
+                    should_trigger = True
+                    trigger_reason = f"Forced: resume_rl requested by user (original: {trigger_reason})"
+                    # Also compute ml_reinforced for per-label RL even without distribution_aware
+                    if multi_label and ml_reinforced is None:
+                        from .reinforced_params import get_multi_label_reinforced_params
+                        train_labels_np = train_dataloader.dataset.tensors[2].numpy()
+                        label_pos_ratios = train_labels_np.mean(axis=0).tolist() if train_labels_np.ndim == 2 else [0.5] * num_labels
+                        label_names_list = class_names or [str(i) for i in range(num_labels)]
+                        ml_reinforced = get_multi_label_reinforced_params(
+                            model_name=self.model_name,
+                            label_f1_scores=list(best_f1_scores),
+                            label_pos_ratios=label_pos_ratios,
+                            label_names=label_names_list,
+                            original_lr=lr,
+                            reinforced_f1_threshold=reinforced_f1_threshold,
+                        )
+                        n_under = len(ml_reinforced['underperforming_labels'])
+                        if not suppress_display:
+                            self.logger.info(f" RL targeting {n_under}/{num_labels} underperforming labels")
+                            tiers = ml_reinforced['label_tiers']
+                            names = ml_reinforced['label_names']
+                            for tier_id in [3, 2, 1]:
+                                if tiers[tier_id]:
+                                    tier_names = [names[i] for i in tiers[tier_id]]
+                                    self.logger.info(f"  Tier {tier_id}: {', '.join(tier_names)}")
 
                 # Update display with reinforced learning threshold info
                 display.reinforced_threshold = trigger_score
@@ -5497,8 +5559,18 @@ class BertBase(BertABC):
 
                             # Save new best model
                             if save_model_as is not None:
-                                # Use session-organized directory structure
-                                temp_reinforced_path = os.path.join(model_category_dir, f"{save_model_as}_reinforced_temp")
+                                # Use a separate RL directory so the original model stays untouched
+                                # Structure: .../reinforced_training/labels/model (parallel to normal_training)
+                                # Note: Path is already imported at module level (line 71)
+                                _parts = list(Path(model_category_dir).parts)
+                                try:
+                                    _idx = len(_parts) - 1 - _parts[::-1].index('normal_training')
+                                    _parts[_idx] = 'reinforced_training'
+                                    rl_category_dir = str(Path(*_parts))
+                                except ValueError:
+                                    rl_category_dir = model_category_dir + "_rl"
+                                os.makedirs(rl_category_dir, exist_ok=True)
+                                temp_reinforced_path = os.path.join(rl_category_dir, f"{save_model_as}_reinforced_temp")
                                 os.makedirs(temp_reinforced_path, exist_ok=True)
 
                                 model_to_save = model.module if hasattr(model, 'module') else model
