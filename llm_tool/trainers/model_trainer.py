@@ -300,6 +300,10 @@ class TrainingConfig:
     # Multi-label classification parameters
     multi_label: bool = False  # Enable true multi-label classification (BCEWithLogitsLoss + sigmoid)
     multi_label_threshold: float = 0.5  # Threshold for multi-label predictions
+    # When True, samples whose tokenized length exceeds ``max_length`` are dropped
+    # at load time (using the actual tokenizer of ``model_name``). Only honoured by
+    # the multi-label path that routes through MultiLabelTrainer.load_multi_label_data.
+    exclude_long_texts: bool = False
 
 
 @dataclass

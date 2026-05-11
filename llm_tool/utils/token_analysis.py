@@ -274,6 +274,7 @@ def analyze_tokens_with_model_tokenizer(
     model_name: str,
     *,
     logger: Optional[logging.Logger] = None,
+    simulate_exclude_above: Optional[int] = None,
 ) -> Optional[dict]:
     """Tokenize every text with the exact tokenizer of ``model_name`` and
     recommend a safe ``max_length``.
@@ -352,6 +353,25 @@ def analyze_tokens_with_model_tokenizer(
     if lengths.size == 0:
         return None
 
+    # When the caller commits to dropping samples above a threshold (the
+    # "Exclude long texts" strategy), we recompute statistics on the kept
+    # subset only. The recommendation should reflect the data the trainer will
+    # actually see, not the raw file.
+    n_excluded_by_simulation = 0
+    if isinstance(simulate_exclude_above, int) and simulate_exclude_above > 0:
+        kept_mask = lengths <= simulate_exclude_above
+        n_excluded_by_simulation = int((~kept_mask).sum())
+        kept_lengths = lengths[kept_mask]
+        if kept_lengths.size == 0:
+            if logger:
+                logger.info(
+                    "Tokenizer-aware analysis: every text exceeds the exclusion "
+                    "threshold %d; nothing left to analyse.",
+                    simulate_exclude_above,
+                )
+            return None
+        lengths = kept_lengths
+
     # Determine the tokenizer's model_max_length when it is a sane finite value.
     raw_model_max = getattr(tokenizer, "model_max_length", None)
     model_max: Optional[int] = None
@@ -385,5 +405,6 @@ def analyze_tokens_with_model_tokenizer(
         "n_above_512": n_above_512,
         "distribution_buckets": buckets,
         "model_max_length": model_max,
+        "n_excluded_by_simulation": n_excluded_by_simulation,
     }
 

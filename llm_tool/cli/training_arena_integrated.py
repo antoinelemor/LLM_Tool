@@ -9416,19 +9416,19 @@ def _collect_quick_mode_parameters(
     # Robustness rules (do NOT silently degrade):
     #   - skip entirely if user picked a long-document model (max_length is the point)
     #   - skip if per-language training (multiple tokenizers, out of scope here)
+    #   - skip if split_long_texts: chunking changes the effective length distribution
+    #     (not implemented in this codebase anyway — a guard upstream raises)
     #   - skip if texts cannot be loaded
     #   - skip if tokenizer cannot be loaded -> never offer a wrong shortcut
-    #   - skip if the user already opted into split/exclude for >512 docs: the
-    #     analysis on the original texts is no longer representative of what
-    #     the trainer will see.
-    # When skipped, max_length stays at 512 (current behavior).
+    # When exclude_long_texts is on, we still run the analysis but on the
+    # *kept* subset (simulating the load-time filter) so the recommendation
+    # reflects what the trainer will actually see.
     optimized_max_length: Optional[int] = None
     token_analysis_result: Optional[Dict[str, Any]] = None
     skip_token_analysis = (
         prefers_long_models
         or train_by_language
         or split_long_texts
-        or exclude_long_texts
         or not hasattr(bundle, 'primary_file')
         or bundle.primary_file is None
     )
@@ -9468,6 +9468,9 @@ def _collect_quick_mode_parameters(
                         texts_for_analysis,
                         model_name,
                         logger=self.logger,
+                        # When the user opted into Exclude, simulate it so the
+                        # recommendation reflects the kept subset (<=512 tokens).
+                        simulate_exclude_above=512 if exclude_long_texts else None,
                     )
 
             if token_analysis_result:
@@ -9478,6 +9481,14 @@ def _collect_quick_mode_parameters(
                 n_analyzed = token_analysis_result['texts_analyzed']
                 buckets = token_analysis_result['distribution_buckets']
                 n_above_512 = token_analysis_result['n_above_512']
+                n_excluded_sim = token_analysis_result.get('n_excluded_by_simulation', 0)
+                if exclude_long_texts and n_excluded_sim > 0:
+                    pct_excluded = 100.0 * n_excluded_sim / (n_analyzed + n_excluded_sim)
+                    self.console.print(
+                        f"[dim]Simulating Exclude strategy: "
+                        f"{n_excluded_sim:,} text(s) above 512 tokens ignored "
+                        f"({pct_excluded:.2f}%). Stats below are on the kept subset.[/dim]\n"
+                    )
 
                 # Case 1: some texts already exceed 512 — no safe reduction available.
                 # Surface the finding so the user knows the upstream "all docs fit in 512"
@@ -10227,6 +10238,22 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     # default (512), preserving legacy behavior.
     if quick_params and quick_params.get('max_length'):
         training_config.max_length = int(quick_params['max_length'])
+    # Honour the "Exclude long texts" strategy the user chose at the Token
+    # Length step. Stored in bundle.metadata; the filter is applied at load
+    # time inside MultiLabelTrainer.load_multi_label_data.
+    if hasattr(bundle, 'metadata') and bundle.metadata:
+        training_config.exclude_long_texts = bool(
+            bundle.metadata.get('exclude_long_texts', False)
+        )
+        # Fail fast on the "Split" strategy: it has the same "stored-but-never-
+        # applied" history as exclude. Refusing to start is safer than running
+        # with a silently inert flag.
+        if bundle.metadata.get('split_long_texts', False):
+            raise NotImplementedError(
+                "The 'Split long texts into chunks' strategy is configured but "
+                "not implemented in this codebase. Re-run dataset configuration "
+                "and choose 'Exclude long texts' or 'Use a long-document model'."
+            )
 
     # Multi-label classification settings from bundle metadata
     if hasattr(bundle, 'metadata') and bundle.metadata:

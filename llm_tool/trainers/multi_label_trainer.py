@@ -331,13 +331,61 @@ class MultiLabelTrainer:
 
         return cleaned or "MULTI"
 
+    def _filter_long_samples(
+        self,
+        samples: List['MultiLabelSample'],
+        tokenizer_name: str,
+        max_length: int,
+        *,
+        split_name: str = '',
+    ) -> List['MultiLabelSample']:
+        """Drop samples whose tokenised length exceeds ``max_length``.
+
+        Used when a dataset is loaded already split (no call goes through
+        ``load_multi_label_data``). Loads the tokenizer eagerly and raises on
+        failure — silent skip would re-introduce the bug we are fixing.
+        """
+        try:
+            from transformers import AutoTokenizer  # type: ignore
+            tok = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
+        except Exception as exc:
+            raise RuntimeError(
+                f"exclude_long_texts was requested but the tokenizer for "
+                f"{tokenizer_name!r} could not be loaded ({exc}). Refusing to "
+                f"keep the dataset without applying the filter."
+            ) from exc
+        n_before = len(samples)
+        kept: List['MultiLabelSample'] = []
+        longest_dropped = 0
+        for s in samples:
+            text = s.text or ""
+            if not text.strip():
+                kept.append(s)
+                continue
+            encoded = tok.encode(text, truncation=False, add_special_tokens=True)
+            if len(encoded) <= max_length:
+                kept.append(s)
+            elif len(encoded) > longest_dropped:
+                longest_dropped = len(encoded)
+        n_dropped = n_before - len(kept)
+        if n_dropped > 0:
+            pct = 100.0 * n_dropped / max(n_before, 1)
+            self.logger.info(
+                "Exclude-long-texts [%s]: dropped %d/%d samples (%.2f%%) "
+                "exceeding %d tokens (longest dropped: %d).",
+                split_name or 'split', n_dropped, n_before, pct, max_length, longest_dropped,
+            )
+        return kept
+
     def load_multi_label_data(self,
                               filepath: str,
                               text_field: str = 'text',
                               label_fields: Optional[List[str]] = None,
                               id_field: Optional[str] = 'id',
                               lang_field: Optional[str] = 'lang',
-                              labels_dict_field: Optional[str] = 'labels') -> List[MultiLabelSample]:
+                              labels_dict_field: Optional[str] = 'labels',
+                              exclude_tokenizer_name: Optional[str] = None,
+                              exclude_max_length: Optional[int] = None) -> List[MultiLabelSample]:
         """
         Load multi-label data from JSONL or JSON file.
 
@@ -348,6 +396,15 @@ class MultiLabelTrainer:
             id_field: Field name for ID
             lang_field: Field name for language
             labels_dict_field: Field name for labels dictionary (for nested format)
+            exclude_tokenizer_name: HF model id whose tokenizer is used to measure
+                token length per sample. When provided together with
+                ``exclude_max_length``, samples exceeding that length are dropped.
+                This is the "Exclude" strategy from the Token Length step — it
+                was stored in metadata for years but never applied. Hard-failing
+                tokenizer load is preferable to silently keeping long samples,
+                so a load error raises here.
+            exclude_max_length: Drop samples whose tokenised length (with the
+                tokenizer above) exceeds this value. Ignored if no tokenizer.
 
         Returns:
             List of MultiLabelSample objects
@@ -358,6 +415,23 @@ class MultiLabelTrainer:
         3. JSON with train/val: {"train": [...], "val": [...]}
         """
         samples = []
+
+        # Resolve the optional exclusion tokenizer once. If the caller asked for
+        # exclusion we MUST NOT silently fall back: that would re-introduce the
+        # bug this method was patched to fix.
+        exclude_tokenizer = None
+        if exclude_tokenizer_name and isinstance(exclude_max_length, int) and exclude_max_length > 0:
+            try:
+                from transformers import AutoTokenizer  # type: ignore
+                exclude_tokenizer = AutoTokenizer.from_pretrained(
+                    exclude_tokenizer_name, use_fast=True
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"exclude_long_texts was requested but the tokenizer for "
+                    f"{exclude_tokenizer_name!r} could not be loaded ({exc}). "
+                    f"Refusing to load the dataset without applying the filter."
+                ) from exc
 
         # Determine file type and load accordingly
         if filepath.endswith('.json'):
@@ -393,6 +467,36 @@ class MultiLabelTrainer:
                         if self.verbose:
                             self.logger.warning(f"Line {line_num}: Error - {e}")
                         continue
+
+        # Apply the tokenizer-aware exclusion AFTER parsing so that the dropped
+        # count is reported against the actual sample set (not raw lines).
+        if exclude_tokenizer is not None:
+            n_before = len(samples)
+            kept: List[MultiLabelSample] = []
+            longest_dropped = 0
+            for s in samples:
+                text = s.text or ""
+                if not text.strip():
+                    kept.append(s)
+                    continue
+                encoded = exclude_tokenizer.encode(
+                    text, truncation=False, add_special_tokens=True
+                )
+                if len(encoded) <= exclude_max_length:  # type: ignore[operator]
+                    kept.append(s)
+                else:
+                    if len(encoded) > longest_dropped:
+                        longest_dropped = len(encoded)
+            samples = kept
+            n_dropped = n_before - len(samples)
+            if self.verbose or n_dropped > 0:
+                pct = (100.0 * n_dropped / n_before) if n_before else 0.0
+                self.logger.info(
+                    "Exclude-long-texts: dropped %d/%d samples (%.2f%%) "
+                    "exceeding %d tokens with tokenizer of %s (longest dropped: %d).",
+                    n_dropped, n_before, pct, exclude_max_length,
+                    exclude_tokenizer_name, longest_dropped,
+                )
 
         if self.verbose:
             # Count unique labels
@@ -1432,6 +1536,15 @@ class MultiLabelTrainer:
             if self.verbose:
                 self.logger.info(f"Loading data from {data_file}")
 
+            # Tokenizer-aware "exclude long texts" filter, configured upstream by
+            # the CLI when the user picked the Exclude strategy. We forward
+            # (model_name, max_length) so the loader drops oversized samples.
+            _exclude_tok: Optional[str] = None
+            _exclude_max: Optional[int] = None
+            if getattr(self.config, 'exclude_long_texts', False) and self.config.model_name:
+                _exclude_tok = self.config.model_name
+                _exclude_max = int(getattr(self.config, 'max_length', 512) or 512)
+
             # Check if it's a JSON file with train/val splits
             if data_file.endswith('.json'):
                 with open(data_file, 'r', encoding='utf-8') as f:
@@ -1442,13 +1555,29 @@ class MultiLabelTrainer:
                     train_samples = self._convert_to_samples(data['train'])
                     val_samples = self._convert_to_samples(data['val'])
                     auto_split = False  # Don't split again
+                    # Apply the exclude filter on pre-split data as well.
+                    if _exclude_tok and _exclude_max:
+                        train_samples = self._filter_long_samples(
+                            train_samples, _exclude_tok, _exclude_max, split_name='train'
+                        )
+                        val_samples = self._filter_long_samples(
+                            val_samples, _exclude_tok, _exclude_max, split_name='val'
+                        )
                 else:
                     # Single JSON file
-                    all_samples = self.load_multi_label_data(data_file)
+                    all_samples = self.load_multi_label_data(
+                        data_file,
+                        exclude_tokenizer_name=_exclude_tok,
+                        exclude_max_length=_exclude_max,
+                    )
                     train_samples = all_samples
             else:
                 # JSONL file
-                all_samples = self.load_multi_label_data(data_file)
+                all_samples = self.load_multi_label_data(
+                    data_file,
+                    exclude_tokenizer_name=_exclude_tok,
+                    exclude_max_length=_exclude_max,
+                )
                 train_samples = all_samples
 
         # Convert dicts to MultiLabelSample if needed
