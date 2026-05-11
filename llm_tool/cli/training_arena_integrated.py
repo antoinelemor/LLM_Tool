@@ -1233,7 +1233,11 @@ def _training_studio_confirm_and_execute(
         # Runtime parameters (to be filled during execution)
         'actual_models_trained': [],  # Will be updated post-training
         'training_start_time': None,
-        'training_end_time': None
+        'training_end_time': None,
+
+        # Resume at RL Phase 2
+        'skip_to_rl': preloaded_config.get('skip_to_rl', False) if preloaded_config else False,
+        'rl_state_path': preloaded_config.get('rl_state_path') if preloaded_config else None,
     }
 
     # Get session ID BEFORE saving metadata
@@ -10283,10 +10287,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         if quick_params.get('distribution_aware', False):
             extra_config["distribution_aware"] = True
 
-    # Resume at RL Phase 2 (from preloaded_config set by resume_rl action)
-    if preloaded_config and preloaded_config.get('skip_to_rl'):
+    # Resume at RL Phase 2 (from model_config set by resume_rl action)
+    if model_config and model_config.get('skip_to_rl'):
         extra_config['skip_to_rl'] = True
-        extra_config['rl_state_path'] = preloaded_config.get('rl_state_path')
+        extra_config['rl_state_path'] = model_config.get('rl_state_path')
         extra_config['reinforced_learning'] = True
 
     # Add models_by_language if user selected per-language models
