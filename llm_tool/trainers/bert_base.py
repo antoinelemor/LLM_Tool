@@ -3185,6 +3185,7 @@ class BertBase(BertABC):
         # For multi-label with distribution_aware=True, compute per-label adaptive gamma
         # and use AdaptiveAsymmetricLoss instead of uniform ASL
         ml_reinforced = None  # Will be set during reinforced learning trigger if needed
+        all_labels_range = list(range(num_labels))  # Needed for classification_report in both normal and RL paths
         if multi_label and distribution_aware:
             train_labels_np = train_dataloader.dataset.tensors[2].numpy()
             if train_labels_np.ndim == 2:
