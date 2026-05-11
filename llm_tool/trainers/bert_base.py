@@ -2430,6 +2430,8 @@ class BertBase(BertABC):
             category_name: Optional[str] = None,  # Category being trained (e.g., "political_parties_long")
             training_approach: Optional[str] = None,  # Override training approach (e.g., 'multi-label', 'one-vs-all', 'multi-class')
             distribution_aware: bool = False,  # Auto-compute per-label pos_weight and adaptive ASL gamma from data (multi-label only)
+            skip_to_rl: bool = False,  # Skip normal training and jump directly to RL Phase 2
+            rl_state_path: Optional[str] = None,  # Path to rl_ready_state.json for resuming at RL
     ) -> Tuple[Any, Any, Any, Any]:
         """
         Train, evaluate, and (optionally) save a BERT model. This method also logs training and validation
@@ -3277,7 +3279,39 @@ class BertBase(BertABC):
             else:
                 throttled_live = ThrottledLiveUpdater(live)
 
-            for i_epoch in range(n_epochs):
+            # ========== SKIP TO RL: Resume at Phase 2 ==========
+            if skip_to_rl and rl_state_path:
+                try:
+                    with open(rl_state_path, 'r') as f:
+                        rl_state = json.load(f)
+                    # Restore best_scores from saved state
+                    best_scores = (
+                        np.array(rl_state['best_precision']),
+                        np.array(rl_state['best_recall']),
+                        np.array(rl_state['best_f1_scores']),
+                        np.array(rl_state['best_support']),
+                    )
+                    best_model_path = rl_state['best_model_path']
+                    # Force RL to trigger
+                    reinforced_learning = True
+                    self._reinforced_already_triggered = False
+                    if not suppress_display:
+                        self.logger.info(f" Resuming at RL Phase 2 from {rl_state_path}")
+                        self.logger.info(f" Best model: {best_model_path} (epoch {rl_state.get('best_epoch', '?')})")
+                        best_f1s = rl_state['best_f1_scores']
+                        self.logger.info(f" F1 scores: min={min(best_f1s):.3f}, max={max(best_f1s):.3f}, avg={sum(best_f1s)/len(best_f1s):.3f}")
+                except Exception as e:
+                    self.logger.error(f"Failed to load RL state from {rl_state_path}: {e}")
+                    skip_to_rl = False  # Fallback to normal training
+
+            if skip_to_rl and best_scores is not None:
+                # Skip normal training entirely — jump to RL trigger check below
+                if not suppress_display:
+                    self.logger.info(f" Skipping normal training — jumping to RL Phase 2")
+            else:
+                skip_to_rl = False  # Ensure we run normal training if state load failed
+
+            for i_epoch in range(n_epochs if not skip_to_rl else 0):
                 epoch_start_time = time.time()
 
                 # Update display for new epoch
@@ -4068,6 +4102,28 @@ class BertBase(BertABC):
 
                     # Always save best_scores for reinforced learning trigger check
                     best_scores = precision_recall_fscore_support(test_labels_array, preds)
+
+                    # Save RL-ready state so training can resume at RL if it crashes
+                    if reinforced_learning and metrics_output_dir and best_model_path:
+                        try:
+                            rl_state = {
+                                'best_f1_scores': [float(f) for f in best_scores[2]],
+                                'best_precision': [float(p) for p in best_scores[0]],
+                                'best_recall': [float(r) for r in best_scores[1]],
+                                'best_support': [int(s) for s in best_scores[3]],
+                                'best_model_path': str(best_model_path),
+                                'best_epoch': i_epoch + 1,
+                                'num_labels': num_labels,
+                                'multi_label': multi_label,
+                                'distribution_aware': distribution_aware,
+                                'reinforced_f1_threshold': reinforced_f1_threshold,
+                                'lr': lr,
+                            }
+                            rl_state_file = os.path.join(metrics_output_dir, 'rl_ready_state.json')
+                            with open(rl_state_file, 'w') as f:
+                                json.dump(rl_state, f, indent=2)
+                        except Exception:
+                            pass  # Don't fail training over state save
 
                     # Save language metrics from best epoch (if available)
                     language_averages_for_best = None

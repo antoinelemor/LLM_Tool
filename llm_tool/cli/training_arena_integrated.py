@@ -10245,6 +10245,12 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         if quick_params.get('distribution_aware', False):
             extra_config["distribution_aware"] = True
 
+    # Resume at RL Phase 2 (from preloaded_config set by resume_rl action)
+    if preloaded_config and preloaded_config.get('skip_to_rl'):
+        extra_config['skip_to_rl'] = True
+        extra_config['rl_state_path'] = preloaded_config.get('rl_state_path')
+        extra_config['reinforced_learning'] = True
+
     # Add models_by_language if user selected per-language models
     if models_by_language:
         extra_config["models_by_language"] = models_by_language
@@ -14216,14 +14222,33 @@ def _resume_training_studio(self, focus_session_id: Optional[str] = None):
     if is_recovered_session:
         self.console.print("\n[yellow][!]  Recovered session: parameters may be incomplete.[/yellow]")
 
+    # Check if RL-ready state exists (normal training completed, RL can be resumed)
+    rl_state_available = False
+    rl_state_path = None
+    try:
+        import glob as glob_mod
+        session_id_check = metadata.get("training_session", {}).get("session_id", "")
+        rl_candidates = glob_mod.glob(f"logs/training_arena/{session_id_check}/training_metrics/**/rl_ready_state.json", recursive=True)
+        if rl_candidates:
+            rl_state_available = True
+            rl_state_path = rl_candidates[0]
+    except Exception:
+        pass
+
     self.console.print("\n[bold cyan]Action Mode[/bold cyan]")
-    self.console.print("  • [cyan]resume[/cyan]   - Continue incomplete training (if interrupted)")
-    self.console.print("  • [cyan]relaunch[/cyan] - Start fresh with same parameters\n")
+    self.console.print("  • [cyan]resume[/cyan]     - Continue incomplete training (if interrupted)")
+    if rl_state_available:
+        self.console.print("  • [cyan]resume_rl[/cyan]  - Skip to RL Phase 2 (normal training completed, RL crashed)")
+    self.console.print("  • [cyan]relaunch[/cyan]  - Start fresh with same parameters\n")
+
+    choices = ["resume", "relaunch"]
+    if rl_state_available:
+        choices.insert(1, "resume_rl")
 
     action_mode = Prompt.ask(
-        "[bold yellow]Resume or relaunch?[/bold yellow]",
-        choices=["resume", "relaunch"],
-        default="relaunch",
+        "[bold yellow]Select action[/bold yellow]",
+        choices=choices,
+        default="resume_rl" if rl_state_available else "relaunch",
     )
 
     self.console.print(f"\n[cyan]Reconstructing dataset configuration...[/cyan]")
@@ -14249,16 +14274,24 @@ def _resume_training_studio(self, focus_session_id: Optional[str] = None):
 
     if action_mode == "resume":
         self.console.print("\n[green]✓ Resuming training session...[/green]\n")
+    elif action_mode == "resume_rl":
+        self.console.print("\n[green]✓ Resuming at RL Phase 2 (skipping normal training)...[/green]\n")
     else:
         self.console.print("\n[green]✓ Relaunching training with saved parameters...[/green]\n")
 
     mode = metadata.get("model_config", {}).get("training_mode", "quick")
 
+    preloaded = metadata.get("model_config", {})
+    if action_mode == "resume_rl" and rl_state_path:
+        preloaded['skip_to_rl'] = True
+        preloaded['rl_state_path'] = rl_state_path
+        preloaded['use_reinforcement'] = True  # Force RL on
+
     self._training_studio_confirm_and_execute(
         bundle,
         mode,
-        preloaded_config=metadata.get("model_config", {}),
-        is_resume=action_mode == "resume",
+        preloaded_config=preloaded,
+        is_resume=action_mode in ("resume", "resume_rl"),
         step_context="arena_quick",
     )
 def _training_studio_default_model(self) -> str:

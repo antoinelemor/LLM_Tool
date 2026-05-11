@@ -151,6 +151,9 @@ class TrainingConfig:
     distribution_aware: bool = True  # Auto-compute per-label pos_weight and adaptive ASL gamma from data
     use_asymmetric_loss: bool = True  # Use Adaptive ASL by default for multi-label (SOTA)
     class_weight_method: str = 'pos_neg_ratio'  # Method for compute_multi_label_class_weights
+    # Resume at RL Phase 2
+    skip_to_rl: bool = False  # Skip normal training and jump to RL
+    rl_state_path: Optional[str] = None  # Path to rl_ready_state.json
 
 
 @dataclass
@@ -1264,6 +1267,9 @@ class MultiLabelTrainer:
             # Distribution-aware multi-label: per-label adaptive gamma, weighted sampling, label masking in RL
             distribution_aware=self.config.distribution_aware if self.config.multi_label else False,
             use_asymmetric_loss=self.config.use_asymmetric_loss if self.config.multi_label else False,
+            # Resume at RL Phase 2
+            skip_to_rl=self.config.skip_to_rl,
+            rl_state_path=self.config.rl_state_path,
         )
 
         # CRITICAL FIX: Use last_training_summary from model for complete metrics

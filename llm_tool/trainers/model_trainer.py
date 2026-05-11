@@ -1880,6 +1880,9 @@ class ModelTrainer:
             # Pass manual reinforced epochs if provided
             if 'reinforced_epochs' in config and config['reinforced_epochs'] is not None:
                 ml_config.reinforced_epochs = config['reinforced_epochs']
+            # Resume at RL Phase 2
+            ml_config.skip_to_rl = config.get('skip_to_rl', False)
+            ml_config.rl_state_path = config.get('rl_state_path')
 
             ml_trainer = MultiLabelTrainer(config=ml_config, verbose=True)
 
@@ -2978,6 +2981,9 @@ class ModelTrainer:
             reinforced_f1_threshold=config.get('rl_f1_threshold', 0.7),
             rl_f1_threshold=config.get('rl_f1_threshold', 0.7),
             reinforced_epochs=config.get('reinforced_epochs'),
+            # Resume at RL Phase 2
+            skip_to_rl=config.get('skip_to_rl', False),
+            rl_state_path=config.get('rl_state_path'),
         )
 
         # ========== STEP 9: Evaluate ==========
