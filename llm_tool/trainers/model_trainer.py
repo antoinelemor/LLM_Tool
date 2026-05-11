@@ -2872,15 +2872,6 @@ class ModelTrainer:
 
         self.logger.info(f"  Loaded {len(df)} samples")
 
-        # Diagnostic: surface the exact value of the flag at the decision point.
-        self.logger.info(
-            "[EXCLUDE_DEBUG] _train_true_multi_label sees self.config.exclude_long_texts=%r, "
-            "self.config.max_length=%r, config dict has exclude=%r",
-            getattr(self.config, 'exclude_long_texts', None),
-            getattr(self.config, 'max_length', None),
-            config.get('exclude_long_texts'),
-        )
-
         # ========== STEP 1a: Optional tokenizer-aware exclusion ==========
         # This path (true multi-label) bypasses both load_multi_label_data and
         # MultiLabelTrainer entirely, so the filter must live here too.

@@ -8673,6 +8673,17 @@ def _collect_quick_mode_parameters(
     text_length_stats['exclude_long_texts'] = exclude_long_texts
     text_length_stats['split_long_texts'] = split_long_texts
 
+    # ALSO mirror the flags at the top level of bundle.metadata. Downstream
+    # consumers (e.g. the training-config propagation in _training_studio_run_quick)
+    # read bundle.metadata.get('exclude_long_texts'), and without this mirror
+    # the choice made here lived only inside the nested text_length_stats dict
+    # and was silently ignored, leaving BertBase to truncate long sequences.
+    if hasattr(bundle, 'metadata') and bundle.metadata is not None:
+        bundle.metadata['exclude_long_texts'] = exclude_long_texts
+        bundle.metadata['split_long_texts'] = split_long_texts
+        bundle.metadata['user_prefers_long_models'] = prefers_long_models
+        bundle.metadata['text_length_stats'] = text_length_stats
+
     # Multilingual strategy (if multiple languages detected)
     train_by_language = False
     if len(languages) > 1:
@@ -10264,13 +10275,6 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         training_config.exclude_long_texts = bool(
             bundle.metadata.get('exclude_long_texts', False)
         )
-        # Diagnostic log to track propagation through the call chain.
-        self.logger.info(
-            "[EXCLUDE_DEBUG] CLI propagation -> bundle.metadata.exclude_long_texts=%r, "
-            "training_config.exclude_long_texts=%r",
-            bundle.metadata.get('exclude_long_texts', False),
-            training_config.exclude_long_texts,
-        )
         # Fail fast on the "Split" strategy: it has the same "stored-but-never-
         # applied" history as exclude. Refusing to start is safer than running
         # with a silently inert flag.
@@ -10337,11 +10341,6 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         "exclude_long_texts": bool(training_config.exclude_long_texts),
         "max_length": int(training_config.max_length),
     }
-    self.logger.info(
-        "[EXCLUDE_DEBUG] extra_config carries -> exclude_long_texts=%r, max_length=%r",
-        extra_config.get("exclude_long_texts"),
-        extra_config.get("max_length"),
-    )
 
     # Add reinforced learning parameters if enabled
     if quick_params:
