@@ -997,6 +997,9 @@ class MultiLabelTrainer:
         }
 
         # select model class based on model name if provided, otherwise auto-select
+        # max_length comes from TrainingConfig and is set upstream by the
+        # tokenizer-aware analysis in the CLI (or stays at the dataclass default 512).
+        configured_max_length = int(getattr(self.config, 'max_length', 512) or 512)
         if self.config.model_name:
             # Get the correct model class for the specified model name
             model_class = get_model_class_for_name(self.config.model_name)
@@ -1004,6 +1007,7 @@ class MultiLabelTrainer:
                 model_name=self.config.model_name,
                 device=target_device,
                 resource_recommendations=resource_recommendations,
+                max_length=configured_max_length,
             )
         else:
             # Auto-select model class based on data characteristics
@@ -1011,6 +1015,7 @@ class MultiLabelTrainer:
             model = model_class(
                 device=target_device,
                 resource_recommendations=resource_recommendations,
+                max_length=configured_max_length,
             )
 
         if len(train_samples) == 0:

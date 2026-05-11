@@ -9368,6 +9368,143 @@ def _collect_quick_mode_parameters(
             'train_by_language': bool(onevsall_models_by_language)
         }
 
+    # ============ TOKENIZER-AWARE MAX_LENGTH OPTIMIZATION ============
+    # Goal: replace the default 512 with the smallest power-of-two bucket that
+    # still fits every text, using the *real* tokenizer of the selected model.
+    # Robustness rules (do NOT silently degrade):
+    #   - skip entirely if user picked a long-document model (max_length is the point)
+    #   - skip if per-language training (multiple tokenizers, out of scope here)
+    #   - skip if texts cannot be loaded
+    #   - skip if tokenizer cannot be loaded -> never offer a wrong shortcut
+    #   - skip if the user already opted into split/exclude for >512 docs: the
+    #     analysis on the original texts is no longer representative of what
+    #     the trainer will see.
+    # When skipped, max_length stays at 512 (current behavior).
+    optimized_max_length: Optional[int] = None
+    token_analysis_result: Optional[Dict[str, Any]] = None
+    skip_token_analysis = (
+        prefers_long_models
+        or train_by_language
+        or split_long_texts
+        or exclude_long_texts
+        or not hasattr(bundle, 'primary_file')
+        or bundle.primary_file is None
+    )
+    if not skip_token_analysis:
+        try:
+            from llm_tool.utils.token_analysis import analyze_tokens_with_model_tokenizer
+            import pandas as _pd
+
+            primary_path = Path(bundle.primary_file) if not isinstance(bundle.primary_file, Path) else bundle.primary_file
+            text_col = getattr(bundle, 'text_column', None) or 'text'
+            texts_for_analysis: List[str] = []
+            if primary_path.exists():
+                suffix = primary_path.suffix.lower()
+                if suffix == '.csv':
+                    df_texts = _pd.read_csv(primary_path, usecols=[text_col])
+                elif suffix in ('.jsonl', '.json'):
+                    df_texts = _pd.read_json(primary_path, lines=suffix == '.jsonl')
+                else:
+                    df_texts = None
+                if df_texts is not None and text_col in df_texts.columns:
+                    texts_for_analysis = [
+                        t for t in df_texts[text_col].dropna().astype(str).tolist()
+                        if t.strip()
+                    ]
+
+            if texts_for_analysis:
+                self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+                self.console.print(f"[bold cyan]           Sequence Length Optimization                       [/bold cyan]")
+                self.console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+                self.console.print(
+                    f"[dim]Tokenizing {len(texts_for_analysis):,} texts with the actual tokenizer of "
+                    f"[cyan]{model_name}[/cyan] to find the smallest safe max_length...[/dim]\n"
+                )
+
+                with self.console.status("[cyan]Running tokenizer-aware analysis...[/cyan]", spinner="dots"):
+                    token_analysis_result = analyze_tokens_with_model_tokenizer(
+                        texts_for_analysis,
+                        model_name,
+                        logger=self.logger,
+                    )
+
+            if token_analysis_result:
+                recommended = token_analysis_result['recommended_max_length']
+                token_max = token_analysis_result['token_max']
+                token_p95 = token_analysis_result['token_p95']
+                token_p99 = token_analysis_result['token_p99']
+                n_analyzed = token_analysis_result['texts_analyzed']
+                buckets = token_analysis_result['distribution_buckets']
+                n_above_512 = token_analysis_result['n_above_512']
+
+                # Case 1: some texts already exceed 512 — no safe reduction available.
+                # Surface the finding so the user knows the upstream "all docs fit in 512"
+                # estimate was based on a different tokenizer, but do NOT offer to change
+                # max_length: any reduction would silently truncate real data.
+                if token_max > 512:
+                    self.console.print(
+                        f"[yellow][!] With the actual tokenizer of {model_name}, "
+                        f"{n_above_512:,}/{n_analyzed:,} texts exceed 512 tokens "
+                        f"(max={token_max}, p99={token_p99:.0f}).[/yellow]"
+                    )
+                    self.console.print(
+                        "[dim]No safe reduction possible. Keeping max_length=512 "
+                        "(those texts will be truncated by the model). To preserve "
+                        "them, re-run and pick split-into-chunks or a long-document "
+                        "model at the Token Length Strategy step.[/dim]\n"
+                    )
+                # Case 2: optimization is meaningful (recommended bucket strictly < 512).
+                elif recommended < 512:
+                    speedup = (512.0 / recommended) ** 2  # attention is quadratic in seq length
+                    stats_table = Table(show_header=True, header_style="bold magenta",
+                                        border_style="cyan", box=box.SIMPLE, expand=True)
+                    stats_table.add_column("Metric", style="cyan", no_wrap=True)
+                    stats_table.add_column("Value", style="white")
+                    stats_table.add_row("Texts analyzed", f"{n_analyzed:,}")
+                    stats_table.add_row("Token max (p100)", f"{token_max}")
+                    stats_table.add_row("Token p99", f"{token_p99:.0f}")
+                    stats_table.add_row("Token p95", f"{token_p95:.0f}")
+                    stats_table.add_row(
+                        "Distribution",
+                        ", ".join(f"{k}: {v:,}" for k, v in buckets.items()),
+                    )
+                    stats_table.add_row(
+                        "[bold]Recommended max_length[/bold]",
+                        f"[bold green]{recommended}[/bold green] "
+                        f"(vs. default 512 — zero truncation guaranteed)",
+                    )
+                    stats_table.add_row(
+                        "Estimated speedup",
+                        f"[green]~{speedup:.1f}× faster[/green] "
+                        f"[dim](attention is O(n²))[/dim]",
+                    )
+                    self.console.print(stats_table)
+                    self.console.print()
+
+                    use_optimized = Confirm.ask(
+                        f"[bold yellow]Use max_length={recommended} (recommended) instead of 512?[/bold yellow]",
+                        default=True,
+                    )
+                    if use_optimized:
+                        optimized_max_length = recommended
+                        self.console.print(
+                            f"[green]✓ max_length set to {recommended}. Training will be ~{speedup:.1f}× faster.[/green]\n"
+                        )
+                    else:
+                        self.console.print("[dim]Keeping default max_length=512.[/dim]\n")
+                else:
+                    self.console.print(
+                        f"[dim]Token analysis: max observed = {token_max} tokens. "
+                        f"Default max_length=512 is already optimal.[/dim]\n"
+                    )
+        except Exception as exc:
+            # Hard rule: never let this analysis break the training flow.
+            # On any unexpected error, log and keep the default 512.
+            self.logger.warning(
+                "Tokenizer-aware max_length analysis failed (%s). Keeping default max_length=512.",
+                exc,
+            )
+
     # Multi-label threshold configuration (only if multi-label was selected in Training Approach)
     # The multi_label flag is already set in bundle.metadata during the Training Approach step
     if hasattr(bundle, 'metadata') and bundle.metadata and bundle.metadata.get('multi_label'):
@@ -9586,6 +9723,9 @@ def _collect_quick_mode_parameters(
         'manual_rl_epochs': manual_rl_epochs if manual_rl_epochs else None,
         'force_reinforced': force_reinforced,
         'distribution_aware': distribution_aware_enabled,
+        # Tokenizer-aware max_length: only set when user opted in. None means
+        # downstream code should keep its default (currently 512).
+        'max_length': optimized_max_length,
     }
 
     # Include models_by_language if training per-language
@@ -10040,6 +10180,11 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     training_config.model_name = model_name
     training_config.num_epochs = epochs
     training_config.batch_size = _get_optimal_batch_size(model_name)  # Dynamic batch size based on system resources
+    # Tokenizer-aware max_length: only override the default when the user accepted
+    # the optimization in _collect_quick_mode_parameters. None => keep the dataclass
+    # default (512), preserving legacy behavior.
+    if quick_params and quick_params.get('max_length'):
+        training_config.max_length = int(quick_params['max_length'])
 
     # Multi-label classification settings from bundle metadata
     if hasattr(bundle, 'metadata') and bundle.metadata:

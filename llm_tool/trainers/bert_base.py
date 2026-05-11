@@ -1515,6 +1515,7 @@ class BertBase(BertABC):
             model_sequence_classifier: Any = None,  # Will use AutoModelForSequenceClassification
             device: Device | None = None,
             resource_recommendations: Optional[Dict[str, Any]] = None,
+            max_length: int = 512,
     ):
         """
         Parameters
@@ -1534,8 +1535,18 @@ class BertBase(BertABC):
         resource_recommendations: dict, default=None
             System resource recommendations from detect_resources().get_recommendation().
             Used to configure DataLoader workers, prefetch, etc. for optimal GPU utilization.
+
+        max_length: int, default=512
+            Maximum sequence length (in tokens) used for padding/truncation. The
+            value is computed upstream (see token_analysis.analyze_tokens_with_model_tokenizer)
+            from the actual tokenizer of this model. Must be >= 8 and <= 4096.
         """
         self.model_name = model_name
+        if not isinstance(max_length, int) or max_length < 8 or max_length > 4096:
+            raise ValueError(
+                f"max_length must be an int between 8 and 4096, got {max_length!r}"
+            )
+        self.max_length = max_length
 
         # Use fast tokenizer by default for up to 4x speedup in tokenization
         if tokenizer is None:
@@ -1703,7 +1714,21 @@ class BertBase(BertABC):
             encoded_sent = self.tokenizer.encode(sent, add_special_tokens=add_special_tokens)
             input_ids.append(encoded_sent)
 
-        max_len = min(max(len(sen) for sen in input_ids), 512)
+        # Sanity check: count sequences that exceed max_length BEFORE we truncate them.
+        # This is a safety net against silent truncation when the upstream tokenizer-aware
+        # analysis was skipped or used a non-representative sample.
+        observed_max = max(len(sen) for sen in input_ids)
+        n_truncated = sum(1 for sen in input_ids if len(sen) > self.max_length)
+        if n_truncated > 0:
+            pct = 100.0 * n_truncated / max(len(input_ids), 1)
+            self.logger.warning(
+                "[!] %d sequence(s) (%.2f%%) exceed max_length=%d and will be truncated "
+                "(observed max=%d tokens). If this is unexpected, re-run the token-length "
+                "analysis with the model tokenizer to pick a safer max_length.",
+                n_truncated, pct, self.max_length, observed_max,
+            )
+
+        max_len = min(observed_max, self.max_length)
         pad = np.full((len(input_ids), max_len), 0, dtype="long")
         for idx, seq in enumerate(input_ids):
             trunc = seq[:max_len]

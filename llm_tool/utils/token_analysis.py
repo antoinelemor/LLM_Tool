@@ -236,3 +236,154 @@ def analyse_text_tokens(
         char_lengths=char_array,
     )
 
+
+# Discrete max_length values offered when sizing a model. Sticking to powers of
+# two (plus 384, a common BERT-friendly checkpoint length) keeps GPU tensor
+# shapes well-aligned for attention kernels on both CUDA and MPS.
+_RECOMMENDED_BUCKETS: Sequence[int] = (64, 96, 128, 192, 256, 384, 512)
+_HARD_CAP: int = 4096
+
+
+def _round_to_recommended_bucket(target: int, *, model_max: Optional[int]) -> int:
+    """Pick the smallest bucket >= target, capped by model_max.
+
+    The clamp matters: a recommendation of 8000 tokens on a model whose
+    position embeddings only go to 512 would silently break the model.
+
+    When ``model_max`` is None (the tokenizer does not expose a usable
+    ``model_max_length`` — many BERT-style tokenizers report a sentinel like
+    1e30), we conservatively cap at 512 since that is the standard ceiling
+    for non-long-document BERT/RoBERTa/CamemBERT checkpoints. Callers that
+    target long-document models must pass an explicit ``model_max``.
+    """
+    if isinstance(model_max, int) and model_max > 0:
+        cap = min(model_max, _HARD_CAP)
+    else:
+        cap = 512
+    target = max(int(target), _RECOMMENDED_BUCKETS[0])
+    target = min(target, cap)
+    for bucket in _RECOMMENDED_BUCKETS:
+        if bucket >= target and bucket <= cap:
+            return bucket
+    # No standard bucket fits under the cap: hand back the cap itself.
+    return cap
+
+
+def analyze_tokens_with_model_tokenizer(
+    texts: Sequence[str],
+    model_name: str,
+    *,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[dict]:
+    """Tokenize every text with the exact tokenizer of ``model_name`` and
+    recommend a safe ``max_length``.
+
+    Behaviour by design
+    -------------------
+    - Returns ``None`` (no exception, no log spam) when the tokenizer cannot be
+      loaded — typical reasons are missing ``transformers``, no network and no
+      cache, or an invalid model id. Callers must treat ``None`` as "don't
+      offer the optimisation, keep the current default" and never as a silent
+      fallback to 512.
+    - When successful, tokenises the full input (no sampling) using the fast
+      tokenizer's batch encode for speed. The recommendation is the smallest
+      power-of-two bucket >= the observed token-length maximum, which
+      guarantees zero truncation by construction.
+    - Caps recommendations at the tokenizer's announced ``model_max_length``
+      so we never advertise a length the model cannot actually consume.
+
+    Returns
+    -------
+    dict with keys: ``model_name``, ``texts_analyzed``, ``token_max``,
+    ``token_p95``, ``token_p99``, ``token_mean``, ``recommended_max_length``,
+    ``current_default`` (always 512 for callers that compare against the
+    legacy default), ``n_above_recommended`` (always 0 — sanity check),
+    ``n_above_512``, ``distribution_buckets``, ``model_max_length``.
+    """
+    if not HAS_TRANSFORMERS:
+        if logger:
+            logger.info(
+                "Skipping tokenizer-aware analysis: transformers not installed."
+            )
+        return None
+    if not model_name or not isinstance(model_name, str):
+        if logger:
+            logger.info("Skipping tokenizer-aware analysis: empty model_name.")
+        return None
+
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)  # type: ignore
+    except Exception as exc:
+        if logger:
+            logger.info(
+                "Tokenizer-aware analysis disabled: could not load tokenizer for "
+                "%s (%s). Falling back to default max_length.",
+                model_name,
+                exc,
+            )
+        return None
+
+    # Filter to non-empty strings; mirror the validation done in BertBase._prepare_inputs.
+    clean_texts: List[str] = [t for t in texts if isinstance(t, str) and t.strip()]
+    if not clean_texts:
+        if logger:
+            logger.info("Skipping tokenizer-aware analysis: no valid texts.")
+        return None
+
+    try:
+        # Fast tokenizers handle large batches efficiently. We disable padding
+        # and truncation so we observe the *real* token length distribution.
+        encoded = tokenizer(
+            clean_texts,
+            add_special_tokens=True,
+            truncation=False,
+            padding=False,
+            return_attention_mask=False,
+            return_token_type_ids=False,
+        )
+        lengths = np.asarray([len(ids) for ids in encoded["input_ids"]], dtype=np.int64)
+    except Exception as exc:
+        if logger:
+            logger.info(
+                "Tokenizer-aware analysis aborted during batch encode: %s", exc
+            )
+        return None
+
+    if lengths.size == 0:
+        return None
+
+    # Determine the tokenizer's model_max_length when it is a sane finite value.
+    raw_model_max = getattr(tokenizer, "model_max_length", None)
+    model_max: Optional[int] = None
+    if isinstance(raw_model_max, int) and 0 < raw_model_max < 10_000_000:
+        model_max = raw_model_max
+
+    token_max = int(lengths.max())
+    recommended = _round_to_recommended_bucket(token_max, model_max=model_max)
+    n_above_recommended = int(np.sum(lengths > recommended))
+    n_above_512 = int(np.sum(lengths > 512))
+
+    # Coarse distribution for display in the CLI panel.
+    buckets = {
+        "≤128": int(np.sum(lengths <= 128)),
+        "129-256": int(np.sum((lengths > 128) & (lengths <= 256))),
+        "257-512": int(np.sum((lengths > 256) & (lengths <= 512))),
+        ">512": int(np.sum(lengths > 512)),
+    }
+
+    return {
+        "model_name": model_name,
+        "texts_analyzed": int(lengths.size),
+        "token_min": int(lengths.min()),
+        "token_max": token_max,
+        "token_mean": float(lengths.mean()),
+        "token_p95": float(np.percentile(lengths, 95)),
+        "token_p99": float(np.percentile(lengths, 99)),
+        "recommended_max_length": recommended,
+        "current_default": 512,
+        "n_above_recommended": n_above_recommended,
+        "n_above_512": n_above_512,
+        "distribution_buckets": buckets,
+        "model_max_length": model_max,
+    }
+

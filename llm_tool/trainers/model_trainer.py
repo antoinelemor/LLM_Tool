@@ -1027,11 +1027,14 @@ class ModelTrainer:
             # Use mapping function to get correct class for model name
             model_class = get_model_class_for_name(model_name)
 
-        # Initialize model with resource recommendations for optimized DataLoader
+        # Initialize model with resource recommendations for optimized DataLoader.
+        # max_length comes from TrainingConfig (set upstream by tokenizer-aware
+        # analysis or left at the dataclass default 512).
         model_instance = model_class(
             model_name=model_name,
             device=self.device,
-            resource_recommendations=self.resource_recommendations
+            resource_recommendations=self.resource_recommendations,
+            max_length=int(getattr(self.config, 'max_length', 512) or 512),
         )
 
         # ==================== LANGUAGE FILTERING FOR MONOLINGUAL MODELS ====================
@@ -2520,7 +2523,8 @@ class ModelTrainer:
             model = model_class(
                 model_name=model_name,
                 device=self.device,
-                resource_recommendations=self.resource_recommendations
+                resource_recommendations=self.resource_recommendations,
+                max_length=int(getattr(self.config, 'max_length', 512) or 512),
             )
         else:
             # Use regular training for other model types
@@ -2850,7 +2854,8 @@ class ModelTrainer:
         model = model_class(
             model_name=model_name,
             device=self.device,
-            resource_recommendations=self.resource_recommendations
+            resource_recommendations=self.resource_recommendations,
+            max_length=int(getattr(self.config, 'max_length', 512) or 512),
         )
 
         # Set num_labels for multi-label
