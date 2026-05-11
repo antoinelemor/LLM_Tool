@@ -2777,6 +2777,53 @@ class ModelTrainer:
 
         self.logger.info(f"  Loaded {len(df)} samples")
 
+        # ========== STEP 1a: Optional tokenizer-aware exclusion ==========
+        # This path (true multi-label) bypasses both load_multi_label_data and
+        # MultiLabelTrainer entirely, so the filter must live here too. Without
+        # it, exclude_long_texts=True from the CLI was silently inert and
+        # BertBase truncated thousands of long sequences instead.
+        if (
+            bool(getattr(self.config, 'exclude_long_texts', False))
+            and model_name
+        ):
+            _ex_max = int(getattr(self.config, 'max_length', 512) or 512)
+            try:
+                from transformers import AutoTokenizer  # type: ignore
+                _ex_tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"exclude_long_texts was requested but the tokenizer for "
+                    f"{model_name!r} could not be loaded ({exc}). Refusing to "
+                    f"start training without applying the filter."
+                ) from exc
+            n_before = len(df)
+            texts_for_check = df[text_column].astype(str).tolist()
+            # Fast path: batch-encode with truncation disabled to measure true lengths.
+            encoded = _ex_tok(
+                texts_for_check,
+                add_special_tokens=True,
+                truncation=False,
+                padding=False,
+                return_attention_mask=False,
+                return_token_type_ids=False,
+            )
+            lengths = np.asarray([len(ids) for ids in encoded['input_ids']])
+            keep_mask = lengths <= _ex_max
+            n_dropped = int((~keep_mask).sum())
+            if n_dropped > 0:
+                longest_dropped = int(lengths[~keep_mask].max())
+                pct = 100.0 * n_dropped / max(n_before, 1)
+                self.logger.info(
+                    "Exclude-long-texts [true multi-label]: dropped %d/%d samples "
+                    "(%.2f%%) exceeding %d tokens (longest dropped: %d).",
+                    n_dropped, n_before, pct, _ex_max, longest_dropped,
+                )
+            df = df.loc[keep_mask].reset_index(drop=True)
+            if len(df) == 0:
+                raise RuntimeError(
+                    "Exclude-long-texts removed every row: aborting training."
+                )
+
         # ========== STEP 1b: Detect Language Column ==========
         language_column = None
         track_languages = False
