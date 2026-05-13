@@ -1613,54 +1613,42 @@ class BertBase(BertABC):
         multi_label: bool,
         uniform_alpha: float = 0.5,
     ):
-        """
-        Build a WeightedRandomSampler that includes empty-label samples
-        and bounds the dynamic range of per-sample weights.
-
-        Pure inverse-frequency weighting assigns weight 0 to samples with
-        no positive labels — in multi-label datasets with negative/empty
-        examples (1:N balanced) those samples are silently dropped from
-        training, biasing the model toward predicting positive on
-        everything (recall=1 across all classes, precision = base rate).
-
-        Mitigation: blend a uniform distribution (every sample at its
-        natural rate) with the inverse-frequency distribution (boosts
-        rare classes; empties treated as a virtual class with frequency
-        = empty_count). `uniform_alpha=0` reproduces the legacy
-        pure-inverse-freq behavior; `uniform_alpha=1` disables
-        rebalancing entirely.
-        """
+        """Inclusive WeightedRandomSampler for binary, multi-class, multi-label (handles empty rows)."""
         from torch.utils.data import WeightedRandomSampler
 
-        if multi_label:
-            if labels.ndim == 1:
-                labels_onehot = np.eye(num_labels)[labels]
-            else:
-                labels_onehot = labels
-
-            n_samples = len(labels_onehot)
-            label_frequencies = labels_onehot.sum(axis=0) + 1e-6
-            label_weights = 1.0 / label_frequencies
-            inv_freq = (labels_onehot * label_weights).sum(axis=1)
-
-            empty_mask = labels_onehot.sum(axis=1) == 0
-            n_empty = int(empty_mask.sum())
-            if n_empty > 0:
-                inv_freq[empty_mask] = 1.0 / n_empty
-
-            inv_freq_total = inv_freq.sum()
-            if inv_freq_total > 0:
-                inv_freq = inv_freq / inv_freq_total
-            else:
-                inv_freq = np.full(n_samples, 1.0 / n_samples)
-
-            uniform = np.full(n_samples, 1.0 / n_samples)
-            alpha = float(np.clip(uniform_alpha, 0.0, 1.0))
-            sample_weights = (alpha * uniform + (1.0 - alpha) * inv_freq).tolist()
+        labels_arr = np.asarray(labels)
+        if labels_arr.ndim == 1:
+            labels_onehot = np.eye(num_labels, dtype=np.float32)[labels_arr.astype(np.int64)]
+        elif labels_arr.ndim == 2:
+            labels_onehot = labels_arr.astype(np.float32)
         else:
-            class_sample_count = np.bincount(labels)
-            weight_per_class = 1.0 / np.maximum(class_sample_count, 1)
-            sample_weights = [weight_per_class[t] for t in labels]
+            raise ValueError(f"labels must be 1D or 2D, got {labels_arr.ndim}D")
+
+        n_samples = len(labels_onehot)
+        if n_samples == 0:
+            return WeightedRandomSampler(weights=[], num_samples=0, replacement=True)
+
+        label_frequencies = labels_onehot.sum(axis=0) + 1e-6
+        label_weights = 1.0 / label_frequencies
+        inv_freq = (labels_onehot * label_weights).sum(axis=1)
+
+        # Empty multi-hot rows form a virtual class — without this they get
+        # weight 0, are silently dropped, and the model learns to predict
+        # positive on everything (recall=1, precision=base rate).
+        empty_mask = labels_onehot.sum(axis=1) == 0
+        n_empty = int(empty_mask.sum())
+        if n_empty > 0:
+            inv_freq[empty_mask] = 1.0 / n_empty
+
+        inv_freq_total = inv_freq.sum()
+        if inv_freq_total > 0:
+            inv_freq = inv_freq / inv_freq_total
+        else:
+            inv_freq = np.full(n_samples, 1.0 / n_samples)
+
+        uniform = np.full(n_samples, 1.0 / n_samples)
+        alpha = float(np.clip(uniform_alpha, 0.0, 1.0))
+        sample_weights = (alpha * uniform + (1.0 - alpha) * inv_freq).tolist()
 
         return WeightedRandomSampler(
             weights=sample_weights,
