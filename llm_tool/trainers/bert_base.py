@@ -1607,25 +1607,28 @@ class BertBase(BertABC):
         return 'token_type_ids' in forward_signature.parameters
 
     @staticmethod
-    def _build_weighted_sampler(labels: np.ndarray, num_labels: int, multi_label: bool):
+    def _build_weighted_sampler(
+        labels: np.ndarray,
+        num_labels: int,
+        multi_label: bool,
+        uniform_alpha: float = 0.5,
+    ):
         """
-        Build a WeightedRandomSampler from label distribution.
+        Build a WeightedRandomSampler that includes empty-label samples
+        and bounds the dynamic range of per-sample weights.
 
-        Samples with rare labels are drawn more frequently, compensating
-        for class imbalance at the data level.
+        Pure inverse-frequency weighting assigns weight 0 to samples with
+        no positive labels — in multi-label datasets with negative/empty
+        examples (1:N balanced) those samples are silently dropped from
+        training, biasing the model toward predicting positive on
+        everything (recall=1 across all classes, precision = base rate).
 
-        Parameters
-        ----------
-        labels : np.ndarray
-            Labels array — multi-hot (N, num_labels) for multi-label, or (N,) indices.
-        num_labels : int
-            Number of labels.
-        multi_label : bool
-            Whether this is a multi-label problem.
-
-        Returns
-        -------
-        WeightedRandomSampler
+        Mitigation: blend a uniform distribution (every sample at its
+        natural rate) with the inverse-frequency distribution (boosts
+        rare classes; empties treated as a virtual class with frequency
+        = empty_count). `uniform_alpha=0` reproduces the legacy
+        pure-inverse-freq behavior; `uniform_alpha=1` disables
+        rebalancing entirely.
         """
         from torch.utils.data import WeightedRandomSampler
 
@@ -1634,14 +1637,29 @@ class BertBase(BertABC):
                 labels_onehot = np.eye(num_labels)[labels]
             else:
                 labels_onehot = labels
+
+            n_samples = len(labels_onehot)
             label_frequencies = labels_onehot.sum(axis=0) + 1e-6
             label_weights = 1.0 / label_frequencies
-            sample_weights = (labels_onehot * label_weights).sum(axis=1)
-            sample_weights = sample_weights / sample_weights.max()
-            sample_weights = sample_weights.tolist()
+            inv_freq = (labels_onehot * label_weights).sum(axis=1)
+
+            empty_mask = labels_onehot.sum(axis=1) == 0
+            n_empty = int(empty_mask.sum())
+            if n_empty > 0:
+                inv_freq[empty_mask] = 1.0 / n_empty
+
+            inv_freq_total = inv_freq.sum()
+            if inv_freq_total > 0:
+                inv_freq = inv_freq / inv_freq_total
+            else:
+                inv_freq = np.full(n_samples, 1.0 / n_samples)
+
+            uniform = np.full(n_samples, 1.0 / n_samples)
+            alpha = float(np.clip(uniform_alpha, 0.0, 1.0))
+            sample_weights = (alpha * uniform + (1.0 - alpha) * inv_freq).tolist()
         else:
             class_sample_count = np.bincount(labels)
-            weight_per_class = 1.0 / class_sample_count
+            weight_per_class = 1.0 / np.maximum(class_sample_count, 1)
             sample_weights = [weight_per_class[t] for t in labels]
 
         return WeightedRandomSampler(
