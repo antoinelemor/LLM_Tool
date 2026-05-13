@@ -3199,26 +3199,16 @@ class BertBase(BertABC):
                     pos_weight = compute_multi_label_class_weights(train_labels_np, method='pos_neg_ratio')
 
                 device_type = str(self.device).split(':')[0] if self.device else 'cpu'
-                # On CUDA: use AdaptiveASL (per-label gamma, best quality)
-                # On MPS/CPU: use BCEWithLogitsLoss + pos_weight (5x faster, nearly same quality)
-                if device_type == 'cuda':
-                    gamma_neg_per_label = np.clip(
-                        4.0 + np.log10(1.0 / np.clip(pos_ratios, 1e-6, 1.0)), 4.0, 8.0
-                    )
-                    asl_criterion = AdaptiveAsymmetricLoss(
-                        gamma_neg_per_label=gamma_neg_per_label,
-                        gamma_pos=asl_gamma_pos,
-                        clip=asl_clip,
-                    )
-                    if not suppress_display:
-                        self.logger.info(f" Adaptive ASL (CUDA): per-label gamma_neg in [{gamma_neg_per_label.min():.2f}, {gamma_neg_per_label.max():.2f}]")
-                else:
-                    # MPS/CPU: pos_weight achieves similar imbalance correction without the compute overhead
-                    asl_criterion = None  # Will use BCEWithLogitsLoss(pos_weight=...) in the training loop
-                    if not suppress_display:
-                        pw_min = pos_weight.min().item()
-                        pw_max = pos_weight.max().item()
-                        self.logger.info(f" Distribution-aware BCE (pos_weight in [{pw_min:.1f}, {pw_max:.1f}])")
+                gamma_neg_per_label = np.clip(
+                    4.0 + np.log10(1.0 / np.clip(pos_ratios, 1e-6, 1.0)), 4.0, 8.0
+                )
+                asl_criterion = AdaptiveAsymmetricLoss(
+                    gamma_neg_per_label=gamma_neg_per_label,
+                    gamma_pos=asl_gamma_pos,
+                    clip=asl_clip,
+                )
+                if not suppress_display:
+                    self.logger.info(f" Adaptive ASL: per-label gamma_neg in [{gamma_neg_per_label.min():.2f}, {gamma_neg_per_label.max():.2f}] (device={device_type})")
 
                 # Activate WeightedRandomSampler for initial training
                 sampler = self._build_weighted_sampler(train_labels_np, num_labels, multi_label=True)
