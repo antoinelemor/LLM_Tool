@@ -33,9 +33,66 @@ Antoine Lemor
 """
 
 import sys
+from pathlib import Path
+
+# Crash & stderr capture — runs before any heavy import so transformers/torch
+# warnings, Rich Live tracebacks, and C-level aborts all reach the filesystem.
+import datetime as _dt
+import faulthandler as _fh
+import traceback as _tb
+
+_LOG_DIR = Path(__file__).resolve().parent.parent / "logs" / "application"
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+_STAMP = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+_fault_fp = open(_LOG_DIR / f"faulthandler_{_STAMP}.log", "w")
+_fh.enable(file=_fault_fp, all_threads=True)
+
+
+class _StderrTee:
+    def __init__(self, real, fp):
+        self._real = real
+        self._fp = fp
+
+    def write(self, data):
+        try:
+            self._fp.write(data)
+            self._fp.flush()
+        except Exception:
+            pass
+        return self._real.write(data)
+
+    def flush(self):
+        try:
+            self._fp.flush()
+        except Exception:
+            pass
+        self._real.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+_stderr_fp = open(_LOG_DIR / f"stderr_{_STAMP}.log", "w", buffering=1)
+sys.stderr = _StderrTee(sys.stderr, _stderr_fp)
+
+_default_excepthook = sys.excepthook
+
+
+def _excepthook(exc_type, exc_value, exc_tb):
+    try:
+        with open(_LOG_DIR / f"exceptions_{_STAMP}.log", "a") as f:
+            f.write(f"\n=== {_dt.datetime.now().isoformat()} ===\n")
+            _tb.print_exception(exc_type, exc_value, exc_tb, file=f)
+    except Exception:
+        pass
+    _default_excepthook(exc_type, exc_value, exc_tb)
+
+
+sys.excepthook = _excepthook
+
 import argparse
 import logging
-from pathlib import Path
 from typing import Optional
 
 # Import main CLI
