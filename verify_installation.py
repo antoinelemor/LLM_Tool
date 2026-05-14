@@ -176,6 +176,7 @@ def check_training_dependencies():
         ("sklearn", "scikit-learn"),
         ("scipy", "SciPy"),
         ("nltk", "NLTK"),
+        ("peft", "PEFT (LoRA/DoRA adapters)"),
     ]
     return all(check_module(mod, name) for mod, name in deps)
 
