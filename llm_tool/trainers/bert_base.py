@@ -4892,16 +4892,15 @@ class BertBase(BertABC):
                         # Write column headers
                         writer.writerow(reinforced_headers)
 
-                    # Extract dataset from train_dataloader and apply WeightedRandomSampler
+                    # Build RL DataLoader
+                    # With DoRA: use NATURAL distribution (no WeightedRandomSampler)
+                    # because underperforming labels already have high recall / low precision.
+                    # The WeightedRandomSampler + pos_weight push recall even higher,
+                    # destroying precision. DoRA adapters learn better from natural distribution.
+                    # Without DoRA (fallback): keep WeightedRandomSampler for legacy behavior.
                     dataset = train_dataloader.dataset
-                    labels = dataset.tensors[2].numpy()
-                    sampler = self._build_weighted_sampler(labels, num_labels, multi_label)
+                    rl_batch_size = train_dataloader.batch_size
 
-                    # Build new train dataloader with optimized settings for reinforced learning
-                    # Use same batch size as main training (already optimized for GPU/MPS)
-                    rl_batch_size = train_dataloader.batch_size  # Keep optimized batch size
-
-                    # Apply same DataLoader optimizations as main training loop
                     rl_num_workers = self.resource_recommendations.get('num_workers', 0)
                     rl_pin_memory = False
                     rl_prefetch_factor = None
@@ -4915,16 +4914,25 @@ class BertBase(BertABC):
                     elif device_type == 'mps':
                         rl_pin_memory = False
                         if rl_num_workers > 0:
-                            rl_prefetch_factor = 8  # Aggressive prefetch for unified memory
+                            rl_prefetch_factor = 8
                             rl_persistent_workers = True
 
                     rl_loader_kwargs = {
                         'dataset': dataset,
-                        'sampler': sampler,
                         'batch_size': rl_batch_size,
                         'num_workers': rl_num_workers,
                         'pin_memory': rl_pin_memory,
                     }
+
+                    if rl_use_lora:
+                        # DoRA: natural distribution with shuffle
+                        rl_loader_kwargs['shuffle'] = True
+                    else:
+                        # Fallback (no peft): use WeightedRandomSampler
+                        labels_np = dataset.tensors[2].numpy()
+                        sampler = self._build_weighted_sampler(labels_np, num_labels, multi_label)
+                        rl_loader_kwargs['sampler'] = sampler
+
                     if rl_num_workers > 0:
                         rl_loader_kwargs['prefetch_factor'] = rl_prefetch_factor
                         rl_loader_kwargs['persistent_workers'] = rl_persistent_workers
@@ -5075,16 +5083,46 @@ class BertBase(BertABC):
                             self.logger.warning(f" LoRA setup failed, falling back to full fine-tuning: {e}")
 
                     # Create new optimizer and scheduler for reinforced training
-                    # With LoRA: only adapter + classifier params are optimized
-                    # Without LoRA: all model params (legacy behavior)
-                    trainable_params_list = [p for p in model.parameters() if p.requires_grad]
-                    optimizer = AdamW(trainable_params_list, lr=new_lr, eps=1e-8)
                     total_steps = len(new_train_dataloader) * n_epochs_reinforced
-                    scheduler = get_linear_schedule_with_warmup(
-                        optimizer,
-                        num_warmup_steps=int(total_steps * 0.1),  # 10% warmup for LoRA stability
-                        num_training_steps=total_steps
-                    )
+                    if rl_use_lora:
+                        # DoRA: differentiated learning rates
+                        # Adapters (LoRA/DoRA) learn at higher lr (SOTA: 1e-4 to 3e-4)
+                        # Classifier head learns at lower lr to avoid destabilizing
+                        adapter_params = []
+                        classifier_params = []
+                        for name, param in model.named_parameters():
+                            if not param.requires_grad:
+                                continue
+                            if 'classifier' in name:
+                                classifier_params.append(param)
+                            else:
+                                adapter_params.append(param)
+
+                        dora_lr = 2e-4  # SOTA for LoRA/DoRA adapters
+                        classifier_lr = new_lr * 0.5  # Conservative for classifier stability
+
+                        optimizer = AdamW([
+                            {'params': adapter_params, 'lr': dora_lr},
+                            {'params': classifier_params, 'lr': classifier_lr},
+                        ], eps=1e-8)
+
+                        if not suppress_display:
+                            self.logger.info(f" DoRA lr={dora_lr}, classifier lr={classifier_lr:.1e}")
+
+                        scheduler = get_linear_schedule_with_warmup(
+                            optimizer,
+                            num_warmup_steps=int(total_steps * 0.1),
+                            num_training_steps=total_steps
+                        )
+                    else:
+                        # Fallback: single lr for all params
+                        trainable_params_list = [p for p in model.parameters() if p.requires_grad]
+                        optimizer = AdamW(trainable_params_list, lr=new_lr, eps=1e-8)
+                        scheduler = get_linear_schedule_with_warmup(
+                            optimizer,
+                            num_warmup_steps=0,
+                            num_training_steps=total_steps
+                        )
 
                     # Freeze classifier head weights for well-performing labels
                     # With LoRA this is still useful: the classifier is in modules_to_save
@@ -5117,17 +5155,29 @@ class BertBase(BertABC):
                         running_loss = 0.0
 
                         # Select appropriate loss function based on multi_label mode
-                        if multi_label and ml_reinforced is not None and ml_reinforced.get('should_use_asl'):
-                            # Distribution-aware: AdaptiveASL with per-label gamma + label masking
+                        # With DoRA: use UNWEIGHTED loss (no pos_weight, no ASL)
+                        # The model already has high recall / low precision on targeted labels.
+                        # Weighted losses push recall even higher, destroying precision.
+                        # DoRA adapters learn to improve precision from natural, unweighted loss.
+                        if rl_use_lora:
+                            # DoRA mode: clean, unweighted loss for all modes
+                            if multi_label:
+                                rl_criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
+                                rl_freeze_mask = ml_reinforced.get('freeze_mask') if ml_reinforced else None
+                            else:
+                                rl_criterion = torch.nn.CrossEntropyLoss()
+                                rl_freeze_mask = None
+                        elif multi_label and ml_reinforced is not None and ml_reinforced.get('should_use_asl'):
+                            # Fallback (no peft): AdaptiveASL with per-label gamma + label masking
                             rl_criterion = AdaptiveAsymmetricLoss(
                                 gamma_neg_per_label=ml_reinforced['per_label_gamma_neg'],
                                 gamma_pos=asl_gamma_pos,
                                 clip=asl_clip,
-                                reduction='none',  # For per-label freeze masking
+                                reduction='none',
                             )
                             rl_freeze_mask = ml_reinforced.get('freeze_mask')
                         elif multi_label and ml_reinforced is not None:
-                            # Distribution-aware but without ASL: weighted BCE
+                            # Fallback: weighted BCE
                             pw_tensor = torch.tensor(ml_reinforced['per_label_pos_weight'], dtype=torch.float32)
                             rl_criterion = torch.nn.BCEWithLogitsLoss(
                                 pos_weight=pw_tensor.to(self.device),
@@ -5135,11 +5185,9 @@ class BertBase(BertABC):
                             )
                             rl_freeze_mask = ml_reinforced.get('freeze_mask')
                         elif multi_label:
-                            # Fallback: unweighted BCE (legacy behavior)
                             rl_criterion = torch.nn.BCEWithLogitsLoss()
                             rl_freeze_mask = None
                         else:
-                            # Single-label (binary/multi-class): Use CrossEntropyLoss
                             rl_criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor.to(self.device))
                             rl_freeze_mask = None
 
@@ -5690,9 +5738,20 @@ class BertBase(BertABC):
                                         base_model.load_state_dict(model_state_merged)
                                         # Re-apply LoRA
                                         model = get_peft_model(base_model, lora_config)
-                                        # Re-create optimizer with new LoRA params
-                                        trainable_params_list = [p for p in model.parameters() if p.requires_grad]
-                                        optimizer = AdamW(trainable_params_list, lr=new_lr, eps=1e-8)
+                                        # Re-create optimizer with differentiated lr
+                                        _adapter_p = []
+                                        _classifier_p = []
+                                        for _n, _p in model.named_parameters():
+                                            if not _p.requires_grad:
+                                                continue
+                                            if 'classifier' in _n:
+                                                _classifier_p.append(_p)
+                                            else:
+                                                _adapter_p.append(_p)
+                                        optimizer = AdamW([
+                                            {'params': _adapter_p, 'lr': dora_lr},
+                                            {'params': _classifier_p, 'lr': classifier_lr},
+                                        ], eps=1e-8)
                                         remaining_steps = (n_epochs_reinforced - epoch - 1) * len(new_train_dataloader)
                                         if remaining_steps > 0:
                                             scheduler = get_linear_schedule_with_warmup(
