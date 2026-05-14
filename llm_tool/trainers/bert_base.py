@@ -5025,13 +5025,14 @@ class BertBase(BertABC):
                         model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
                         if 'deberta' in model_lower:
                             target_modules = ["query_proj", "key_proj", "value_proj", "dense"]
-                        elif 'albert' in model_lower:
-                            target_modules = ["query", "key", "value", "dense"]
                         elif 'distilbert' in model_lower:
                             target_modules = ["q_lin", "k_lin", "v_lin", "out_lin"]
+                        elif 'longformer' in model_lower:
+                            # Longformer has local + global attention projections
+                            target_modules = ["query", "key", "value", "query_global", "key_global", "value_global", "dense"]
                         else:
-                            # Default for BERT, RoBERTa, XLM-RoBERTa, CamemBERT, etc.
-                            # Target all attention projections (Q, K, V) + output dense
+                            # Default for BERT, RoBERTa, XLM-RoBERTa, CamemBERT, ELECTRA,
+                            # ALBERT, BigBird, and all other BERT-family models
                             target_modules = ["query", "key", "value", "dense"]
 
                         # LoRA rank: higher = more capacity but more params

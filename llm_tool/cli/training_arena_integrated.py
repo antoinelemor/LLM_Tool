@@ -997,7 +997,8 @@ def _display_training_diagnostic(self, bundle, quick_params=None, preloaded_conf
         self.console.print("  [dim]  Phase 1: Off (standard BCE/ASL loss, no weighted sampling)[/dim]")
     if phase2_enabled:
         self.console.print(f"  [green]✓[/green] Phase 2: Reinforced learning (triggers if F1 < {rl_threshold:.2f})")
-        self.console.print("    - Well-performing labels frozen during RL")
+        self.console.print("    - DoRA adapters (SOTA): only ~0.7% of params trained, encoder frozen")
+        self.console.print("    - Well-performing labels frozen in classifier head")
         self.console.print("    - Underperforming labels get boosted weights + more epochs")
     else:
         self.console.print("  [dim]  Phase 2: Off[/dim]")
