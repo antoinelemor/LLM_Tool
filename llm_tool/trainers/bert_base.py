@@ -5024,14 +5024,15 @@ class BertBase(BertABC):
                         # Determine target modules based on model architecture
                         model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
                         if 'deberta' in model_lower:
-                            target_modules = ["query_proj", "value_proj"]
+                            target_modules = ["query_proj", "key_proj", "value_proj", "dense"]
                         elif 'albert' in model_lower:
-                            target_modules = ["query", "value"]
+                            target_modules = ["query", "key", "value", "dense"]
                         elif 'distilbert' in model_lower:
-                            target_modules = ["q_lin", "v_lin"]
+                            target_modules = ["q_lin", "k_lin", "v_lin", "out_lin"]
                         else:
                             # Default for BERT, RoBERTa, XLM-RoBERTa, CamemBERT, etc.
-                            target_modules = ["query", "value"]
+                            # Target all attention projections (Q, K, V) + output dense
+                            target_modules = ["query", "key", "value", "dense"]
 
                         # LoRA rank: higher = more capacity but more params
                         # rank 8 is standard; rank 16 for harder tasks
@@ -5039,6 +5040,10 @@ class BertBase(BertABC):
                         lora_alpha = lora_rank * 2  # Standard: alpha = 2 * rank
                         lora_dropout = 0.1  # Regularization
 
+                        # Use DoRA (Weight-Decomposed Low-Rank Adaptation) — SOTA 2024
+                        # DoRA decomposes pre-trained weights into magnitude + direction,
+                        # then applies LoRA only to the direction component.
+                        # Shown to outperform standard LoRA on classification tasks.
                         lora_config = LoraConfig(
                             task_type=TaskType.SEQ_CLS,
                             r=lora_rank,
@@ -5046,6 +5051,7 @@ class BertBase(BertABC):
                             lora_dropout=lora_dropout,
                             target_modules=target_modules,
                             modules_to_save=["classifier"],  # Also train the classifier head
+                            use_dora=True,  # DoRA: direction + magnitude decomposition
                         )
 
                         model = get_peft_model(model, lora_config)
@@ -5056,7 +5062,7 @@ class BertBase(BertABC):
                         total_params = sum(p.numel() for p in model.parameters())
                         pct = 100.0 * trainable_params / total_params
                         if not suppress_display:
-                            self.logger.info(f" LoRA enabled: rank={lora_rank}, alpha={lora_alpha}, dropout={lora_dropout}")
+                            self.logger.info(f" DoRA (LoRA+direction decomposition): rank={lora_rank}, alpha={lora_alpha}, dropout={lora_dropout}")
                             self.logger.info(f" Trainable: {trainable_params:,} / {total_params:,} ({pct:.1f}%) params")
                             self.logger.info(f" Target modules: {target_modules} + classifier")
 
