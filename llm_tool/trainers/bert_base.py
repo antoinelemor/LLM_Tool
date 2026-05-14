@@ -4892,6 +4892,14 @@ class BertBase(BertABC):
                         # Write column headers
                         writer.writerow(reinforced_headers)
 
+                    # Detect if peft/DoRA is available — determines DataLoader and loss strategy
+                    rl_use_lora = False
+                    try:
+                        from peft import LoraConfig, get_peft_model, TaskType
+                        rl_use_lora = True  # peft is available; will be applied after model load
+                    except ImportError:
+                        pass
+
                     # Build RL DataLoader
                     # With DoRA: use NATURAL distribution (no WeightedRandomSampler)
                     # because underperforming labels already have high recall / low precision.
@@ -5025,10 +5033,8 @@ class BertBase(BertABC):
                     # inject low-rank adapters into the encoder. Only ~0.5-1% of params are trained.
                     # The base model weights are frozen → well-performing labels cannot degrade.
                     # After training, LoRA weights are merged back for standard inference.
-                    rl_use_lora = False
-                    try:
-                        from peft import LoraConfig, get_peft_model, TaskType
-
+                    if rl_use_lora:
+                      try:
                         # Determine target modules based on model architecture
                         model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
                         if 'deberta' in model_lower:
@@ -5075,12 +5081,10 @@ class BertBase(BertABC):
                             self.logger.info(f" Trainable: {trainable_params:,} / {total_params:,} ({pct:.1f}%) params")
                             self.logger.info(f" Target modules: {target_modules} + classifier")
 
-                    except ImportError:
+                      except Exception as e:
+                        rl_use_lora = False
                         if not suppress_display:
-                            self.logger.warning(" peft not installed — using full fine-tuning for RL (pip install peft)")
-                    except Exception as e:
-                        if not suppress_display:
-                            self.logger.warning(f" LoRA setup failed, falling back to full fine-tuning: {e}")
+                            self.logger.warning(f" DoRA setup failed, falling back to full fine-tuning: {e}")
 
                     # Create new optimizer and scheduler for reinforced training
                     total_steps = len(new_train_dataloader) * n_epochs_reinforced
