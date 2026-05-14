@@ -5049,24 +5049,34 @@ class BertBase(BertABC):
                             # ALBERT, BigBird, and all other BERT-family models
                             target_modules = ["query", "key", "value", "dense"]
 
-                        # LoRA rank: higher = more capacity but more params
-                        # rank 8 is standard; rank 16 for harder tasks
-                        lora_rank = 16 if (ml_reinforced and len(ml_reinforced.get('underperforming_labels', [])) > num_labels // 2) else 8
-                        lora_alpha = lora_rank * 2  # Standard: alpha = 2 * rank
-                        lora_dropout = 0.1  # Regularization
+                        # LoRA config tuned for post-convergence fine-tuning:
+                        # - Rank 4 (not 8/16): minimal perturbation on already-converged model
+                        # - Only Q,V (not K,dense): fewer params = less overfitting risk
+                        # - No modules_to_save: classifier trains via normal gradient flow,
+                        #   not as a separately saved module. This lets all 21 labels recalibrate
+                        #   together (they're interdependent in multi-label classification).
+                        lora_rank = 4
+                        lora_alpha = 16  # alpha/rank = 4 → moderate scaling
+                        lora_dropout = 0.1
 
-                        # Use DoRA (Weight-Decomposed Low-Rank Adaptation) — SOTA 2024
-                        # DoRA decomposes pre-trained weights into magnitude + direction,
-                        # then applies LoRA only to the direction component.
-                        # Shown to outperform standard LoRA on classification tasks.
+                        # Override target_modules to Q,V only for post-convergence
+                        if 'deberta' in model_lower:
+                            target_modules = ["query_proj", "value_proj"]
+                        elif 'distilbert' in model_lower:
+                            target_modules = ["q_lin", "v_lin"]
+                        elif 'longformer' in model_lower:
+                            target_modules = ["query", "value", "query_global", "value_global"]
+                        else:
+                            target_modules = ["query", "value"]
+
                         lora_config = LoraConfig(
                             task_type=TaskType.SEQ_CLS,
                             r=lora_rank,
                             lora_alpha=lora_alpha,
                             lora_dropout=lora_dropout,
                             target_modules=target_modules,
-                            modules_to_save=["classifier"],  # Also train the classifier head
-                            use_dora=True,  # DoRA: direction + magnitude decomposition
+                            modules_to_save=["classifier"],  # Classifier trains alongside adapters
+                            use_dora=True,
                         )
 
                         model = get_peft_model(model, lora_config)
@@ -5089,9 +5099,9 @@ class BertBase(BertABC):
                     # Create new optimizer and scheduler for reinforced training
                     total_steps = len(new_train_dataloader) * n_epochs_reinforced
                     if rl_use_lora:
-                        # DoRA: differentiated learning rates
-                        # Adapters (LoRA/DoRA) learn at higher lr (SOTA: 1e-4 to 3e-4)
-                        # Classifier head learns at lower lr to avoid destabilizing
+                        # DoRA on a CONVERGED model: conservative lr + long warmup + weight decay
+                        # Key insight: 2e-4 is for from-scratch LoRA. Here the model is already
+                        # fine-tuned for 13 epochs — we need gentle adaptation, not aggressive learning.
                         adapter_params = []
                         classifier_params = []
                         for name, param in model.named_parameters():
@@ -5102,20 +5112,20 @@ class BertBase(BertABC):
                             else:
                                 adapter_params.append(param)
 
-                        dora_lr = 2e-4  # SOTA for LoRA/DoRA adapters
-                        classifier_lr = new_lr * 0.5  # Conservative for classifier stability
+                        dora_lr = 3e-5  # Conservative: 10x lower than standard LoRA lr
+                        classifier_lr = 1e-5  # Even more conservative for classifier stability
 
                         optimizer = AdamW([
-                            {'params': adapter_params, 'lr': dora_lr},
-                            {'params': classifier_params, 'lr': classifier_lr},
+                            {'params': adapter_params, 'lr': dora_lr, 'weight_decay': 0.05},
+                            {'params': classifier_params, 'lr': classifier_lr, 'weight_decay': 0.01},
                         ], eps=1e-8)
 
                         if not suppress_display:
-                            self.logger.info(f" DoRA lr={dora_lr}, classifier lr={classifier_lr:.1e}")
+                            self.logger.info(f" DoRA lr={dora_lr}, classifier lr={classifier_lr}, weight_decay=0.05/0.01")
 
                         scheduler = get_linear_schedule_with_warmup(
                             optimizer,
-                            num_warmup_steps=int(total_steps * 0.1),
+                            num_warmup_steps=int(total_steps * 0.25),  # 25% warmup for stability
                             num_training_steps=total_steps
                         )
                     else:
@@ -5129,10 +5139,13 @@ class BertBase(BertABC):
                         )
 
                     # Freeze classifier head weights for well-performing labels
-                    # With LoRA this is still useful: the classifier is in modules_to_save
-                    # so it trains, but we zero gradients for frozen label rows
+                    # With DoRA: do NOT freeze classifier labels. The encoder is already frozen
+                    # via LoRA, and all 21 labels are interdependent in multi-label classification.
+                    # Freezing individual label rows prevents the classifier from recalibrating
+                    # decision boundaries across all labels simultaneously.
+                    # Without DoRA (fallback): freeze to protect against encoder perturbation.
                     rl_frozen_label_indices = None
-                    if multi_label and ml_reinforced is not None and ml_reinforced.get('freeze_mask'):
+                    if not rl_use_lora and multi_label and ml_reinforced is not None and ml_reinforced.get('freeze_mask'):
                         frozen_indices = [i for i, freeze in enumerate(ml_reinforced['freeze_mask']) if freeze]
                         if frozen_indices:
                             rl_frozen_label_indices = frozen_indices
@@ -5753,8 +5766,8 @@ class BertBase(BertABC):
                                             else:
                                                 _adapter_p.append(_p)
                                         optimizer = AdamW([
-                                            {'params': _adapter_p, 'lr': dora_lr},
-                                            {'params': _classifier_p, 'lr': classifier_lr},
+                                            {'params': _adapter_p, 'lr': dora_lr, 'weight_decay': 0.05},
+                                            {'params': _classifier_p, 'lr': classifier_lr, 'weight_decay': 0.01},
                                         ], eps=1e-8)
                                         remaining_steps = (n_epochs_reinforced - epoch - 1) * len(new_train_dataloader)
                                         if remaining_steps > 0:
