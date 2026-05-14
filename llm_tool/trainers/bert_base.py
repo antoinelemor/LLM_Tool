@@ -5012,17 +5012,76 @@ class BertBase(BertABC):
                         model_state = torch.load(os.path.join(best_model_path, WEIGHTS_NAME), map_location=self.device)
                         model.load_state_dict(model_state)
 
+                    # ==================== LoRA Adapter for Reinforced Learning ====================
+                    # Instead of fine-tuning all 278M params (which causes catastrophic forgetting),
+                    # inject low-rank adapters into the encoder. Only ~0.5-1% of params are trained.
+                    # The base model weights are frozen → well-performing labels cannot degrade.
+                    # After training, LoRA weights are merged back for standard inference.
+                    rl_use_lora = False
+                    try:
+                        from peft import LoraConfig, get_peft_model, TaskType
+
+                        # Determine target modules based on model architecture
+                        model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
+                        if 'deberta' in model_lower:
+                            target_modules = ["query_proj", "value_proj"]
+                        elif 'albert' in model_lower:
+                            target_modules = ["query", "value"]
+                        elif 'distilbert' in model_lower:
+                            target_modules = ["q_lin", "v_lin"]
+                        else:
+                            # Default for BERT, RoBERTa, XLM-RoBERTa, CamemBERT, etc.
+                            target_modules = ["query", "value"]
+
+                        # LoRA rank: higher = more capacity but more params
+                        # rank 8 is standard; rank 16 for harder tasks
+                        lora_rank = 16 if (ml_reinforced and len(ml_reinforced.get('underperforming_labels', [])) > num_labels // 2) else 8
+                        lora_alpha = lora_rank * 2  # Standard: alpha = 2 * rank
+                        lora_dropout = 0.1  # Regularization
+
+                        lora_config = LoraConfig(
+                            task_type=TaskType.SEQ_CLS,
+                            r=lora_rank,
+                            lora_alpha=lora_alpha,
+                            lora_dropout=lora_dropout,
+                            target_modules=target_modules,
+                            modules_to_save=["classifier"],  # Also train the classifier head
+                        )
+
+                        model = get_peft_model(model, lora_config)
+                        rl_use_lora = True
+
+                        # Log LoRA stats
+                        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                        total_params = sum(p.numel() for p in model.parameters())
+                        pct = 100.0 * trainable_params / total_params
+                        if not suppress_display:
+                            self.logger.info(f" LoRA enabled: rank={lora_rank}, alpha={lora_alpha}, dropout={lora_dropout}")
+                            self.logger.info(f" Trainable: {trainable_params:,} / {total_params:,} ({pct:.1f}%) params")
+                            self.logger.info(f" Target modules: {target_modules} + classifier")
+
+                    except ImportError:
+                        if not suppress_display:
+                            self.logger.warning(" peft not installed — using full fine-tuning for RL (pip install peft)")
+                    except Exception as e:
+                        if not suppress_display:
+                            self.logger.warning(f" LoRA setup failed, falling back to full fine-tuning: {e}")
+
                     # Create new optimizer and scheduler for reinforced training
-                    optimizer = AdamW(model.parameters(), lr=new_lr, eps=1e-8)
+                    # With LoRA: only adapter + classifier params are optimized
+                    # Without LoRA: all model params (legacy behavior)
+                    trainable_params_list = [p for p in model.parameters() if p.requires_grad]
+                    optimizer = AdamW(trainable_params_list, lr=new_lr, eps=1e-8)
                     total_steps = len(new_train_dataloader) * n_epochs_reinforced
                     scheduler = get_linear_schedule_with_warmup(
                         optimizer,
-                        num_warmup_steps=0,
+                        num_warmup_steps=int(total_steps * 0.1),  # 10% warmup for LoRA stability
                         num_training_steps=total_steps
                     )
 
                     # Freeze classifier head weights for well-performing labels
-                    # This prevents indirect degradation via encoder gradient updates
+                    # With LoRA this is still useful: the classifier is in modules_to_save
+                    # so it trains, but we zero gradients for frozen label rows
                     rl_frozen_label_indices = None
                     if multi_label and ml_reinforced is not None and ml_reinforced.get('freeze_mask'):
                         frozen_indices = [i for i, freeze in enumerate(ml_reinforced['freeze_mask']) if freeze]
@@ -5578,7 +5637,13 @@ class BertBase(BertABC):
                                 temp_reinforced_path = os.path.join(rl_category_dir, f"{save_model_as}_reinforced_temp")
                                 os.makedirs(temp_reinforced_path, exist_ok=True)
 
-                                model_to_save = model.module if hasattr(model, 'module') else model
+                                # Merge LoRA weights into the base model for saving
+                                # This produces a standard model that works without peft at inference
+                                if rl_use_lora:
+                                    merged_model = model.merge_and_unload()
+                                    model_to_save = merged_model.module if hasattr(merged_model, 'module') else merged_model
+                                else:
+                                    model_to_save = model.module if hasattr(model, 'module') else model
 
                                 # CRITICAL: Ensure label mappings are in config before saving
                                 # This ensures annotation studio reducer mode can access label names
@@ -5605,6 +5670,30 @@ class BertBase(BertABC):
                                 torch.save(model_to_save.state_dict(), output_model_file)
                                 model_to_save.config.to_json_file(output_config_file)
                                 self.tokenizer.save_pretrained(temp_reinforced_path)
+
+                                # After saving, re-apply LoRA for continued training
+                                # merge_and_unload() consumed the LoRA model, so we need to re-wrap
+                                if rl_use_lora:
+                                    try:
+                                        from peft import get_peft_model
+                                        # Re-load the merged weights into the original model structure
+                                        model_state_merged = torch.load(output_model_file, map_location=self.device)
+                                        # Get the base model back from the merged model
+                                        base_model = model_to_save
+                                        base_model.load_state_dict(model_state_merged)
+                                        # Re-apply LoRA
+                                        model = get_peft_model(base_model, lora_config)
+                                        # Re-create optimizer with new LoRA params
+                                        trainable_params_list = [p for p in model.parameters() if p.requires_grad]
+                                        optimizer = AdamW(trainable_params_list, lr=new_lr, eps=1e-8)
+                                        remaining_steps = (n_epochs_reinforced - epoch - 1) * len(new_train_dataloader)
+                                        if remaining_steps > 0:
+                                            scheduler = get_linear_schedule_with_warmup(
+                                                optimizer, num_warmup_steps=0, num_training_steps=remaining_steps
+                                            )
+                                    except Exception as e:
+                                        self.logger.warning(f" Could not re-apply LoRA after save: {e}")
+                                        rl_use_lora = False
 
                                 # Save training metadata for annotation studio
                                 metadata_file = os.path.join(temp_reinforced_path, "training_metadata.json")
