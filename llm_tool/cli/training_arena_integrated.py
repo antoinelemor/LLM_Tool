@@ -10397,6 +10397,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # Read the JSONL and collect unique labels
             all_labels_set = set()
             records = []
+            _is_binary_list_format = False  # Detect key_yes/key_no format
             with open(data_path, 'r', encoding='utf-8') as f:
                 for line in f:
                     record = json.loads(line)
@@ -10406,7 +10407,15 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         if isinstance(record['labels'], dict):
                             all_labels_set.update(record['labels'].keys())
                         elif isinstance(record['labels'], list):
-                            all_labels_set.update(record['labels'])
+                            for lbl in record['labels']:
+                                # Detect binary format: key_yes / key_no
+                                if lbl.endswith('_yes') or lbl.endswith('_no'):
+                                    _is_binary_list_format = True
+                                    # Extract base label name (strip _yes/_no)
+                                    base = lbl.rsplit('_', 1)[0]
+                                    all_labels_set.add(base)
+                                else:
+                                    all_labels_set.add(lbl)
 
             self.logger.debug(f"[ONE-VS-ALL] Found {len(records)} records")
             self.logger.debug(f"[ONE-VS-ALL] Found {len(all_labels_set)} unique labels: {sorted(all_labels_set)}")
@@ -10454,8 +10463,11 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
                         # Handle both dict and list formats
                         if isinstance(labels_data, dict):
-                            label_raw = labels_data.get(label_name, 0)
-                            # Handle bool, int, or string values
+                            # Dict format: {"agriculture": "yes", "defense": "no"}
+                            # Key absent = undersampled → skip this row for this label
+                            if label_name not in labels_data:
+                                continue  # Skip: this row was undersampled for this label
+                            label_raw = labels_data[label_name]
                             if isinstance(label_raw, bool):
                                 label_value = 1 if label_raw else 0
                             elif isinstance(label_raw, (int, float)):
@@ -10463,10 +10475,21 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                             else:
                                 label_value = 1 if str(label_raw).lower() in ['1', 'true', 'yes'] else 0
                         elif isinstance(labels_data, list):
-                            # For list format, check if label is in the list
-                            label_value = 1 if label_name in labels_data else 0
+                            # List format: ["agriculture_yes", "defense_no", ...]
+                            # Check for key_yes or key_no in the list
+                            has_yes = f"{label_name}_yes" in labels_data
+                            has_no = f"{label_name}_no" in labels_data
+                            has_bare = label_name in labels_data  # Legacy: bare label name
+                            if has_yes:
+                                label_value = 1
+                            elif has_no:
+                                label_value = 0
+                            elif has_bare:
+                                label_value = 1  # Legacy: bare name = positive
+                            else:
+                                continue  # Skip: label not mentioned → undersampled
                         else:
-                            label_value = 0
+                            continue  # Skip: unknown format
 
                         # CRITICAL: Validate text is a valid non-empty string
                         text_raw = record.get('text', '')
