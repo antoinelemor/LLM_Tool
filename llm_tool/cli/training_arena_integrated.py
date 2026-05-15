@@ -10382,13 +10382,11 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     if training_approach_from_metadata == 'one-vs-all':
         # One-vs-all training: create separate binary models for each label
 
-        # First, try to use pre-generated category CSV files if they exist
+        # One-vs-all always creates fresh binary CSV files from the JSONL.
+        # Pre-generated training_files are JSONL multi-label format (labels: [...])
+        # which is NOT compatible with the binary format (label: 0/1) expected by
+        # the one-vs-all trainer. So we always regenerate.
         category_files = {}
-        if hasattr(bundle, 'training_files') and bundle.training_files:
-            # Extract the category files (exclude 'multilabel' key)
-            category_files = {k: v for k, v in bundle.training_files.items() if k != 'multilabel'}
-
-        # If no category files exist, create them from the JSONL file
         if not category_files:
             self.console.print("\n[yellow]Creating binary datasets for one-vs-all training...[/yellow]")
 
