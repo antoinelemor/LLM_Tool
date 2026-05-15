@@ -2962,7 +2962,8 @@ class BertBase(BertABC):
         # The disentangled attention uses operations that lose precision in float16
         # after weight updates. Force float32 for DeBERTa on MPS to prevent this.
         _model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
-        _force_f32 = device_type == 'mps' and 'deberta' in _model_lower
+        _device_str = str(self.device) if hasattr(self, 'device') else 'cpu'
+        _force_f32 = 'mps' in _device_str and 'deberta' in _model_lower
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Some weights of.*were not initialized")
