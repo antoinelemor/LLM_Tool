@@ -2957,14 +2957,26 @@ class BertBase(BertABC):
         torch.cuda.manual_seed_all(random_state)
 
         # Initialize the model (suppress warnings about missing weights)
+        # CRITICAL: DeBERTa-v3 / mDeBERTa-v3 models produce NaN after the first
+        # optimizer step on MPS when loaded in float16 (the safetensors default).
+        # The disentangled attention uses operations that lose precision in float16
+        # after weight updates. Force float32 for DeBERTa on MPS to prevent this.
+        _model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
+        _force_f32 = device_type == 'mps' and 'deberta' in _model_lower
+
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Some weights of.*were not initialized")
             warnings.filterwarnings("ignore", message=".*not initialized from the model checkpoint.*")
-            model = self.model_sequence_classifier.from_pretrained(
-                self.model_name,
+            model_kwargs = dict(
                 num_labels=num_labels,
                 output_attentions=False,
-                output_hidden_states=False
+                output_hidden_states=False,
+            )
+            if _force_f32:
+                model_kwargs['dtype'] = torch.float32
+            model = self.model_sequence_classifier.from_pretrained(
+                self.model_name,
+                **model_kwargs,
             )
 
         # Add label mappings to model config so they're saved with the model
@@ -6160,16 +6172,22 @@ class BertBase(BertABC):
         # Load with ignore_mismatched_sizes to handle cases where the checkpoint
         # was saved with a different number of classes (e.g., during reinforced learning
         # when retraining on a different subset of data)
+        # Force float32 for DeBERTa on MPS (see model init comment for details)
+        _model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
+        _load_kwargs = {}
+        if hasattr(self, 'device') and str(self.device) == 'mps' and 'deberta' in _model_lower:
+            _load_kwargs['dtype'] = torch.float32
+
         try:
             if target_num_labels is not None:
                 return self.model_sequence_classifier.from_pretrained(
                     model_path,
                     num_labels=target_num_labels,
-                    ignore_mismatched_sizes=True
+                    ignore_mismatched_sizes=True,
+                    **_load_kwargs,
                 )
             else:
-                # Let HuggingFace auto-detect from config.json
-                return self.model_sequence_classifier.from_pretrained(model_path)
+                return self.model_sequence_classifier.from_pretrained(model_path, **_load_kwargs)
         except Exception as e:
             # Fallback: try loading without specifying num_labels
             self.logger.warning(f"[!] Could not load with num_labels={target_num_labels}, trying default: {e}")
