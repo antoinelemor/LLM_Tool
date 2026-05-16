@@ -62,8 +62,7 @@ models/
 # Data directory - ignore contents but keep the folder
 data/*
 !data/.gitkeep
-!data/sets/
-!data/sets/llm_sets/**
+data/sets/
 
 # Prompts directory - ignore contents but keep the folder
 prompts/*
