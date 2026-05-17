@@ -11479,7 +11479,25 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # RESUME LOGIC: Check if model is already trained and skip if complete
             is_complete, existing_path = _is_model_already_trained(key_name, model_name, 'normal_training')
             if is_complete:
-                self.console.print(f"\n[green]⏭ Skipping '{key_name}' - already trained[/green]")
+                # Read best metrics from training CSV if available
+                _skip_info = ""
+                try:
+                    import glob as _g
+                    _csvs = _g.glob(f"{session_dir}/training_metrics/normal_training/{key_name}/**/training.csv", recursive=True)
+                    if _csvs:
+                        import csv as _csv
+                        with open(_csvs[0]) as _f:
+                            _lines = [l for l in _f if not l.startswith('#')]
+                            _rows = list(_csv.DictReader(_lines))
+                        if _rows:
+                            _best = max(_rows, key=lambda r: float(r.get('macro_f1', r.get('f1_1', 0))))
+                            _f1 = float(_best.get('macro_f1', _best.get('f1_1', 0)))
+                            _ep = _best.get('epoch', '?')
+                            _total_ep = len(_rows)
+                            _skip_info = f" (F1={_f1:.3f} at epoch {_ep}/{_total_ep})"
+                except Exception:
+                    pass
+                self.console.print(f"\n[green]⏭ Skipping '{key_name}' — already trained{_skip_info}[/green]")
                 self.console.print(f"[dim]   Model path: {existing_path}[/dim]")
                 # Register the existing model in results
                 key_bucket = results_per_key.setdefault(key_name, {})
@@ -11580,7 +11598,24 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
             # RESUME LOGIC: Check if model is already trained and skip if complete
             is_complete, trained_path = _is_model_already_trained(key_name, model_name, 'normal_training')
             if is_complete:
-                self.console.print(f"\n[dim]⏩ Skipping multi-label key '{key_name}' (already trained at {trained_path})[/dim]")
+                _skip_info = ""
+                try:
+                    import glob as _g
+                    _csvs = _g.glob(f"{session_dir}/training_metrics/normal_training/{key_name}/**/training.csv", recursive=True)
+                    if _csvs:
+                        import csv as _csv
+                        with open(_csvs[0]) as _f:
+                            _lines = [l for l in _f if not l.startswith('#')]
+                            _rows = list(_csv.DictReader(_lines))
+                        if _rows:
+                            _best = max(_rows, key=lambda r: float(r.get('macro_f1', 0)))
+                            _f1 = float(_best.get('macro_f1', 0))
+                            _ep = _best.get('epoch', '?')
+                            _total_ep = len(_rows)
+                            _skip_info = f" (F1={_f1:.3f} at epoch {_ep}/{_total_ep})"
+                except Exception:
+                    pass
+                self.console.print(f"\n[green]⏭ Skipping '{key_name}' — already trained{_skip_info}[/green]")
                 current_model_index += 1
                 continue
 
@@ -11697,7 +11732,25 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     # RESUME LOGIC: Check if binary model is already trained and skip if complete
                     is_complete, existing_path = _is_model_already_trained(label_name, model_name, 'normal_training')
                     if is_complete:
-                        self.console.print(f"\n[green]⏭ Skipping '{label_name}' - already trained[/green]")
+                        # Read best metrics from training CSV if available
+                        _skip_info = ""
+                        try:
+                            import glob as _g
+                            _csvs = _g.glob(f"{session_dir}/training_metrics/normal_training/{label_name}/**/training.csv", recursive=True)
+                            if _csvs:
+                                import csv as _csv
+                                with open(_csvs[0]) as _f:
+                                    _lines = [l for l in _f if not l.startswith('#')]
+                                    _rows = list(_csv.DictReader(_lines))
+                                if _rows:
+                                    _best = max(_rows, key=lambda r: float(r.get('macro_f1', r.get('f1_1', 0))))
+                                    _f1 = float(_best.get('f1_1', _best.get('macro_f1', 0)))
+                                    _ep = _best.get('epoch', '?')
+                                    _total_ep = len(_rows)
+                                    _skip_info = f" (F1={_f1:.3f} at epoch {_ep}/{_total_ep})"
+                        except Exception:
+                            pass
+                        self.console.print(f"\n[green]⏭ Skipping '{label_name}' — already trained{_skip_info}[/green]")
                         self.console.print(f"[dim]   Model path: {existing_path}[/dim]")
                         onevsall_bucket[raw_value] = {
                             'skipped': True,
