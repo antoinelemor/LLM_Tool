@@ -1239,6 +1239,8 @@ def _training_studio_confirm_and_execute(
         # Resume at RL Phase 2
         'skip_to_rl': preloaded_config.get('skip_to_rl', False) if preloaded_config else False,
         'rl_state_path': preloaded_config.get('rl_state_path') if preloaded_config else None,
+        # Early stopping
+        'early_stopping_patience': preloaded_config.get('early_stopping_patience') if preloaded_config else (quick_params.get('early_stopping_patience') if quick_params else None),
     }
 
     # Get session ID BEFORE saving metadata
@@ -10292,7 +10294,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     training_config.metrics_output_dir = str(metrics_base_dir)
     training_config.model_name = model_name
     training_config.num_epochs = epochs
-    training_config.early_stopping_patience = quick_params.get('early_stopping_patience') if quick_params else None
+    # Early stopping: from quick_params (new session) or model_config (resume)
+    _es_from_params = quick_params.get('early_stopping_patience') if quick_params else None
+    _es_from_config = model_config.get('early_stopping_patience') if model_config else None
+    training_config.early_stopping_patience = _es_from_params or _es_from_config
     training_config.batch_size = _get_optimal_batch_size(model_name)  # Dynamic batch size based on system resources
     # Tokenizer-aware max_length: only override the default when the user accepted
     # the optimization in _collect_quick_mode_parameters. None => keep the dataclass
@@ -14434,9 +14439,26 @@ def _resume_training_studio(self, focus_session_id: Optional[str] = None):
     else:
         self.console.print("\n[green]✓ Relaunching training with saved parameters...[/green]\n")
 
+    # ── Ask for early stopping & interactive skip on resume ──
+    if action_mode in ("resume", "relaunch"):
+        self.console.print("[bold]Training Control Options[/bold]\n")
+        self.console.print("[bold]Early Stopping[/bold]")
+        self.console.print("  Automatically stop a model if F1 stops improving.\n")
+        _es_enabled = Confirm.ask("Enable early stopping?", default=True)
+        _es_patience = None
+        if _es_enabled:
+            _es_patience = IntPrompt.ask("  Patience (epochs without improvement)", default=3)
+            self.console.print(f"  [green]✓[/green] Early stopping: patience={_es_patience}\n")
+        self.console.print("[dim]Tip: Type [bold cyan]s[/bold cyan] + Enter during training to skip to next model[/dim]\n")
+
     mode = metadata.get("model_config", {}).get("training_mode", "quick")
 
     preloaded = metadata.get("model_config", {})
+
+    # Inject early stopping into preloaded config
+    if action_mode in ("resume", "relaunch") and '_es_patience' in dir():
+        preloaded['early_stopping_patience'] = _es_patience
+
     if action_mode == "resume_rl" and rl_state_path:
         preloaded['skip_to_rl'] = True
         preloaded['rl_state_path'] = rl_state_path
