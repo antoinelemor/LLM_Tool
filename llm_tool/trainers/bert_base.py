@@ -2438,6 +2438,8 @@ class BertBase(BertABC):
             distribution_aware: bool = False,  # Auto-compute per-label pos_weight and adaptive ASL gamma from data (multi-label only)
             skip_to_rl: bool = False,  # Skip normal training and jump directly to RL Phase 2
             rl_state_path: Optional[str] = None,  # Path to rl_ready_state.json for resuming at RL
+            early_stopping_patience: Optional[int] = None,  # Stop if no F1 improvement for N epochs (None=disabled)
+            manual_reinforced_epochs: Optional[int] = None,  # Override number of reinforced epochs
     ) -> Tuple[Any, Any, Any, Any]:
         """
         Train, evaluate, and (optionally) save a BERT model. This method also logs training and validation
@@ -3356,7 +3358,25 @@ class BertBase(BertABC):
             else:
                 skip_to_rl = False  # Ensure we run normal training if state load failed
 
+            # Early stopping state
+            _es_patience = early_stopping_patience  # None = disabled
+            _es_counter = 0  # epochs without improvement
+            _es_best_metric = -1.0  # best combined metric seen
+
             for i_epoch in range(n_epochs if not skip_to_rl else 0):
+                # ── Interactive skip: check for user input (non-blocking) ──
+                # User can press 's' + Enter to skip to next model
+                try:
+                    import select
+                    if select.select([__import__('sys').stdin], [], [], 0.0)[0]:
+                        user_input = __import__('sys').stdin.readline().strip().lower()
+                        if user_input in ('s', 'skip', 'next'):
+                            if not suppress_display:
+                                self.logger.info(f" User requested skip at epoch {i_epoch + 1}/{n_epochs}")
+                            break
+                except Exception:
+                    pass  # select not available on all platforms (Windows)
+
                 epoch_start_time = time.time()
 
                 # Update display for new epoch
@@ -4499,8 +4519,20 @@ class BertBase(BertABC):
                     # Update with calculated metrics
                     throttled_live.update(display.create_panel(), force=True)
 
-                # Epoch summary removed - Rich Live display is sufficient
-                # (keeping print() was pushing the Rich table down on every epoch)
+                # ── Early stopping check ──
+                if _es_patience is not None:
+                    if combined_metric > _es_best_metric:
+                        _es_best_metric = combined_metric
+                        _es_counter = 0
+                    else:
+                        _es_counter += 1
+                        if _es_counter >= _es_patience:
+                            if not suppress_display:
+                                self.logger.info(
+                                    f" Early stopping: no improvement for {_es_patience} epochs "
+                                    f"(best={_es_best_metric:.4f} at epoch {best_epoch_index})"
+                                )
+                            break
 
             # End of normal training (after all epochs) - display final summary
             display.current_phase = "Training Complete"
@@ -5168,6 +5200,10 @@ class BertBase(BertABC):
 
                     # Reinforced training loop - INLINE within same Live context
                     # NOTE: Suppress logger during reinforced training to avoid interfering with Rich Live display
+                    # RL early stopping state
+                    _rl_es_counter = 0
+                    _rl_es_best = -1.0
+
                     for epoch in range(n_epochs_reinforced):
                         epoch_start_time = time.time()
 
@@ -5949,6 +5985,31 @@ class BertBase(BertABC):
                                 display.current_phase = f"NEW BEST! Metric: {current_metric:.4f}"
                                 # Update with calculated metrics
                                 throttled_live.update(display.create_panel(), force=True)
+
+                        # ── RL Early stopping check ──
+                        if _es_patience is not None:
+                            _rl_combined = combined_metric if 'combined_metric' in dir() else macro_f1
+                            if _rl_combined > _rl_es_best:
+                                _rl_es_best = _rl_combined
+                                _rl_es_counter = 0
+                            else:
+                                _rl_es_counter += 1
+                                if _rl_es_counter >= _es_patience:
+                                    if not suppress_display:
+                                        self.logger.info(f" RL Early stopping: no improvement for {_es_patience} epochs")
+                                    break
+
+                        # ── RL Interactive skip ──
+                        try:
+                            import select
+                            if select.select([__import__('sys').stdin], [], [], 0.0)[0]:
+                                user_input = __import__('sys').stdin.readline().strip().lower()
+                                if user_input in ('s', 'skip', 'next'):
+                                    if not suppress_display:
+                                        self.logger.info(f" User requested RL skip at epoch {epoch + 1}/{n_epochs_reinforced}")
+                                    break
+                        except Exception:
+                            pass
 
                     # Finalize reinforced model path
                     if best_model_path and best_model_path.endswith("_reinforced_temp"):

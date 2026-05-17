@@ -1489,6 +1489,8 @@ class MultiLabelTrainer:
             # Resume at RL Phase 2
             skip_to_rl=self.config.skip_to_rl,
             rl_state_path=self.config.rl_state_path,
+            # Early stopping
+            early_stopping_patience=getattr(self.config, 'early_stopping_patience', None),
         )
 
         # CRITICAL FIX: Use last_training_summary from model for complete metrics

@@ -9795,6 +9795,29 @@ def _collect_quick_mode_parameters(
 
     epochs = IntPrompt.ask("[bold yellow]Number of epochs[/bold yellow]", default=default_epochs)
 
+    # ═══════════════════════════════════════════════════════
+    #            STEP 6: Early Stopping & Interactive Skip
+    # ═══════════════════════════════════════════════════════
+    self.console.print(f"\n{'═'*60}")
+    self.console.print(f"{'           STEP 6: Training Control':^60}")
+    self.console.print(f"{'═'*60}\n")
+
+    # Early stopping
+    self.console.print("[bold]Early Stopping[/bold]")
+    self.console.print("  Automatically stop training a model if F1 stops improving.")
+    self.console.print("  Best model checkpoint is always preserved.\n")
+    es_enabled = Confirm.ask("Enable early stopping?", default=True)
+    early_stopping_patience = None
+    if es_enabled:
+        early_stopping_patience = IntPrompt.ask("  Patience (epochs without improvement)", default=3)
+        self.console.print(f"  [green]✓[/green] Early stopping: stop after {early_stopping_patience} epochs without improvement\n")
+
+    # Interactive skip
+    self.console.print("[bold]Interactive Skip[/bold]")
+    self.console.print("  Type [bold cyan]s[/bold cyan] + Enter during training to skip to next model.")
+    self.console.print("  Works for both normal training and reinforced learning.\n")
+    self.console.print("  [dim]Note: Interactive skip is always available during training.[/dim]\n")
+
     # distribution_aware = Phase 1 (pos_weight + WeightedRandomSampler)
     # reinforced_learning = Phase 2 (extra epochs for underperforming labels)
     # These are now INDEPENDENT choices
@@ -9805,6 +9828,7 @@ def _collect_quick_mode_parameters(
         'model_name': model_name,
         'reinforced_learning': enable_reinforced_learning,
         'epochs': epochs,
+        'early_stopping_patience': early_stopping_patience,
         # Reinforced learning parameters
         'rl_f1_threshold': rl_f1_threshold,
         'rl_oversample_factor': rl_oversample_factor,
@@ -10268,6 +10292,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     training_config.metrics_output_dir = str(metrics_base_dir)
     training_config.model_name = model_name
     training_config.num_epochs = epochs
+    training_config.early_stopping_patience = quick_params.get('early_stopping_patience') if quick_params else None
     training_config.batch_size = _get_optimal_batch_size(model_name)  # Dynamic batch size based on system resources
     # Tokenizer-aware max_length: only override the default when the user accepted
     # the optimization in _collect_quick_mode_parameters. None => keep the dataclass
@@ -10781,6 +10806,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     'training_strategy': 'single-label',  # Binary classification
                     'training_approach': training_approach_from_metadata or 'one-vs-all',  # CRITICAL: Pass for chart labeling
                     'category_name': category_name,  # For display in metrics
+                    'early_stopping_patience': training_config.early_stopping_patience if hasattr(training_config, 'early_stopping_patience') else None,
                     'confirmed_languages': list(languages) if languages else None,
                     'train_by_language': needs_language_training,
                     'session_id': session_id,
