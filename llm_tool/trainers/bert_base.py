@@ -991,8 +991,10 @@ class TrainingDisplay:
                  global_total_models: int = None, global_current_model: int = None,
                  global_total_epochs: int = None, global_max_epochs: int = None,
                  global_completed_epochs: int = None,
-                 global_start_time: float = None, reinforced_learning_enabled: bool = False):
+                 global_start_time: float = None, reinforced_learning_enabled: bool = False,
+                 interactive_skip: bool = False):
         self.model_name = model_name
+        self.interactive_skip = interactive_skip
         self.label_key = label_key
         self.label_value = label_value
         self.language = language
@@ -1487,7 +1489,8 @@ class TrainingDisplay:
             title = "[MODEL TRAINING]"
             border_color = "bold blue"  # Blue for normal
 
-        return Panel(group, title=title, border_style=border_color, box=box.HEAVY)
+        _subtitle = "[dim cyan]Press s + Enter → skip to next model[/dim cyan]" if self.interactive_skip else None
+        return Panel(group, title=title, subtitle=_subtitle, border_style=border_color, box=box.HEAVY)
 
     def _create_bar(self, percentage: float, width: int = 30) -> str:
         """Create a text-based progress bar."""
@@ -2439,6 +2442,7 @@ class BertBase(BertABC):
             skip_to_rl: bool = False,  # Skip normal training and jump directly to RL Phase 2
             rl_state_path: Optional[str] = None,  # Path to rl_ready_state.json for resuming at RL
             early_stopping_patience: Optional[int] = None,  # Stop if no F1 improvement for N epochs (None=disabled)
+            interactive_skip: bool = True,  # Allow user to type 's' + Enter to skip to next model
             manual_reinforced_epochs: Optional[int] = None,  # Override number of reinforced epochs
     ) -> Tuple[Any, Any, Any, Any]:
         """
@@ -3157,7 +3161,8 @@ class BertBase(BertABC):
             global_max_epochs=global_max_epochs,
             global_completed_epochs=global_completed_epochs,
             global_start_time=global_start_time,
-            reinforced_learning_enabled=reinforced_learning
+            reinforced_learning_enabled=reinforced_learning,
+            interactive_skip=interactive_skip
         )
 
         live_stats_summary = None
@@ -3363,19 +3368,30 @@ class BertBase(BertABC):
             _es_counter = 0  # epochs without improvement
             _es_best_metric = -1.0  # best combined metric seen
 
+            # ── Interactive skip: background thread reads stdin ──
+            _skip_requested = False
+            _skip_thread = None
+            if interactive_skip:
+                import threading
+                def _stdin_listener():
+                    nonlocal _skip_requested
+                    import sys
+                    try:
+                        for line in sys.stdin:
+                            if line.strip().lower() in ('s', 'skip', 'next'):
+                                _skip_requested = True
+                                break
+                    except Exception:
+                        pass
+                _skip_thread = threading.Thread(target=_stdin_listener, daemon=True)
+                _skip_thread.start()
+
             for i_epoch in range(n_epochs if not skip_to_rl else 0):
-                # ── Interactive skip: check for user input (non-blocking) ──
-                # User can press 's' + Enter to skip to next model
-                try:
-                    import select
-                    if select.select([__import__('sys').stdin], [], [], 0.0)[0]:
-                        user_input = __import__('sys').stdin.readline().strip().lower()
-                        if user_input in ('s', 'skip', 'next'):
-                            if not suppress_display:
-                                self.logger.info(f" User requested skip at epoch {i_epoch + 1}/{n_epochs}")
-                            break
-                except Exception:
-                    pass  # select not available on all platforms (Windows)
+                # ── Interactive skip: check flag set by background thread ──
+                if _skip_requested:
+                    if not suppress_display:
+                        self.logger.info(f" User requested skip at epoch {i_epoch + 1}/{n_epochs}")
+                    break
 
                 epoch_start_time = time.time()
 
@@ -4852,6 +4868,7 @@ class BertBase(BertABC):
                 if should_trigger:
                     reinforced_triggered = True
                     self._reinforced_already_triggered = True  # Mark as triggered to prevent re-triggering
+                    _skip_requested = False  # Reset skip flag for RL phase
 
                     # ========== INLINE REINFORCED TRAINING (ROBUST SOLUTION) ==========
                     # Instead of calling separate function, run reinforced training INLINE
@@ -6000,16 +6017,10 @@ class BertBase(BertABC):
                                     break
 
                         # ── RL Interactive skip ──
-                        try:
-                            import select
-                            if select.select([__import__('sys').stdin], [], [], 0.0)[0]:
-                                user_input = __import__('sys').stdin.readline().strip().lower()
-                                if user_input in ('s', 'skip', 'next'):
-                                    if not suppress_display:
-                                        self.logger.info(f" User requested RL skip at epoch {epoch + 1}/{n_epochs_reinforced}")
-                                    break
-                        except Exception:
-                            pass
+                        if _skip_requested:
+                            if not suppress_display:
+                                self.logger.info(f" User requested RL skip at epoch {epoch + 1}/{n_epochs_reinforced}")
+                            break
 
                     # Finalize reinforced model path
                     if best_model_path and best_model_path.endswith("_reinforced_temp"):

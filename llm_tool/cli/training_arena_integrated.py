@@ -1239,8 +1239,9 @@ def _training_studio_confirm_and_execute(
         # Resume at RL Phase 2
         'skip_to_rl': preloaded_config.get('skip_to_rl', False) if preloaded_config else False,
         'rl_state_path': preloaded_config.get('rl_state_path') if preloaded_config else None,
-        # Early stopping
+        # Early stopping & interactive skip
         'early_stopping_patience': preloaded_config.get('early_stopping_patience') if preloaded_config else (quick_params.get('early_stopping_patience') if quick_params else None),
+        'interactive_skip': preloaded_config.get('interactive_skip', True) if preloaded_config else (quick_params.get('interactive_skip', True) if quick_params else True),
     }
 
     # Get session ID BEFORE saving metadata
@@ -9818,7 +9819,11 @@ def _collect_quick_mode_parameters(
     self.console.print("[bold]Interactive Skip[/bold]")
     self.console.print("  Type [bold cyan]s[/bold cyan] + Enter during training to skip to next model.")
     self.console.print("  Works for both normal training and reinforced learning.\n")
-    self.console.print("  [dim]Note: Interactive skip is always available during training.[/dim]\n")
+    interactive_skip = Confirm.ask("Enable interactive skip (manual model skip)?", default=True)
+    if interactive_skip:
+        self.console.print("  [green]✓[/green] Interactive skip enabled: type [bold cyan]s[/bold cyan] + Enter to skip a model\n")
+    else:
+        self.console.print("  [dim]Interactive skip disabled[/dim]\n")
 
     # distribution_aware = Phase 1 (pos_weight + WeightedRandomSampler)
     # reinforced_learning = Phase 2 (extra epochs for underperforming labels)
@@ -9831,6 +9836,7 @@ def _collect_quick_mode_parameters(
         'reinforced_learning': enable_reinforced_learning,
         'epochs': epochs,
         'early_stopping_patience': early_stopping_patience,
+        'interactive_skip': interactive_skip,
         # Reinforced learning parameters
         'rl_f1_threshold': rl_f1_threshold,
         'rl_oversample_factor': rl_oversample_factor,
@@ -10298,6 +10304,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     _es_from_params = quick_params.get('early_stopping_patience') if quick_params else None
     _es_from_config = model_config.get('early_stopping_patience') if model_config else None
     training_config.early_stopping_patience = _es_from_params or _es_from_config
+    # Interactive skip: from quick_params (new session) or model_config (resume)
+    _is_from_params = quick_params.get('interactive_skip', True) if quick_params else True
+    _is_from_config = model_config.get('interactive_skip', True) if model_config else True
+    training_config.interactive_skip = _is_from_params if quick_params else _is_from_config
     training_config.batch_size = _get_optimal_batch_size(model_name)  # Dynamic batch size based on system resources
     # Tokenizer-aware max_length: only override the default when the user accepted
     # the optimization in _collect_quick_mode_parameters. None => keep the dataclass
@@ -10794,7 +10804,48 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
 
             # Train each binary model sequentially
             results_per_category = {}
+
+            # RESUME SCAN: Count already trained one-vs-all models before starting
+            _ova_already_trained = 0
+            _model_safe = model_name.replace("/", "_")
+            for _cat_name in category_files:
+                _cat_model_dir = Path("models") / session_id / "normal_training" / _cat_name / _model_safe / "model"
+                if _cat_model_dir.exists() and ((_cat_model_dir / "pytorch_model.bin").exists() or (_cat_model_dir / "model.safetensors").exists()):
+                    _ova_already_trained += 1
+            if _ova_already_trained > 0:
+                _ova_remaining = len(category_files) - _ova_already_trained
+                self.console.print(f"\n[bold cyan]RESUMING TRAINING SESSION[/bold cyan]")
+                self.console.print(f"[green]   \u2713 {_ova_already_trained} models already trained (will be skipped)[/green]")
+                self.console.print(f"[yellow]   \u23f3 {_ova_remaining} models remaining to train[/yellow]\n")
+
             for idx, (category_name, category_file) in enumerate(category_files.items(), 1):
+                # RESUME: Skip already trained models
+                _cat_model_dir = Path("models") / session_id / "normal_training" / category_name / _model_safe / "model"
+                if _cat_model_dir.exists() and ((_cat_model_dir / "pytorch_model.bin").exists() or (_cat_model_dir / "model.safetensors").exists()):
+                    # Try to get best F1 info for the skip message
+                    _skip_info = ""
+                    try:
+                        import glob as _g
+                        _metrics_base = str(session_metrics_dir) if session_metrics_dir else str(get_training_metrics_dir(session_id) / "normal_training")
+                        _csvs = _g.glob(f"{_metrics_base}/{category_name}/**/training.csv", recursive=True)
+                        if _csvs:
+                            import csv as _csv
+                            with open(_csvs[0]) as _f:
+                                _lines = [l for l in _f if not l.startswith('#')]
+                                _rows = list(_csv.DictReader(_lines))
+                            if _rows:
+                                _best = max(_rows, key=lambda r: float(r.get('macro_f1', r.get('f1_1', 0))))
+                                _f1 = float(_best.get('macro_f1', _best.get('f1_1', 0)))
+                                _ep = _best.get('epoch', '?')
+                                _total_ep = len(_rows)
+                                _skip_info = f" (F1={_f1:.3f} at epoch {_ep}/{_total_ep})"
+                    except Exception:
+                        pass
+                    self.console.print(f"\n[green]\u23ed Skipping '{category_name}' \u2014 already trained{_skip_info}[/green]")
+                    self.console.print(f"[dim]   Model path: {_cat_model_dir}[/dim]")
+                    global_completed_epochs += int(epochs)
+                    continue
+
                 self.console.print(f"\n[cyan]Training binary model for: {category_name}[/cyan]")
 
                 # Create config for this specific category
@@ -10812,6 +10863,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     'training_approach': training_approach_from_metadata or 'one-vs-all',  # CRITICAL: Pass for chart labeling
                     'category_name': category_name,  # For display in metrics
                     'early_stopping_patience': training_config.early_stopping_patience if hasattr(training_config, 'early_stopping_patience') else None,
+                    'interactive_skip': training_config.interactive_skip if hasattr(training_config, 'interactive_skip') else True,
                     'confirmed_languages': list(languages) if languages else None,
                     'train_by_language': needs_language_training,
                     'session_id': session_id,
@@ -14502,15 +14554,23 @@ def _resume_training_studio(self, focus_session_id: Optional[str] = None):
         if _es_enabled:
             _es_patience = IntPrompt.ask("  Patience (epochs without improvement)", default=3)
             self.console.print(f"  [green]✓[/green] Early stopping: patience={_es_patience}\n")
-        self.console.print("[dim]Tip: Type [bold cyan]s[/bold cyan] + Enter during training to skip to next model[/dim]\n")
+        self.console.print("\n[bold]Interactive Skip[/bold]")
+        self.console.print("  Type [bold cyan]s[/bold cyan] + Enter during training to skip to next model.\n")
+        _interactive_skip = Confirm.ask("Enable interactive skip (manual model skip)?", default=True)
+        if _interactive_skip:
+            self.console.print("  [green]✓[/green] Interactive skip enabled\n")
+        else:
+            self.console.print("  [dim]Interactive skip disabled[/dim]\n")
 
     mode = metadata.get("model_config", {}).get("training_mode", "quick")
 
     preloaded = metadata.get("model_config", {})
 
-    # Inject early stopping into preloaded config
+    # Inject early stopping & interactive skip into preloaded config
     if action_mode in ("resume", "relaunch") and '_es_patience' in dir():
         preloaded['early_stopping_patience'] = _es_patience
+    if action_mode in ("resume", "relaunch") and '_interactive_skip' in dir():
+        preloaded['interactive_skip'] = _interactive_skip
 
     if action_mode == "resume_rl" and rl_state_path:
         preloaded['skip_to_rl'] = True
