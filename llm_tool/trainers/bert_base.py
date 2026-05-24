@@ -3368,27 +3368,19 @@ class BertBase(BertABC):
             _es_counter = 0  # epochs without improvement
             _es_best_metric = -1.0  # best combined metric seen
 
-            # ── Interactive skip: background thread reads stdin ──
-            _skip_requested = False
-            _skip_thread = None
+            # ── Interactive skip: process-wide stdin listener ──
+            # Robust across sequential models: a single daemon thread reads
+            # stdin and notifies via Event. .reset() clears any stale flag
+            # set during the previous model so the new run starts clean.
+            from llm_tool.utils.interactive_skip import get_skip_listener
+            _skip_listener = get_skip_listener()
             if interactive_skip:
-                import threading
-                def _stdin_listener():
-                    nonlocal _skip_requested
-                    import sys
-                    try:
-                        for line in sys.stdin:
-                            if line.strip().lower() in ('s', 'skip', 'next'):
-                                _skip_requested = True
-                                break
-                    except Exception:
-                        pass
-                _skip_thread = threading.Thread(target=_stdin_listener, daemon=True)
-                _skip_thread.start()
+                _skip_listener.enable()
+                _skip_listener.reset()
 
             for i_epoch in range(n_epochs if not skip_to_rl else 0):
                 # ── Interactive skip: check flag set by background thread ──
-                if _skip_requested:
+                if interactive_skip and _skip_listener.consume():
                     if not suppress_display:
                         self.logger.info(f" User requested skip at epoch {i_epoch + 1}/{n_epochs}")
                     break
@@ -4868,7 +4860,8 @@ class BertBase(BertABC):
                 if should_trigger:
                     reinforced_triggered = True
                     self._reinforced_already_triggered = True  # Mark as triggered to prevent re-triggering
-                    _skip_requested = False  # Reset skip flag for RL phase
+                    if interactive_skip:
+                        _skip_listener.reset()  # Clear any stale skip request before RL phase
 
                     # ========== INLINE REINFORCED TRAINING (ROBUST SOLUTION) ==========
                     # Instead of calling separate function, run reinforced training INLINE
@@ -6017,7 +6010,7 @@ class BertBase(BertABC):
                                     break
 
                         # ── RL Interactive skip ──
-                        if _skip_requested:
+                        if interactive_skip and _skip_listener.consume():
                             if not suppress_display:
                                 self.logger.info(f" User requested RL skip at epoch {epoch + 1}/{n_epochs_reinforced}")
                             break
