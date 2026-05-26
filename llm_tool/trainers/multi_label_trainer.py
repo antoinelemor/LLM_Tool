@@ -154,6 +154,7 @@ class TrainingConfig:
     # Resume at RL Phase 2
     skip_to_rl: bool = False  # Skip normal training and jump to RL
     rl_state_path: Optional[str] = None  # Path to rl_ready_state.json
+    interactive_skip: bool = True  # Allow user to type 's' + Enter to skip to next model
 
 
 @dataclass
@@ -1489,8 +1490,9 @@ class MultiLabelTrainer:
             # Resume at RL Phase 2
             skip_to_rl=self.config.skip_to_rl,
             rl_state_path=self.config.rl_state_path,
-            # Early stopping
+            # Early stopping & interactive skip
             early_stopping_patience=getattr(self.config, 'early_stopping_patience', None),
+            interactive_skip=getattr(self.config, 'interactive_skip', True),
         )
 
         # CRITICAL FIX: Use last_training_summary from model for complete metrics

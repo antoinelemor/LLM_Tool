@@ -442,6 +442,7 @@ class TrainingConfig:
     validation_split: float = 0.2
     test_split: float = 0.1
     early_stopping_patience: Optional[int] = None  # None = disabled, set via CLI
+    interactive_skip: bool = True  # Allow user to type 's' + Enter to skip to next model
     early_stopping_threshold: float = 0.001
     gradient_accumulation_steps: int = 1
     fp16: bool = False
@@ -1561,8 +1562,9 @@ class ModelTrainer:
                 multi_label_threshold=self.config.multi_label_threshold,
                 # CRITICAL: Pass training_approach for correct chart labeling
                 training_approach=training_approach,
-                # Early stopping
+                # Early stopping & interactive skip
                 early_stopping_patience=getattr(self.config, 'early_stopping_patience', None),
+                interactive_skip=getattr(self.config, 'interactive_skip', True),
             )
 
             # Capture global_completed_epochs from model_instance BEFORE it goes out of scope
@@ -2838,8 +2840,9 @@ class ModelTrainer:
             multi_label_threshold=self.config.multi_label_threshold,
             # CRITICAL: Pass training_approach for correct chart labeling
             training_approach=config.get('training_approach'),
-            # Early stopping
+            # Early stopping & interactive skip
             early_stopping_patience=getattr(self.config, 'early_stopping_patience', None),
+            interactive_skip=getattr(self.config, 'interactive_skip', True),
         )
 
         # Log final model path
@@ -3242,8 +3245,9 @@ class ModelTrainer:
             # Resume at RL Phase 2
             skip_to_rl=config.get('skip_to_rl', False),
             rl_state_path=config.get('rl_state_path'),
-            # Early stopping
+            # Early stopping & interactive skip
             early_stopping_patience=getattr(self.config, 'early_stopping_patience', None),
+            interactive_skip=getattr(self.config, 'interactive_skip', True),
         )
 
         # ========== STEP 9: Evaluate ==========

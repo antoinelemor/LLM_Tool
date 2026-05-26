@@ -412,67 +412,88 @@ class SystemResources:
                 recommendations['notes'].append(f"MPS XLARGE: {unified_mem:.0f}GB → batch {recommendations['batch_size']} (calibrated ~0.31GB/sample)")
 
             elif model_category == 'large':
-                # Large models (~350-560M params): ~2.2GB model + activations
-                # Measured: batch=96 uses ~20GB → ~0.21GB per sample
-                # Target: 30-35% of GPU memory (75% of unified = GPU available)
+                # Large models (~350-560M params).
+                # CONVERGENCE CAP: micro-batch capped at 16 for fine-tuning stability.
+                # Measured 2026-05-25 on M4 Max 128GB + mDeBERTa-v3-base: micro-batch >32
+                # leaves the classifier head essentially un-trained (cosine between the two
+                # rows of classifier.weight stays at random init ≈ 0; the saved checkpoints
+                # predict the same class for ~100 % of the test set, F1 ~ 0.25). Lit. for
+                # DeBERTa-v3 fine-tuning (HuggingFace/microsoft repo) uses batch 8-16 with
+                # lr 1e-5..2e-5. We compensate with gradient_accumulation_steps to keep an
+                # effective batch size that still gives stable gradients but with many more
+                # optimizer steps per epoch, which is what the head needs to converge.
                 if unified_mem >= 128:
-                    # 96GB GPU avail, 30% = 28.8GB → batch 137 → use 128
-                    recommendations['batch_size'] = 128
-                    recommendations['gradient_accumulation_steps'] = 1
+                    recommendations['batch_size'] = 16
+                    recommendations['gradient_accumulation_steps'] = 4   # eff. batch = 64
                     recommendations['num_workers'] = 12
                 elif unified_mem >= 64:
-                    # 48GB GPU avail, 30% = 14.4GB → batch 69 → use 72
-                    recommendations['batch_size'] = 72
-                    recommendations['gradient_accumulation_steps'] = 1
+                    recommendations['batch_size'] = 16
+                    recommendations['gradient_accumulation_steps'] = 2   # eff. batch = 32
                     recommendations['num_workers'] = 10
                 elif unified_mem >= 32:
-                    # 24GB GPU avail, 30% = 7.2GB → batch 34 → use 36
-                    recommendations['batch_size'] = 36
-                    recommendations['gradient_accumulation_steps'] = 1
+                    recommendations['batch_size'] = 12
+                    recommendations['gradient_accumulation_steps'] = 2   # eff. batch = 24
                     recommendations['num_workers'] = 8
                 elif unified_mem >= 16:
-                    # 12GB GPU avail, 35% = 4.2GB → batch 20
-                    recommendations['batch_size'] = 20
-                    recommendations['gradient_accumulation_steps'] = 1
+                    recommendations['batch_size'] = 8
+                    recommendations['gradient_accumulation_steps'] = 2   # eff. batch = 16
                     recommendations['num_workers'] = 6
                 elif unified_mem >= 8:
-                    # 6GB GPU avail, 40% = 2.4GB → batch 12
-                    recommendations['batch_size'] = 12
-                    recommendations['gradient_accumulation_steps'] = 1
-                    recommendations['num_workers'] = 4
-                else:
                     recommendations['batch_size'] = 6
                     recommendations['gradient_accumulation_steps'] = 2
-                recommendations['notes'].append(f"MPS LARGE: {unified_mem:.0f}GB → batch {recommendations['batch_size']} (calibrated ~0.21GB/sample)")
-
-            else:
-                # Base/small models - GO BIG - these are lightweight
-                # Estimated: ~0.10GB per sample (half of large models)
-                # Target: 30-35% of GPU memory
-                if unified_mem >= 128:
-                    # 96GB GPU avail, 30% = 28.8GB → batch 288 → use 256
-                    recommendations['batch_size'] = 256
-                    recommendations['num_workers'] = 12
-                elif unified_mem >= 64:
-                    # 48GB GPU avail, 30% = 14.4GB → batch 144
-                    recommendations['batch_size'] = 144
-                    recommendations['num_workers'] = 10
-                elif unified_mem >= 32:
-                    # 24GB GPU avail, 30% = 7.2GB → batch 72
-                    recommendations['batch_size'] = 72
-                    recommendations['num_workers'] = 8
-                elif unified_mem >= 16:
-                    # 12GB GPU avail, 35% = 4.2GB → batch 42 → use 48
-                    recommendations['batch_size'] = 48
-                    recommendations['num_workers'] = 6
-                elif unified_mem >= 8:
-                    # 6GB GPU avail, 40% = 2.4GB → batch 24
-                    recommendations['batch_size'] = 24
                     recommendations['num_workers'] = 4
                 else:
-                    recommendations['batch_size'] = 12
+                    recommendations['batch_size'] = 4
+                    recommendations['gradient_accumulation_steps'] = 4
+                recommendations['notes'].append(
+                    f"MPS LARGE: {unified_mem:.0f}GB → micro-batch {recommendations['batch_size']} "
+                    f"× ga={recommendations['gradient_accumulation_steps']} "
+                    f"(convergence cap for fine-tuning stability)"
+                )
+
+            else:
+                # Base/small models (~100-280M params, incl. mDeBERTa-v3-base).
+                # CONVERGENCE CAP: micro-batch capped at 16 for fine-tuning stability.
+                # See LARGE branch above for the diagnosis. Measured 2026-05-26 on
+                # M4 Max 128GB at equal optimizer-step count (92), micro-batch 16
+                # reaches F1=0.73 / AUC=0.97 in 2 epochs while micro-batch 32 reaches
+                # only F1=0.55 (same AUC ≈ 0.97 → encoder learns in both, but the
+                # head only calibrates with the smaller batch). Micro-batch 256
+                # (system default before the fix) gives F1≈0.25 and a head that
+                # predicts the same class for 100 % of inputs.
+                # gradient_accumulation_steps preserves the effective batch when the
+                # caller wants a larger one (note that going from ga=1 to ga=4 on the
+                # same micro-batch costs convergence too because it cuts the number
+                # of optimizer steps by 4×; keep ga modest unless lr is also scaled).
+                if unified_mem >= 128:
+                    recommendations['batch_size'] = 16
+                    recommendations['gradient_accumulation_steps'] = 2   # eff. batch = 32
+                    recommendations['num_workers'] = 12
+                elif unified_mem >= 64:
+                    recommendations['batch_size'] = 16
+                    recommendations['gradient_accumulation_steps'] = 2   # eff. batch = 32
+                    recommendations['num_workers'] = 10
+                elif unified_mem >= 32:
+                    recommendations['batch_size'] = 16
+                    recommendations['gradient_accumulation_steps'] = 1   # eff. batch = 16
+                    recommendations['num_workers'] = 8
+                elif unified_mem >= 16:
+                    recommendations['batch_size'] = 16
+                    recommendations['gradient_accumulation_steps'] = 1   # eff. batch = 16
+                    recommendations['num_workers'] = 6
+                elif unified_mem >= 8:
+                    recommendations['batch_size'] = 8
+                    recommendations['gradient_accumulation_steps'] = 1
+                    recommendations['num_workers'] = 4
+                else:
+                    recommendations['batch_size'] = 8
+                    recommendations['gradient_accumulation_steps'] = 1
                     recommendations['num_workers'] = 2
-                recommendations['notes'].append(f"MPS BASE: {unified_mem:.0f}GB → batch {recommendations['batch_size']} (calibrated ~0.10GB/sample)")
+                recommendations['notes'].append(
+                    f"MPS BASE: {unified_mem:.0f}GB → micro-batch {recommendations['batch_size']} "
+                    f"× ga={recommendations['gradient_accumulation_steps']} "
+                    f"(convergence cap for fine-tuning stability)"
+                )
 
         # Calculate effective batch size for logging
         effective_batch_size = recommendations['batch_size'] * recommendations['gradient_accumulation_steps']

@@ -3066,6 +3066,40 @@ class BertBase(BertABC):
             num_training_steps=len(train_dataloader) * n_epochs
         )
 
+        # =============== Fine-tuning convergence guard ===============
+        # DeBERTa-v3 (incl. mDeBERTa-v3) on MPS will silently NOT train the
+        # classifier head with large micro-batches: the encoder's StableDropout
+        # + AdamW with lr≈2e-5 needs many optimizer steps per epoch, and a
+        # micro-batch of 256 on a 24k-row dataset × 12 epochs only gives ~190
+        # updates total — not enough for the freshly-init linear head to
+        # converge. Symptoms in the saved checkpoint: cosine(W[0], W[1]) ≈ 0
+        # (rows random-direction), classifier predicts the same class for
+        # ~100 % of inputs at threshold 0.5, F1 ~ 0.25 vs the 0.9+ shown by
+        # the in-training validator (which appears OK because it evaluates on
+        # the same shuffled batch distribution that hides the failure).
+        # We warn here so the issue can never come back unnoticed.
+        try:
+            _eff_micro_bs = train_dataloader.batch_size
+            _hp_micro_bs = hyperparameters.batch_size if hyperparameters is not None else _eff_micro_bs
+            _model_lower = (self.model_name or '').lower() if hasattr(self, 'model_name') else ''
+            _is_deberta = 'deberta' in _model_lower
+            # Measured threshold (2026-05-26, M4 Max, mDeBERTa-v3-base): a micro-batch
+            # of 16 gives F1=0.73 in 2 epochs (1500 samples), 32 → 0.55, 256 → 0.25.
+            # Above 16, F1 degrades smoothly with batch size, so we warn at >16 for
+            # DeBERTa-family models. Other base models (BERT, RoBERTa, XLM-R) can
+            # tolerate batch=64 fine; threshold them higher.
+            _bs_threshold = 16 if _is_deberta else 64
+            if _is_deberta and _eff_micro_bs > _bs_threshold and not suppress_display:
+                self.logger.warning(
+                    f" [convergence guard] DeBERTa detected with micro-batch "
+                    f"{_eff_micro_bs} > {_bs_threshold}. The classifier head "
+                    f"is very likely NOT going to converge. Reduce micro-batch "
+                    f"to ≤ {_bs_threshold} and use gradient_accumulation_steps "
+                    f"to preserve the effective batch size if needed."
+                )
+        except Exception:
+            pass
+
         # =============== Mixed Precision Training Setup ===============
         # Initialize GradScaler for mixed precision training (FP16)
         # Only use on CUDA devices; MPS has its own optimizations and CPU doesn't benefit
