@@ -1844,23 +1844,24 @@ Contributions are welcome! Please:
 
 A [technical paper](https://doi.org/10.31235/osf.io/6q8yg_v2) validating the full local LLM → BERT training pipeline is available on SocArXiv. The pipeline was tested with large open-source models running locally via Ollama (Nemotron 42 GB, GPT-OSS:120B 65 GB, Gemma 3:27B 17 GB), confirming that open-source local models can produce training data of sufficient quality to train competitive BERT classifiers.
 
-If you use LLM Tool in your research, please cite:
+If you use LLM Tool in your research, please cite the preprint:
 
 ```bibtex
-@software{lemor2025llmtool,
-  author = {Lemor, Antoine and Dinan, Shannon and Gilbert, Jérémy},
-  title = {LLM Tool: A Hybrid Pipeline for Automated Large-Scale Text Annotation Using Local Language Models and BERT Classifiers},
-  year = {2025},
-  version = {1.0.0},
-  url = {https://github.com/antoinelemor/LLM_Tool}
+@unpublished{lemor2026llmtool,
+  author       = {Lemor, Antoine and Dinan, Shannon and Gilbert, Jérémy},
+  title        = {{LLM Tool}: A Hybrid Pipeline for Automated High-Throughput Text Annotation Using Local Language Models and {BERT} Classifiers},
+  year         = {2026},
+  note         = {SocArXiv preprint, v2},
+  doi          = {10.31235/osf.io/6q8yg_v2},
+  howpublished = {\url{https://osf.io/preprints/socarxiv/6q8yg_v2}}
 }
 ```
 
 **In-text citation (APA):**
-> Lemor, A., Dinan, S., & Gilbert, J. (2025). LLM Tool: A Hybrid Pipeline for Automated Large-Scale Text Annotation Using Local Language Models and BERT Classifiers (Version 1.0.0) [Computer software]. https://github.com/antoinelemor/LLM_Tool
+> Lemor, A., Dinan, S., & Gilbert, J. (2026). *LLM Tool: A Hybrid Pipeline for Automated High-Throughput Text Annotation Using Local Language Models and BERT Classifiers* [Preprint]. SocArXiv. https://doi.org/10.31235/osf.io/6q8yg_v2
 
 **Methodology description for papers:**
-> "Text classification was performed using LLM Tool (Lemor et al., 2025), an open-source hybrid pipeline for LLM-assisted annotation and BERT model training. Documents were initially annotated using local LLMs (e.g., Ollama Llama 3.2) or cloud models (GPT‑4) following a custom annotation schema. A stratified subset of N documents was manually validated (Cohen's Kappa = X.XX). The final classifier was trained using the [model name] transformer architecture and achieved an F1 score of X.XX on held-out test data."
+> "Text classification was performed using LLM Tool (Lemor, Dinan, & Gilbert, 2026), an open-source hybrid pipeline for LLM-assisted annotation and BERT model training. Documents were initially annotated using local LLMs (e.g., Ollama Llama 3.2) or cloud models (GPT‑4) following a custom annotation schema. A stratified subset of N documents was manually validated (Cohen's Kappa = X.XX). The final classifier was trained using the [model name] transformer architecture and achieved an F1 score of X.XX on held-out test data."
 
 ---
 
