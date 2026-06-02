@@ -18,7 +18,6 @@
 
 ---
 
-
 ### 🎯 **Turn Research Data into ML Models, No Coding Required**
 
 > 💻 100% Local Option • 🦙 Any Ollama Model • 🤖 Zero-Shot AI Annotation • 📊 Automated BERT Training • 🌍 75+ Languages
@@ -116,6 +115,7 @@ As a social science researcher, you might have:
   - [Mode 5: Validation Lab](#mode-5-validation-lab)
 - [Mode Playbook (Detailed Guide)](#-mode-playbook-detailed-guide)
 - [Complete Example: From Raw Data to Trained Model](#-complete-example-from-raw-data-to-trained-model)
+- [Annotation JSON Formats](#-annotation-json-formats)
 - [Outputs & Directory Layout](#-outputs--directory-layout)
 - [Data Connectors & Providers](#-data-connectors--providers)
 - [Model Zoo Overview](#-model-zoo-overview)
@@ -1486,6 +1486,65 @@ Open `election_tweets_classified.csv` in Excel/R/Python:
 **Total Time**: ~45 minutes (from raw data to 10,000 classified tweets)
 
 **Total Cost**: $0 (using Ollama locally)
+
+---
+
+## 🏷️ Annotation JSON Formats
+
+When you bring your own labelled data (or inspect what the LLM annotators produce), the labels live in a JSON **`annotation`** column (one JSON object per row). This is what gets converted into training data, so it is worth knowing the exact conventions — especially because the way you *omit* a label changes whether a row counts as a **negative** or is **skipped** entirely.
+
+### Multi-label / themes (one key, many values)
+
+The common case: a single key (e.g. `themes`) whose value is the **list of labels that apply** to the sentence.
+
+```json
+{"themes": ["democracy", "authority"]}   // positive for democracy AND authority
+{"themes": []}                            // negative for EVERY theme
+```
+
+In one-vs-all training, each value becomes its own binary classifier. A label **present** in the list is a **positive**; a label **absent** from the list is a **negative** for that classifier. An **empty list** is a valid row that is negative for all themes.
+
+### Controlling negatives vs. skips (the `_no` / `_yes` suffix)
+
+Sometimes you don't want every absent label to count as a negative — for instance to **balance classes** (cap negatives per label) without splitting your data into separate files. Suffix conventions let you say *negative* and *skip* explicitly, **per label, per row**:
+
+| In the list | Meaning for that label |
+|---|---|
+| `democracy` (bare) or `democracy_yes` | **positive** |
+| `democracy_no` | **negative** (kept) |
+| *omitted entirely* | **skipped** — the row does not count for that label at all |
+
+```json
+{"themes": ["democracy", "authority_no", "ecology_no"]}
+// democracy → positive
+// authority, ecology → explicit negatives
+// every other theme → skipped for this row (neither positive nor negative)
+```
+
+> **Important — the suffix flips the whole dataset's mode.** As soon as **any** row in the file uses a `_yes` / `_no` suffix, the dataset switches to *explicit* mode: from then on, for **every** row, a label is positive (bare / `_yes`), negative (`_no`), or **skipped** (omitted). If **no** row uses a suffix, the file stays in *bare* mode where every omitted label is simply a negative. Don't mix the two intentions per label and expect omission to mean "negative" — in explicit mode, omission means "skip".
+
+This is exactly how you down-sample negatives to a target ratio (e.g. 3 negatives per positive) inside a **single** file: keep all positives bare, tag the negatives you want to keep with `_no`, and omit the surplus negatives so they are skipped.
+
+### Single-label / multi-class (one key, one value)
+
+For a single categorical label per row, use a scalar value:
+
+```json
+{"sentiment": "positive"}
+{"topic": "economy"}
+```
+
+### Multiple keys at once
+
+You can annotate several keys in the same object; each key is processed independently (and can be multi-class or one-vs-all):
+
+```json
+{"sentiment": "positive", "themes": ["economy", "immigration_no"]}
+```
+
+### Empty or missing annotation = row excluded
+
+If the `annotation` cell is empty, `null`, `NaN`, or unparseable JSON, the **entire row is dropped** before training (it is neither positive nor negative for anything). This differs from `{"themes": []}`, which is kept as an all-negative row. Use a blank cell when you want a sentence ignored completely.
 
 ---
 
