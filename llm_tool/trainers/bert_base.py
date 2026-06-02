@@ -1025,6 +1025,15 @@ class TrainingDisplay:
             # Default: Class 0, Class 1, etc.
             self.class_names = [f"Class {i}" for i in range(num_labels)]
 
+        # Defensive: ensure class_names always has at least num_labels entries.
+        # A provided class_names list can be shorter than num_labels (e.g. a
+        # binary head built with a single-element list), which would otherwise
+        # crash the backward-compatibility assignment below with IndexError.
+        if len(self.class_names) < num_labels:
+            self.class_names += [
+                f"Class {i}" for i in range(len(self.class_names), num_labels)
+            ]
+
         # For backward compatibility
         if num_labels == 2:
             self.class_0_name = self.class_names[0]
