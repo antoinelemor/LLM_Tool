@@ -10515,19 +10515,33 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                             else:
                                 label_value = 1 if str(label_raw).lower() in ['1', 'true', 'yes'] else 0
                         elif isinstance(labels_data, list):
-                            # List format: ["agriculture_yes", "defense_no", ...]
-                            # Check for key_yes or key_no in the list
+                            # List format. Two sub-cases:
+                            #  - Explicit binary: ["agriculture_yes", "defense_no", ...]
+                            #    where every annotated label carries a _yes/_no suffix.
+                            #    Absence of BOTH means the row was undersampled for this
+                            #    label (not annotated for it) -> skip it.
+                            #  - Bare multi-label: ["agriculture", "defense", ...] listing
+                            #    ONLY the positive labels. Here absence means NEGATIVE (0),
+                            #    not "skip": every row is implicitly annotated for every
+                            #    label. Treating absence as skip collapses the one-vs-all
+                            #    dataset to a single positive class (only label=1 rows),
+                            #    which breaks binary training. This mirrors the hybrid path.
                             has_yes = f"{label_name}_yes" in labels_data
                             has_no = f"{label_name}_no" in labels_data
-                            has_bare = label_name in labels_data  # Legacy: bare label name
+                            has_bare = label_name in labels_data  # bare positive label
                             if has_yes:
                                 label_value = 1
                             elif has_no:
                                 label_value = 0
                             elif has_bare:
-                                label_value = 1  # Legacy: bare name = positive
+                                label_value = 1  # bare name present = positive
+                            elif _is_binary_list_format:
+                                # Explicit _yes/_no format and neither suffix present:
+                                # this label wasn't annotated for this row -> undersampled.
+                                continue  # Skip: label not mentioned -> undersampled
                             else:
-                                continue  # Skip: label not mentioned → undersampled
+                                # Bare multi-label format: absence = negative class.
+                                label_value = 0
                         else:
                             continue  # Skip: unknown format
 

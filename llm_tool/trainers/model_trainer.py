@@ -406,7 +406,32 @@ def split_long_texts_in_dataframe(
         # Slice in disjoint chunks (no overlap by default).
         for chunk_idx, start in enumerate(range(0, len(ids), chunk_size)):
             chunk_ids = ids[start:start + chunk_size]
+            # The decode -> re-encode round-trip is NOT token-count preserving:
+            # re-tokenising the decoded text can yield a few MORE tokens than we
+            # sliced (subword/whitespace boundaries shift), and the number of
+            # special tokens a model adds is not always 2. So a chunk can come
+            # back over budget and re-introduce the very truncation the chunker
+            # exists to prevent. Verify against the REAL constraint BertBase
+            # enforces -- the full encode *with* special tokens must fit
+            # max_length -- and shrink the slice until it provably does.
+            #
+            # We always re-slice from the ORIGINAL chunk_ids with a strictly
+            # decreasing ``keep`` (never from the already-decoded text), so the
+            # length is monotonically non-increasing and the loop cannot
+            # oscillate on round-trip drift. A handful of boundary tokens may be
+            # dropped, which is harmless compared to silent truncation.
+            keep = len(chunk_ids)
             chunk_text = tok.decode(chunk_ids, skip_special_tokens=True).strip()
+            while chunk_text and keep > 1:
+                full_len = len(tok.encode(
+                    chunk_text, add_special_tokens=True, truncation=False
+                ))
+                if full_len <= max_length:
+                    break
+                keep = max(1, keep - max(1, full_len - max_length))
+                chunk_text = tok.decode(
+                    chunk_ids[:keep], skip_special_tokens=True
+                ).strip()
             if not chunk_text:
                 continue
             new_row = row.copy()
