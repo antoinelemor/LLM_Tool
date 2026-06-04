@@ -151,6 +151,14 @@ class TrainingConfig:
     distribution_aware: bool = True  # Auto-compute per-label pos_weight and adaptive ASL gamma from data
     use_asymmetric_loss: bool = True  # Use Adaptive ASL by default for multi-label (SOTA)
     class_weight_method: str = 'pos_neg_ratio'  # Method for compute_multi_label_class_weights
+    # NORMAL-phase SOTA imbalance handling (applies to ALL types incl. one-vs-all binary).
+    # None => disabled (legacy behaviour). Unlike distribution_aware/use_asymmetric_loss,
+    # these are NOT gated on multi_label so they fix binary/one-vs-all collapse too.
+    imbalance_strategy: Optional[str] = None  # 'none'|'weighted'|'focal'|'asymmetric'|'auto'
+    focal_gamma: float = 2.0
+    imbalance_weight_source: str = 'auto'  # 'auto' | 'manual'
+    imbalance_class_weights: Optional[List[float]] = None
+    imbalance_weighted_sampler: bool = True
     # Resume at RL Phase 2
     skip_to_rl: bool = False  # Skip normal training and jump to RL
     rl_state_path: Optional[str] = None  # Path to rl_ready_state.json
@@ -1487,6 +1495,12 @@ class MultiLabelTrainer:
             # Distribution-aware multi-label: per-label adaptive gamma, weighted sampling, label masking in RL
             distribution_aware=self.config.distribution_aware if self.config.multi_label else False,
             use_asymmetric_loss=self.config.use_asymmetric_loss if self.config.multi_label else False,
+            # NORMAL-phase imbalance handling — passed for ALL types (incl. one-vs-all binary)
+            imbalance_strategy=self.config.imbalance_strategy,
+            focal_gamma=self.config.focal_gamma,
+            imbalance_weight_source=self.config.imbalance_weight_source,
+            imbalance_class_weights=self.config.imbalance_class_weights,
+            imbalance_weighted_sampler=self.config.imbalance_weighted_sampler,
             # Resume at RL Phase 2
             skip_to_rl=self.config.skip_to_rl,
             rl_state_path=self.config.rl_state_path,

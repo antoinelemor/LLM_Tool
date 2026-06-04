@@ -2080,6 +2080,13 @@ class ParallelTrainingConfig:
     rl_f1_threshold: float = 0.7  # F1 threshold below which RL is triggered
     rl_oversample_factor: float = 2.0  # Oversample factor for RL
     rl_class_weight_factor: float = 2.0  # Class weight factor for RL
+    # NORMAL-phase SOTA imbalance handling (session-global, all training types).
+    # None => disabled (legacy behaviour).
+    imbalance_strategy: Optional[str] = None  # 'none'|'weighted'|'focal'|'asymmetric'|'auto'
+    focal_gamma: float = 2.0
+    imbalance_weight_source: str = 'auto'  # 'auto' | 'manual'
+    imbalance_class_weights: Optional[List[float]] = None
+    imbalance_weighted_sampler: bool = True
     # Per-language training settings
     train_by_language: bool = False  # If True, train separate model per (category, language)
     languages: Optional[List[str]] = None  # List of languages to train (e.g., ['EN', 'FR', 'DE'])
@@ -2336,6 +2343,11 @@ class ParallelTrainingManager:
                                 "rl_f1_threshold": self.config.rl_f1_threshold,
                                 "rl_oversample_factor": self.config.rl_oversample_factor,
                                 "rl_class_weight_factor": self.config.rl_class_weight_factor,
+                                "imbalance_strategy": self.config.imbalance_strategy,
+                                "focal_gamma": self.config.focal_gamma,
+                                "imbalance_weight_source": self.config.imbalance_weight_source,
+                                "imbalance_class_weights": self.config.imbalance_class_weights,
+                                "imbalance_weighted_sampler": self.config.imbalance_weighted_sampler,
                                 # Per-language settings - CRITICAL
                                 "train_by_language": True,
                                 "language_code": lang_code,  # Filter data to this language only
@@ -2401,6 +2413,11 @@ class ParallelTrainingManager:
                             "rl_f1_threshold": self.config.rl_f1_threshold,
                             "rl_oversample_factor": self.config.rl_oversample_factor,
                             "rl_class_weight_factor": self.config.rl_class_weight_factor,
+                            "imbalance_strategy": self.config.imbalance_strategy,
+                            "focal_gamma": self.config.focal_gamma,
+                            "imbalance_weight_source": self.config.imbalance_weight_source,
+                            "imbalance_class_weights": self.config.imbalance_class_weights,
+                            "imbalance_weighted_sampler": self.config.imbalance_weighted_sampler,
                             # Multilingual: no language filtering
                             "train_by_language": False,
                             "language_code": None,
@@ -2678,6 +2695,11 @@ class ParallelTrainingManager:
                 multi_label=self.config.multi_label,
                 multi_label_threshold=self.config.multi_label_threshold,
                 scheduler_config=self.config.scheduler_config,
+                imbalance_strategy=self.config.imbalance_strategy,
+                focal_gamma=self.config.focal_gamma,
+                imbalance_weight_source=self.config.imbalance_weight_source,
+                imbalance_class_weights=self.config.imbalance_class_weights,
+                imbalance_weighted_sampler=self.config.imbalance_weighted_sampler,
             )
 
             logger.info(f"[HYBRID] Starting hybrid parallel training: GPU + {num_cpu_workers} CPU workers")
@@ -2919,6 +2941,11 @@ class ParallelTrainingManager:
                 multi_label=self.config.multi_label,
                 multi_label_threshold=self.config.multi_label_threshold,
                 scheduler_config=self.config.scheduler_config,
+                imbalance_strategy=self.config.imbalance_strategy,
+                focal_gamma=self.config.focal_gamma,
+                imbalance_weight_source=self.config.imbalance_weight_source,
+                imbalance_class_weights=self.config.imbalance_class_weights,
+                imbalance_weighted_sampler=self.config.imbalance_weighted_sampler,
             )
 
         # Execute distributed training

@@ -124,6 +124,7 @@ transformers.logging.set_verbosity_error()
 
 from llm_tool.trainers.bert_abc import BertABC
 from llm_tool.utils.logging_utils import get_logger
+from llm_tool.trainers.imbalance_loss import ImbalanceConfig, build_train_criterion
 from llm_tool.trainers.training_metrics_chart import TrainingMetricsChart
 from llm_tool.trainers.training_logger import (
     TrainingHyperparameters,
@@ -1618,6 +1619,54 @@ class BertBase(BertABC):
         forward_signature = inspect.signature(model.forward)
         return 'token_type_ids' in forward_signature.parameters
 
+    def _compute_batch_loss(
+        self,
+        train_criterion,
+        asl_criterion,
+        logits: torch.Tensor,
+        b_labels: torch.Tensor,
+        multi_label: bool,
+        num_labels: int,
+        pos_weight: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        """Single chokepoint for the NORMAL-phase per-batch loss.
+
+        Precedence:
+          1. ``train_criterion`` (unified imbalance-aware criterion) if set —
+             applies to every training type (multi-class/multi-label/binary).
+          2. ``asl_criterion`` (legacy distribution-aware ASL) for multi-label.
+          3. Plain weighted/unweighted BCE (multi-label) or CrossEntropy.
+
+        This replaces three previously-duplicated AMP/MPS/CPU blocks so the loss
+        is identical across devices.
+        """
+        if multi_label:
+            if b_labels.dim() == 1:
+                b_labels_onehot = torch.zeros(b_labels.size(0), num_labels, device=self.device)
+                b_labels_onehot.scatter_(1, b_labels.unsqueeze(1), 1)
+            else:
+                b_labels_onehot = b_labels.float()
+            if train_criterion is not None:
+                return train_criterion(logits, b_labels_onehot)
+            if asl_criterion is not None:
+                return asl_criterion(logits, b_labels_onehot)
+            criterion = torch.nn.BCEWithLogitsLoss(
+                pos_weight=pos_weight.to(self.device) if pos_weight is not None else None
+            )
+            return criterion(logits, b_labels_onehot)
+        # Single-label (multi-class / binary / one-vs-all)
+        if train_criterion is not None:
+            return train_criterion(logits, b_labels)
+        if pos_weight is not None:
+            if pos_weight.numel() > 1:
+                weight_tensor = pos_weight.to(self.device)
+            else:
+                weight_tensor = torch.tensor([1.0, pos_weight.item()], device=self.device)
+            criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor)
+        else:
+            criterion = torch.nn.CrossEntropyLoss()
+        return criterion(logits, b_labels)
+
     @staticmethod
     def _build_weighted_sampler(
         labels: np.ndarray,
@@ -2439,6 +2488,13 @@ class BertBase(BertABC):
             asl_gamma_neg: float = 4.0,  # ASL gamma for negative samples (higher = down-weight easy negatives)
             asl_gamma_pos: float = 1.0,  # ASL gamma for positive samples (lower = preserve hard positive gradients)
             asl_clip: float = 0.05,  # ASL probability margin for hard negative mining
+            # SOTA imbalance handling for the NORMAL phase (works for ALL training types:
+            # multi-class, multi-label, binary, one-vs-all). None => legacy behaviour.
+            imbalance_strategy: Optional[str] = None,  # 'none'|'weighted'|'focal'|'asymmetric'|'auto'
+            focal_gamma: float = 2.0,  # focusing parameter for focal/asl-auto
+            imbalance_weight_source: str = "auto",  # 'auto' (from data) | 'manual'
+            imbalance_class_weights: Optional[list] = None,  # manual per-class weights override
+            imbalance_weighted_sampler: bool = True,  # activate WeightedRandomSampler when imbalance handling is on
             batch_progress_callback: Optional[callable] = None,  # Callback for batch-level progress (for parallel training dashboard)
             suppress_display: bool = False,  # Suppress Rich Live display (for parallel training workers)
             model_output_dir: Optional[str] = None,  # Override model output directory (for parallel training - bypasses normal_training subfolder)
@@ -3259,7 +3315,54 @@ class BertBase(BertABC):
         hp_learning_rate = lr
         hp_batch_size = train_dataloader.batch_size
         hp_warmup_ratio = 0.1
-        if multi_label and distribution_aware:
+        # Unified imbalance-aware criterion (None => use the legacy per-batch loss logic).
+        # When set, it takes precedence over asl_criterion/pos_weight in _compute_batch_loss
+        # and applies to EVERY training type (multi-class, multi-label, binary, one-vs-all).
+        train_criterion = None
+        imbalance_strategy_used = "none"
+        _imb_cfg = ImbalanceConfig(
+            strategy=imbalance_strategy,
+            focal_gamma=focal_gamma,
+            weight_source=imbalance_weight_source,
+            manual_class_weights=imbalance_class_weights,
+            use_weighted_sampler=imbalance_weighted_sampler,
+            asl_gamma_neg=asl_gamma_neg,
+            asl_gamma_pos=asl_gamma_pos,
+            asl_clip=asl_clip,
+        )
+        if _imb_cfg.normalized_strategy() is not None:
+            # SOTA imbalance handling for the normal phase (opt-in). Builds a single
+            # criterion via the central factory and (optionally) a WeightedRandomSampler.
+            asl_criterion = None
+            train_labels_np = None
+            try:
+                train_labels_np = train_dataloader.dataset.tensors[2].numpy()
+            except Exception:
+                pass
+            criterion, imb_pos_weight, use_sampler, imbalance_strategy_used = build_train_criterion(
+                None, multi_label, num_labels, train_labels_np, _imb_cfg,
+                suppress_log=suppress_display,
+            )
+            train_criterion = criterion
+            if train_criterion is not None:
+                # nn losses keep weight/pos_weight as buffers; move them to the model device.
+                try:
+                    train_criterion = train_criterion.to(self.device)
+                except Exception:
+                    pass
+            if multi_label and imb_pos_weight is not None and pos_weight is None:
+                pos_weight = imb_pos_weight  # exposed for logging/back-compat
+            if use_sampler and train_labels_np is not None:
+                try:
+                    sampler = self._build_weighted_sampler(train_labels_np, num_labels, multi_label=multi_label)
+                    train_dataloader = self._rebuild_dataloader_with_sampler(train_dataloader, sampler)
+                    if not suppress_display:
+                        self.logger.info(" WeightedRandomSampler enabled (imbalance handling)")
+                except Exception:
+                    pass
+            if not suppress_display:
+                self.logger.info(f" Imbalance handling: strategy={imbalance_strategy_used} (multi_label={multi_label})")
+        elif multi_label and distribution_aware:
             train_labels_np = train_dataloader.dataset.tensors[2].numpy()
             if train_labels_np.ndim == 2:
                 pos_ratios = train_labels_np.mean(axis=0)
@@ -3463,30 +3566,11 @@ class BertBase(BertABC):
                                 outputs = model(b_inputs, attention_mask=b_masks)
                             logits = outputs[0]
 
-                            # Compute loss inside autocast context
-                            if multi_label:
-                                # Multi-label: Convert class indices to one-hot if needed
-                                if b_labels.dim() == 1:
-                                    b_labels_onehot = torch.zeros(b_labels.size(0), num_labels, device=self.device)
-                                    b_labels_onehot.scatter_(1, b_labels.unsqueeze(1), 1)
-                                else:
-                                    b_labels_onehot = b_labels.float()
-                                # Use ASL (SOTA) or standard BCE
-                                if asl_criterion is not None:
-                                    loss = asl_criterion(logits, b_labels_onehot)
-                                else:
-                                    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(self.device) if pos_weight is not None else None)
-                                    loss = criterion(logits, b_labels_onehot)
-                            else:
-                                if pos_weight is not None:
-                                    if pos_weight.numel() > 1:
-                                        weight_tensor = pos_weight.to(self.device)
-                                    else:
-                                        weight_tensor = torch.tensor([1.0, pos_weight.item()], device=self.device)
-                                    criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor)
-                                else:
-                                    criterion = torch.nn.CrossEntropyLoss()
-                                loss = criterion(logits, b_labels)
+                            # Compute loss inside autocast context (unified across devices)
+                            loss = self._compute_batch_loss(
+                                train_criterion, asl_criterion, logits, b_labels,
+                                multi_label, num_labels, pos_weight,
+                            )
                     elif use_mps_amp:
                         # MPS: Use autocast without GradScaler
                         with autocast(device_type='mps', dtype=torch.float16):
@@ -3496,29 +3580,10 @@ class BertBase(BertABC):
                                 outputs = model(b_inputs, attention_mask=b_masks)
                             logits = outputs[0]
 
-                            if multi_label:
-                                # Multi-label: Convert class indices to one-hot if needed
-                                if b_labels.dim() == 1:
-                                    b_labels_onehot = torch.zeros(b_labels.size(0), num_labels, device=self.device)
-                                    b_labels_onehot.scatter_(1, b_labels.unsqueeze(1), 1)
-                                else:
-                                    b_labels_onehot = b_labels.float()
-                                # Use ASL (SOTA) or standard BCE
-                                if asl_criterion is not None:
-                                    loss = asl_criterion(logits, b_labels_onehot)
-                                else:
-                                    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(self.device) if pos_weight is not None else None)
-                                    loss = criterion(logits, b_labels_onehot)
-                            else:
-                                if pos_weight is not None:
-                                    if pos_weight.numel() > 1:
-                                        weight_tensor = pos_weight.to(self.device)
-                                    else:
-                                        weight_tensor = torch.tensor([1.0, pos_weight.item()], device=self.device)
-                                    criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor)
-                                else:
-                                    criterion = torch.nn.CrossEntropyLoss()
-                                loss = criterion(logits, b_labels)
+                            loss = self._compute_batch_loss(
+                                train_criterion, asl_criterion, logits, b_labels,
+                                multi_label, num_labels, pos_weight,
+                            )
                     else:
                         # Standard forward pass (no mixed precision)
                         if self._supports_token_type_ids(model):
@@ -3527,29 +3592,10 @@ class BertBase(BertABC):
                             outputs = model(b_inputs, attention_mask=b_masks)
                         logits = outputs[0]
 
-                        if multi_label:
-                            # Multi-label: Convert class indices to one-hot if needed
-                            if b_labels.dim() == 1:
-                                b_labels_onehot = torch.zeros(b_labels.size(0), num_labels, device=self.device)
-                                b_labels_onehot.scatter_(1, b_labels.unsqueeze(1), 1)
-                            else:
-                                b_labels_onehot = b_labels.float()
-                            # Use ASL (SOTA) or standard BCE
-                            if asl_criterion is not None:
-                                loss = asl_criterion(logits, b_labels_onehot)
-                            else:
-                                criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(self.device) if pos_weight is not None else None)
-                                loss = criterion(logits, b_labels_onehot)
-                        else:
-                            if pos_weight is not None:
-                                if pos_weight.numel() > 1:
-                                    weight_tensor = pos_weight.to(self.device)
-                                else:
-                                    weight_tensor = torch.tensor([1.0, pos_weight.item()], device=self.device)
-                                criterion = torch.nn.CrossEntropyLoss(weight=weight_tensor)
-                            else:
-                                criterion = torch.nn.CrossEntropyLoss()
-                            loss = criterion(logits, b_labels)
+                        loss = self._compute_batch_loss(
+                            train_criterion, asl_criterion, logits, b_labels,
+                            multi_label, num_labels, pos_weight,
+                        )
 
                     # Scale loss for gradient accumulation
                     loss = loss / gradient_accumulation_steps
@@ -3640,6 +3686,13 @@ class BertBase(BertABC):
 
                         loss = outputs.loss
                         logits = outputs.logits
+                        # Keep validation loss consistent with the (custom) training
+                        # criterion so early-stopping/best-model selection match.
+                        if train_criterion is not None:
+                            loss = self._compute_batch_loss(
+                                train_criterion, asl_criterion, logits, b_labels,
+                                multi_label, num_labels, pos_weight,
+                            )
 
                     total_val_loss += loss.item()
                     logits_complete.append(logits.detach().cpu().numpy())

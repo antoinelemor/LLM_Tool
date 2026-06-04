@@ -571,6 +571,12 @@ def _cpu_worker_process(
         dataloader_persistent_workers=persistent_workers,
         multi_label=worker_config.get('multi_label', False),
         multi_label_threshold=worker_config.get('multi_label_threshold', 0.5),
+        # NORMAL-phase imbalance handling (session-global)
+        imbalance_strategy=worker_config.get('imbalance_strategy'),
+        focal_gamma=worker_config.get('focal_gamma', 2.0),
+        imbalance_weight_source=worker_config.get('imbalance_weight_source', 'auto'),
+        imbalance_class_weights=worker_config.get('imbalance_class_weights'),
+        imbalance_weighted_sampler=worker_config.get('imbalance_weighted_sampler', True),
         # Propagate tokenizer-aware filter knobs so MultiLabelTrainer
         # applies the Split/Exclude strategy uniformly across CPU/GPU workers.
         exclude_long_texts=bool(worker_config.get('exclude_long_texts', False)),
@@ -1045,6 +1051,12 @@ def _train_on_gpu(
             multi_label=task.config.get('multi_label', False),
             multi_label_threshold=task.config.get('multi_label_threshold', 0.5),
             training_approach=task.config.get('training_approach'),
+            # NORMAL-phase imbalance handling (session-global, carried per task)
+            imbalance_strategy=task.config.get('imbalance_strategy'),
+            focal_gamma=task.config.get('focal_gamma', 2.0),
+            imbalance_weight_source=task.config.get('imbalance_weight_source', 'auto'),
+            imbalance_class_weights=task.config.get('imbalance_class_weights'),
+            imbalance_weighted_sampler=task.config.get('imbalance_weighted_sampler', True),
             # Propagate tokenizer-aware filter knobs to the GPU worker too.
             exclude_long_texts=bool(task.config.get('exclude_long_texts', False)),
             split_long_texts=bool(task.config.get('split_long_texts', False)),
@@ -1202,6 +1214,12 @@ class HybridParallelTrainer:
         multi_label: bool = False,
         multi_label_threshold: float = 0.5,
         scheduler_config: Optional[SchedulerConfig] = None,
+        # NORMAL-phase imbalance handling (session-global; forwarded to every worker)
+        imbalance_strategy: Optional[str] = None,
+        focal_gamma: float = 2.0,
+        imbalance_weight_source: str = 'auto',
+        imbalance_class_weights: Optional[List[float]] = None,
+        imbalance_weighted_sampler: bool = True,
     ):
         self.model_name = model_name
 
@@ -1224,10 +1242,20 @@ class HybridParallelTrainer:
 
         self.num_cpu_workers = num_cpu_workers
 
+        # Session-global imbalance handling, forwarded to both CPU and GPU workers.
+        _imbalance_cfg = {
+            'imbalance_strategy': imbalance_strategy,
+            'focal_gamma': focal_gamma,
+            'imbalance_weight_source': imbalance_weight_source,
+            'imbalance_class_weights': imbalance_class_weights,
+            'imbalance_weighted_sampler': imbalance_weighted_sampler,
+        }
+
         self.gpu_config = {
             'batch_size': gpu_batch_size,
             'dataloader_workers': gpu_dataloader_workers,
             'dataloader_prefetch': gpu_prefetch,
+            **_imbalance_cfg,
         }
 
         self.cpu_config = {
@@ -1237,6 +1265,7 @@ class HybridParallelTrainer:
             'dataloader_prefetch': cpu_prefetch,
             'multi_label': multi_label,
             'multi_label_threshold': multi_label_threshold,
+            **_imbalance_cfg,
         }
 
         # Multiprocessing resources

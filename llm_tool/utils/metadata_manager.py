@@ -163,6 +163,11 @@ class MetadataManager:
                 model_config, quick_params, runtime_params
             ),
 
+            # === IMBALANCE HANDLING CONFIGURATION (normal phase) ===
+            "imbalance_handling_config": self._extract_imbalance_config(
+                model_config, quick_params, runtime_params
+            ),
+
             # === EXECUTION STATUS ===
             "execution_status": execution_status or self._default_execution_status(),
 
@@ -672,6 +677,40 @@ class MetadataManager:
                     if clean_key in config:
                         config[clean_key] = runtime_params[key]
 
+        return config
+
+    def _extract_imbalance_config(
+        self,
+        model_config: Dict[str, Any],
+        quick_params: Optional[Dict[str, Any]],
+        runtime_params: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Extract NORMAL-phase imbalance-handling configuration (for reproducibility)."""
+
+        config = {
+            "enabled": False,
+            "strategy": None,          # 'none'|'weighted'|'focal'|'asymmetric'|'auto'
+            "focal_gamma": 2.0,
+            "weight_source": "auto",   # 'auto' | 'manual'
+            "class_weights": None,     # manual override, if any
+            "weighted_sampler": True,
+        }
+
+        for src in (model_config, quick_params, runtime_params):
+            if not src:
+                continue
+            if src.get('imbalance_strategy') is not None:
+                config["strategy"] = src.get('imbalance_strategy')
+            if 'focal_gamma' in src:
+                config["focal_gamma"] = src.get('focal_gamma', config["focal_gamma"])
+            if 'imbalance_weight_source' in src:
+                config["weight_source"] = src.get('imbalance_weight_source', config["weight_source"])
+            if 'imbalance_class_weights' in src:
+                config["class_weights"] = src.get('imbalance_class_weights', config["class_weights"])
+            if 'imbalance_weighted_sampler' in src:
+                config["weighted_sampler"] = src.get('imbalance_weighted_sampler', config["weighted_sampler"])
+
+        config["enabled"] = config["strategy"] is not None and str(config["strategy"]).lower() not in ("", "off", "disabled")
         return config
 
     def _default_execution_status(self) -> Dict[str, Any]:

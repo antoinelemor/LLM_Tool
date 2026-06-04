@@ -489,6 +489,12 @@ class TrainingConfig:
     # Multi-label classification parameters
     multi_label: bool = False  # Enable true multi-label classification (BCEWithLogitsLoss + sigmoid)
     multi_label_threshold: float = 0.5  # Threshold for multi-label predictions
+    # NORMAL-phase SOTA imbalance handling (all training types). None => legacy behaviour.
+    imbalance_strategy: Optional[str] = None  # 'none'|'weighted'|'focal'|'asymmetric'|'auto'
+    focal_gamma: float = 2.0
+    imbalance_weight_source: str = 'auto'  # 'auto' | 'manual'
+    imbalance_class_weights: Optional[List[float]] = None
+    imbalance_weighted_sampler: bool = True
     # When True, samples whose tokenized length exceeds ``max_length`` are dropped
     # at load time (using the actual tokenizer of ``model_name``). Only honoured by
     # the multi-label path that routes through MultiLabelTrainer.load_multi_label_data.
@@ -1585,6 +1591,12 @@ class ModelTrainer:
                 # Multi-label classification parameters
                 multi_label=self.config.multi_label,
                 multi_label_threshold=self.config.multi_label_threshold,
+                # NORMAL-phase imbalance handling (all types incl. one-vs-all binary)
+                imbalance_strategy=getattr(self.config, 'imbalance_strategy', None),
+                focal_gamma=getattr(self.config, 'focal_gamma', 2.0),
+                imbalance_weight_source=getattr(self.config, 'imbalance_weight_source', 'auto'),
+                imbalance_class_weights=getattr(self.config, 'imbalance_class_weights', None),
+                imbalance_weighted_sampler=getattr(self.config, 'imbalance_weighted_sampler', True),
                 # CRITICAL: Pass training_approach for correct chart labeling
                 training_approach=training_approach,
                 # Early stopping & interactive skip
@@ -2127,6 +2139,12 @@ class ModelTrainer:
             # Distribution-aware training parameters
             ml_config.distribution_aware = config.get('distribution_aware', True)
             ml_config.use_asymmetric_loss = config.get('use_asymmetric_loss', True)
+            # NORMAL-phase imbalance handling (config dict overrides self.config)
+            ml_config.imbalance_strategy = config.get('imbalance_strategy', getattr(self.config, 'imbalance_strategy', None))
+            ml_config.focal_gamma = config.get('focal_gamma', getattr(self.config, 'focal_gamma', 2.0))
+            ml_config.imbalance_weight_source = config.get('imbalance_weight_source', getattr(self.config, 'imbalance_weight_source', 'auto'))
+            ml_config.imbalance_class_weights = config.get('imbalance_class_weights', getattr(self.config, 'imbalance_class_weights', None))
+            ml_config.imbalance_weighted_sampler = config.get('imbalance_weighted_sampler', getattr(self.config, 'imbalance_weighted_sampler', True))
             # Reinforced learning parameters
             ml_config.reinforced_learning = config.get('reinforced_learning', False)
             ml_config.rl_f1_threshold = config.get('rl_f1_threshold', 0.7)
@@ -2863,6 +2881,12 @@ class ModelTrainer:
             # Multi-label classification parameters
             multi_label=self.config.multi_label,
             multi_label_threshold=self.config.multi_label_threshold,
+            # NORMAL-phase imbalance handling (config dict overrides self.config)
+            imbalance_strategy=config.get('imbalance_strategy', getattr(self.config, 'imbalance_strategy', None)),
+            focal_gamma=config.get('focal_gamma', getattr(self.config, 'focal_gamma', 2.0)),
+            imbalance_weight_source=config.get('imbalance_weight_source', getattr(self.config, 'imbalance_weight_source', 'auto')),
+            imbalance_class_weights=config.get('imbalance_class_weights', getattr(self.config, 'imbalance_class_weights', None)),
+            imbalance_weighted_sampler=config.get('imbalance_weighted_sampler', getattr(self.config, 'imbalance_weighted_sampler', True)),
             # CRITICAL: Pass training_approach for correct chart labeling
             training_approach=config.get('training_approach'),
             # Early stopping & interactive skip
@@ -3262,6 +3286,12 @@ class ModelTrainer:
             training_approach=config.get('training_approach', 'multi-label'),
             # Distribution-aware training (AdaptiveASL + WeightedRandomSampler)
             distribution_aware=config.get('distribution_aware', False),
+            # NORMAL-phase imbalance handling (config dict overrides self.config)
+            imbalance_strategy=config.get('imbalance_strategy', getattr(self.config, 'imbalance_strategy', None)),
+            focal_gamma=config.get('focal_gamma', getattr(self.config, 'focal_gamma', 2.0)),
+            imbalance_weight_source=config.get('imbalance_weight_source', getattr(self.config, 'imbalance_weight_source', 'auto')),
+            imbalance_class_weights=config.get('imbalance_class_weights', getattr(self.config, 'imbalance_class_weights', None)),
+            imbalance_weighted_sampler=config.get('imbalance_weighted_sampler', getattr(self.config, 'imbalance_weighted_sampler', True)),
             # Reinforced learning parameters
             reinforced_learning=config.get('reinforced_learning', False),
             reinforced_f1_threshold=config.get('rl_f1_threshold', 0.7),

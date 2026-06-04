@@ -534,6 +534,12 @@ def _run_parallel_training(
         rl_f1_threshold=rl_f1_threshold,
         rl_oversample_factor=rl_oversample_factor,
         rl_class_weight_factor=rl_class_weight_factor,
+        # NORMAL-phase imbalance handling (session-global)
+        imbalance_strategy=(quick_params.get('imbalance_strategy') if quick_params else None),
+        focal_gamma=(quick_params.get('focal_gamma', 2.0) if quick_params else 2.0),
+        imbalance_weight_source=(quick_params.get('imbalance_weight_source', 'auto') if quick_params else 'auto'),
+        imbalance_class_weights=(quick_params.get('imbalance_class_weights') if quick_params else None),
+        imbalance_weighted_sampler=(quick_params.get('imbalance_weighted_sampler', True) if quick_params else True),
         # Per-language training settings
         train_by_language=train_by_language,
         # Always pass languages for chart tracking, even in multilingual mode
@@ -9661,6 +9667,75 @@ def _collect_quick_mode_parameters(
         default=default_reinforced
     )
 
+    # ---- NORMAL-phase imbalance handling (SOTA loss selection) -----------------
+    # Configurable, data-adaptive class-imbalance handling for the *normal*
+    # training phase. Works for every training type (multi-class, multi-label,
+    # binary, one-vs-all). Independent of Phase 2 (reinforced learning).
+    imbalance_strategy = None
+    focal_gamma = 2.0
+    imbalance_weight_source = 'auto'
+    imbalance_class_weights = None
+    imbalance_weighted_sampler = True
+    if enable_phase1:
+        _preloaded_strategy = (preloaded_params or {}).get('imbalance_strategy') if preloaded_params else None
+        self.console.print()
+        self.console.print("[bold]Imbalance-handling strategy[/bold] [dim](normal training loss)[/dim]")
+        self.console.print("   • [green]auto[/green]: pick from the data distribution [dim](recommended)[/dim]")
+        self.console.print("   • [cyan]weighted[/cyan]: class-weighted CrossEntropy / pos_weight BCE")
+        self.console.print("   • [cyan]focal[/cyan]: Focal Loss (down-weights easy examples; best for severe imbalance)")
+        self.console.print("   • [cyan]asymmetric[/cyan]: Asymmetric Loss (multi-label; falls back to focal otherwise)")
+        self.console.print("   • [yellow]none[/yellow]: plain loss (no imbalance handling)\n")
+        imbalance_strategy = Prompt.ask(
+            "Strategy",
+            choices=["auto", "weighted", "focal", "asymmetric", "none"],
+            default=str(_preloaded_strategy) if _preloaded_strategy else "auto",
+        )
+
+        if imbalance_strategy in ("focal", "asymmetric"):
+            gamma_input = Prompt.ask(
+                "[bold]Focal gamma[/bold] [dim](focusing strength; 2.0 recommended, higher = more focus on hard examples)[/dim]",
+                default="2.0",
+            )
+            try:
+                focal_gamma = float(gamma_input)
+                if focal_gamma < 0:
+                    focal_gamma = 2.0
+            except ValueError:
+                self.console.print("[yellow][!] Invalid gamma. Using 2.0[/yellow]")
+                focal_gamma = 2.0
+
+        if imbalance_strategy in ("weighted", "focal", "asymmetric"):
+            use_auto_weights = Confirm.ask(
+                "[bold]Compute class weights automatically from the data?[/bold]\n"
+                "[dim](Choose 'n' to enter weights manually)[/dim]",
+                default=True,
+            )
+            imbalance_weight_source = 'auto' if use_auto_weights else 'manual'
+            if not use_auto_weights:
+                raw = Prompt.ask(
+                    "[bold]Manual per-class weights[/bold] [dim](comma-separated, e.g. '1.0,5.0')[/dim]",
+                    default="",
+                )
+                try:
+                    parsed = [float(x) for x in raw.split(",") if x.strip() != ""]
+                    imbalance_class_weights = parsed if parsed else None
+                except ValueError:
+                    self.console.print("[yellow][!] Could not parse weights; falling back to auto[/yellow]")
+                    imbalance_weight_source = 'auto'
+
+            imbalance_weighted_sampler = Confirm.ask(
+                "[bold]Use a WeightedRandomSampler (oversample rare classes)?[/bold]",
+                default=True,
+            )
+
+        if imbalance_strategy == "none":
+            self.console.print("[green]  Imbalance handling: plain loss (none)[/green]\n")
+        else:
+            self.console.print(
+                f"[green]  Imbalance handling: strategy={imbalance_strategy}, "
+                f"weights={imbalance_weight_source}, sampler={imbalance_weighted_sampler}[/green]\n"
+            )
+
     # Phase 2: Reinforced learning
     self.console.print()
     phase2_choice = Prompt.ask(
@@ -9844,6 +9919,12 @@ def _collect_quick_mode_parameters(
         'manual_rl_epochs': manual_rl_epochs if manual_rl_epochs else None,
         'force_reinforced': force_reinforced,
         'distribution_aware': distribution_aware_enabled,
+        # NORMAL-phase SOTA imbalance handling
+        'imbalance_strategy': imbalance_strategy,
+        'focal_gamma': focal_gamma,
+        'imbalance_weight_source': imbalance_weight_source,
+        'imbalance_class_weights': imbalance_class_weights,
+        'imbalance_weighted_sampler': imbalance_weighted_sampler,
         # Tokenizer-aware max_length: only set when user opted in. None means
         # downstream code should keep its default (currently 512).
         'max_length': optimized_max_length,
@@ -10308,6 +10389,13 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     _is_from_params = quick_params.get('interactive_skip', True) if quick_params else True
     _is_from_config = model_config.get('interactive_skip', True) if model_config else True
     training_config.interactive_skip = _is_from_params if quick_params else _is_from_config
+    # NORMAL-phase imbalance handling (from quick_params or resume model_config)
+    _imb_src = quick_params if quick_params else (model_config or {})
+    training_config.imbalance_strategy = _imb_src.get('imbalance_strategy')
+    training_config.focal_gamma = _imb_src.get('focal_gamma', 2.0)
+    training_config.imbalance_weight_source = _imb_src.get('imbalance_weight_source', 'auto')
+    training_config.imbalance_class_weights = _imb_src.get('imbalance_class_weights')
+    training_config.imbalance_weighted_sampler = _imb_src.get('imbalance_weighted_sampler', True)
     training_config.batch_size = _get_optimal_batch_size(model_name)  # Dynamic batch size based on system resources
     # Tokenizer-aware max_length: only override the default when the user accepted
     # the optimization in _collect_quick_mode_parameters. None => keep the dataclass
@@ -10392,6 +10480,13 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
         # Distribution-aware training (Phase 1) — independent of Phase 2
         if quick_params.get('distribution_aware', False):
             extra_config["distribution_aware"] = True
+        # NORMAL-phase imbalance handling — independent of Phases 1/2
+        if quick_params.get('imbalance_strategy') is not None:
+            extra_config["imbalance_strategy"] = quick_params.get('imbalance_strategy')
+            extra_config["focal_gamma"] = quick_params.get('focal_gamma', 2.0)
+            extra_config["imbalance_weight_source"] = quick_params.get('imbalance_weight_source', 'auto')
+            extra_config["imbalance_class_weights"] = quick_params.get('imbalance_class_weights')
+            extra_config["imbalance_weighted_sampler"] = quick_params.get('imbalance_weighted_sampler', True)
 
     # Resume at RL Phase 2 (from model_config set by resume_rl action)
     if model_config and model_config.get('skip_to_rl'):
