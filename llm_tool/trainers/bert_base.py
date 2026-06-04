@@ -1667,6 +1667,41 @@ class BertBase(BertABC):
             criterion = torch.nn.CrossEntropyLoss()
         return criterion(logits, b_labels)
 
+    # Attention query/value projection leaf-names across every supported family:
+    # BERT/RoBERTa/XLM-R/CamemBERT-v1/ELECTRA/ALBERT/BigBird/Longformer (query,value
+    # + *_global), DeBERTa v2/v3 & CamemBERTa/CamemBERTav2 (query_proj,value_proj),
+    # DistilBERT/FlauBERT/XLM (q_lin,v_lin), BART/BARThez/LED (q_proj,v_proj),
+    # T5/Long-T5 (q,v).
+    _LORA_QV_NAMES = frozenset({
+        "query", "value",
+        "query_proj", "value_proj",
+        "q_proj", "v_proj",
+        "q_lin", "v_lin",
+        "q", "v",
+        "query_global", "value_global",
+    })
+
+    @staticmethod
+    def _detect_lora_target_modules(model):
+        """Auto-detect the attention Q/V projection modules to adapt with LoRA/DoRA.
+
+        Inspects the model's ACTUAL architecture (``named_modules``) rather than
+        matching on the model name, so DoRA works on every supported model
+        (BERT, RoBERTa, DeBERTa v2/v3, CamemBERTav2, DistilBERT, ELECTRA, ALBERT,
+        BigBird, Longformer/LED, FlauBERT, BART/BARThez, T5/Long-T5, …).
+
+        Returns a sorted list of leaf module names to target, or the string
+        ``"all-linear"`` as a universal fallback when no Q/V projection is found
+        (peft then adapts every linear layer except the classifier head).
+        """
+        found = set()
+        for name, module in model.named_modules():
+            if isinstance(module, torch.nn.Linear):
+                leaf = name.rsplit(".", 1)[-1]
+                if leaf in BertBase._LORA_QV_NAMES:
+                    found.add(leaf)
+        return sorted(found) if found else "all-linear"
+
     @staticmethod
     def _build_weighted_sampler(
         labels: np.ndarray,
@@ -5186,39 +5221,18 @@ class BertBase(BertABC):
                     # After training, LoRA weights are merged back for standard inference.
                     if rl_use_lora:
                       try:
-                        # Determine target modules based on model architecture
-                        model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
-                        if 'deberta' in model_lower:
-                            target_modules = ["query_proj", "key_proj", "value_proj", "dense"]
-                        elif 'distilbert' in model_lower:
-                            target_modules = ["q_lin", "k_lin", "v_lin", "out_lin"]
-                        elif 'longformer' in model_lower:
-                            # Longformer has local + global attention projections
-                            target_modules = ["query", "key", "value", "query_global", "key_global", "value_global", "dense"]
-                        else:
-                            # Default for BERT, RoBERTa, XLM-RoBERTa, CamemBERT, ELECTRA,
-                            # ALBERT, BigBird, and all other BERT-family models
-                            target_modules = ["query", "key", "value", "dense"]
-
                         # LoRA config tuned for post-convergence fine-tuning:
                         # - Rank 4 (not 8/16): minimal perturbation on already-converged model
-                        # - Only Q,V (not K,dense): fewer params = less overfitting risk
-                        # - No modules_to_save: classifier trains via normal gradient flow,
-                        #   not as a separately saved module. This lets all 21 labels recalibrate
-                        #   together (they're interdependent in multi-label classification).
+                        # - Only Q,V attention projections: fewer params = less overfitting risk
+                        # - modules_to_save=["classifier"]: the head recalibrates with the adapters
                         lora_rank = 4
                         lora_alpha = 16  # alpha/rank = 4 → moderate scaling
                         lora_dropout = 0.1
 
-                        # Override target_modules to Q,V only for post-convergence
-                        if 'deberta' in model_lower:
-                            target_modules = ["query_proj", "value_proj"]
-                        elif 'distilbert' in model_lower:
-                            target_modules = ["q_lin", "v_lin"]
-                        elif 'longformer' in model_lower:
-                            target_modules = ["query", "value", "query_global", "value_global"]
-                        else:
-                            target_modules = ["query", "value"]
+                        # Auto-detect Q/V attention projections from the model's actual
+                        # architecture — robust across EVERY supported model — instead of
+                        # brittle model-name matching. Falls back to "all-linear".
+                        target_modules = self._detect_lora_target_modules(model)
 
                         lora_config = LoraConfig(
                             task_type=TaskType.SEQ_CLS,
