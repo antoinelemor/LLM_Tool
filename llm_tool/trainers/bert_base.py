@@ -2507,6 +2507,7 @@ class BertBase(BertABC):
             n_epochs: int = 3,
             lr: float = 5e-5,
             warmup_ratio: float = 0.0,  # Linear-warmup fraction for the NORMAL-phase scheduler. 0.0 = legacy (no warmup).
+            freeze_encoder: bool = False,  # Linear-probe: freeze the encoder, train only the classifier head. False = legacy.
             random_state: int = 42,
             save_model_as: str | None = None,
             pos_weight: torch.Tensor | None = None,
@@ -3146,6 +3147,10 @@ class BertBase(BertABC):
             use_gradient_checkpointing = model_params > 100_000_000  # >100M params on MPS
         else:
             use_gradient_checkpointing = model_params > 300_000_000  # >300M params on CUDA/CPU
+        if freeze_encoder:
+            # Checkpointing a frozen encoder breaks (no input requires grad) and is
+            # pointless when only the head trains.
+            use_gradient_checkpointing = False
         if use_gradient_checkpointing and hasattr(model, 'gradient_checkpointing_enable'):
             model.gradient_checkpointing_enable()
             if not suppress_display:
@@ -3185,7 +3190,23 @@ class BertBase(BertABC):
             if not suppress_display:
                 self.logger.info(f" MPS: {model_params/1e6:.0f}M params, {gc_status}, {compile_status}")
 
-        optimizer = AdamW(model.parameters(), lr=lr, eps=1e-8)
+        # Linear-probe option: freeze the encoder and train ONLY the classifier head.
+        # Useful for hard/small categories where full fine-tuning never escapes the
+        # init plateau (loss stuck ~ln2) yet the features ARE linearly separable —
+        # this turns the model into a strong linear probe on the pretrained
+        # embeddings. Default off = full fine-tuning (legacy).
+        if freeze_encoder:
+            _trainable, _frozen = 0, 0
+            for _n, _p in model.named_parameters():
+                if any(k in _n.lower() for k in ('classifier', 'pooler', 'score', 'logits_proj')):
+                    _p.requires_grad = True; _trainable += _p.numel()
+                else:
+                    _p.requires_grad = False; _frozen += _p.numel()
+            if not suppress_display:
+                self.logger.info(f" Linear-probe: encoder frozen ({_frozen/1e6:.0f}M), training head only ({_trainable/1e3:.0f}K params)")
+
+        _opt_params = [p for p in model.parameters() if p.requires_grad] if freeze_encoder else model.parameters()
+        optimizer = AdamW(_opt_params, lr=lr, eps=1e-8)
         # Linear warmup: 0.0 (default) reproduces the legacy behaviour (no warmup).
         # A positive warmup_ratio ramps the LR over the first fraction of training —
         # this stabilises fine-tuning of hard/small categories (reduces the
