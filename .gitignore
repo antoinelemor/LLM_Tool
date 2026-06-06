@@ -115,3 +115,7 @@ paper/latex/*.pdf
 paper/latex/*.wordcount
 paper/scripts/__pycache__/
 
+
+# Local-only research artefacts (kept off the remote)
+docs/model_repair_report.md
+scripts/repair_experiment.py
