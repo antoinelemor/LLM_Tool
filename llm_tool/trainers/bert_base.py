@@ -3196,14 +3196,36 @@ class BertBase(BertABC):
         # this turns the model into a strong linear probe on the pretrained
         # embeddings. Default off = full fine-tuning (legacy).
         if freeze_encoder:
+            # Robust across ALL architectures: HuggingFace exposes the backbone under
+            # `model.base_model_prefix` (e.g. 'bert', 'roberta', 'deberta', 'model'
+            # for BART/T5, 'transformer'…). Everything NOT under that prefix is the
+            # task head (classifier / classification_head / score / logits_proj…),
+            # whatever its name. We freeze the backbone and train the head only.
+            _prefix = getattr(model, 'base_model_prefix', None)
+            _head_kw = ('classifier', 'classification_head', 'pooler', 'score',
+                        'logits_proj', 'classification', 'head')
             _trainable, _frozen = 0, 0
             for _n, _p in model.named_parameters():
-                if any(k in _n.lower() for k in ('classifier', 'pooler', 'score', 'logits_proj')):
-                    _p.requires_grad = True; _trainable += _p.numel()
+                if _prefix:
+                    is_head = not _n.startswith(_prefix + '.')
+                else:  # fallback: name-based head detection
+                    is_head = any(k in _n.lower() for k in _head_kw)
+                _p.requires_grad = bool(is_head)
+                if is_head:
+                    _trainable += _p.numel()
                 else:
-                    _p.requires_grad = False; _frozen += _p.numel()
+                    _frozen += _p.numel()
+            # Safety net: if the prefix matched everything (no head found), fall back
+            # to keyword detection so the probe still has trainable params.
+            if _trainable == 0:
+                _trainable = _frozen = 0
+                for _n, _p in model.named_parameters():
+                    is_head = any(k in _n.lower() for k in _head_kw)
+                    _p.requires_grad = bool(is_head)
+                    if is_head: _trainable += _p.numel()
+                    else: _frozen += _p.numel()
             if not suppress_display:
-                self.logger.info(f" Linear-probe: encoder frozen ({_frozen/1e6:.0f}M), training head only ({_trainable/1e3:.0f}K params)")
+                self.logger.info(f" Linear-probe: encoder frozen ({_frozen/1e6:.0f}M), training head only ({_trainable/1e3:.0f}K params, prefix={_prefix})")
 
         _opt_params = [p for p in model.parameters() if p.requires_grad] if freeze_encoder else model.parameters()
         optimizer = AdamW(_opt_params, lr=lr, eps=1e-8)
