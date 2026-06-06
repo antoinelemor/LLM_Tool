@@ -755,6 +755,10 @@ def _process_task_cpu(
         num_labels = len(all_labels) if len(all_labels) > 2 else 2
         class_names = sorted(list(all_labels)) if all_labels else None
         epochs = task.config.get('epochs', 10)
+        # CPU worker: apply per-session optimizer hyperparameters from the task
+        # config (the worker-level TrainingConfig is built once with defaults).
+        trainer.config.learning_rate = task.config.get('learning_rate', getattr(trainer.config, 'learning_rate', 2e-5))
+        trainer.config.warmup_ratio = task.config.get('warmup_ratio', getattr(trainer.config, 'warmup_ratio', 0.0))
 
         send_progress(0, epochs, "training",
                      msg=f"Train: {len(train_samples):,} | Val: {len(val_samples):,} | Lang: {len(unique_languages)}")

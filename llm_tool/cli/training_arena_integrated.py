@@ -10420,6 +10420,10 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
     training_config.metrics_output_dir = str(metrics_base_dir)
     training_config.model_name = model_name
     training_config.num_epochs = epochs
+    # Optimizer hyperparameters (CLI) — feed the model_trainer-direct path too.
+    _opt_src = quick_params if quick_params else (model_config or {})
+    training_config.learning_rate = _opt_src.get('learning_rate', getattr(training_config, 'learning_rate', 2e-5))
+    training_config.warmup_ratio = _opt_src.get('warmup_ratio', getattr(training_config, 'warmup_ratio', 0.0))
     # Early stopping: from quick_params (new session) or model_config (resume)
     _es_from_params = quick_params.get('early_stopping_patience') if quick_params else None
     _es_from_config = model_config.get('early_stopping_patience') if model_config else None

@@ -1564,6 +1564,7 @@ class ModelTrainer:
                 test_dataloader=val_dataloader,  # bert_base expects test_dataloader for validation
                 n_epochs=self.config.num_epochs,
                 lr=self.config.learning_rate,
+                warmup_ratio=getattr(self.config, 'warmup_ratio', 0.0),
                 random_state=42,
                 save_model_as='model',  # Just the model name, bert_base.py will construct full path
                 metrics_output_dir=str(metrics_base_dir),
@@ -2863,6 +2864,7 @@ class ModelTrainer:
             test_dataloader=val_loader,
             n_epochs=self.config.num_epochs,
             lr=self.config.learning_rate,
+            warmup_ratio=getattr(self.config, 'warmup_ratio', 0.0),
             save_model_as='model',  # Just the model name, bert_base.py will construct full path
             metrics_output_dir=str(metrics_base_dir),
             track_languages=track_languages,
@@ -3256,6 +3258,7 @@ class ModelTrainer:
             test_dataloader=val_dataloader,
             n_epochs=self.config.num_epochs,
             lr=self.config.learning_rate,
+            warmup_ratio=getattr(self.config, 'warmup_ratio', 0.0),
             save_model_as='model',
             metrics_output_dir=str(metrics_base_dir),
             track_languages=track_languages,  # Enable per-language tracking if language column exists
