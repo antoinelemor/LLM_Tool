@@ -101,6 +101,39 @@ Produit une session `logs/training_arena/` standard (metadata + training_metrics
    passer à un split *par video_id* — appliqué uniformément, il ne change pas le
    classement relatif mais donnerait des F1 absolus plus conservateurs.
 
+## Mise à jour — camembert-base étendu aux catégories sous 0.7
+
+Le probe large ayant prédit un gain net, les catégories CamemBERTav2 sous 0.7 ont
+été ré-entraînées sur **camembert-base** (no-aug, weighted, sauvegarde). Toutes
+progressent fortement :
+
+| Thème | CamemBERTav2 (best-of) | **camembert-base** | Δ |
+|---|---|---|---|
+| libertarianism | 0.000 | **0.865** | +0.865 |
+| fictional_metaphors | 0.348 | **0.863** | +0.515 |
+| tradition | 0.679 | **0.847** | +0.168 |
+| progress | 0.664 | **0.814** | +0.150 |
+| authority | 0.659 | **0.805** | +0.146 |
+| technology | 0.795 | **0.891** | +0.096 |
+
+→ **camembert-base améliore CHAQUE catégorie testée (6/6)**, y compris
+`technology` qui était la **meilleure** de CamemBERTav2 (0.795 → 0.891). Le
+backbone est donc le facteur **dominant et universel** pour ces thèmes politiques
+français — pas un effet limité aux thèmes difficiles.
+
+### Recommandation forte
+Ré-entraîner **les 11 thèmes sur camembert-base** pour un jeu homogène et
+nettement supérieur. Les 5 restants encore sur CamemBERTav2 (ecology 0.826,
+immigration 0.812, nationalism 0.792, equality 0.766, democracy 0.705)
+devraient eux aussi gagner (probe frozen camembert-base 0.71–0.89 ; et
+`technology` vient de passer de 0.795 à 0.891). Commande type (reproductible) :
+```
+python scripts/repair_experiment.py --category <thème> --base noaug \
+   --model camembert-base --lr 2e-5 --strategy weighted --epochs 8 --save
+```
+Note : `fictional_metaphors` reste meilleur sur la base **aug** (542 positifs vs
+~100 en no-aug) ; pour les autres, no-aug suffit.
+
 ## Annexe — probe large (camembertav2 vs camembert-base)
 
 Embedding-probe **frozen** (mean-pool → LogReg pondérée, f1_pos, échantillons
