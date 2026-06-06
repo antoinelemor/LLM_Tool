@@ -576,7 +576,7 @@ class MetadataManager:
             "epochs": 10,
             "batch_size": 16,
             "learning_rate": 2e-5,
-            "warmup_ratio": 0.1,
+            "warmup_ratio": 0.0,
             "warmup_steps": 0,
             "weight_decay": 0.01,
             "adam_epsilon": 1e-8,
@@ -616,6 +616,7 @@ class MetadataManager:
             params["epochs"] = quick_params.get('epochs', params["epochs"])
             params["batch_size"] = quick_params.get('batch_size', params["batch_size"])
             params["learning_rate"] = quick_params.get('learning_rate', params["learning_rate"])
+            params["warmup_ratio"] = quick_params.get('warmup_ratio', params["warmup_ratio"])
 
         # Update from runtime params
         if runtime_params:

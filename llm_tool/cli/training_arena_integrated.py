@@ -518,6 +518,7 @@ def _run_parallel_training(
         model_name=model_name,
         epochs=int(epochs),
         learning_rate=quick_params.get('learning_rate', 2e-5) if quick_params else 2e-5,
+        warmup_ratio=quick_params.get('warmup_ratio', 0.0) if quick_params else 0.0,
         output_dir=str(session_output_dir),
         session_id=session_id or f"parallel_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         max_cpu_workers=None,  # Auto-detect based on system resources
@@ -9736,6 +9737,41 @@ def _collect_quick_mode_parameters(
                 f"weights={imbalance_weight_source}, sampler={imbalance_weighted_sampler}[/green]\n"
             )
 
+    # ---- Advanced optimizer hyperparameters (learning rate, warmup) ------------
+    # Optional, opt-in. Defaults reproduce legacy behaviour exactly (lr 2e-5,
+    # warmup 0.0 = no warmup). Applies to EVERY supported model. Lowering the LR
+    # and adding warmup stabilises fine-tuning of hard/small categories (cures the
+    # all-negative <-> all-positive oscillation seen on difficult themes).
+    learning_rate = (preloaded_params or {}).get('learning_rate', 2e-5) if preloaded_params else 2e-5
+    warmup_ratio = (preloaded_params or {}).get('warmup_ratio', 0.0) if preloaded_params else 0.0
+    configure_optim = Confirm.ask(
+        "\n[bold cyan]Configure advanced optimizer hyperparameters (learning rate, warmup)?[/bold cyan]\n"
+        "[dim](Choose 'n' to use defaults: lr=2e-5, warmup=0.0 — unchanged legacy behaviour)[/dim]",
+        default=False,
+    )
+    if configure_optim:
+        self.console.print("\n[bold]Learning rate[/bold]")
+        self.console.print("   [dim]Lower it (e.g. 1e-5) to stabilise hard/small categories that oscillate.[/dim]")
+        self.console.print("   • Default: [green]2e-5[/green]  • Conservative: [yellow]1e-5[/yellow]  • Very conservative: [yellow]5e-6[/yellow]\n")
+        lr_input = Prompt.ask("Learning rate", default="2e-5")
+        try:
+            learning_rate = float(lr_input)
+            if not (0 < learning_rate < 1):
+                self.console.print("[yellow][!] Out of range. Using 2e-5[/yellow]"); learning_rate = 2e-5
+        except ValueError:
+            self.console.print("[yellow][!] Invalid. Using 2e-5[/yellow]"); learning_rate = 2e-5
+
+        self.console.print("\n[bold]Warmup ratio[/bold]")
+        self.console.print("   [dim]Fraction of training spent ramping the LR from 0. 0.0=off; 0.1–0.2 helps stability.[/dim]\n")
+        wu_input = Prompt.ask("Warmup ratio", default="0.0")
+        try:
+            warmup_ratio = float(wu_input)
+            if not (0 <= warmup_ratio < 1):
+                self.console.print("[yellow][!] Out of range. Using 0.0[/yellow]"); warmup_ratio = 0.0
+        except ValueError:
+            self.console.print("[yellow][!] Invalid. Using 0.0[/yellow]"); warmup_ratio = 0.0
+        self.console.print(f"[green]  Optimizer: lr={learning_rate:g}, warmup_ratio={warmup_ratio:g}[/green]\n")
+
     # Phase 2: Reinforced learning
     self.console.print()
     phase2_choice = Prompt.ask(
@@ -9925,6 +9961,9 @@ def _collect_quick_mode_parameters(
         'imbalance_weight_source': imbalance_weight_source,
         'imbalance_class_weights': imbalance_class_weights,
         'imbalance_weighted_sampler': imbalance_weighted_sampler,
+        # Advanced optimizer hyperparameters
+        'learning_rate': learning_rate,
+        'warmup_ratio': warmup_ratio,
         # Tokenizer-aware max_length: only set when user opted in. None means
         # downstream code should keep its default (currently 512).
         'max_length': optimized_max_length,

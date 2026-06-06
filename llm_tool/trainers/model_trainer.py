@@ -462,7 +462,7 @@ class TrainingConfig:
     batch_size: int = 16
     learning_rate: float = 2e-5
     num_epochs: int = 10
-    warmup_ratio: float = 0.1
+    warmup_ratio: float = 0.0  # legacy/no-warmup default (was a dead field; now consistent with bert_base)
     weight_decay: float = 0.01
     validation_split: float = 0.2
     test_split: float = 0.1

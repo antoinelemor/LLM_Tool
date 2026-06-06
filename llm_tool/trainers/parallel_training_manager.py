@@ -2060,6 +2060,7 @@ class ParallelTrainingConfig:
     model_name: str = "xlm-roberta-base"
     epochs: int = 10
     learning_rate: float = 2e-5
+    warmup_ratio: float = 0.0  # Linear-warmup fraction (0.0 = legacy/no warmup)
     output_dir: str = "models"  # Directory for saving trained models
     session_id: str = ""
     max_cpu_workers: Optional[int] = None
@@ -2330,6 +2331,7 @@ class ParallelTrainingManager:
                             config={
                                 "epochs": self.config.epochs,
                                 "learning_rate": self.config.learning_rate,
+                                "warmup_ratio": self.config.warmup_ratio,
                                 # CRITICAL: Pass session_id to workers to ensure unified logging
                                 # This prevents duplicate session directories (training_session_XXXXXX)
                                 "session_id": self.config.session_id,
@@ -2400,6 +2402,7 @@ class ParallelTrainingManager:
                         config={
                             "epochs": self.config.epochs,
                             "learning_rate": self.config.learning_rate,
+                            "warmup_ratio": self.config.warmup_ratio,
                             # CRITICAL: Pass session_id to workers to ensure unified logging
                             # This prevents duplicate session directories (training_session_XXXXXX)
                             "session_id": self.config.session_id,

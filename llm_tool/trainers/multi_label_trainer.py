@@ -138,7 +138,7 @@ class TrainingConfig:
     dataloader_prefetch_factor: int = 4  # Batches to prefetch per worker (reduces I/O wait)
     dataloader_persistent_workers: bool = True  # Keep workers alive between epochs (avoids recreation overhead)
     # NEW: Explicit hyperparameters for reproducibility (Phase 4 of logging rationalization)
-    warmup_ratio: float = 0.1  # Warmup ratio for learning rate scheduler
+    warmup_ratio: float = 0.0  # Linear-warmup fraction for the normal-phase scheduler (0.0 = legacy/no warmup)
     weight_decay: float = 0.01  # Weight decay for optimizer
     seed: int = 42  # Random seed for reproducibility
     # NEW: Reinforced learning thresholds
@@ -1451,6 +1451,7 @@ class MultiLabelTrainer:
             val_loader,
             n_epochs=self.config.n_epochs,
             lr=self.config.learning_rate,
+            warmup_ratio=getattr(self.config, 'warmup_ratio', 0.0),
             save_model_as=model_name,
             reinforced_learning=reinforced_learning,
             n_epochs_reinforced=self.config.n_epochs_reinforced,

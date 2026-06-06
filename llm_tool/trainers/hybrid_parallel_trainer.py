@@ -1044,6 +1044,7 @@ def _train_on_gpu(
             n_epochs=epochs,
             batch_size=gpu_config.get('batch_size', 128),
             learning_rate=task.config.get('learning_rate', 2e-5),
+            warmup_ratio=task.config.get('warmup_ratio', 0.0),
             force_device='mps',  # Force MPS for Apple Silicon
             dataloader_num_workers=dl_workers,
             dataloader_prefetch_factor=dl_prefetch,

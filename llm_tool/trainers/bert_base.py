@@ -1681,6 +1681,31 @@ class BertBase(BertABC):
         "query_global", "value_global",
     })
 
+    def _is_deberta_arch(self) -> bool:
+        """True if the model is a DeBERTa-family architecture.
+
+        DeBERTa-v2/v3 (incl. mDeBERTa, and CamemBERTa / CamemBERTav2 whose NAME
+        does NOT contain 'deberta' but whose architecture IS deberta-v2) use
+        disentangled attention that loses precision in float16 on MPS. Detection
+        must therefore be based on the HF config ``model_type`` (robust across
+        all supported models), with a name-substring fallback for offline cases.
+        Result is cached on the instance.
+        """
+        cached = getattr(self, '_is_deberta_cache', None)
+        if cached is not None:
+            return cached
+        name = (getattr(self, 'model_name', '') or '').lower()
+        result = 'deberta' in name
+        if not result:
+            try:
+                from transformers import AutoConfig
+                mt = (AutoConfig.from_pretrained(self.model_name).model_type or '').lower()
+                result = 'deberta' in mt
+            except Exception:
+                result = False
+        self._is_deberta_cache = result
+        return result
+
     @staticmethod
     def _detect_lora_target_modules(model):
         """Auto-detect the attention Q/V projection modules to adapt with LoRA/DoRA.
@@ -2481,6 +2506,7 @@ class BertBase(BertABC):
             test_dataloader: DataLoader,
             n_epochs: int = 3,
             lr: float = 5e-5,
+            warmup_ratio: float = 0.0,  # Linear-warmup fraction for the NORMAL-phase scheduler. 0.0 = legacy (no warmup).
             random_state: int = 42,
             save_model_as: str | None = None,
             pos_weight: torch.Tensor | None = None,
@@ -3067,9 +3093,10 @@ class BertBase(BertABC):
         # optimizer step on MPS when loaded in float16 (the safetensors default).
         # The disentangled attention uses operations that lose precision in float16
         # after weight updates. Force float32 for DeBERTa on MPS to prevent this.
-        _model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
+        # Architecture-based detection (config model_type), NOT just the name:
+        # CamemBERTa / CamemBERTav2 are deberta-v2 but their name lacks 'deberta'.
         _device_str = str(self.device) if hasattr(self, 'device') else 'cpu'
-        _force_f32 = 'mps' in _device_str and 'deberta' in _model_lower
+        _force_f32 = 'mps' in _device_str and self._is_deberta_arch()
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Some weights of.*were not initialized")
@@ -3129,8 +3156,7 @@ class BertBase(BertABC):
         use_torch_compile = False
         if hasattr(torch, 'compile'):
             # Check if model is DeBERTa - has Metal shader issues with sign() function
-            model_name_lower = getattr(self, 'model_name', '').lower() if hasattr(self, 'model_name') else ''
-            is_deberta = 'deberta' in model_name_lower
+            is_deberta = self._is_deberta_arch()
 
             try:
                 if device_type == 'cuda':
@@ -3160,11 +3186,19 @@ class BertBase(BertABC):
                 self.logger.info(f" MPS: {model_params/1e6:.0f}M params, {gc_status}, {compile_status}")
 
         optimizer = AdamW(model.parameters(), lr=lr, eps=1e-8)
+        # Linear warmup: 0.0 (default) reproduces the legacy behaviour (no warmup).
+        # A positive warmup_ratio ramps the LR over the first fraction of training —
+        # this stabilises fine-tuning of hard/small categories (reduces the
+        # all-negative <-> all-positive oscillation seen on difficult themes).
+        _total_steps = max(1, len(train_dataloader) * n_epochs)
+        _warmup_steps = int(_total_steps * max(0.0, float(warmup_ratio or 0.0)))
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
-            num_warmup_steps=0,
-            num_training_steps=len(train_dataloader) * n_epochs
+            num_warmup_steps=_warmup_steps,
+            num_training_steps=_total_steps
         )
+        if _warmup_steps > 0 and not suppress_display:
+            self.logger.info(f" LR warmup: {_warmup_steps} steps ({warmup_ratio:.0%} of {_total_steps})")
 
         # =============== Fine-tuning convergence guard ===============
         # DeBERTa-v3 (incl. mDeBERTa-v3) on MPS will silently NOT train the
@@ -3181,8 +3215,7 @@ class BertBase(BertABC):
         try:
             _eff_micro_bs = train_dataloader.batch_size
             _hp_micro_bs = hyperparameters.batch_size if hyperparameters is not None else _eff_micro_bs
-            _model_lower = (self.model_name or '').lower() if hasattr(self, 'model_name') else ''
-            _is_deberta = 'deberta' in _model_lower
+            _is_deberta = self._is_deberta_arch()  # config-based (catches camembertav2)
             # Measured threshold (2026-05-26, M4 Max, mDeBERTa-v3-base): a micro-batch
             # of 16 gives F1=0.73 in 2 epochs (1500 samples), 32 → 0.55, 256 → 0.25.
             # Above 16, F1 degrades smoothly with batch size, so we warn at >16 for
@@ -3349,7 +3382,7 @@ class BertBase(BertABC):
         # Initialize hyperparameter tracking for CSV output (used in both normal and RL paths)
         hp_learning_rate = lr
         hp_batch_size = train_dataloader.batch_size
-        hp_warmup_ratio = 0.1
+        hp_warmup_ratio = float(warmup_ratio or 0.0)  # reflect the warmup actually applied
         # Unified imbalance-aware criterion (None => use the legacy per-batch loss logic).
         # When set, it takes precedence over asl_criterion/pos_weight in _compute_batch_loss
         # and applies to EVERY training type (multi-class, multi-label, binary, one-vs-all).
@@ -6348,10 +6381,10 @@ class BertBase(BertABC):
         # Load with ignore_mismatched_sizes to handle cases where the checkpoint
         # was saved with a different number of classes (e.g., during reinforced learning
         # when retraining on a different subset of data)
-        # Force float32 for DeBERTa on MPS (see model init comment for details)
-        _model_lower = self.model_name.lower() if hasattr(self, 'model_name') else ''
+        # Force float32 for DeBERTa on MPS (see model init comment for details).
+        # Architecture-based detection (catches camembertav2 = deberta-v2).
         _load_kwargs = {}
-        if hasattr(self, 'device') and str(self.device) == 'mps' and 'deberta' in _model_lower:
+        if hasattr(self, 'device') and str(self.device) == 'mps' and self._is_deberta_arch():
             _load_kwargs['dtype'] = torch.float32
 
         try:
