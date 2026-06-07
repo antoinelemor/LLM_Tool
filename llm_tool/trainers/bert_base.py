@@ -1681,6 +1681,28 @@ class BertBase(BertABC):
         "query_global", "value_global",
     })
 
+    def _finalize_save_config(self, model_to_save) -> None:
+        """Make the saved config.json self-describing as a sequence classifier.
+
+        ``from_pretrained`` on a base checkpoint leaves ``architectures`` pointing
+        at the pretrained MLM class and ``id2label`` as 0/1. The checkpoint still
+        loads correctly via AutoModelForSequenceClassification (num_labels is
+        derived from id2label), but the metadata is misleading. We set the real
+        classifier class and human-readable labels so the saved model is portable
+        and self-documenting. Best-effort: never blocks saving.
+        """
+        try:
+            cfg = model_to_save.config
+            cfg.architectures = [model_to_save.__class__.__name__]
+            nl = int(getattr(self, "num_labels", None) or getattr(cfg, "num_labels", 0) or 0)
+            names = getattr(self, "class_names", None)
+            if nl and names and len(names) >= nl:
+                cfg.id2label = {i: str(names[i]) for i in range(nl)}
+                cfg.label2id = {str(names[i]): i for i in range(nl)}
+                cfg.num_labels = nl
+        except Exception:
+            pass  # metadata only — must never prevent the checkpoint from saving
+
     def _is_deberta_arch(self) -> bool:
         """True if the model is a DeBERTa-family architecture.
 
@@ -4472,6 +4494,7 @@ class BertBase(BertABC):
                         output_config_file = os.path.join(best_model_path, CONFIG_NAME)
 
                         torch.save(model_to_save.state_dict(), output_model_file)
+                        self._finalize_save_config(model_to_save)
                         model_to_save.config.to_json_file(output_config_file)
                         self.tokenizer.save_pretrained(best_model_path)
 
@@ -4823,6 +4846,7 @@ class BertBase(BertABC):
                 output_model_file = os.path.join(final_path, WEIGHTS_NAME)
                 output_config_file = os.path.join(final_path, CONFIG_NAME)
                 torch.save(model_to_save.state_dict(), output_model_file)
+                self._finalize_save_config(model_to_save)
                 model_to_save.config.to_json_file(output_config_file)
                 self.tokenizer.save_pretrained(final_path)
                 best_model_path = final_path
@@ -5985,6 +6009,7 @@ class BertBase(BertABC):
                                 output_config_file = os.path.join(temp_reinforced_path, CONFIG_NAME)
 
                                 torch.save(model_to_save.state_dict(), output_model_file)
+                                self._finalize_save_config(model_to_save)
                                 model_to_save.config.to_json_file(output_config_file)
                                 self.tokenizer.save_pretrained(temp_reinforced_path)
 
