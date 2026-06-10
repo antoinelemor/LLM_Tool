@@ -48,8 +48,9 @@ This project adheres to a code of conduct. By participating, you are expected to
 1. **Create and activate virtual environment**:
    ```bash
    python3 -m venv .venv
-   source .venv/bin/activate  # macOS/Linux
-   # or .venv\Scripts\activate  # Windows
+   source .venv/bin/activate         # macOS/Linux
+   # source .venv/Scripts/activate   # Windows (Git Bash)
+   # .venv\Scripts\activate          # Windows (Command Prompt / PowerShell)
    ```
 
 2. **Install in development mode with all dependencies**:

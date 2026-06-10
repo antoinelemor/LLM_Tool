@@ -130,10 +130,16 @@ As a social science researcher, you might have:
 > Ten minutes to move from checkout to your first annotated dataset.
 
 1. **Install prerequisites** – Python 3.11+, Git, and (optionally) [Ollama](https://ollama.ai) for fully local LLMs. On macOS: `brew install python@3.11` then `brew install --cask ollama`.
-2. **Clone the repository**  
-   `git clone https://github.com/antoinelemor/LLM_Tool.git && cd LLM_Tool`
-3. **Run the installer** – `chmod +x install.sh && ./install.sh --all` (creates `.venv`, installs extras, runs verification).
-4. **Activate the virtualenv** – `source .venv/bin/activate` (Windows: `.venv\Scripts\activate`).
+2. **Clone the repository** – run these two commands one after the other:  
+   `git clone https://github.com/antoinelemor/LLM_Tool.git`  
+   `cd LLM_Tool`
+3. **Run the installer** – run these two commands one after the other (creates `.venv`, installs extras, runs verification):  
+   `chmod +x install.sh`  
+   `./install.sh --all`
+4. **Activate the virtualenv** – pick the line that matches your shell:  
+   - macOS/Linux: `source .venv/bin/activate`  
+   - Windows (Git Bash): `source .venv/Scripts/activate`  
+   - Windows (Command Prompt / PowerShell): `.venv\Scripts\activate`
 5. **Launch the CLI** – `llm-tool` shows the Rich main menu.
 6. **Configure providers (optional)** – Mode 6 → Resume Center → add OpenAI API key or set Ollama as default.
 7. **Annotate a sample** – Mode 1 → pick `data/AI_catégo_pour_antoine_phrases.csv` → choose columns → select `ollama:llama3.2` or `gpt-4o-mini` → run.
@@ -369,12 +375,21 @@ chmod +x install.sh
 ./install.sh --all
 ```
 
-**Windows:**
+**Windows (Git Bash):**
 ```bash
+python -m venv .venv
+source .venv/Scripts/activate
+pip install -e ".[all]"
+```
+
+**Windows (Command Prompt / PowerShell):**
+```bat
 python -m venv .venv
 .venv\Scripts\activate
 pip install -e ".[all]"
 ```
+
+> **Note:** Git and `python` commands work in all three shells once installed — you don't need to switch from Git Bash to Command Prompt to run them. Only the virtualenv **activation** line differs: Git Bash uses `source .venv/Scripts/activate` (forward slashes), while Command Prompt/PowerShell use `.venv\Scripts\activate` (backslashes).
 
 The installer will:
 - ✅ Check your Python version
@@ -473,8 +488,9 @@ chmod +x install.sh
 python3 -m venv .venv
 
 # Activate
-source .venv/bin/activate  # macOS/Linux
-# .venv\Scripts\activate   # Windows
+source .venv/bin/activate         # macOS/Linux
+# source .venv/Scripts/activate   # Windows (Git Bash)
+# .venv\Scripts\activate          # Windows (Command Prompt / PowerShell)
 
 # Install
 pip install -e ".[all]"
@@ -1799,7 +1815,9 @@ Compare multiple models before committing to full training:
 ### Issue: "ModuleNotFoundError: No module named 'llm_tool'"
 **Solution**: Ensure virtual environment is activated and package is installed:
 ```bash
-source .venv/bin/activate  # macOS/Linux
+source .venv/bin/activate         # macOS/Linux
+# source .venv/Scripts/activate   # Windows (Git Bash)
+# .venv\Scripts\activate          # Windows (Command Prompt / PowerShell)
 pip install -e .
 ```
 
