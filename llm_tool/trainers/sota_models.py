@@ -1119,7 +1119,11 @@ def get_model_class_for_name(model_name: str):
             return LongT5TGlobalBase
         return LongT5Base
     
-    # DeBERTa models
+    # DeBERTa models — multilingual mDeBERTa MUST be checked before the
+    # monolingual deberta-v3 substring, otherwise 'deberta-v3' matches inside
+    # 'mdeberta-v3-base' and we silently route to the English-vocab class.
+    if 'mdeberta' in name_lower:
+        return MDeBERTaV3Base
     if 'deberta-v3' in name_lower or 'deberta-v2' in name_lower:
         if 'xsmall' in name_lower or 'small' in name_lower:
             return DeBERTaV3XSmall
@@ -1127,8 +1131,6 @@ def get_model_class_for_name(model_name: str):
             return DeBERTaV3Large
         else:
             return DeBERTaV3Base
-    if 'mdeberta' in name_lower:
-        return MDeBERTaV3Base
     
     # RoBERTa models
     if 'xlm-roberta' in name_lower:
