@@ -1703,6 +1703,113 @@ class BertBase(BertABC):
         except Exception:
             pass  # metadata only — must never prevent the checkpoint from saving
 
+    def _verify_saved_checkpoint(
+        self,
+        checkpoint_dir: str,
+        model,
+        test_dataloader,
+        multi_label: bool,
+        max_samples: int = 256,
+        min_agreement: float = 0.98,
+        retry_save: bool = True,
+    ) -> Optional[float]:
+        """Reload the exported checkpoint and verify it matches the live model.
+
+        Silent checkpoint corruption is otherwise undetectable at training
+        time: the in-run metrics describe the in-memory model, while every
+        downstream consumer reads the files on disk. This check reloads the
+        saved weights and compares their predictions against the in-memory
+        model on up to ``max_samples`` validation samples. On disagreement it
+        re-saves the state_dict once, re-verifies, and if the mismatch
+        persists writes a ``SAVE_VERIFICATION_FAILED.json`` marker inside the
+        checkpoint directory so the artefact can never be consumed unnoticed.
+
+        Returns the final agreement ratio (None when verification could not
+        run). Best-effort: never raises, never blocks training.
+        """
+        try:
+            import numpy as _np
+
+            live = model.module if hasattr(model, 'module') else model
+            live_was_training = live.training
+            live.eval()
+
+            # Collect a bounded evaluation slice from the validation loader.
+            batches = []
+            n_taken = 0
+            for batch in test_dataloader:
+                batches.append((batch[0], batch[1]))
+                n_taken += batch[0].shape[0]
+                if n_taken >= max_samples:
+                    break
+            if not batches:
+                return None
+
+            def _predict(m) -> _np.ndarray:
+                outs = []
+                with torch.no_grad():
+                    for b_inputs, b_masks in batches:
+                        b_inputs = b_inputs.to(self.device)
+                        b_masks = b_masks.to(self.device)
+                        logits = m(b_inputs, attention_mask=b_masks).logits
+                        if multi_label:
+                            outs.append((torch.sigmoid(logits) > 0.5).long().cpu().numpy())
+                        else:
+                            outs.append(torch.argmax(logits, dim=-1).cpu().numpy())
+                return _np.concatenate(outs, axis=0)
+
+            def _reload_and_predict() -> _np.ndarray:
+                loader_cls = getattr(self, 'model_sequence_classifier', None)
+                if loader_cls is None:
+                    from transformers import AutoModelForSequenceClassification as loader_cls
+                reloaded = loader_cls.from_pretrained(checkpoint_dir).to(self.device)
+                reloaded.eval()
+                try:
+                    return _predict(reloaded)
+                finally:
+                    del reloaded
+
+            live_preds = _predict(live)
+            agreement = float((_reload_and_predict() == live_preds).mean())
+
+            if agreement < min_agreement and retry_save:
+                self.logger.warning(
+                    f"[SAVE VERIFY] Reloaded checkpoint disagrees with live model "
+                    f"(agreement={agreement:.4f} < {min_agreement}) — re-saving {checkpoint_dir}"
+                )
+                torch.save(live.state_dict(), os.path.join(checkpoint_dir, WEIGHTS_NAME))
+                agreement = float((_reload_and_predict() == live_preds).mean())
+
+            if agreement < min_agreement:
+                marker = {
+                    'agreement': agreement,
+                    'min_agreement': min_agreement,
+                    'n_samples': int(n_taken),
+                    'timestamp': datetime.datetime.now().isoformat(),
+                    'detail': 'Saved weights do not reproduce the in-memory model '
+                              'predictions. Do NOT use this checkpoint; retrain or '
+                              're-export it.',
+                }
+                with open(os.path.join(checkpoint_dir, 'SAVE_VERIFICATION_FAILED.json'),
+                          'w', encoding='utf-8') as f:
+                    json.dump(marker, f, indent=2)
+                self.logger.error(
+                    f"[SAVE VERIFY] ❌ Checkpoint verification FAILED for {checkpoint_dir} "
+                    f"(agreement={agreement:.4f}). Marker file written."
+                )
+            else:
+                self.logger.info(
+                    f"[SAVE VERIFY] ✅ Checkpoint verified: agreement={agreement:.4f} "
+                    f"on {n_taken} samples ({checkpoint_dir})"
+                )
+
+            if live_was_training:
+                live.train()
+            return agreement
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning(f"[SAVE VERIFY] verification skipped ({e})")
+            return None
+
     def _is_deberta_arch(self) -> bool:
         """True if the model is a DeBERTa-family architecture.
 
@@ -4545,6 +4652,20 @@ class BertBase(BertABC):
                         }
                         if final_metrics_block:
                             training_metadata["final_metrics"] = final_metrics_block
+
+                        # Guard against silent checkpoint corruption: reload
+                        # the file just written and make sure it reproduces
+                        # the live model's predictions. Done HERE (not at the
+                        # end-of-training move) because right now the live
+                        # model holds exactly the weights that were saved.
+                        verify_agreement = self._verify_saved_checkpoint(
+                            best_model_path, model, test_dataloader, multi_label,
+                        )
+                        if verify_agreement is not None:
+                            training_metadata["save_verification"] = {
+                                "agreement": verify_agreement,
+                                "passed": verify_agreement >= 0.98,
+                            }
                         with open(metadata_file, 'w', encoding='utf-8') as f:
                             json.dump(training_metadata, f, indent=2, ensure_ascii=False)
                     else:
@@ -6012,6 +6133,14 @@ class BertBase(BertABC):
                                 self._finalize_save_config(model_to_save)
                                 model_to_save.config.to_json_file(output_config_file)
                                 self.tokenizer.save_pretrained(temp_reinforced_path)
+
+                                # Same silent-corruption guard as the normal-phase
+                                # save: the reloaded file must reproduce the model
+                                # that was just serialized (pre-LoRA re-wrap).
+                                self._verify_saved_checkpoint(
+                                    temp_reinforced_path, model_to_save,
+                                    test_dataloader, multi_label,
+                                )
 
                                 # After saving, re-apply LoRA for continued training
                                 # merge_and_unload() consumed the LoRA model, so we need to re-wrap
