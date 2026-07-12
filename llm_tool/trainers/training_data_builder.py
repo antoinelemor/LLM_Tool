@@ -121,6 +121,11 @@ class TrainingDataRequest:
     id_column: Optional[str] = None
     lang_column: Optional[str] = None
     key_strategies: Optional[Dict[str, str]] = None  # {key_name: 'multi-class' or 'one-vs-all'}
+    # Per-key value strings excluded by the user (Training Arena "Value
+    # Filtering" step). Threaded down to the converter so that every dataset
+    # derivation honours the exclusion — the builder re-reads the source CSV
+    # and would otherwise resurrect filtered values.
+    excluded_values: Optional[Dict[str, List[str]]] = None
     output_dir: Optional[Path] = None
     output_format: str = "jsonl"
 
@@ -233,6 +238,7 @@ class TrainingDatasetBuilder:
                         label_strategy=request.label_strategy,
                         id_column=request.id_column,
                         lang_column=request.lang_column,
+                        excluded_values=request.excluded_values,
                     )
 
                     if key_path:
@@ -251,6 +257,7 @@ class TrainingDatasetBuilder:
                         label_strategy=request.label_strategy,
                         id_column=request.id_column,
                         lang_column=request.lang_column,
+                        excluded_values=request.excluded_values,
                     )
 
                     if key_path:
@@ -270,6 +277,7 @@ class TrainingDatasetBuilder:
                         label_strategy=request.label_strategy,
                         id_column=request.id_column,
                         lang_column=request.lang_column,
+                        excluded_values=request.excluded_values,
                     )
                     category_files['onevsall_multilabel'] = onevsall_multilabel_path
                     LOGGER.info(f"Created one-vs-all multilabel file for {len(onevsall_keys)} keys")
@@ -285,6 +293,7 @@ class TrainingDatasetBuilder:
                     label_strategy=request.label_strategy,
                     id_column=request.id_column,
                     lang_column=request.lang_column,
+                    excluded_values=request.excluded_values,
                 )
 
                 # Determine training approach
@@ -340,6 +349,7 @@ class TrainingDatasetBuilder:
                         label_strategy=request.label_strategy,
                         id_column=request.id_column,
                         lang_column=request.lang_column,
+                        excluded_values=request.excluded_values,
                     )
 
                     if key_path:
@@ -360,6 +370,7 @@ class TrainingDatasetBuilder:
                     label_strategy=request.label_strategy,
                     id_column=request.id_column,
                     lang_column=request.lang_column,
+                    excluded_values=request.excluded_values,
                 )
 
                 metadata.update({
@@ -394,6 +405,7 @@ class TrainingDatasetBuilder:
                 label_strategy=request.label_strategy,
                 id_column=request.id_column,
                 lang_column=request.lang_column,
+                excluded_values=request.excluded_values,
             )
 
             if not key_path:
@@ -445,6 +457,7 @@ class TrainingDatasetBuilder:
                     label_strategy=request.label_strategy,
                     id_column=request.id_column,
                     lang_column=request.lang_column,
+                    excluded_values=request.excluded_values,
                 )
 
                 if key_path:
@@ -465,6 +478,7 @@ class TrainingDatasetBuilder:
                 label_strategy=request.label_strategy,
                 id_column=request.id_column,
                 lang_column=request.lang_column,
+                excluded_values=request.excluded_values,
             )
 
             metadata.update({
@@ -496,6 +510,7 @@ class TrainingDatasetBuilder:
             label_strategy=request.label_strategy,
             id_column=request.id_column,
             lang_column=request.lang_column,
+            excluded_values=request.excluded_values,
         )
 
         if not path:
@@ -685,6 +700,7 @@ class TrainingDatasetBuilder:
             value_column=request.value_column,
             id_column=request.id_column,
             lang_column=request.lang_column,
+            excluded_values=request.excluded_values,
             language_series=language_series,
         )
 

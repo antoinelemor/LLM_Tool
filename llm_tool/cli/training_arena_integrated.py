@@ -4449,6 +4449,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 mode="multi-label",  # Use multi-label to trigger one-vs-all training
                 id_column=id_column or None,
                 lang_column=lang_column or None,
+                excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
                 key_strategies={k: 'one-vs-all' for k in (annotation_keys or [])} if 'key_strategies' not in locals() else None
             )
             bundle = builder.build(request)
@@ -4481,6 +4482,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 mode="multi-label",  # Use multi-label data format
                 id_column=id_column or None,
                 lang_column=lang_column or None,
+                excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
                 key_strategies=key_strategies if 'key_strategies' in locals() else None
             )
             bundle = builder.build(request)
@@ -4515,6 +4517,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 mode=mode,
                 id_column=id_column or None,
                 lang_column=lang_column or None,
+                excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
                 key_strategies=key_strategies if 'key_strategies' in locals() else None
             )
             bundle = builder.build(request)
@@ -4683,6 +4686,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 label_column=selection['label_column'],
                 id_column=selection.get('id_column'),
                 lang_column=selection.get('lang_column'),
+                excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
                 mode="multi-label",  # Use multi-label to trigger one-vs-all training
             )
             bundle = builder.build(request)
@@ -4700,6 +4704,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 label_column=selection['label_column'],
                 id_column=selection.get('id_column'),
                 lang_column=selection.get('lang_column'),
+                excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
                 mode="multi-label",  # Use multi-label data format
             )
             bundle = builder.build(request)
@@ -4718,6 +4723,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
                 label_column=selection['label_column'],
                 id_column=selection.get('id_column'),
                 lang_column=selection.get('lang_column'),
+                excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
                 mode=mode,
             )
             bundle = builder.build(request)
@@ -4762,6 +4768,7 @@ def _training_studio_dataset_wizard(self, builder: TrainingDatasetBuilder) -> Op
             value_column=value_column,
             id_column=selection.get('id_column'),
             lang_column=selection.get('lang_column'),
+            excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
             mode="multi-label",
         )
         bundle = builder.build(request)
@@ -17061,6 +17068,7 @@ def integrate_training_arena_in_annotator_factory(
             mode="multi-label",  # Use multi-label to trigger one-vs-all training
             id_column=id_column or None,
             lang_column=lang_column or None,
+            excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
             key_strategies={k: 'one-vs-all' for k in (annotation_keys or [])} if 'key_strategies' not in locals() else None
         )
         bundle = builder.build(request)
@@ -17081,6 +17089,7 @@ def integrate_training_arena_in_annotator_factory(
             mode="multi-label",  # Use multi-label data format
             id_column=id_column or None,
             lang_column=lang_column or None,
+            excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
             key_strategies=key_strategies if 'key_strategies' in locals() else None
         )
         bundle = builder.build(request)
@@ -17103,6 +17112,7 @@ def integrate_training_arena_in_annotator_factory(
             mode=mode,
             id_column=id_column or None,
             lang_column=lang_column or None,
+            excluded_values=excluded_values if 'excluded_values' in locals() and excluded_values else None,
             key_strategies=key_strategies if 'key_strategies' in locals() else None
         )
         bundle = builder.build(request)

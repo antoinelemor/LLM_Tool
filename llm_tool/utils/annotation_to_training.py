@@ -162,6 +162,42 @@ class AnnotationToTrainingConverter:
         self.verbose = verbose
         self.logger = logging.getLogger(__name__)
 
+    @staticmethod
+    def _apply_excluded_values(
+        annotation: Dict[str, Any],
+        excluded_values: Optional[Dict[str, List[str]]],
+    ) -> Dict[str, Any]:
+        """Remove excluded values from a parsed annotation dict.
+
+        ``excluded_values`` maps an annotation key to the value strings the
+        user chose to exclude (Training Arena "Value Filtering" step). List
+        values lose the excluded entries; a scalar value equal to an excluded
+        entry becomes None. Keys not present in ``excluded_values`` are left
+        untouched. The input dict is never mutated.
+
+        This is the single enforcement point for value filtering: every
+        dataset derivation (multi-label JSONL, one-vs-all binaries,
+        single-key multi-class) parses annotations through this converter,
+        so filtering here guarantees excluded values can never reach a
+        training set regardless of the downstream strategy.
+        """
+        if not excluded_values or not isinstance(annotation, dict):
+            return annotation
+        result: Dict[str, Any] = {}
+        for key, value in annotation.items():
+            excluded = excluded_values.get(key)
+            if not excluded:
+                result[key] = value
+                continue
+            excluded_set = {str(v) for v in excluded}
+            if isinstance(value, list):
+                result[key] = [v for v in value if str(v) not in excluded_set]
+            elif value is not None and str(value) in excluded_set:
+                result[key] = None
+            else:
+                result[key] = value
+        return result
+
     def analyze_annotations(
         self,
         csv_path: str,
@@ -482,7 +518,8 @@ class AnnotationToTrainingConverter:
         annotation_keys: Optional[List[str]] = None,
         label_strategy: str = "key_value",
         id_column: Optional[str] = None,
-        lang_column: Optional[str] = None
+        lang_column: Optional[str] = None,
+        excluded_values: Optional[Dict[str, List[str]]] = None
     ) -> str:
         """
         Create a single JSONL dataset for multi-label classification.
@@ -494,6 +531,8 @@ class AnnotationToTrainingConverter:
             text_column: Column with text data
             annotation_column: Column with JSON annotations
             annotation_keys: Specific keys to include (None = all keys)
+            excluded_values: Per-key value strings to drop from annotations
+                (Training Arena "Value Filtering"); None = keep everything
             label_strategy: How to create labels (see create_single_label_datasets)
             id_column: Column to use as ID (auto-detect if None)
             lang_column: Column to use as language (auto-detect if None)
@@ -614,6 +653,8 @@ class AnnotationToTrainingConverter:
                     })
                     continue
 
+                annotation = self._apply_excluded_values(annotation, excluded_values)
+
                 # Collect all labels from specified keys as a FLAT list
                 # CRITICAL FIX: Include ALL samples, even those with no labels (empty list)
                 all_labels = []
@@ -714,7 +755,8 @@ class AnnotationToTrainingConverter:
         annotation_key: str = None,
         label_strategy: str = "key_value",
         id_column: Optional[str] = None,
-        lang_column: Optional[str] = None
+        lang_column: Optional[str] = None,
+        excluded_values: Optional[Dict[str, List[str]]] = None
     ) -> str:
         """
         Create a single-label JSONL dataset for ONE annotation key only.
@@ -844,6 +886,8 @@ class AnnotationToTrainingConverter:
                         'annotation': str(annotation)
                     })
                     continue
+
+                annotation = self._apply_excluded_values(annotation, excluded_values)
 
                 # Extract value for THIS KEY ONLY
                 # For multiclass: SKIP samples without valid value (don't create artificial NO_{key} class)
