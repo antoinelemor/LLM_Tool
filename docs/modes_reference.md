@@ -35,7 +35,9 @@ The structure is identical across modes so you can compare them quickly.
 - **Core Steps**:
   1. Detect candidate datasets (auto-scans folders and previews schema).
   2. Select text/ID columns and optional metadata fields.
-  3. Pick an LLM provider (OpenAI, Anthropic, Google, Ollama, LlamaCPP) and model.
+  3. Pick an LLM provider (OpenAI, Anthropic, Google, Ollama, LlamaCPP) and model. Ollama
+     is offered as both a local daemon and Ollama Cloud (`https://ollama.com`); either can
+     be tested from the picker before launching, and any model name can be typed by hand.
   4. Design prompts (simple, multi-prompt, or guided Social Science Wizard).
   5. Set execution controls (batch size, retries, confidence sampling, JSON validation).
   6. Launch annotation with live Rich dashboard (success/failure counters, throughput).

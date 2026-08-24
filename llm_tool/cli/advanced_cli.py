@@ -148,6 +148,14 @@ from ..utils.resource_display import (
     create_detailed_mode_panel
 )
 from ..annotators.json_cleaner import extract_expected_keys
+from ..annotators.local_models import (
+    DEFAULT_OLLAMA_HOST,
+    OLLAMA_CLOUD_HOST,
+    OllamaEndpoint,
+    list_ollama_models,
+    probe_ollama,
+    resolve_ollama_endpoint,
+)
 from ..annotators.prompt_wizard import SocialSciencePromptWizard, create_llm_client_for_wizard
 from ..trainers.model_trainer import ModelTrainer, BenchmarkConfig
 from ..trainers.multi_label_trainer import (
@@ -175,9 +183,12 @@ from .annotation_workflow import (
     AnnotationMode,
     ANNOTATOR_RESUME_STEPS,
     FACTORY_RESUME_STEPS,
+    AnnotationCancelled,
     AnnotationResumeTracker,
     _launch_model_annotation_stage,
+    _ollama_endpoint_settings,
     _persist_annotation_outputs,
+    _resume_ollama_endpoint_settings,
     create_session_directories,
     execute_from_metadata,
     run_annotator_workflow,
@@ -198,30 +209,60 @@ MODEL_DESCRIPTIONS = {
     'codellama': 'Meta Code Llama - Code generation specialist, supports Python/C++/Java (7B/13B/34B)',
 
     # Google Gemma models
-    'gemma3': 'Google Gemma 3 - Latest efficient model for everyday devices (2B/9B/27B)',
+    # More specific keys come first: _get_model_description falls back to prefix
+    # matching in insertion order, so 'gemma' would otherwise swallow 'gemma4'.
+    'gemma4:31b': 'Google Gemma 4 31B - 262K context, vision + thinking; best Gemma for nuanced label sets on a single GPU',
+    'gemma4': 'Google Gemma 4 - Multilingual annotator with 262K context, follows JSON label schemas closely',
+    'gemma3': 'Google Gemma 3 - Efficient model for everyday devices, 128K context (2B/9B/27B)',
     'gemma2': 'Google Gemma 2 - Lightweight deployment across consumer devices (2B/9B/27B)',
     'gemma': 'Google Gemma - Efficient open model by Google DeepMind (2B/7B)',
 
     # Alibaba Qwen models
+    'qwen3.5': 'Qwen 3.5 397B - Multilingual MoE with vision and thinking, 262K context; wide language coverage for annotation',
     'qwen3': 'Qwen 3 - Latest generation with dense and MoE variants (8B-235B), 128K context',
     'qwen2.5': 'Qwen 2.5 - Pretrained on 18T tokens, multilingual support, 128K context',
     'qwen2': 'Qwen 2 - Multilingual model with strong coding abilities (0.5B-72B)',
     'qwen': 'Qwen - Alibaba large language model series',
 
     # DeepSeek models
+    'deepseek-v4-pro': 'DeepSeek V4 Pro - 1.6T MoE reasoning flagship, 512K-1M context; for ambiguous or fine-grained label schemes',
+    'deepseek-v4-flash': 'DeepSeek V4 Flash - 158B MoE with 1M context; fast, cheap pass over large annotation batches',
     'deepseek-r1': 'DeepSeek-R1 - Reasoning model, strong in math/coding/logic (8B/671B)',
     'deepseek-coder': 'DeepSeek Coder - Specialized coding model with 16K context',
     'deepseek': 'DeepSeek - General purpose model series',
 
     # Mistral AI models
+    'mistral-large-3': 'Mistral Large 3 - 675B MoE with vision, 262K context; strong on European-language corpora',
+    'ministral-3': 'Ministral 3 - 14B model with 262K context; efficient local annotator for high-volume runs',
     'mixtral': 'Mistral Mixtral - Mixture of Experts (MoE) model with open weights (8x7B/8x22B)',
     'mistral': 'Mistral 7B - Efficient 7B model, approaches CodeLlama on code tasks',
     'mistral-nemo': 'Mistral Nemo - 12B model with 128K context window',
     'codestral': 'Codestral - Mistral AI code generation model, supports 80+ languages',
 
     # NVIDIA Nemotron models
+    'nemotron-3-ultra': 'NVIDIA Nemotron 3 Ultra - 550B reasoning tier, 262K context; adjudicates labels smaller models disagree on',
+    'nemotron-3-super': 'NVIDIA Nemotron 3 Super - 120B hybrid MoE, 262K context; instruction-faithful multi-label annotation',
+    'nemotron-3-nano': 'NVIDIA Nemotron 3 Nano 30B - Compact 262K-context model for fast first-pass labelling',
     'nemotron': 'NVIDIA Nemotron-70B - Customized Llama 3.1 for helpful responses via RLHF',
     'nemotron-mini': 'NVIDIA Nemotron Mini - Small language model for RAG/function calling, 4K context',
+
+    # Zhipu GLM models
+    'glm-5.2': 'Zhipu GLM-5.2 - 756B MoE with thinking mode, 1M context; deep taxonomies over long documents',
+    'glm-5.1': 'Zhipu GLM-5.1 - 756B MoE, 198K context; reliable structured output for multi-label coding',
+
+    # Moonshot Kimi models
+    'kimi-k3': 'Moonshot Kimi K3 - 2.8T MoE, 1M context with vision; whole-document annotation without chunking',
+    'kimi-k2.7-code': 'Moonshot Kimi K2.7 Code - Coding and agentic tool-use variant, 262K context; tuned for writing and refactoring code, not a good pick for annotation',
+    'kimi-k2.6': 'Moonshot Kimi K2.6 - 1T MoE, 262K context with vision; consistent JSON labels at scale',
+
+    # MiniMax models
+    'minimax-m3': 'MiniMax M3 - 524K-context MoE with vision; long transcripts and interview coding',
+    'minimax-m2.7': 'MiniMax M2.7 - 229B MoE, 196K context; balanced cost/quality for bulk classification',
+
+    # OpenAI open-weight models (served locally or via Ollama Cloud)
+    'gpt-oss:120b': 'OpenAI GPT-OSS 120B - Open-weight 117B MoE, 128K context; annotation quality close to hosted APIs',
+    'gpt-oss:20b': 'OpenAI GPT-OSS 20B - Open-weight 21B MoE, 128K context; runs on one GPU for routine labelling',
+    'gpt-oss': 'OpenAI GPT-OSS - Open-weight MoE with thinking and tool use, 128K context (20B/120B)',
 
     # Microsoft Phi models
     'phi4': 'Microsoft Phi-4 - 14B reasoning model rivaling larger models',
@@ -277,6 +318,11 @@ class ModelInfo:
     """Information about an available model"""
     name: str
     provider: str  # ollama, openai, anthropic, local
+    # Ollama endpoint this model was listed from; None means "resolve the ambient one".
+    host: Optional[str] = None
+    # Credential the user supplied for this endpoint during selection. Held in memory
+    # only so the choice survives the trip to the pipeline; never serialised to disk.
+    api_key: Optional[str] = None
     size: Optional[str] = None
     quantization: Optional[str] = None
     context_length: Optional[int] = None
@@ -308,88 +354,193 @@ class LLMDetector:
     """Auto-detect available LLMs for annotation from various sources"""
 
     @staticmethod
-    def detect_ollama_models() -> List[ModelInfo]:
-        """Detect locally available Ollama LLMs for annotation"""
-        models = []
+    def _format_model_size(size_bytes: Optional[int]) -> Optional[str]:
+        """Render a byte count the way `ollama list` does, or None when unknown."""
+        if not size_bytes:
+            return None
+        for unit, threshold in (("TB", 1024 ** 4), ("GB", 1024 ** 3), ("MB", 1024 ** 2)):
+            if size_bytes >= threshold:
+                return f"{size_bytes / threshold:.1f} {unit}"
+        return f"{size_bytes / 1024:.0f} KB"
+
+    @staticmethod
+    def _ollama_model_sizes(endpoint: OllamaEndpoint, timeout: float = 10.0) -> Dict[str, str]:
+        """Map model name to a human-readable size; empty when the server omits it."""
+        sizes: Dict[str, str] = {}
         try:
-            result = subprocess.run(
-                ["ollama", "list"],
-                capture_output=True,
-                text=True,
-                timeout=5
+            listing = endpoint.client(timeout=timeout).list()
+        except Exception:
+            return sizes
+        for entry in getattr(listing, 'models', []) or []:
+            name = getattr(entry, 'model', None)
+            formatted = LLMDetector._format_model_size(getattr(entry, 'size', None))
+            if name and formatted:
+                sizes[name] = formatted
+        return sizes
+
+    @staticmethod
+    def detect_ollama_models(endpoint: Optional[OllamaEndpoint] = None) -> List[ModelInfo]:
+        """
+        List the models served by an Ollama endpoint.
+
+        Parameters
+        ----------
+        endpoint : OllamaEndpoint, optional
+            Endpoint to query. Defaults to the ambient endpoint (OLLAMA_HOST or
+            the local daemon), so a user who exported OLLAMA_HOST sees that
+            server's catalogue here.
+
+        Returns
+        -------
+        list of ModelInfo
+            Empty when the endpoint is unreachable; use `probe_ollama` for the reason.
+        """
+        endpoint = endpoint or resolve_ollama_endpoint()
+        names = list_ollama_models(endpoint=endpoint)
+        if not names:
+            return []
+
+        sizes = LLMDetector._ollama_model_sizes(endpoint)
+        return [
+            ModelInfo(
+                name=name,
+                provider="ollama",
+                host=endpoint.host,
+                size=sizes.get(name),
+                is_available=True,
+                requires_api_key=endpoint.is_cloud,
+                supports_json=True,
+                supports_streaming=True,
+                context_length=LLMDetector._estimate_context_length(name),
+                max_tokens=LLMDetector._suggest_local_max_tokens(name),
             )
-            if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                if len(lines) > 1:  # Has header and content
-                    # Parse the table format from ollama list
-                    # Format: NAME                    ID              SIZE      MODIFIED
-                    for line in lines[1:]:  # Skip header
-                        if line.strip():
-                            parts = line.split()
-                            if len(parts) >= 1:
-                                name = parts[0]
+            for name in names
+        ]
 
-                                # Extract size - look for GB/MB/KB/TB in any part
-                                # Format from ollama: "NAME  ID  2.0 GB  MODIFIED"
-                                size = None
-                                import re
-                                for i, part in enumerate(parts[1:]):
-                                    part_upper = part.upper()
-                                    # Check if this part is a size unit (GB, MB, KB, TB)
-                                    if part_upper in ['GB', 'MB', 'KB', 'TB']:
-                                        # The number should be in the previous element
-                                        if i > 0:
-                                            number_part = parts[1:][i-1]  # Get previous element in the sliced list
-                                            # Validate it's a number
-                                            if re.match(r'^\d+\.?\d*$', number_part):
-                                                size = f"{number_part} {part_upper}"
-                                                break
-                                    # Also handle cases like "2.0GB" (no space)
-                                    elif 'GB' in part_upper or 'MB' in part_upper or 'KB' in part_upper or 'TB' in part_upper:
-                                        match = re.match(r'([\d.]+)\s*([KMGT]B)', part_upper)
-                                        if match:
-                                            size = f"{match.group(1)} {match.group(2)}"
-                                            break
+    @staticmethod
+    def detect_ollama_cloud_models() -> List[ModelInfo]:
+        """
+        List the Ollama Cloud catalogue.
 
-                                models.append(ModelInfo(
-                                    name=name,
-                                    provider="ollama",
-                                    size=size,
-                                    is_available=True,
-                                    supports_json=True,
-                                    supports_streaming=True,
-                                    context_length=LLMDetector._estimate_context_length(name),
-                                    max_tokens=LLMDetector._suggest_local_max_tokens(name)
-                                ))
-        except (subprocess.SubprocessError, FileNotFoundError):
-            pass
-        return models
+        Listing on ollama.com is public, so the catalogue renders even with no
+        credential; the key is only needed once inference starts, which is why
+        every entry is flagged `requires_api_key`.
+
+        Returns
+        -------
+        list of ModelInfo
+            Empty when ollama.com cannot be reached.
+        """
+        endpoint = resolve_ollama_endpoint(host=OLLAMA_CLOUD_HOST)
+        names = list_ollama_models(endpoint=endpoint, timeout=8.0)
+        if not names:
+            return []
+
+        sizes = LLMDetector._ollama_model_sizes(endpoint, timeout=8.0)
+        return [
+            ModelInfo(
+                name=name,
+                provider="ollama",
+                host=endpoint.host,
+                size=sizes.get(name),
+                is_available=True,
+                requires_api_key=True,
+                supports_json=True,
+                supports_streaming=True,
+                context_length=LLMDetector._estimate_context_length(name),
+                max_tokens=LLMDetector._suggest_local_max_tokens(name),
+            )
+            for name in names
+        ]
+
+    # Offline fallback for context windows, longest family name first so that
+    # 'gemma4' is not matched by 'gemma'. Values are the windows the models
+    # actually advertise; `live_context_length` supersedes them when a server
+    # can be asked.
+    _CONTEXT_LENGTHS: Tuple[Tuple[str, int], ...] = (
+        ('gemma4', 262144),
+        ('gemma3', 131072),
+        ('gemma2', 8192),
+        ('gemma', 8192),
+        ('llama3.1', 131072),
+        ('llama3.2', 131072),
+        ('llama3.3', 131072),
+        ('llama-3.1', 131072),
+        ('llama-3.2', 131072),
+        ('llama-3.3', 131072),
+        ('llama3', 8192),
+        ('llama-3', 8192),
+        ('llama2', 4096),
+        ('mixtral', 32768),
+        ('mistral-large-3', 262144),
+        ('mistral-nemo', 131072),
+        ('ministral', 262144),
+        ('mistral', 32768),
+        ('qwen3.5', 262144),
+        ('qwen3', 131072),
+        ('qwen2.5', 32768),
+        ('qwen2', 32768),
+        ('qwen', 32768),
+        ('deepseek-v4-pro', 524288),
+        ('deepseek-v4-flash', 1048576),
+        ('deepseek-r1', 131072),
+        ('deepseek', 32768),
+        ('kimi-k3', 1048576),
+        ('kimi-k2', 262144),
+        ('glm-5.2', 1048576),
+        ('glm-5', 202752),
+        ('minimax-m3', 524288),
+        ('minimax-m2', 196608),
+        ('minimax', 196608),
+        ('nemotron-3', 262144),
+        ('nemotron-mini', 4096),
+        ('nemotron', 131072),
+        ('gpt-oss', 131072),
+        ('phi4', 16384),
+        ('phi', 4096),
+    )
 
     @staticmethod
     def _estimate_context_length(model_name: str) -> int:
-        """Estimate context length based on model name"""
+        """Estimate context length from the model name when no server can be asked"""
         name_lower = model_name.lower()
-        if 'llama3' in name_lower or 'llama-3' in name_lower:
-            return 8192
-        elif 'mixtral' in name_lower:
-            return 32768
-        elif 'gemma2' in name_lower:
-            return 8192
-        elif 'gemma3' in name_lower:
-            return 8192
-        elif 'qwen' in name_lower:
-            return 32768
-        elif 'phi' in name_lower:
-            return 4096
-        elif 'mistral' in name_lower:
-            return 8192
-        else:
-            return 4096  # Default
+        for fragment, context in LLMDetector._CONTEXT_LENGTHS:
+            if fragment in name_lower:
+                return context
+        return 4096  # Default
 
     @staticmethod
-    def _suggest_local_max_tokens(model_name: str) -> int:
+    def live_context_length(
+        model_name: str,
+        endpoint: Optional[OllamaEndpoint] = None,
+    ) -> Optional[int]:
+        """
+        Ask an Ollama server for a model's real context window.
+
+        Only worth calling for a model the user has actually selected: it costs a
+        round trip per model, so a whole catalogue must not be resolved this way.
+
+        Returns
+        -------
+        int or None
+            None when the endpoint is unreachable or does not report a window,
+            leaving the caller on `_estimate_context_length`.
+        """
+        endpoint = endpoint or resolve_ollama_endpoint()
+        try:
+            # Constructing a client against a model the endpoint does not serve
+            # would either pull it (locally) or raise (remotely), so check first.
+            if model_name not in list_ollama_models(endpoint=endpoint):
+                return None
+            from ..annotators.local_models import OllamaClient
+            return OllamaClient(model_name, endpoint=endpoint).get_context_length()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _suggest_local_max_tokens(model_name: str, context_length: Optional[int] = None) -> int:
         """Heuristic for local model generation budget"""
-        context = LLMDetector._estimate_context_length(model_name)
+        context = context_length or LLMDetector._estimate_context_length(model_name)
         # Keep generous default while leaving room for prompt context
         return max(512, min(2048, context // 2))
 
@@ -468,9 +619,16 @@ class LLMDetector:
 
     @staticmethod
     def detect_all_llms() -> Dict[str, List[ModelInfo]]:
-        """Detect all available LLMs for annotation from all sources"""
+        """
+        Detect all available LLMs for annotation from all sources.
+
+        The 'local' and 'ollama_cloud' buckets are separated for display only —
+        both hold models whose `provider` is the literal 'ollama'; they differ by
+        `host`.
+        """
         return {
             "local": LLMDetector.detect_ollama_models(),
+            "ollama_cloud": LLMDetector.detect_ollama_cloud_models(),
             "openai": LLMDetector.detect_openai_models(),
             "anthropic": LLMDetector.detect_anthropic_models(),
         }
@@ -1337,6 +1495,18 @@ class AdvancedCLI:
                     f"{model.context_length:,}" if model.context_length else "N/A",
                     "✓ Ready"
                 )
+
+        # The cloud catalogue is long, so summarise it here and let the model
+        # picker show it in full.
+        cloud_llms = self.detected_llms.get('ollama_cloud', [])
+        if cloud_llms:
+            llms_table.add_row(
+                "Ollama Cloud",
+                f"{len(cloud_llms)} models",
+                "Cloud",
+                f"up to {max((m.context_length or 0) for m in cloud_llms):,}",
+                " API Key"
+            )
 
         # Show API models (top ones)
         for provider in ['openai', 'anthropic']:
@@ -3034,6 +3204,15 @@ class AdvancedCLI:
                 'annotation_mode': annotation_mode,
                 'annotation_provider': provider,
                 'annotation_model': model_name,
+                # The saved host describes the model this session was created with; the
+                # resume wizard may have swapped that model since, so it is re-checked
+                # against the endpoint catalogues rather than trusted.
+                **_resume_ollama_endpoint_settings(
+                    self,
+                    provider,
+                    model_name,
+                    model_config.get('ollama_host'),
+                ),
                 'api_key': api_key,
                 'openai_batch_mode': openai_batch_mode,
                 'prompts': prompts_payload,
@@ -3962,7 +4141,7 @@ class AdvancedCLI:
         try:
             self.detected_llms = self.llm_detector.detect_all_llms()
         except Exception:  # pragma: no cover - defensive fallback
-            self.detected_llms = {"local": [], "openai": [], "anthropic": []}
+            self.detected_llms = {"local": [], "ollama_cloud": [], "openai": [], "anthropic": []}
             if self.console:
                 self.console.print("[red][!] Unable to refresh available LLMs list.[/red]")
 
@@ -4016,6 +4195,18 @@ class AdvancedCLI:
             model_config["openai_batch_mode"] = False
             changed = True
 
+        # The saved run is replayed against whatever host it records, so switching
+        # between the local daemon and Ollama Cloud has to move the host with the
+        # model; a leftover value would send the new pick to the wrong server.
+        # Only the host is stored - this dict is written to the metadata file.
+        if new_provider == "ollama":
+            new_host = resolve_ollama_endpoint(host=selected_model.host).host
+            if model_config.get("ollama_host") != new_host:
+                model_config["ollama_host"] = new_host
+                changed = True
+        elif model_config.pop("ollama_host", None) is not None:
+            changed = True
+
         if selected_model.context_length:
             if model_config.get("context_window") != selected_model.context_length:
                 model_config["context_window"] = selected_model.context_length
@@ -4032,40 +4223,273 @@ class AdvancedCLI:
 
         return changed
 
+    def _ensure_ollama_credential(self, endpoint: OllamaEndpoint) -> OllamaEndpoint:
+        """
+        Return an endpoint that carries a credential, asking for one if needed.
+
+        Listing models on ollama.com is public, so the user reaches this picker
+        with no key at all; generation is where the 401 would surface, hence the
+        prompt happens at selection time rather than mid-run.
+        """
+        if endpoint.is_local or endpoint.api_key:
+            return endpoint
+
+        self.console.print(
+            f"\n[yellow]{endpoint.label} needs an API key to generate "
+            f"(browsing its catalogue does not).[/yellow]"
+        )
+        api_key = Prompt.ask("  API key (leave empty to skip)", password=True, default="").strip()
+        if not api_key:
+            self.console.print("[dim]  Continuing without a key - annotation will fail if the server requires one.[/dim]")
+            return endpoint
+
+        if Confirm.ask("  Store this key for future runs?", default=True):
+            try:
+                from ..config.api_key_manager import APIKeyManager
+                APIKeyManager().save_key('ollama', api_key)
+                self.console.print("[green]  ✓ Key saved for provider 'ollama'[/green]")
+            except Exception as exc:
+                self.console.print(f"[yellow]  Could not save the key: {exc}[/yellow]")
+        else:
+            self.console.print("[dim]  Key kept in memory for this session only.[/dim]")
+
+        return OllamaEndpoint(host=endpoint.host, api_key=api_key)
+
+    def _prompt_ollama_endpoint(self) -> OllamaEndpoint:
+        """Ask which Ollama server a manually entered model lives on."""
+        ambient = resolve_ollama_endpoint()
+
+        self.console.print("\n  [bold]Which Ollama server?[/bold]")
+        self.console.print(f"    [cyan]local[/cyan] - {ambient.host}")
+        self.console.print(f"    [cyan]cloud[/cyan] - {OLLAMA_CLOUD_HOST}")
+        self.console.print("    [cyan]other[/cyan] - another server URL")
+        where = Prompt.ask("  Server", choices=["local", "cloud", "other"], default="local")
+
+        if where == "cloud":
+            return resolve_ollama_endpoint(host=OLLAMA_CLOUD_HOST)
+        if where == "other":
+            host = Prompt.ask("  Server URL", default=DEFAULT_OLLAMA_HOST).strip()
+            return resolve_ollama_endpoint(host=host or DEFAULT_OLLAMA_HOST)
+        return ambient
+
+    def _render_ollama_probe(self, probe: Dict[str, Any], model: Optional[str] = None) -> None:
+        """Display the result of `probe_ollama` as a Rich panel."""
+        endpoint = probe.get('endpoint')
+
+        def flag(value: Optional[bool]) -> str:
+            if value is None:
+                return "[dim]not tested[/dim]"
+            return "[green]yes[/green]" if value else "[red]no[/red]"
+
+        table = Table(box=box.SIMPLE, show_header=False, expand=True)
+        table.add_column("Check", style="cyan", no_wrap=True)
+        table.add_column("Result", style="white", overflow="fold")
+
+        table.add_row("Endpoint", f"{endpoint.label} ({endpoint.host})" if endpoint else "-")
+        if model:
+            table.add_row("Model", model)
+        table.add_row("Reachable", flag(probe.get('reachable')))
+        table.add_row("Authenticated", flag(probe.get('authenticated')))
+        table.add_row("Model available", flag(probe.get('model_available')))
+        table.add_row("Responds", flag(probe.get('responds')))
+        latency = probe.get('latency_ms')
+        table.add_row("Latency", f"{latency} ms" if latency is not None else "[dim]not measured[/dim]")
+        table.add_row("Models served", str(len(probe.get('models') or [])))
+        if probe.get('error'):
+            table.add_row("Error", f"[red]{probe['error']}[/red]")
+        if probe.get('hint'):
+            table.add_row("Hint", f"[yellow]{probe['hint']}[/yellow]")
+
+        healthy = bool(probe.get('reachable')) and probe.get('responds') is not False and not probe.get('error')
+        self.console.print(Panel(
+            table,
+            title=(
+                "[bold green]Connectivity test - OK[/bold green]" if healthy
+                else "[bold red]Connectivity test - problem found[/bold red]"
+            ),
+            border_style="green" if healthy else "red",
+            padding=(0, 1),
+        ))
+
+    def _probe_ollama_with_status(self, endpoint: OllamaEndpoint, model: Optional[str] = None) -> Dict[str, Any]:
+        """Run `probe_ollama` behind a spinner (a generation test can take seconds)."""
+        label = f"Testing {model} on {endpoint.host}" if model else f"Contacting {endpoint.host}"
+        with self.console.status(f"[bold green]{label}...", spinner="dots"):
+            return probe_ollama(endpoint, model=model)
+
+    def _test_ollama_model_interactive(self, entries: List[Tuple[str, Any]]) -> None:
+        """Test one Ollama model end to end before committing to a long run."""
+        answer = Prompt.ask("\n  Model to test (number from the list above, or a model name)", default="").strip()
+        if not answer:
+            return
+
+        if answer.isdigit():
+            index = int(answer) - 1
+            if not (0 <= index < len(entries)) or entries[index][0] != 'model':
+                self.console.print("[red]  That number is not a model in the list.[/red]")
+                return
+            candidate: ModelInfo = entries[index][1]
+            if candidate.provider != 'ollama':
+                self.console.print("[yellow]  Only Ollama models can be tested here.[/yellow]")
+                return
+            model_name = candidate.name
+            endpoint = resolve_ollama_endpoint(host=candidate.host)
+        else:
+            model_name = answer
+            endpoint = self._prompt_ollama_endpoint()
+
+        endpoint = self._ensure_ollama_credential(endpoint)
+        probe = self._probe_ollama_with_status(endpoint, model=model_name)
+        self._render_ollama_probe(probe, model=model_name)
+
+    def _prompt_custom_ollama_model(self) -> Optional[ModelInfo]:
+        """Build a ModelInfo for an Ollama model typed by hand, on any server."""
+        endpoint = self._prompt_ollama_endpoint()
+        model_name = Prompt.ask("  Model name (e.g. gemma4:31b)", default="").strip()
+        if not model_name:
+            return None
+
+        endpoint = self._ensure_ollama_credential(endpoint)
+        probe = self._probe_ollama_with_status(endpoint, model=model_name)
+        self._render_ollama_probe(probe, model=model_name)
+
+        if probe.get('model_available') is False:
+            if not Confirm.ask("  This model is not in the server catalogue. Use it anyway?", default=False):
+                return None
+
+        context_length = (
+            LLMDetector.live_context_length(model_name, endpoint)
+            or LLMDetector._estimate_context_length(model_name)
+        )
+        return ModelInfo(
+            name=model_name,
+            provider="ollama",
+            host=endpoint.host,
+            api_key=endpoint.api_key,
+            context_length=context_length,
+            max_tokens=LLMDetector._suggest_local_max_tokens(model_name, context_length),
+            requires_api_key=endpoint.is_cloud,
+            supports_json=True,
+            supports_streaming=True,
+            is_available=True,
+        )
+
+    def _build_ollama_client(self, model: ModelInfo, **kwargs):
+        """
+        Build an Ollama client pinned to the endpoint the model was listed from.
+
+        A cloud pick that loses its host resolves back to the local daemon, where
+        the model is missing from the catalogue and a multi-hundred-gigabyte pull
+        starts on the user's own machine, so the endpoint is passed explicitly.
+        """
+        from ..annotators.local_models import OllamaClient
+
+        endpoint = self._ensure_ollama_credential(
+            resolve_ollama_endpoint(host=model.host, api_key=model.api_key)
+        )
+        model.host = endpoint.host
+        model.api_key = endpoint.api_key
+        return OllamaClient(model.name, endpoint=endpoint, **kwargs)
+
+    def _finalise_ollama_selection(self, model: ModelInfo) -> ModelInfo:
+        """Attach a credential and the server's real context window to an Ollama pick."""
+        endpoint = self._ensure_ollama_credential(resolve_ollama_endpoint(host=model.host, api_key=model.api_key))
+        model.host = endpoint.host
+        # Declining to store the key must not lose it: the run still needs it, and
+        # ModelInfo never reaches disk.
+        model.api_key = endpoint.api_key
+
+        with self.console.status(f"[bold green]Reading context window for {model.name}...", spinner="dots"):
+            context_length = LLMDetector.live_context_length(model.name, endpoint)
+
+        if context_length:
+            model.context_length = context_length
+            model.max_tokens = LLMDetector._suggest_local_max_tokens(model.name, context_length)
+
+        return model
+
+    def _render_ollama_section(
+        self,
+        title: str,
+        endpoint: OllamaEndpoint,
+        llms: List[ModelInfo],
+        entries: List[Tuple[str, Any]],
+        border_style: str,
+    ) -> None:
+        """
+        Render one Ollama catalogue, or explain why it is empty.
+
+        An unreachable daemon used to make the whole section disappear, which read
+        as "Ollama is not supported" instead of "Ollama is not running".
+        """
+        self.console.print(f"\n[bold cyan]{title} - {endpoint.host}[/bold cyan]\n")
+
+        if not llms:
+            probe = probe_ollama(endpoint)
+            reason = probe.get('error') or "The endpoint is reachable but serves no models."
+            hint = probe.get('hint') or (
+                "Pull one with: ollama pull llama3.2" if endpoint.is_local
+                else "Check the catalogue at https://ollama.com/library"
+            )
+            self.console.print(f"  [yellow]{reason}[/yellow]")
+            self.console.print(f"  [dim]{hint}[/dim]")
+            self.console.print("  [dim]You can still enter a model name manually below.[/dim]")
+            return
+
+        if endpoint.is_cloud:
+            key_state = (
+                "[green]API key detected[/green]" if endpoint.api_key
+                else "[yellow]no API key yet - you will be asked for one when you select a model[/yellow]"
+            )
+            self.console.print(f"  [dim]Listing is public; {key_state}[/dim]\n")
+
+        table = Table(border_style=border_style, show_header=True, expand=True)
+        table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
+        table.add_column("Model Name", style="white", no_wrap=True)
+        table.add_column("Size", style="green", no_wrap=True)
+        table.add_column("Context", style="cyan", justify="right", no_wrap=True)
+        table.add_column("Description", style="dim", ratio=1, overflow="fold")
+
+        for llm in llms:
+            entries.append(('model', llm))
+            table.add_row(
+                str(len(entries)),
+                llm.name,
+                llm.size or "-",
+                f"{llm.context_length:,}" if llm.context_length else "-",
+                self._get_model_description(llm.name),
+            )
+
+        self.console.print(table)
+
     def _select_llm_interactive(self) -> ModelInfo:
         """Let user interactively select an LLM from available options"""
-        if HAS_RICH and self.console:
+        if not (HAS_RICH and self.console):
+            # Fallback
+            return self._auto_select_llm()
+
+        detected = self.detected_llms or {}
+        local_llms = detected.get('local', [])
+        cloud_llms = detected.get('ollama_cloud', [])
+        openai_llms = detected.get('openai', [])
+        anthropic_llms = detected.get('anthropic', [])
+
+        local_endpoint = resolve_ollama_endpoint()
+        cloud_endpoint = resolve_ollama_endpoint(host=OLLAMA_CLOUD_HOST)
+
+        while True:
             self.console.print("\n[bold]Available LLMs:[/bold]")
-            self.console.print("[dim]ℹ️  Additional API models (Anthropic, Google, etc.) will be added as they are tested in the pipeline[/dim]\n")
+            self.console.print("[dim]ℹ️  Additional API models (Anthropic, Google, etc.) will be added as they are tested in the pipeline[/dim]")
 
-            # Collect all available LLMs
-            all_llms = []
-            local_llms = self.detected_llms.get('local', [])
-            openai_llms = self.detected_llms.get('openai', [])
-            anthropic_llms = self.detected_llms.get('anthropic', [])
+            # One entry per displayed number: ('model', ModelInfo) or an action.
+            entries: List[Tuple[str, Any]] = []
 
-            # Display Local Models with Rich Table
-            if local_llms:
-                self.console.print("\n[bold cyan]️  Local Models (Ollama):[/bold cyan]\n")
-
-                local_table = Table(border_style="cyan", show_header=True, expand=True)
-                local_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
-                local_table.add_column("Model Name", style="white", no_wrap=True)
-                local_table.add_column("Size", style="green", no_wrap=True)
-                local_table.add_column("Description", style="dim", ratio=1, overflow="fold")
-
-                for llm in local_llms:
-                    idx = len(all_llms) + 1
-                    description = self._get_model_description(llm.name)
-                    local_table.add_row(
-                        str(idx),
-                        llm.name,
-                        llm.size or "N/A",
-                        description
-                    )
-                    all_llms.append(llm)
-
-                self.console.print(local_table)
+            self._render_ollama_section(
+                "️  Local Models (Ollama)", local_endpoint, local_llms, entries, "cyan"
+            )
+            self._render_ollama_section(
+                "☁️  Ollama Cloud", cloud_endpoint, cloud_llms, entries, "bright_blue"
+            )
 
             # Display OpenAI Models with Rich Table
             if openai_llms:
@@ -4098,7 +4522,7 @@ class AdvancedCLI:
                     return value if value is not None else "-"
 
                 for llm in openai_llms:
-                    idx = len(all_llms) + 1
+                    entries.append(('model', llm))
                     input_cost = format_price_per_million(llm.prompt_cost_per_1k)
                     output_cost = format_price_per_million(llm.completion_cost_per_1k)
                     cached_cost = format_price_per_million(llm.cached_prompt_cost_per_1k)
@@ -4107,7 +4531,7 @@ class AdvancedCLI:
                     batch_out = format_price_per_million(llm.batch_completion_cost_per_1k)
                     description = self._get_model_description(llm.name)
                     openai_table.add_row(
-                        str(idx),
+                        str(len(entries)),
                         llm.name,
                         display_or_dash(input_cost),
                         display_or_dash(output_cost),
@@ -4117,12 +4541,11 @@ class AdvancedCLI:
                         display_or_dash(batch_out),
                         description
                     )
-                    all_llms.append(llm)
 
                 # Add custom option row
-                idx = len(all_llms) + 1
+                entries.append(('custom_openai', None))
                 openai_table.add_row(
-                    str(idx),
+                    str(len(entries)),
                     "[bold]Custom model[/bold]",
                     "-",
                     "-",
@@ -4132,7 +4555,6 @@ class AdvancedCLI:
                     "-",
                     "[dim]Enter OpenAI model name manually[/dim]"
                 )
-                custom_openai_option_idx = idx
 
                 self.console.print(openai_table)
 
@@ -4147,7 +4569,7 @@ class AdvancedCLI:
                 anthropic_table.add_column("Description", style="dim", ratio=1, overflow="fold")
 
                 for llm in anthropic_llms[:3]:  # Show top 3
-                    idx = len(all_llms) + 1
+                    entries.append(('model', llm))
                     if llm.prompt_cost_per_1k and llm.completion_cost_per_1k:
                         cost = f"${llm.prompt_cost_per_1k:.4f}/${llm.completion_cost_per_1k:.4f}"
                     elif llm.prompt_cost_per_1k:
@@ -4156,27 +4578,51 @@ class AdvancedCLI:
                         cost = "N/A"
                     description = self._get_model_description(llm.name)
                     anthropic_table.add_row(
-                        str(idx),
+                        str(len(entries)),
                         llm.name,
                         cost,
                         description
                     )
-                    all_llms.append(llm)
 
                 self.console.print(anthropic_table)
 
-            if not all_llms:
-                self.console.print("[red]No LLMs detected![/red]")
-                return ModelInfo("llama3.2", "ollama", is_available=False)
+            # Actions are always available, so a picker with an empty catalogue is
+            # still a way out: type a model name, or find out why nothing listed.
+            self.console.print("\n[bold cyan] Actions:[/bold cyan]\n")
+            action_table = Table(border_style="yellow", show_header=True, expand=True)
+            action_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
+            action_table.add_column("Action", style="white", no_wrap=True)
+            action_table.add_column("Description", style="dim", ratio=1, overflow="fold")
 
-            # Ask user to select with validation
-            max_choice = len(all_llms) + (1 if openai_llms else 0)  # +1 for custom option if OpenAI available
-            choice = self._int_prompt_with_validation("\nSelect LLM", default=1, min_value=1, max_value=max_choice)
+            entries.append(('custom_ollama', None))
+            action_table.add_row(
+                str(len(entries)),
+                "Custom Ollama model",
+                "Enter any model name on the local server, Ollama Cloud, or another host"
+            )
+            entries.append(('test', None))
+            action_table.add_row(
+                str(len(entries)),
+                "Test this model",
+                "Check that a model is reachable, authenticated and answering before starting a run"
+            )
+            self.console.print(action_table)
 
-            # Check if user selected custom OpenAI option
-            if openai_llms and choice == custom_openai_option_idx:
+            choice = self._int_prompt_with_validation(
+                "\nSelect LLM", default=1, min_value=1, max_value=len(entries)
+            )
+            kind, payload = entries[choice - 1]
+
+            if kind == 'model':
+                if payload.provider == 'ollama':
+                    return self._finalise_ollama_selection(payload)
+                return payload
+
+            if kind == 'custom_openai':
                 self.console.print("\n[dim]Examples: gpt-3.5-turbo, gpt-4.1-2025-04-14, gpt-5-2025-08-07, gpt-5-mini-2025-08-07, gpt-5-nano-2025-08-07, o1, o1-mini, o3-mini[/dim]")
-                custom_model = Prompt.ask("Enter OpenAI model name")
+                custom_model = Prompt.ask("Enter OpenAI model name", default="").strip()
+                if not custom_model:
+                    continue
 
                 # Create a ModelInfo for the custom model with estimated parameters
                 return ModelInfo(
@@ -4189,10 +4635,14 @@ class AdvancedCLI:
                     is_available=True
                 )
 
-            return all_llms[choice - 1]
-        else:
-            # Fallback
-            return self._auto_select_llm()
+            if kind == 'custom_ollama':
+                custom_ollama = self._prompt_custom_ollama_model()
+                if custom_ollama:
+                    return custom_ollama
+                continue
+
+            if kind == 'test':
+                self._test_ollama_model_interactive(entries)
 
     def _auto_select_llm(self) -> ModelInfo:
         """Intelligently select the best available LLM for annotation"""
@@ -4632,7 +5082,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
                         # Style the provider
                         if provider == "ollama":
-                            provider_styled = " Ollama"
+                            # Local and cloud rows sit in the same flat list, so the
+                            # endpoint is spelled out to keep the two apart.
+                            provider_styled = (
+                                " Ollama Cloud"
+                                if OllamaEndpoint(host=model.host).is_cloud
+                                else " Ollama (local)"
+                            )
                         elif provider == "openai":
                             provider_styled = "️  OpenAI"
                         elif provider == "anthropic":
@@ -4658,21 +5114,25 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     selected_model = available_models[choice - 1]
                     self.console.print(f"[green]✓ Selected: {selected_model.name}[/green]\n")
 
-                    # Get API key if needed
-                    api_key = None
-                    if selected_model.requires_api_key:
-                        api_key = self._get_or_prompt_api_key(
-                            selected_model.provider,
-                            selected_model.name
-                        )
-
                     # Create LLM client for wizard
                     try:
-                        llm_client = create_llm_client_for_wizard(
-                            provider=selected_model.provider,
-                            model=selected_model.name,
-                            api_key=api_key
-                        )
+                        if selected_model.provider == "ollama":
+                            # Ollama credentials are per-endpoint, and the wizard
+                            # helper has nowhere to put a host, so the client is
+                            # built here from the row the user picked.
+                            llm_client = self._build_ollama_client(selected_model)
+                        else:
+                            api_key = None
+                            if selected_model.requires_api_key:
+                                api_key = self._get_or_prompt_api_key(
+                                    selected_model.provider,
+                                    selected_model.name
+                                )
+                            llm_client = create_llm_client_for_wizard(
+                                provider=selected_model.provider,
+                                model=selected_model.name,
+                                api_key=api_key
+                            )
                         self.console.print("[green]✓ AI assistant ready![/green]\n")
                     except Exception as e:
                         self.console.print(f"[yellow][!]  Failed to initialize AI assistant: {e}[/yellow]")
@@ -6989,13 +7449,19 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             overall_status="active",
         )
 
-        succeeded = execute_from_metadata(
-            self,
-            metadata,
-            action_mode,
-            metadata_file,
-            session_dirs=session_dirs
-        )
+        try:
+            succeeded = execute_from_metadata(
+                self,
+                metadata,
+                action_mode,
+                metadata_file,
+                session_dirs=session_dirs
+            )
+        except AnnotationCancelled as cancelled:
+            # Backing out before anything ran is not a failure: leave the step
+            # in progress so the saved session stays resumable.
+            self.console.print(f"\n[yellow]{cancelled}[/yellow]")
+            return
 
         if succeeded:
             tracker.mark_step(
@@ -8325,7 +8791,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
         # Check if model supports parameter tuning
         model_name_lower = model_name.lower() if model_name else ""
         is_o_series = any(x in model_name_lower for x in ['o1', 'o3', 'o4'])
-        is_gpt5_series = (llm_config and llm_config.provider == 'openai' and model_name_lower.startswith('gpt-5'))
+        is_gpt5_series = (provider == 'openai' and model_name_lower.startswith('gpt-5'))
         is_locked_openai = False
 
         supports_params = not (is_o_series or is_locked_openai or is_gpt5_series)
@@ -9357,6 +9823,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                 'annotation_mode': annotation_mode,
                 'annotation_provider': llm_config.provider,
                 'annotation_model': llm_config.name,
+                # Carry the endpoint the model was picked from; without it a cloud-only
+                # model resolves to the local daemon and gets pulled instead of called.
+                **_ollama_endpoint_settings(llm_config.provider, llm_config),
                 'api_key': api_key,
                 'openai_batch_mode': openai_batch_mode,
                 'prompts': prompts_payload,

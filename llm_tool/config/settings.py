@@ -74,6 +74,10 @@ class LocalModelConfig:
     device: str = "auto"  # auto, cuda, rocm, cpu, mps (rocm uses cuda API)
     quantization: Optional[str] = None
     max_memory: Optional[Dict[str, Any]] = None
+    host: Optional[str] = None      # None = ambient endpoint (OLLAMA_HOST or localhost)
+    # No api_key field: this config is saved to ~/.llm_tool/config.json in plaintext.
+    # Credentials belong in OLLAMA_API_KEY or the encrypted store (APIKeyManager),
+    # both of which resolve_ollama_endpoint() consults.
 
 
 @dataclass
@@ -374,11 +378,12 @@ class Settings:
             'openai': 'OPENAI_API_KEY',
             'anthropic': 'ANTHROPIC_API_KEY',
             'google': 'GOOGLE_API_KEY',
-            'huggingface': 'HF_TOKEN'
+            'huggingface': 'HF_TOKEN',
+            'ollama': 'OLLAMA_API_KEY'
         }
 
         env_var = env_var_names.get(provider.lower())
-        if env_var and env_var in os.environ:
+        if env_var and os.environ.get(env_var):
             return os.environ[env_var]
 
         # Return stored API key (legacy)

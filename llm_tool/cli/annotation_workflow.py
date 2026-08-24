@@ -68,10 +68,28 @@ from llm_tool.utils.cost_estimator import (
 )
 from llm_tool.utils.model_metrics import load_language_metrics, summarize_final_metrics
 from llm_tool.annotators.annotation_metrics_chart import generate_annotation_chart
+from llm_tool.annotators.local_models import (
+    DEFAULT_OLLAMA_HOST,
+    OLLAMA_CLOUD_HOST,
+    OllamaEndpoint,
+    list_ollama_models,
+    probe_ollama,
+    resolve_ollama_endpoint,
+)
 
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S"
 TOOL_VERSION = "LLMTool v1.0"
+
+
+class AnnotationCancelled(Exception):
+    """
+    Raised when the operator backs out of a run that had not started yet.
+
+    Returning a falsy value would be indistinguishable from a crashed run, and a
+    resume session marked ``failed`` cannot be picked up again — so a deliberate
+    "take me back" has to travel out of band, leaving the saved session untouched.
+    """
 
 
 def _read_training_metadata(model_dir: Path) -> Dict[str, Any]:
@@ -600,6 +618,228 @@ def _display_cost_estimate_panel(
             print(message)
 
     return None
+
+
+def _ollama_endpoint_settings(
+    provider: str,
+    model_info: Any = None,
+    host: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> Dict[str, Optional[str]]:
+    """
+    Resolve the Ollama endpoint a chosen model belongs to into pipeline config keys.
+
+    Parameters
+    ----------
+    provider : str
+        Provider id from the model picker. Anything other than ``'ollama'``
+        yields an empty mapping, so callers can merge the result unconditionally.
+    model_info : ModelInfo, optional
+        Selected model. Its ``host`` attribute, when set, pins the endpoint the
+        model was listed from, and its ``api_key`` the credential captured while
+        picking it.
+    host : str, optional
+        Explicit host that wins over ``model_info`` (used on the resume path,
+        where there is no picker).
+    api_key : str, optional
+        Credential obtained from the workflow's own prompt, used when the picker
+        did not capture one.
+
+    Returns
+    -------
+    dict
+        ``{'ollama_host': str, 'ollama_api_key': Optional[str]}`` or ``{}``.
+
+    Notes
+    -----
+    Model listing is public on ollama.com, so a cloud model can be selected
+    without any credential ever being seen. Callers must therefore settle the key
+    *before* calling this, otherwise the endpoint is frozen without one and every
+    subsequent generation fails with a 401.
+    """
+    if provider != 'ollama':
+        return {}
+
+    endpoint = resolve_ollama_endpoint(
+        host=host or getattr(model_info, 'host', None),
+        api_key=getattr(model_info, 'api_key', None) or api_key,
+    )
+    return {'ollama_host': endpoint.host, 'ollama_api_key': endpoint.api_key}
+
+
+def _resolve_model_credential(cli: Any, selected_llm: Any, provider: str, model_name: str) -> Optional[str]:
+    """
+    Obtain the credential for a freshly picked model before its endpoint is frozen.
+
+    Parameters
+    ----------
+    cli : Any
+        CLI object exposing ``_get_or_prompt_api_key``.
+    selected_llm : ModelInfo
+        Model returned by the picker.
+    provider : str
+        Provider id of ``selected_llm``.
+    model_name : str
+        Model name, passed through so a stored key is filed against it.
+
+    Returns
+    -------
+    str or None
+        The credential, or ``None`` when the model needs none.
+    """
+    if not getattr(selected_llm, 'requires_api_key', False):
+        return None
+
+    # A key typed into the picker (e.g. to unlock a cloud catalogue) is already the
+    # right one for that endpoint, so never ask for it twice.
+    return getattr(selected_llm, 'api_key', None) or cli._get_or_prompt_api_key(provider, model_name)
+
+
+def _preflight_ollama_endpoint(
+    cli: Any,
+    provider: str,
+    model_name: str,
+    endpoint_settings: Dict[str, Optional[str]],
+) -> bool:
+    """
+    Verify the Ollama endpoint answers before committing to a long annotation run.
+
+    The engine only touches Ollama once batching has started, so without this a
+    wrong host or a missing key surfaces as a generic pipeline failure after the
+    whole wizard has been filled in.
+
+    Parameters
+    ----------
+    cli : Any
+        CLI object exposing a Rich ``console``.
+    provider : str
+        Provider id; non-Ollama runs are waved through untouched.
+    model_name : str
+        Model to test. A one-token generation is what proves the credential.
+    endpoint_settings : dict
+        Mapping produced by :func:`_ollama_endpoint_settings`.
+
+    Returns
+    -------
+    bool
+        ``True`` to launch the run, ``False`` to go back to the wizard.
+    """
+    if provider != 'ollama':
+        return True
+
+    endpoint = OllamaEndpoint(
+        host=endpoint_settings.get('ollama_host'),
+        api_key=endpoint_settings.get('ollama_api_key'),
+    )
+
+    cli.console.print(f"\n[dim]Pre-flight: contacting {endpoint.label} at {endpoint.host}...[/dim]")
+    result = probe_ollama(endpoint, model=model_name, timeout=10.0, generation_timeout=30.0)
+
+    if result.get('responds'):
+        latency = result.get('latency_ms')
+        latency_note = f" ({latency} ms)" if latency else ""
+        cli.console.print(
+            f"[green]✓ {endpoint.label} is serving {model_name}{latency_note}[/green]"
+        )
+        return True
+
+    if result.get('authenticated') is True:
+        # The generation call itself succeeded, so host, credential and model are all
+        # good; reasoning models routinely spend the probe's few tokens on hidden
+        # thinking and hand back an empty string. Not worth blocking a run over.
+        cli.console.print(
+            f"[yellow][!] {endpoint.label} accepted {model_name} but the probe reply was "
+            "empty — continuing.[/yellow]"
+        )
+        return True
+
+    cli.console.print(f"[bold red]✗ {endpoint.label} is not ready[/bold red]")
+    if result.get('error'):
+        cli.console.print(f"   [red]{result['error']}[/red]")
+    if result.get('hint'):
+        cli.console.print(f"   [yellow]{result['hint']}[/yellow]")
+    if result.get('reachable') and result.get('model_available') is False and result.get('models'):
+        catalogue = ', '.join(result['models'][:8])
+        extra = len(result['models']) - 8
+        if extra > 0:
+            catalogue += f", ... (+{extra} more)"
+        cli.console.print(f"   [dim]Models served here: {catalogue}[/dim]")
+
+    cli.console.print(
+        "[dim]Choose 'n' to go back and fix the endpoint, or 'y' if you know the "
+        "check is wrong (a cold model can be slow to answer).[/dim]"
+    )
+    return Confirm.ask("[bold yellow]Launch anyway?[/bold yellow]", default=False)
+
+
+def _resume_ollama_endpoint_settings(
+    cli: Any,
+    provider: str,
+    model_name: str,
+    saved_host: Optional[str],
+) -> Dict[str, Optional[str]]:
+    """
+    Pick the Ollama endpoint a saved run should be replayed against.
+
+    The host stored in a run config describes the model that run used. The
+    resume wizard lets that model be swapped afterwards, so the pair can no
+    longer agree — and sending a cloud model to ``localhost`` makes the client
+    try to pull a model that machine will never have. The saved host is
+    therefore treated as a hint and checked against the endpoint's catalogue.
+
+    Parameters
+    ----------
+    cli : Any
+        CLI object exposing a Rich ``console`` and ``_get_or_prompt_api_key``.
+    provider : str
+        Provider id; non-Ollama runs yield an empty mapping.
+    model_name : str
+        Model the resumed run will annotate with.
+    saved_host : str, optional
+        Host recorded in the run config, if any.
+
+    Returns
+    -------
+    dict
+        ``{'ollama_host': str, 'ollama_api_key': Optional[str]}`` or ``{}``.
+    """
+    if provider != 'ollama':
+        return {}
+
+    settings = _ollama_endpoint_settings(provider, host=saved_host)
+    catalogue = list_ollama_models(
+        host=settings['ollama_host'],
+        api_key=settings['ollama_api_key'],
+    )
+
+    if catalogue and model_name not in catalogue:
+        for candidate_host in (DEFAULT_OLLAMA_HOST, OLLAMA_CLOUD_HOST):
+            if candidate_host.rstrip('/') == settings['ollama_host']:
+                continue
+            candidate = _ollama_endpoint_settings(provider, host=candidate_host)
+            if model_name in list_ollama_models(
+                host=candidate['ollama_host'],
+                api_key=candidate['ollama_api_key'],
+            ):
+                cli.console.print(
+                    f"[yellow][!] {model_name} is not served by {settings['ollama_host']}; "
+                    f"switching to {candidate['ollama_host']}.[/yellow]"
+                )
+                settings = candidate
+                break
+        else:
+            cli.console.print(
+                f"[yellow][!] No known Ollama endpoint serves {model_name}; "
+                f"trying {settings['ollama_host']} anyway.[/yellow]"
+            )
+
+    endpoint = OllamaEndpoint(host=settings['ollama_host'], api_key=settings['ollama_api_key'])
+    if endpoint.is_cloud and not endpoint.api_key:
+        # Credentials are deliberately absent from run configs, so a remote resume
+        # has to re-acquire one whenever the environment/vault cannot supply it.
+        settings['ollama_api_key'] = cli._get_or_prompt_api_key(provider, model_name)
+
+    return settings
 
 
 class AnnotationMode(Enum):
@@ -3212,6 +3452,10 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     selected_llm = cli._select_llm_interactive()
     provider = selected_llm.provider
     model_name = selected_llm.name
+    # The credential has to be settled first: it is part of the endpoint, and a
+    # cloud Ollama model can be picked from the public catalogue without one.
+    api_key = _resolve_model_credential(cli, selected_llm, provider, model_name)
+    ollama_endpoint_settings = _ollama_endpoint_settings(provider, selected_llm, api_key=api_key)
     tracker.mark_step(
         3,
         detail=f"{provider}:{model_name}",
@@ -3241,6 +3485,10 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'provider': provider,
         'model_name': model_name,
     })
+    # Only the host is recorded; the credential is re-resolved from env/vault on
+    # resume so no bearer token is ever written to a run-config JSON.
+    if ollama_endpoint_settings:
+        metadata_model_config['ollama_host'] = ollama_endpoint_settings['ollama_host']
 
     # Persist early snapshot to allow relaunch before annotation starts.
     early_metadata = _compose_metadata_payload(
@@ -3257,11 +3505,6 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         progress=metadata_progress,
     )
     _persist_metadata_bundle(metadata_targets, early_metadata)
-
-    # Get API key if needed
-    api_key = None
-    if selected_llm.requires_api_key:
-        api_key = cli._get_or_prompt_api_key(provider, model_name)
 
     openai_batch_mode = _prompt_openai_batch_mode(cli, provider, "this annotation run")
 
@@ -3928,6 +4171,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
 
     # Model section
     summary_table.add_row("Model", "Provider/Model", f"{provider}/{model_name}")
+    if ollama_endpoint_settings:
+        summary_table.add_row("", "Endpoint", str(ollama_endpoint_settings['ollama_host']))
     summary_table.add_row("", "Temperature", f"{temperature}")
     summary_table.add_row("", "Max Tokens", f"{max_tokens}")
     if configure_params:
@@ -3970,6 +4215,9 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     )
 
     if not Confirm.ask("\n[bold yellow]Start annotation?[/bold yellow]", default=True):
+        return
+
+    if not _preflight_ollama_endpoint(cli, provider, model_name, ollama_endpoint_settings):
         return
 
     # ============================================================
@@ -4281,7 +4529,6 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'model_display_name': model_name,
         'api_key': api_key if api_key else None,
         'openai_batch_mode': openai_batch_mode,
-        'openai_batch_mode': openai_batch_mode,
         'prompts': prompts_payload,
         'annotation_sample_size': annotation_limit,
         'annotation_sampling_strategy': sample_strategy if annotation_limit else 'head',
@@ -4315,6 +4562,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         'session_id': session_id,
         'context_window_config': context_window_config,  # Context window for surrounding sentences
     }
+    pipeline_config.update(ollama_endpoint_settings)
 
     # Wire Doccano live sync client + rewrite IDs if enabled
     if doccano_sync_client:
@@ -5299,11 +5547,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     selected_llm = cli._select_llm_interactive()
     provider = selected_llm.provider
     model_name = selected_llm.name
-
-    # Get API key if needed
-    api_key = None
-    if selected_llm.requires_api_key:
-        api_key = cli._get_or_prompt_api_key(provider, model_name)
+    # The credential has to be settled first: it is part of the endpoint, and a
+    # cloud Ollama model can be picked from the public catalogue without one.
+    api_key = _resolve_model_credential(cli, selected_llm, provider, model_name)
+    ollama_endpoint_settings = _ollama_endpoint_settings(provider, selected_llm, api_key=api_key)
 
     openai_batch_mode = _prompt_openai_batch_mode(cli, provider, "the factory annotation stage")
     model_config_section = factory_metadata_state.setdefault('model_configuration', {})
@@ -5312,6 +5559,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'model_name': model_name,
         'openai_batch_mode': openai_batch_mode,
     })
+    # Only the host is recorded; the credential is re-resolved from env/vault on
+    # resume so no bearer token is ever written to a run-config JSON.
+    if ollama_endpoint_settings:
+        model_config_section['ollama_host'] = ollama_endpoint_settings['ollama_host']
     processing_section = factory_metadata_state.setdefault('processing_configuration', {})
     processing_section.update({
         'provider_folder': provider.replace("/", "_"),
@@ -5874,6 +6125,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
 
     # Model section
     summary_table.add_row("Model", "Provider/Model", f"{provider}/{model_name}")
+    if ollama_endpoint_settings:
+        summary_table.add_row("", "Endpoint", str(ollama_endpoint_settings['ollama_host']))
     summary_table.add_row("", "Temperature", f"{temperature}")
     summary_table.add_row("", "Max Tokens", f"{max_tokens}")
     if configure_params:
@@ -5916,6 +6169,9 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     )
 
     if not Confirm.ask("\n[bold yellow]Start annotation?[/bold yellow]", default=True):
+        return
+
+    if not _preflight_ollama_endpoint(cli, provider, model_name, ollama_endpoint_settings):
         return
 
     # ============================================================
@@ -6216,6 +6472,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         'lang_column': lang_column,  # From Step 4b: Language column for training metadata
         'create_annotated_subset': True,  # ensure compact annotated-only export is materialised
     }
+    pipeline_config.update(ollama_endpoint_settings)
 
     if cost_estimate:
         pipeline_config['estimated_cost_usd'] = cost_estimate.total_cost
@@ -6319,6 +6576,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
             'top_p': top_p,
             'top_k': top_k if provider in ['ollama', 'google'] else None,
         })
+        if ollama_endpoint_settings:
+            model_config_section['ollama_host'] = ollama_endpoint_settings['ollama_host']
         processing_section = factory_metadata_state.setdefault('processing_configuration', {})
         processing_section.update({
             'parallel_workers': None if annotation_mode == 'openai_batch' else num_processes,
@@ -6884,7 +7143,13 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         input()
 
 def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: Path, session_dirs: Optional[Dict[str, Path]] = None):
-    """Execute annotation based on loaded metadata"""
+    """
+    Execute annotation based on loaded metadata.
+
+    Returns ``True``/``False`` for a run that actually happened; raises
+    :class:`AnnotationCancelled` when the operator backs out beforehand, so the
+    session is left resumable instead of being recorded as a failed run.
+    """
     import json
     from datetime import datetime
     metadata_state: Optional[Dict[str, Any]] = copy.deepcopy(metadata) if metadata else None
@@ -7231,13 +7496,28 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
 
     # Get parameters
     provider = model_config.get('provider', 'ollama')
-    model_name = model_config.get('model_name', 'llama2')
+    model_name = model_config.get('model_name', 'llama3.2')
     annotation_mode = model_config.get('annotation_mode', 'local')
     openai_batch_mode = model_config.get('openai_batch_mode', annotation_mode == 'openai_batch')
     temperature = model_config.get('temperature', 0.7)
     max_tokens = model_config.get('max_tokens', 1000)
     top_p = model_config.get('top_p', 1.0)
     top_k = model_config.get('top_k', 40)
+
+    # The saved run records which endpoint it ran against, never its credential:
+    # the key is re-resolved here from the environment/vault so a rotated token
+    # keeps working and no bearer token ever lands in a run-config JSON.
+    ollama_endpoint_settings = _resume_ollama_endpoint_settings(
+        cli,
+        provider,
+        model_name,
+        model_config.get('ollama_host'),
+    )
+    if ollama_endpoint_settings:
+        model_config['ollama_host'] = ollama_endpoint_settings['ollama_host']
+        cli.console.print(
+            f"[cyan]Ollama endpoint: {ollama_endpoint_settings['ollama_host']}[/cyan]"
+        )
 
     num_processes = proc_config.get('parallel_workers', 1)
     if not isinstance(num_processes, int) or num_processes < 1:
@@ -7315,6 +7595,13 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         'session_id': session_id,
         'context_window_config': proc_config.get('context_window_config'),  # Restore from metadata if present
     }
+    pipeline_config.update(ollama_endpoint_settings)
+
+    if not _preflight_ollama_endpoint(cli, provider, model_name, ollama_endpoint_settings):
+        raise AnnotationCancelled(
+            f"Endpoint check declined for {model_name}; nothing was annotated and the "
+            "saved session is unchanged."
+        )
 
     # Add resume information if resuming
     # Always set resume flags when action_mode is 'resume', regardless of

@@ -49,14 +49,249 @@ from pathlib import Path
 
 # Try to import Ollama
 try:
-    from ollama import generate, chat
-    # DO NOT import 'list' at module level - it causes mutex locks
-    # Import it dynamically when needed instead
+    from ollama import Client as OllamaSDKClient
+    from ollama import ResponseError as OllamaResponseError
+    # DO NOT import the module-level `generate`/`list` helpers: they bind a client
+    # to the ambient OLLAMA_HOST at import time, which makes the endpoint
+    # impossible to change per instance. Build an explicit Client instead.
     HAS_OLLAMA = True
 except ImportError:
     HAS_OLLAMA = False
-    generate = None
-    chat = None
+    OllamaSDKClient = None
+
+    class OllamaResponseError(Exception):
+        """Placeholder so `except OllamaResponseError` stays valid without the SDK."""
+        status_code = None
+
+
+# Default endpoints. The local daemon needs no credentials; the hosted service at
+# ollama.com serves the same REST API but requires a Bearer token for inference
+# (model listing via /api/tags is public).
+DEFAULT_OLLAMA_HOST = "http://localhost:11434"
+OLLAMA_CLOUD_HOST = "https://ollama.com"
+
+
+class OllamaFatalError(RuntimeError):
+    """
+    Raised for a condition that every subsequent row would hit identically.
+
+    A rejected credential or a model the endpoint does not serve will not resolve
+    itself on retry, so callers should abandon the run rather than replay the
+    failure for every row — which against a metered endpoint is also billable.
+    """
+
+
+def _is_local_host(host: str) -> bool:
+    """True when `host` points at a daemon on this machine."""
+    if not host:
+        return True
+    lowered = host.lower()
+    return any(
+        marker in lowered
+        for marker in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]")
+    )
+
+
+class OllamaEndpoint:
+    """
+    An Ollama server address plus the credential needed to reach it.
+
+    Ollama Cloud and a local `ollama serve` expose the same REST API, so the only
+    thing that varies between them is the base URL and whether an Authorization
+    header is required. Keeping both in one object means every call site takes a
+    single argument instead of threading two.
+    """
+
+    def __init__(self, host: Optional[str] = None, api_key: Optional[str] = None):
+        self.host = (host or DEFAULT_OLLAMA_HOST).rstrip('/')
+        self.api_key = (api_key or '').strip() or None
+
+    @property
+    def is_local(self) -> bool:
+        """True when the endpoint is a daemon on this machine."""
+        return _is_local_host(self.host)
+
+    @property
+    def is_cloud(self) -> bool:
+        """True when the endpoint is remote (cloud or a networked server)."""
+        return not self.is_local
+
+    @property
+    def label(self) -> str:
+        """Short human-readable name for menus and logs."""
+        if self.is_local:
+            return "Local Ollama"
+        if self.host.rstrip('/') == OLLAMA_CLOUD_HOST:
+            return "Ollama Cloud"
+        return f"Ollama @ {self.host}"
+
+    def headers(self) -> Dict[str, str]:
+        """Auth headers for this endpoint (empty for an unauthenticated local daemon)."""
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+
+    def client(self, timeout: Optional[float] = None):
+        """Build an `ollama.Client` bound to this endpoint."""
+        if not HAS_OLLAMA:
+            raise ImportError("Ollama library not installed. Install with: pip install ollama")
+        return OllamaSDKClient(host=self.host, headers=self.headers(), timeout=timeout)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialise for run configs (the key is kept so resumed runs stay authenticated)."""
+        return {'host': self.host, 'api_key': self.api_key}
+
+    def __repr__(self) -> str:
+        return f"OllamaEndpoint(host={self.host!r}, authenticated={bool(self.api_key)})"
+
+
+def resolve_ollama_endpoint(
+    host: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> OllamaEndpoint:
+    """
+    Resolve an Ollama endpoint from explicit values, then the environment.
+
+    Precedence: explicit argument > OLLAMA_HOST / OLLAMA_API_KEY > stored key >
+    local default. A remote host with no key still resolves — listing models is
+    public, so the caller can show a picker and only then ask for a credential.
+    """
+    resolved_host = host or os.environ.get('OLLAMA_HOST') or DEFAULT_OLLAMA_HOST
+    resolved_key = api_key or os.environ.get('OLLAMA_API_KEY')
+
+    if not resolved_key and not _is_local_host(resolved_host):
+        # Only reach for the vault when a credential can actually be needed.
+        try:
+            from llm_tool.config.api_key_manager import APIKeyManager
+            resolved_key = APIKeyManager().get_key('ollama')
+        except Exception:
+            resolved_key = None
+
+    return OllamaEndpoint(host=resolved_host, api_key=resolved_key)
+
+
+def probe_ollama(
+    endpoint: Optional[OllamaEndpoint] = None,
+    model: Optional[str] = None,
+    timeout: float = 15.0,
+    generation_timeout: float = 60.0,
+) -> Dict[str, Any]:
+    """
+    Check that an Ollama endpoint is reachable, authenticated, and serving a model.
+
+    This is the pre-flight the UI runs before committing to a long annotation job,
+    so it reports *why* it failed rather than raising: a wrong host, a missing key
+    and a missing model all need different fixes.
+
+    Parameters
+    ----------
+    endpoint : OllamaEndpoint, optional
+        Endpoint to test. Defaults to the resolved ambient endpoint.
+    model : str, optional
+        If given, also verify the model is served and answers a trivial prompt.
+    timeout : float
+        Timeout for the reachability/listing call.
+    generation_timeout : float
+        Timeout for the one-token test generation.
+
+    Returns
+    -------
+    dict
+        Keys: 'reachable', 'authenticated', 'models', 'model_available',
+        'responds', 'latency_ms', 'error', 'hint', 'endpoint'.
+    """
+    endpoint = endpoint or resolve_ollama_endpoint()
+    result: Dict[str, Any] = {
+        'reachable': False,
+        'authenticated': None,     # None = not applicable/untested
+        'models': [],
+        'model_available': None,
+        'responds': None,
+        'latency_ms': None,
+        'error': None,
+        'hint': None,
+        'endpoint': endpoint,
+    }
+
+    if not HAS_OLLAMA:
+        result['error'] = "Ollama library not installed"
+        result['hint'] = "pip install ollama"
+        return result
+
+    # 1. Reachability + model listing (public on ollama.com, unauthenticated locally).
+    try:
+        client = endpoint.client(timeout=timeout)
+        listing = client.list()
+        result['models'] = [m.model for m in getattr(listing, 'models', []) if getattr(m, 'model', None)]
+        result['reachable'] = True
+    except ConnectionError as e:
+        result['error'] = f"Cannot reach {endpoint.host}: {e}"
+        result['hint'] = (
+            "Start the daemon with: ollama serve"
+            if endpoint.is_local else
+            f"Check the host is correct and reachable: {endpoint.host}"
+        )
+        return result
+    except OllamaResponseError as e:
+        status = getattr(e, 'status_code', None)
+        result['error'] = f"{endpoint.host} returned {status or 'an error'}: {e}"
+        if status in (401, 403):
+            result['authenticated'] = False
+            result['hint'] = "This endpoint needs an API key. Add one for the 'ollama' provider."
+        return result
+    except Exception as e:
+        result['error'] = f"Unexpected error contacting {endpoint.host}: {e}"
+        return result
+
+    if model is None:
+        return result
+
+    # 2. Is the requested model served here?
+    base = model.split(':')[0]
+    result['model_available'] = any(
+        m == model or m.split(':')[0] == base for m in result['models']
+    )
+
+    # 3. Does it actually answer? This is what catches a bad key: listing is public
+    #    on ollama.com but inference is not, so only a real generation proves auth.
+    try:
+        start = time.time()
+        client = endpoint.client(timeout=generation_timeout)
+        response = client.generate(
+            model=model,
+            prompt="Reply with only the word 'OK'.",
+            options={'temperature': 0, 'num_predict': 5},
+        )
+        text = (getattr(response, 'response', '') or '').strip()
+        result['latency_ms'] = int((time.time() - start) * 1000)
+        result['responds'] = bool(text)
+        result['authenticated'] = True
+        if not text:
+            result['error'] = f"Model {model} returned an empty response"
+    except OllamaResponseError as e:
+        status = getattr(e, 'status_code', None)
+        result['responds'] = False
+        if status in (401, 403):
+            result['authenticated'] = False
+            result['error'] = f"Authentication failed for {endpoint.host} (HTTP {status})"
+            result['hint'] = (
+                "Ollama Cloud requires a valid API key. Set OLLAMA_API_KEY or store "
+                "one for the 'ollama' provider."
+            )
+        elif status == 404:
+            result['error'] = f"Model '{model}' not found on {endpoint.host}"
+            result['hint'] = (
+                f"Pull it first: ollama pull {model}"
+                if endpoint.is_local else
+                "Pick a model from this endpoint's catalogue."
+            )
+        else:
+            result['error'] = f"Generation failed (HTTP {status}): {e}"
+        return result
+    except Exception as e:
+        result['responds'] = False
+        result['error'] = f"Generation failed: {e}"
+        return result
+
+    return result
 
 # Try to import llama-cpp-python
 try:
@@ -92,13 +327,33 @@ class OllamaClient(BaseLocalClient):
     """Ollama client implementation"""
 
     def __init__(self, model_name: str, **kwargs):
-        """Initialize Ollama client"""
+        """
+        Initialize Ollama client.
+
+        Parameters
+        ----------
+        model_name : str
+            Model to generate with (e.g. 'gemma4:31b').
+        host : str, optional
+            Base URL of the Ollama server. Defaults to OLLAMA_HOST or localhost.
+            Pass OLLAMA_CLOUD_HOST to use Ollama Cloud.
+        api_key : str, optional
+            Bearer token, required by Ollama Cloud. Falls back to OLLAMA_API_KEY
+            or the stored 'ollama' key.
+        endpoint : OllamaEndpoint, optional
+            Pre-resolved endpoint; takes precedence over host/api_key.
+        """
         super().__init__(model_name, **kwargs)
 
         self.logger.info(f"[1/4] Initializing OllamaClient for {model_name}")
 
         if not HAS_OLLAMA:
             raise ImportError("Ollama library not installed. Install with: pip install ollama")
+
+        self.endpoint = kwargs.get('endpoint') or resolve_ollama_endpoint(
+            host=kwargs.get('host'),
+            api_key=kwargs.get('api_key'),
+        )
 
         self.options = kwargs.get('options', {})
         # Default timeout of 5 minutes per request (can be overridden via kwargs or per-call)
@@ -111,70 +366,91 @@ class OllamaClient(BaseLocalClient):
         # Short timeout for health check test requests
         self._health_check_timeout = kwargs.get('health_check_timeout', 30)
 
-        self.logger.info(f"[2/4] Checking Ollama service...")
+        # One client per instance, bound to this endpoint.
+        self._client = self.endpoint.client(timeout=self.default_timeout)
+
+        self.logger.info(f"[2/4] Checking Ollama service at {self.endpoint.host}...")
         self._check_ollama_service()
 
         self.logger.info(f"[3/4] Checking if model {model_name} is available...")
         # Check if model is available
         if not self.is_available():
-            self.logger.warning(f"Model {model_name} not found in Ollama. Attempting to pull...")
-            self._pull_model()
+            if self.endpoint.is_local:
+                # Several hosted-only models share a name with a public registry entry,
+                # so an absent-minded pick would start a multi-gigabyte download of a
+                # model the user meant to run in the cloud. Check before pulling.
+                if model_name in list_ollama_models(host=OLLAMA_CLOUD_HOST):
+                    raise RuntimeError(
+                        f"Model '{model_name}' is served by Ollama Cloud, not by "
+                        f"{self.endpoint.label} ({self.endpoint.host}). Select it from the "
+                        f"Ollama Cloud catalogue, or pull it locally first if you meant to."
+                    )
+                self.logger.warning(f"Model {model_name} not found in Ollama. Attempting to pull...")
+                self._pull_model()
+            else:
+                # Remote catalogues are fixed — a missing model is a selection error,
+                # and pulling would target the wrong machine.
+                raise RuntimeError(
+                    f"Model '{model_name}' is not served by {self.endpoint.label} "
+                    f"({self.endpoint.host}). Choose a model from that endpoint's catalogue."
+                )
         else:
             self.logger.info(f"[4/4] Model {model_name} is available ✓")
 
+    @property
+    def is_local(self) -> bool:
+        """True when this client talks to a daemon on this machine."""
+        return self.endpoint.is_local
+
     def _check_ollama_service(self):
-        """Check if Ollama service is running and healthy"""
+        """Check that the configured Ollama endpoint is reachable and healthy"""
         try:
-            # Try to list models to check if service is running
-            result = subprocess.run(
-                ["ollama", "list"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode != 0:
-                raise RuntimeError("Ollama service not running. Start with: ollama serve")
+            # Listing is the cheapest call that proves the server is up. It runs
+            # over HTTP against the configured host, so it works for a remote
+            # endpoint on a machine with no ollama CLI installed.
+            self._client.list()
+        except ConnectionError as e:
+            if self.endpoint.is_local:
+                raise RuntimeError(
+                    f"Ollama service not running at {self.endpoint.host}. "
+                    f"Start with: ollama serve"
+                ) from e
+            raise RuntimeError(
+                f"Cannot reach Ollama endpoint {self.endpoint.host}: {e}"
+            ) from e
+        except OllamaResponseError as e:
+            status = getattr(e, 'status_code', None)
+            if status in (401, 403):
+                raise RuntimeError(
+                    f"Authentication failed for {self.endpoint.host} (HTTP {status}). "
+                    f"Set OLLAMA_API_KEY or store a key for the 'ollama' provider."
+                ) from e
+            raise RuntimeError(f"Ollama endpoint {self.endpoint.host} error: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Ollama service not responding at {self.endpoint.host}: {e}") from e
 
-            # Check for stuck models
+        # Stuck-model recovery unloads models, which is only ours to do locally.
+        if self.endpoint.is_local:
             self._check_and_recover_stuck_models()
-
-        except FileNotFoundError:
-            raise RuntimeError("Ollama not installed. Install from: https://ollama.ai")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("Ollama service not responding")
 
     def _get_running_models(self) -> List[Dict[str, str]]:
         """Get list of currently running/loaded models with their status"""
+        # Only a local daemon has a meaningful notion of "loaded models" we may act on.
+        if not self.endpoint.is_local:
+            return []
         try:
-            result = subprocess.run(
-                ["ollama", "ps"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode != 0:
-                return []
-
-            lines = result.stdout.strip().splitlines()
+            running = self._client.ps()
             models = []
-
-            for line in lines:
-                # Skip header
-                if "NAME" in line and "SIZE" in line:
+            for m in getattr(running, 'models', []) or []:
+                name = getattr(m, 'model', None) or getattr(m, 'name', None)
+                if not name:
                     continue
-                if not line.strip():
-                    continue
-
-                parts = line.split()
-                if len(parts) >= 6:
-                    model_info = {
-                        'name': parts[0],
-                        'id': parts[1],
-                        'size': parts[2],
-                        'status': parts[-1] if parts[-1] in ['Stopping...', 'Running'] else 'Running'
-                    }
-                    models.append(model_info)
-
+                models.append({
+                    'name': name,
+                    'id': getattr(m, 'digest', '') or '',
+                    'size': str(getattr(m, 'size', '') or ''),
+                    'status': 'Running',
+                })
             return models
         except Exception as e:
             self.logger.warning(f"Could not get running models: {e}")
@@ -238,6 +514,13 @@ class OllamaClient(BaseLocalClient):
         try:
             self.logger.warning("Attempting to stop stuck Ollama models...")
 
+            # Unloading models is only ours to do on a daemon we own.
+            if not self.endpoint.is_local:
+                self.logger.warning(
+                    f"Skipping stuck-model recovery: {self.endpoint.host} is a remote endpoint."
+                )
+                return False
+
             # Try using ollama stop command first (if available)
             for model in stuck_models:
                 try:
@@ -299,17 +582,13 @@ class OllamaClient(BaseLocalClient):
         }
 
         try:
-            # Check service
-            check = subprocess.run(
-                ["ollama", "list"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            result['service_running'] = (check.returncode == 0)
-
-            if not result['service_running']:
-                result['error'] = "Ollama service not running"
+            # Check service over HTTP against the configured endpoint.
+            try:
+                self._client.list()
+                result['service_running'] = True
+            except Exception as e:
+                result['service_running'] = False
+                result['error'] = f"Ollama endpoint {self.endpoint.host} not responding: {e}"
                 return result
 
             # Check for stuck models
@@ -380,6 +659,15 @@ class OllamaClient(BaseLocalClient):
         bool
             True if reset was successful, False otherwise
         """
+        # A hard reset unloads the model from the server. Against a shared or
+        # hosted endpoint that is not ours to do, and the unresponsiveness is
+        # almost certainly network- or quota-related rather than a stuck model.
+        if not self.endpoint.is_local:
+            self.logger.warning(
+                f"Skipping hard reset: {self.endpoint.host} is a remote endpoint."
+            )
+            return False
+
         self.logger.warning(f"Performing hard reset of model {self.model_name}...")
 
         try:
@@ -463,19 +751,19 @@ class OllamaClient(BaseLocalClient):
         return False
 
     def _pull_model(self):
-        """Pull model from Ollama registry"""
+        """Pull model into the local Ollama server"""
+        if not self.endpoint.is_local:
+            # Pulling targets the server's own disk; for a remote endpoint that
+            # is both futile and not ours to trigger.
+            raise RuntimeError(
+                f"Cannot pull '{self.model_name}' into remote endpoint {self.endpoint.host}."
+            )
         try:
             self.logger.info(f"Pulling model {self.model_name}...")
-            result = subprocess.run(
-                ["ollama", "pull", self.model_name],
-                capture_output=True,
-                text=True,
-                timeout=600  # 10 minutes timeout for download
-            )
-            if result.returncode == 0:
-                self.logger.info(f"Successfully pulled model {self.model_name}")
-            else:
-                raise RuntimeError(f"Failed to pull model: {result.stderr}")
+            # Pull over the API rather than the CLI so a machine without the
+            # ollama binary can still populate its own daemon.
+            self._client.pull(self.model_name)
+            self.logger.info(f"Successfully pulled model {self.model_name}")
         except Exception as e:
             self.logger.error(f"Error pulling model: {e}")
             raise
@@ -492,14 +780,15 @@ class OllamaClient(BaseLocalClient):
             if self.model_name in models:
                 return True
 
-            # Check if model_name without tag matches any model
-            # e.g., 'nemotron' should match 'nemotron:latest'
-            base_name = self.model_name.split(':')[0]
-            for model in models:
-                model_base = model.split(':')[0]
-                if base_name == model_base:
-                    self.logger.info(f"Model '{self.model_name}' matched to '{model}'")
-                    return True
+            # An untagged name is a request for whatever tag the server has, so
+            # 'nemotron' may resolve to 'nemotron:latest'. An explicit tag is not
+            # negotiable though — matching 'gpt-oss:20b' to a local 'gpt-oss:120b'
+            # would pass this check and then 404 on every single generation.
+            if ':' not in self.model_name:
+                for model in models:
+                    if model.split(':')[0] == self.model_name:
+                        self.logger.info(f"Model '{self.model_name}' matched to '{model}'")
+                        return True
 
             return False
         except Exception as e:
@@ -507,41 +796,38 @@ class OllamaClient(BaseLocalClient):
             return False
 
     def list_models(self) -> List[str]:
-        """List available Ollama models"""
+        """List models served by this client's endpoint"""
         try:
-            result = subprocess.run(
-                ["ollama", "list"],
-                capture_output=True,
-                text=True
-            )
-            if result.returncode != 0:
-                return []
-            
-            lines = result.stdout.strip().splitlines()
-            models = []
-            
-            for line in lines:
-                # Skip header
-                if "NAME" in line and "MODIFIED" in line:
-                    continue
-                if not line.strip():
-                    continue
-
-                parts = line.split()
-                if parts:
-                    model_name = parts[0]
-                    # Keep the full model name with tag (e.g., gpt-oss:120b)
-                    models.append(model_name)
-            
-            return models
-        except:
+            listing = self._client.list()
+            # Keep the full model name with tag (e.g., gpt-oss:120b)
+            return [m.model for m in getattr(listing, 'models', []) if getattr(m, 'model', None)]
+        except Exception as e:
+            self.logger.warning(f"Could not list models from {self.endpoint.host}: {e}")
             return []
+
+    def get_context_length(self) -> Optional[int]:
+        """
+        Ask the server for this model's real context window.
+
+        Returns None when the endpoint does not report one, so callers can fall
+        back to their own estimate rather than treating 0 as a valid window.
+        """
+        try:
+            info = self._client.show(self.model_name)
+            model_info = getattr(info, 'modelinfo', None) or {}
+            for key, value in model_info.items():
+                if key.endswith('.context_length') and isinstance(value, int):
+                    return value
+        except Exception as e:
+            self.logger.debug(f"Could not read context length for {self.model_name}: {e}")
+        return None
 
     def _generate_with_timeout(
         self,
         prompt: str,
         options: Dict[str, Any],
-        timeout: float
+        timeout: float,
+        format: Optional[Any] = None,
     ) -> Optional[str]:
         """
         Execute Ollama generate with a timeout.
@@ -549,29 +835,39 @@ class OllamaClient(BaseLocalClient):
         Uses ThreadPoolExecutor to wrap the blocking call and enforce timeout.
         """
         def _do_generate():
-            response = generate(
-                model=self.model_name,
-                prompt=prompt,
-                options=options
-            )
+            kwargs: Dict[str, Any] = {
+                'model': self.model_name,
+                'prompt': prompt,
+                'options': options,
+            }
+            # 'json' or a JSON-schema dict; omitted entirely when unset so we
+            # don't constrain models that were not asked to produce JSON.
+            if format:
+                kwargs['format'] = format
+
+            response = self._client.generate(**kwargs)
             # Extract response
             if isinstance(response, dict):
                 return response.get('response', '').strip()
-            elif hasattr(response, 'get'):
-                return response.get('response', '').strip()
-            else:
-                return str(response)
+            text = getattr(response, 'response', None)
+            if text is not None:
+                return text.strip()
+            return str(response)
 
-        # Use a thread pool to enforce timeout on the blocking Ollama call
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_do_generate)
-            try:
-                return future.result(timeout=timeout)
-            except FuturesTimeoutError:
-                self.logger.error(f"Ollama generation timed out after {timeout}s")
-                # Try to cancel the future (may not actually stop the underlying call)
-                future.cancel()
-                return None
+        # Enforce the timeout on the blocking Ollama call. Note we deliberately
+        # avoid `with ThreadPoolExecutor(...)`: its __exit__ waits for the worker,
+        # so a "timed out" call would still block the caller until the server
+        # finished. Shut down without waiting and let the orphan thread die.
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_do_generate)
+        try:
+            return future.result(timeout=timeout)
+        except FuturesTimeoutError:
+            self.logger.error(f"Ollama generation timed out after {timeout}s")
+            future.cancel()
+            return None
+        finally:
+            executor.shutdown(wait=False)
 
     def generate(
         self,
@@ -593,8 +889,8 @@ class OllamaClient(BaseLocalClient):
             Temperature parameter (0-2)
         max_tokens : int
             Maximum tokens in response
-        format : str, optional
-            Response format ('json' for JSON mode)
+        format : str or dict, optional
+            Response format ('json' for JSON mode, or a JSON schema dict)
         timeout : float, optional
             Timeout in seconds for each generation attempt.
             Defaults to self.default_timeout (300s = 5 minutes).
@@ -607,7 +903,10 @@ class OllamaClient(BaseLocalClient):
         # Check for periodic model reload to prevent memory accumulation
         self._maybe_reload_model()
 
-        # Build options
+        # Build options. Precedence: instance defaults < explicit temperature /
+        # max_tokens < an `options` dict passed by the caller. That last case is
+        # how the annotator forwards the sampling settings the user configured,
+        # so it has to win.
         options = self.options.copy()
         options['temperature'] = temperature
         options['num_predict'] = max_tokens
@@ -616,6 +915,10 @@ class OllamaClient(BaseLocalClient):
         for key in ['seed', 'top_p', 'top_k', 'num_thread']:
             if key in kwargs:
                 options[key] = kwargs[key]
+
+        caller_options = kwargs.get('options')
+        if isinstance(caller_options, dict):
+            options.update(caller_options)
 
         # Use provided timeout or default
         request_timeout = timeout if timeout is not None else self.default_timeout
@@ -631,7 +934,7 @@ class OllamaClient(BaseLocalClient):
                 self.logger.info(f"Generating response with {self.model_name} (attempt {attempt + 1}/{self.max_retries}, timeout={request_timeout}s, gen_count={self._generation_count})")
 
                 # Use timeout-wrapped generate
-                content = self._generate_with_timeout(prompt, options, request_timeout)
+                content = self._generate_with_timeout(prompt, options, request_timeout, format=format)
 
                 if not content:
                     consecutive_timeouts += 1
@@ -676,6 +979,25 @@ class OllamaClient(BaseLocalClient):
                 consecutive_timeouts = 0
                 self.logger.info(f"Successfully generated response ({len(content)} chars)")
                 return content
+
+            except OllamaResponseError as e:
+                status = getattr(e, 'status_code', None)
+                # A rejected credential or a missing model will not fix itself on
+                # retry — and against a metered endpoint each retry costs quota.
+                if status in (401, 403):
+                    raise OllamaFatalError(
+                        f"Authentication rejected by {self.endpoint.host} (HTTP {status}). "
+                        f"Check the API key for the 'ollama' provider."
+                    ) from e
+                if status == 404:
+                    raise OllamaFatalError(
+                        f"Model '{self.model_name}' not found on {self.endpoint.host}."
+                    ) from e
+                self.logger.error(f"Ollama returned HTTP {status} (attempt {attempt + 1}): {e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay * (attempt + 1))
+                    continue
+                return None
 
             except Exception as e:
                 consecutive_timeouts += 1
@@ -879,40 +1201,37 @@ class LlamaCPPClient(BaseLocalClient):
         }
 
 
-def list_ollama_models() -> List[str]:
+def list_ollama_models(
+    host: Optional[str] = None,
+    api_key: Optional[str] = None,
+    endpoint: Optional[OllamaEndpoint] = None,
+    timeout: float = 10.0,
+) -> List[str]:
     """
-    List all available Ollama models.
+    List all models served by an Ollama endpoint.
+
+    Parameters
+    ----------
+    host : str, optional
+        Base URL of the server. Defaults to OLLAMA_HOST or localhost.
+    api_key : str, optional
+        Bearer token for an authenticated endpoint.
+    endpoint : OllamaEndpoint, optional
+        Pre-resolved endpoint; takes precedence over host/api_key.
+    timeout : float
+        Request timeout in seconds.
 
     Returns
     -------
     list
-        List of available model names
+        List of available model names, or [] if the endpoint is unreachable.
     """
+    if not HAS_OLLAMA:
+        return []
     try:
-        result = subprocess.run(
-            ["ollama", "list"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        if result.returncode != 0:
-            return []
-
-        lines = result.stdout.strip().splitlines()
-        models = []
-
-        for line in lines:
-            # Skip header
-            if "NAME" in line and "MODIFIED" in line:
-                continue
-            if not line.strip():
-                continue
-
-            parts = line.split()
-            if parts:
-                models.append(parts[0])
-
-        return models
+        endpoint = endpoint or resolve_ollama_endpoint(host=host, api_key=api_key)
+        listing = endpoint.client(timeout=timeout).list()
+        return [m.model for m in getattr(listing, 'models', []) if getattr(m, 'model', None)]
     except Exception:
         return []
 

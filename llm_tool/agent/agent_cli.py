@@ -7,8 +7,8 @@ and the LLM agent orchestrates pipeline operations via tool_use.
 
 import json
 import logging
+import os
 import re
-import subprocess
 import sys
 import uuid
 from datetime import datetime
@@ -26,18 +26,83 @@ from rich.text import Text
 from rich.table import Table
 
 from .config import AgentConfig
-from .providers import AgentMessage, BaseAgentProvider, ToolCall, create_agent_provider
+from .providers import (
+    DEFAULT_OLLAMA_BASE_URL,
+    AgentMessage,
+    BaseAgentProvider,
+    ToolCall,
+    create_agent_provider,
+)
 from .system_prompt import build_system_prompt
 from .tool_executor import ToolExecutor
 from .tools import get_tool_definitions
 
 # Classic CLI display helpers (reused for agent welcome screen)
+from ..annotators.local_models import (
+    DEFAULT_OLLAMA_HOST,
+    OLLAMA_CLOUD_HOST,
+    OllamaEndpoint,
+    list_ollama_models,
+    probe_ollama,
+    resolve_ollama_endpoint,
+)
 from ..cli.advanced_cli import LLMDetector, TrainerModelDetector
 from ..utils.data_detector import DatasetInfo, DataDetector
 from ..utils.resource_display import create_visual_resource_panel
 from ..utils.system_resources import SystemResourceDetector
 
 logger = logging.getLogger(__name__)
+
+# Default agent model per Ollama endpoint. The local default stays llama3.2; the
+# cloud catalogue does not serve it, so the cloud path needs its own default.
+DEFAULT_LOCAL_OLLAMA_MODEL = "llama3.2"
+DEFAULT_CLOUD_OLLAMA_MODEL = "gemma4:31b"
+
+
+def native_ollama_host(base_url: Optional[str]) -> Optional[str]:
+    """
+    Convert an OpenAI-compatible base URL into a native Ollama host.
+
+    The agent talks to Ollama through ``<host>/v1``, but the native REST API used
+    for listing and probing is rooted at ``<host>`` and returns nothing when the
+    ``/v1`` suffix is left on.
+
+    Parameters
+    ----------
+    base_url : str, optional
+        Base URL as configured for the OpenAI SDK.
+
+    Returns
+    -------
+    str or None
+        Host without the ``/v1`` suffix, or None when no base URL is set.
+    """
+    if not base_url:
+        return None
+    host = base_url.rstrip('/')
+    if host.endswith('/v1'):
+        host = host[:-len('/v1')].rstrip('/')
+    return host or None
+
+
+def openai_base_url(host: str) -> str:
+    """Convert a native Ollama host into the OpenAI-compatible base URL."""
+    host = host.rstrip('/')
+    return host if host.endswith('/v1') else f"{host}/v1"
+
+
+def describe_api_key(api_key: Optional[str]) -> str:
+    """Describe a credential for display without ever revealing it."""
+    if not api_key:
+        return "[dim]not set[/dim]"
+    return f"[green]set[/green] [dim](…{api_key[-4:]})[/dim]"
+
+
+def _format_tristate(value: Optional[bool]) -> str:
+    """Render a probe field that may be True, False or untested."""
+    if value is None:
+        return "[dim]not tested[/dim]"
+    return "[green]yes[/green]" if value else "[red]no[/red]"
 
 
 class AgentCLI:
@@ -54,6 +119,10 @@ class AgentCLI:
         self.console = Console()
         self._model_explicit = model_explicit  # True if user passed --agent-model
         self.provider: Optional[BaseAgentProvider] = None
+        # Endpoint chosen for Ollama this session. Held here — never in config,
+        # which other providers overwrite — so a detour through OpenAI or
+        # Anthropic does not lose the host and the key picked for Ollama.
+        self._selected_ollama_endpoint: Optional[OllamaEndpoint] = None
         self.executor = ToolExecutor(
             settings=settings,
             progress_callback=self._progress_callback,
@@ -111,7 +180,7 @@ class AgentCLI:
         provider_table.add_column(width=3)
         provider_table.add_column()
 
-        provider_table.add_row("[bold cyan]1[/bold cyan]", "Ollama (local models)")
+        provider_table.add_row("[bold cyan]1[/bold cyan]", "Ollama (local or cloud models)")
         provider_table.add_row("[bold cyan]2[/bold cyan]", "Cloud OpenAI (GPT)")
         provider_table.add_row("[bold cyan]3[/bold cyan]", "Cloud Anthropic (Claude)")
 
@@ -136,73 +205,248 @@ class AgentCLI:
             self._select_cloud_model("anthropic")
         else:
             self.config.provider = "ollama"
-            self.config.base_url = self.config.base_url or "http://localhost:11434/v1"
+            self.config.base_url = self.config.base_url or DEFAULT_OLLAMA_BASE_URL
             self._select_ollama_model()
 
         self._create_provider()
         self.console.print()
 
-    def _select_ollama_model(self):
-        """Let user pick from installed Ollama models, styled like the classic CLI."""
-        self.console.print()
+    def _configured_ollama_key(self) -> Optional[str]:
+        """Return the session Ollama credential, ignoring other providers' keys."""
+        if self._selected_ollama_endpoint is not None:
+            return self._selected_ollama_endpoint.api_key
+        if self.config.provider == "ollama" and self.config.api_key:
+            return self.config.api_key
+        return None
 
-        # Use already-scanned Ollama models if available, else fetch
-        res = getattr(self, '_scanned_resources', {})
-        models = res.get("ollama_models", None)
-        if models is None:
-            models = self._get_ollama_models()
+    def _ollama_endpoint(self, base_url: Optional[str] = None) -> OllamaEndpoint:
+        """
+        Resolve the endpoint behind the configured OpenAI-compatible base URL.
 
-        if not models:
-            self.console.print("[yellow]No Ollama models found. Using default: llama3.2[/yellow]")
-            self.config.model = "llama3.2"
-            return
+        Parameters
+        ----------
+        base_url : str, optional
+            Base URL to resolve. Defaults to the configured one.
 
-        model_table = Table.grid(padding=(0, 1))
-        model_table.add_column(width=3, justify="right")
-        model_table.add_column(min_width=20)
-        model_table.add_column(justify="right")
+        Returns
+        -------
+        OllamaEndpoint
+            Endpoint addressing the native API, i.e. without the ``/v1`` suffix.
+        """
+        # Another provider's base URL says nothing about where Ollama lives, so
+        # fall back to the endpoint chosen this session, then to the ambient one,
+        # instead of borrowing it.
+        configured = base_url or (
+            self.config.base_url if self.config.provider == "ollama" else None
+        )
+        host = native_ollama_host(configured)
+        if host is None and self._selected_ollama_endpoint is not None:
+            host = self._selected_ollama_endpoint.host
+        return resolve_ollama_endpoint(
+            host=host,
+            api_key=self._configured_ollama_key(),
+        )
 
-        for i, model in enumerate(models, 1):
-            name = model["name"]
-            size = model.get("size", "")
-            marker = " [dim](default)[/dim]" if name == self.config.model else ""
-            model_table.add_row(
-                f"[bold cyan]{i}[/bold cyan]",
-                f"{name}{marker}",
-                f"[dim]{size}[/dim]" if size else "",
-            )
+    def _choose_ollama_endpoint(self) -> OllamaEndpoint:
+        """Ask for local or cloud Ollama, prompting for a key when the cloud needs one."""
+        configured = OllamaEndpoint(
+            host=native_ollama_host(self.config.base_url) or DEFAULT_OLLAMA_HOST
+        )
+
+        endpoint_table = Table.grid(padding=(0, 2))
+        endpoint_table.add_column(width=3, justify="right")
+        endpoint_table.add_column(min_width=14)
+        endpoint_table.add_column()
+        endpoint_table.add_row(
+            "[bold cyan]1[/bold cyan]", configured.label, f"[dim]{configured.host}[/dim]"
+        )
+        endpoint_table.add_row(
+            "[bold cyan]2[/bold cyan]", "Ollama Cloud", f"[dim]{OLLAMA_CLOUD_HOST}[/dim]"
+        )
 
         self.console.print(Panel(
-            model_table,
-            title="[bold]Select Ollama Model[/bold]",
+            endpoint_table,
+            title="[bold]Select Ollama Endpoint[/bold]",
             border_style="cyan",
             padding=(1, 2),
         ))
 
-        default_idx = "1"
-        for i, m in enumerate(models, 1):
-            if m["name"] == self.config.model:
-                default_idx = str(i)
-                break
-
         choice = Prompt.ask(
-            "\n[bold yellow]Model[/bold yellow]",
-            default=default_idx,
+            "\n[bold yellow]Endpoint[/bold yellow]",
+            choices=["1", "2"],
+            default="2" if configured.is_cloud else "1",
+        )
+        host = OLLAMA_CLOUD_HOST if choice == "2" else configured.host
+
+        endpoint = resolve_ollama_endpoint(host=host, api_key=self._configured_ollama_key())
+        if endpoint.is_cloud and not endpoint.api_key:
+            # Listing is public on ollama.com but inference is not, so the key is
+            # collected before a model is picked rather than at the first request.
+            self.console.print(
+                f"\n[yellow]{endpoint.label} requires an API key for inference.[/yellow]"
+            )
+            entered = Prompt.ask("[bold]OLLAMA_API_KEY[/bold]", password=True, default="").strip()
+            if entered:
+                endpoint = OllamaEndpoint(host=host, api_key=entered)
+
+        self._selected_ollama_endpoint = endpoint
+        self.config.base_url = openai_base_url(endpoint.host)
+        self.config.api_key = endpoint.api_key
+        return endpoint
+
+    def _select_ollama_model(self):
+        """Let user pick a local or cloud Ollama model, styled like the classic CLI."""
+        self.console.print()
+
+        endpoint = self._choose_ollama_endpoint()
+        default_model = (
+            DEFAULT_CLOUD_OLLAMA_MODEL if endpoint.is_cloud else DEFAULT_LOCAL_OLLAMA_MODEL
         )
 
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(models):
-                self.config.model = models[idx]["name"]
-            else:
-                self.console.print(f"[yellow]Invalid choice, using {self.config.model}[/yellow]")
-        except ValueError:
-            self.config.model = choice.strip()
+        # A cached scan describes the one host it was read from, so it can only
+        # stand in for the endpoint now being listed when the hosts match.
+        scanned = getattr(self, '_scanned_resources', {})
+        cached = scanned.get("ollama_models")
+        if cached and scanned.get("ollama_host") == endpoint.host:
+            names = [m["name"] for m in cached]
+        else:
+            names = list_ollama_models(endpoint=endpoint)
+
+        if not names:
+            self.console.print(
+                f"\n[yellow]No models listed by {endpoint.label}.[/yellow]"
+            )
+            self._render_probe_result(probe_ollama(endpoint=endpoint))
+
+        if self.config.model in names:
+            default_answer = str(names.index(self.config.model) + 1)
+        elif names:
+            default_answer = "1"
+        else:
+            default_answer = default_model
+
+        if names:
+            model_table = Table.grid(padding=(0, 1))
+            model_table.add_column(width=3, justify="right")
+            model_table.add_column(min_width=20)
+
+            for i, name in enumerate(names, 1):
+                marker = " [dim](current)[/dim]" if name == self.config.model else ""
+                model_table.add_row(f"[bold cyan]{i}[/bold cyan]", f"{name}{marker}")
+
+            self.console.print(Panel(
+                model_table,
+                title=f"[bold]Select Model — {endpoint.label}[/bold]",
+                border_style="cyan",
+                padding=(1, 2),
+            ))
+
+        self.console.print(
+            "\n[dim]Enter a number, or type any model name to use it directly.[/dim]"
+        )
+        self.console.print(
+            "[dim]Prefix with 't ' to test a model before selecting it (e.g. 't 1').[/dim]"
+        )
+
+        while True:
+            answer = Prompt.ask("\n[bold yellow]Model[/bold yellow]", default=default_answer).strip()
+
+            test_only = answer.lower() == "t" or answer.lower().startswith("t ")
+            if test_only:
+                answer = answer[1:].strip()
+
+            selected = self._resolve_model_answer(answer, names, default_model)
+            if selected is None:
+                self.console.print(
+                    f"[yellow]Enter 1-{len(names)}, or type a model name.[/yellow]"
+                    if names else
+                    "[yellow]No catalogue to index — type a model name.[/yellow]"
+                )
+                continue
+
+            if test_only:
+                self._render_probe_result(
+                    probe_ollama(endpoint=endpoint, model=selected), model=selected
+                )
+                continue
+
+            self.config.model = selected
+            return
+
+    @staticmethod
+    def _resolve_model_answer(
+        answer: str, names: List[str], fallback: str
+    ) -> Optional[str]:
+        """
+        Turn a picker answer into a model name.
+
+        Parameters
+        ----------
+        answer : str
+            Raw user input: a 1-based index, a model name, or empty.
+        names : list of str
+            Models offered by the endpoint.
+        fallback : str
+            Model to use when the answer is empty.
+
+        Returns
+        -------
+        str or None
+            Chosen model name, or None if the answer is an out-of-range index.
+        """
+        if not answer:
+            return fallback
+        if answer.isdigit():
+            idx = int(answer) - 1
+            return names[idx] if 0 <= idx < len(names) else None
+        return answer
+
+    def _render_probe_result(self, probe: Dict[str, Any], model: Optional[str] = None):
+        """
+        Display a :func:`probe_ollama` result as a status panel.
+
+        Parameters
+        ----------
+        probe : dict
+            Result returned by :func:`probe_ollama`.
+        model : str, optional
+            Model the probe was run against, when one was tested.
+        """
+        endpoint = probe["endpoint"]
+        healthy = (
+            probe["reachable"]
+            and probe["authenticated"] is not False
+            and probe["responds"] is not False
+        )
+
+        detail = Table.grid(padding=(0, 2))
+        detail.add_column(style="dim", no_wrap=True)
+        detail.add_column()
+        detail.add_row("Endpoint", endpoint.host)
+        detail.add_row("API key", describe_api_key(endpoint.api_key))
+        detail.add_row("Reachable", _format_tristate(probe["reachable"]))
+        detail.add_row("Models served", str(len(probe["models"])))
+        if model:
+            detail.add_row("Model", model)
+            detail.add_row("In catalogue", _format_tristate(probe["model_available"]))
+            detail.add_row("Responds", _format_tristate(probe["responds"]))
+            detail.add_row("Authenticated", _format_tristate(probe["authenticated"]))
+        if probe["latency_ms"] is not None:
+            detail.add_row("Latency", f"{probe['latency_ms']} ms")
+        if probe["error"]:
+            detail.add_row("Error", f"[red]{probe['error']}[/red]")
+        if probe["hint"]:
+            detail.add_row("Hint", f"[yellow]{probe['hint']}[/yellow]")
+
+        self.console.print(Panel(
+            detail,
+            title=f"[bold]{'Endpoint OK' if healthy else 'Endpoint Problem'}[/bold]",
+            border_style="green" if healthy else "red",
+            padding=(1, 2),
+        ))
 
     def _select_cloud_model(self, provider: str):
         """Let user configure a cloud provider model, styled like the classic CLI."""
-        import os
-
         self.console.print()
 
         if provider == "openai":
@@ -247,31 +491,29 @@ class AgentCLI:
         if not api_key:
             api_key = Prompt.ask(f"\n[bold]{env_key}[/bold]", password=True)
         self.config.api_key = api_key
+        # A base URL left over from an Ollama selection would send these requests to
+        # the wrong host. An explicitly configured gateway is the user's choice though,
+        # so only the Ollama leftover is cleared.
+        if self.config.base_url and not os.environ.get('LLM_TOOL_AGENT_BASE_URL'):
+            self.config.base_url = None
 
-    def _get_ollama_models(self) -> List[dict]:
-        """Get list of installed Ollama models with sizes."""
-        try:
-            result = subprocess.run(
-                ["ollama", "list"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode != 0:
-                return []
+    def _get_ollama_models(self, base_url: Optional[str] = None) -> List[dict]:
+        """
+        List the models served by an Ollama endpoint.
 
-            models = []
-            lines = result.stdout.strip().split("\n")
-            for line in lines[1:]:  # Skip header
-                parts = line.split()
-                if not parts:
-                    continue
-                name = parts[0]
-                # Extract size like "9.1 GB" or "17 GB"
-                size_match = re.search(r'([\d.]+\s*[GM]B)', line)
-                size = size_match.group(1) if size_match else ""
-                models.append({"name": name, "size": size})
-            return models
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return []
+        Parameters
+        ----------
+        base_url : str, optional
+            OpenAI-compatible base URL. Defaults to the configured one, so a
+            remote endpoint is honoured instead of whatever the local CLI knows.
+
+        Returns
+        -------
+        list of dict
+            One ``{'name': ...}`` entry per model, empty if unreachable.
+        """
+        endpoint = self._ollama_endpoint(base_url)
+        return [{"name": name} for name in list_ollama_models(endpoint=endpoint)]
 
     def run(self):
         """Main conversation loop."""
@@ -1216,6 +1458,8 @@ class AgentCLI:
         ollama_models = self._get_ollama_models()
         if ollama_models:
             resources["ollama_models"] = ollama_models
+            # Catalogues differ per host, so record which one was scanned.
+            resources["ollama_host"] = self._ollama_endpoint().host
 
         # Scan ALL LLMs (Ollama + OpenAI + Anthropic) with full metadata
         try:
@@ -1864,6 +2108,18 @@ class AgentCLI:
 
         info_table.add_row("Provider", f"[bold]{self.config.provider}[/bold]")
         info_table.add_row("Model", f"[bold]{self.config.model}[/bold]")
+        if self.config.provider == "ollama":
+            # The effective endpoint, which may come from the environment rather
+            # than from anything the user typed this session.
+            endpoint = self._ollama_endpoint()
+            info_table.add_row(
+                "Endpoint", f"{endpoint.label} — {openai_base_url(endpoint.host)}"
+            )
+            info_table.add_row("API key", describe_api_key(endpoint.api_key))
+        else:
+            if self.config.base_url:
+                info_table.add_row("Endpoint", self.config.base_url)
+            info_table.add_row("API key", describe_api_key(self.config.api_key))
         info_table.add_row("Temperature", str(self.config.temperature))
         info_table.add_row("Session", self.session_id)
         info_table.add_row("Turns", f"{self._turn_count}/{self.config.max_conversation_turns}")
@@ -1958,37 +2214,58 @@ class AgentCLI:
         parts = arg.strip().split()
         if len(parts) < 1:
             self.console.print("[yellow]Usage: /provider <name> [model][/yellow]")
-            self.console.print("[dim]Examples: /provider ollama llama3.2, /provider openai gpt-4o[/dim]")
+            self.console.print(
+                "[dim]Examples: /provider ollama llama3.2, "
+                f"/provider ollama {DEFAULT_CLOUD_OLLAMA_MODEL}, /provider openai gpt-4o[/dim]"
+            )
             return
 
         new_provider = parts[0]
         new_model = parts[1] if len(parts) > 1 else None
 
+        # A base URL only ever addresses an Ollama endpoint, so it is re-derived
+        # from the endpoint in effect and dropped for every other provider,
+        # which reaches its own API.
+        endpoint = self._ollama_endpoint() if new_provider == "ollama" else None
+        base_url = openai_base_url(endpoint.host) if endpoint else None
+
         # Determine model defaults
         if not new_model:
-            defaults = {"ollama": "llama3.2", "openai": "gpt-4o", "anthropic": "claude-sonnet-4-20250514"}
-            new_model = defaults.get(new_provider, "llama3.2")
+            ollama_default = (
+                DEFAULT_CLOUD_OLLAMA_MODEL
+                if endpoint is not None and endpoint.is_cloud
+                else DEFAULT_LOCAL_OLLAMA_MODEL
+            )
+            defaults = {
+                "ollama": ollama_default,
+                "openai": "gpt-4o",
+                "anthropic": "claude-sonnet-4-20250514",
+            }
+            new_model = defaults.get(new_provider, DEFAULT_LOCAL_OLLAMA_MODEL)
 
         # Resolve API key
         api_key = self.config.api_key
         if new_provider == "anthropic":
-            import os
             api_key = os.environ.get("ANTHROPIC_API_KEY") or self.settings.get_api_key("anthropic")
         elif new_provider == "openai":
-            import os
             api_key = os.environ.get("OPENAI_API_KEY") or self.settings.get_api_key("openai")
+        elif new_provider == "ollama":
+            # Never carry another provider's key over; a key typed this session
+            # is not stored anywhere else, so it still wins.
+            api_key = endpoint.api_key
 
         try:
             self.provider = create_agent_provider(
                 provider=new_provider,
                 model=new_model,
                 api_key=api_key,
-                base_url=self.config.base_url if new_provider == "ollama" else None,
+                base_url=base_url,
                 keep_alive=self.config.keep_alive if new_provider == "ollama" else None,
             )
             self.config.provider = new_provider
             self.config.model = new_model
             self.config.api_key = api_key
+            self.config.base_url = base_url
             self.console.print(
                 f"\n[green]Switched to[/green] [cyan bold]{new_provider}/{new_model}[/cyan bold]"
             )

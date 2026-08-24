@@ -90,7 +90,10 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                     },
                     "annotation_model": {
                         "type": "string",
-                        "description": "Model name (e.g., 'llama3.2', 'gpt-4o', 'claude-sonnet-4-20250514')",
+                        "description": (
+                            "Model name (e.g., 'llama3.2' local or 'gemma4:31b' cloud for "
+                            "ollama, 'gpt-5-2025-08-07', 'claude-sonnet-4-20250514')"
+                        ),
                     },
                     "prompt_path": {
                         "type": "string",
@@ -668,7 +671,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                     },
                     "model": {
                         "type": "string",
-                        "description": "Model name (e.g., gpt-4o, claude-sonnet-4-20250514)",
+                        "description": "Model name (e.g., gpt-5-2025-08-07, claude-sonnet-4-20250514)",
                     },
                     "num_samples": {
                         "type": "integer",

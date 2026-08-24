@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .providers import DEFAULT_OLLAMA_BASE_URL
+
 
 @dataclass
 class AgentConfig:
@@ -21,36 +23,53 @@ class AgentConfig:
     max_tool_calls_per_turn: int = 10
 
     @classmethod
-    def from_env_and_settings(cls, settings) -> "AgentConfig":
-        """Resolve agent config from environment variables and LLMTool settings."""
+    def from_env_and_settings(cls, settings, api_key: Optional[str] = None) -> "AgentConfig":
+        """
+        Resolve agent config from environment variables and LLMTool settings.
+
+        Parameters
+        ----------
+        settings : Settings
+            LLMTool settings, consulted for stored provider credentials.
+        api_key : str, optional
+            Explicit credential (e.g. from a command-line flag). Takes precedence
+            over the environment and the stored key.
+        """
         provider = os.environ.get("LLM_TOOL_AGENT_PROVIDER", "ollama")
         model = os.environ.get("LLM_TOOL_AGENT_MODEL", "")
-        api_key = None
+        explicit_key = api_key
         base_url = os.environ.get("LLM_TOOL_AGENT_BASE_URL")
         keep_alive = os.environ.get("LLM_TOOL_AGENT_KEEP_ALIVE")
 
         if provider == "anthropic":
-            api_key = (
+            api_key = explicit_key or (
                 os.environ.get("ANTHROPIC_API_KEY")
                 or settings.get_api_key("anthropic")
             )
             if not model:
                 model = "claude-sonnet-4-20250514"
         elif provider == "openai":
-            api_key = (
+            api_key = explicit_key or (
                 os.environ.get("OPENAI_API_KEY")
                 or settings.get_api_key("openai")
             )
             if not model:
                 model = "gpt-4o"
         elif provider == "ollama":
+            # A local daemon needs no credential, but the same provider id also
+            # drives ollama.com, where inference is authenticated.
+            api_key = explicit_key or (
+                os.environ.get("OLLAMA_API_KEY")
+                or settings.get_api_key("ollama")
+            )
             if not model:
                 model = "llama3.2"
             if not base_url:
-                base_url = "http://localhost:11434/v1"
+                base_url = DEFAULT_OLLAMA_BASE_URL
             if not keep_alive:
                 keep_alive = "30m"
         else:
+            api_key = explicit_key
             if not model:
                 model = "llama3.2"
 

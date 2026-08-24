@@ -59,6 +59,7 @@ import logging
 import time
 import math
 import random
+import threading
 import concurrent.futures
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Tuple, Iterable, Set
@@ -96,10 +97,19 @@ from ..utils.data_filter_logger import get_filter_logger
 
 # Try to import local model support
 try:
-    from ..annotators.local_models import OllamaClient, LlamaCPPClient
+    from ..annotators.local_models import (
+        OllamaClient,
+        LlamaCPPClient,
+        OllamaFatalError,
+        resolve_ollama_endpoint,
+        list_ollama_models,
+    )
     HAS_LOCAL_MODELS = True
 except ImportError:
     HAS_LOCAL_MODELS = False
+
+    class OllamaFatalError(RuntimeError):
+        """Placeholder so the `except OllamaFatalError` guards stay valid."""
     logging.warning("Local model support not available")
 
 # OpenAI SDK for batch operations
@@ -144,6 +154,61 @@ DEFAULT_CONTEXT_LABELS = {
     'sentence_to_annotate': 'Sentence to annotate:',
     'context_after': 'Context sentences AFTER:'
 }
+
+# Sampling settings are collected under portable names in the run config but the
+# local backends expect Ollama's own vocabulary.
+GENERATION_OPTION_ALIASES = {
+    'temperature': 'temperature',
+    'max_tokens': 'num_predict',
+    'num_predict': 'num_predict',
+    'top_p': 'top_p',
+    'top_k': 'top_k',
+    'seed': 'seed',
+    'num_thread': 'num_thread',
+}
+
+# Flags that travel in the same 'options' dict but steer the annotator, not the server.
+ANNOTATOR_ONLY_OPTIONS = {'disable_schema'}
+
+
+def _build_generation_options(*sources: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Collect the user's sampling settings into the options a local client expects.
+
+    Parameters
+    ----------
+    *sources : dict or None
+        Configuration dictionaries, least specific first. Each may hold the
+        settings as top-level scalars (``temperature``, ``max_tokens``, ...)
+        and/or as a nested ``options`` dict already using Ollama's names.
+
+    Returns
+    -------
+    dict
+        Sampling options keyed the way Ollama expects them. Settings the user
+        left unset are omitted so the client keeps its own defaults.
+    """
+    options: Dict[str, Any] = {}
+
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+
+        for key, value in source.items():
+            target = GENERATION_OPTION_ALIASES.get(key)
+            if target and value is not None:
+                options[target] = value
+
+        # A nested dict is the more specific expression of intent, so it wins
+        # over the scalars sitting next to it.
+        nested = source.get('options')
+        if isinstance(nested, dict):
+            for key, value in nested.items():
+                if value is None or key in ANNOTATOR_ONLY_OPTIONS:
+                    continue
+                options[GENERATION_OPTION_ALIASES.get(key, key)] = value
+
+    return options
 
 
 def _coerce_mapping(value: Any) -> Optional[Dict[str, Any]]:
@@ -316,6 +381,7 @@ class LLMAnnotator:
         self.progress_bar = None
         self.last_annotation = None  # Store last successful annotation for display
         self.doccano_sync = None  # DoccanoSyncClient, set externally before annotate()
+        self.ollama_endpoint = None  # Resolved in _setup_model_client for ollama runs
 
     def annotate(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -416,12 +482,17 @@ class LLMAnnotator:
             model_name = config['model']
             provider = config.get('provider', 'ollama')
             api_key = config.get('api_key')
+            ollama_host = config.get('ollama_host')
+            ollama_api_key = config.get('ollama_api_key')
         else:
             # Dict model config
             model_config = config['model']
             provider = model_config.get('provider', 'ollama')
             model_name = model_config.get('model_name')
             api_key = model_config.get('api_key')
+            # The endpoint may be declared on the model or on the run config.
+            ollama_host = model_config.get('ollama_host') or config.get('ollama_host')
+            ollama_api_key = model_config.get('ollama_api_key') or config.get('ollama_api_key')
 
         self.logger.info(f"[SETUP] Provider: {provider}, Model: {model_name}")
 
@@ -435,8 +506,15 @@ class LLMAnnotator:
             )
             self.logger.info(f"[SETUP] API client created successfully")
         elif provider == 'ollama' and HAS_LOCAL_MODELS:
-            self.logger.info(f"[SETUP] Creating OllamaClient for {model_name}...")
-            self.local_client = OllamaClient(model_name)
+            self.ollama_endpoint = resolve_ollama_endpoint(
+                host=ollama_host,
+                api_key=ollama_api_key
+            )
+            self.logger.info(
+                f"[SETUP] Creating OllamaClient for {model_name} "
+                f"on {self.ollama_endpoint.label} ({self.ollama_endpoint.host})..."
+            )
+            self.local_client = OllamaClient(model_name, endpoint=self.ollama_endpoint)
             self.logger.info(f"[SETUP] OllamaClient created successfully")
         elif provider == 'llamacpp' and HAS_LOCAL_MODELS:
             self.logger.info(f"[SETUP] Creating LlamaCPPClient for {model_name}...")
@@ -861,19 +939,36 @@ class LLMAnnotator:
         # Use full_data for context, or data if full_data not provided
         context_source = full_data if full_data is not None else data
 
-        for idx, row in data.iterrows():
-            # Build model config dict for the task
-            if isinstance(config.get('model'), str):
-                model_config = {
-                    'provider': config.get('provider', 'ollama'),
-                    'model_name': config.get('model'),
-                    'api_key': config.get('api_key'),
-                    'temperature': config.get('temperature', 0.7),
-                    'max_tokens': config.get('max_tokens', 1000)
-                }
-            else:
-                model_config = config.get('model', {})
+        # Build the model config dict once: it is identical for every row and is
+        # pickled to each worker process, so it carries the Ollama endpoint as
+        # plain strings rather than a live client or endpoint object.
+        if isinstance(config.get('model'), str):
+            model_config = {
+                'provider': config.get('provider', 'ollama'),
+                'model_name': config.get('model'),
+                'api_key': config.get('api_key'),
+                'temperature': config.get('temperature', 0.7),
+                'max_tokens': config.get('max_tokens', 1000)
+            }
+        else:
+            model_config = dict(config.get('model', {}))
 
+        ollama_host = model_config.get('ollama_host') or config.get('ollama_host')
+        ollama_api_key = model_config.get('ollama_api_key') or config.get('ollama_api_key')
+        if ollama_host:
+            model_config['ollama_host'] = ollama_host
+        if ollama_api_key:
+            model_config['ollama_api_key'] = ollama_api_key
+
+        # The wizard records sampling settings on the run config, but generation
+        # reads them off the model config, so fold them in before the tasks are
+        # frozen. Without this the run silently falls back to library defaults.
+        for key in ('temperature', 'max_tokens'):
+            if config.get(key) is not None:
+                model_config.setdefault(key, config[key])
+        model_config['options'] = _build_generation_options(config, model_config)
+
+        for idx, row in data.iterrows():
             task = {
                 'index': idx,
                 'row': row,
@@ -1147,6 +1242,33 @@ class LLMAnnotator:
         failed_tasks_queue = []
         max_final_retry_rounds = config.get('max_final_retry_rounds', 3)  # How many times to retry the failed queue
 
+        def run_task(task: Dict[str, Any]) -> Dict[str, Any]:
+            """Run one row, reporting a hard failure as an error result.
+
+            A row that raises (transient network error, endpoint hiccup) must be
+            contained here: unlike the parallel path, nothing downstream would
+            catch it and the whole run would die mid-dataset.
+            """
+            try:
+                if len(task['prompts']) > 1:
+                    return process_multiple_prompts(task)
+                return process_single_prompt(task)
+            except OllamaFatalError:
+                # A rejected key or an unserved model fails every remaining row the
+                # same way. Replaying it row by row would bill the endpoint for a
+                # dataset's worth of 401s, so let it end the run.
+                raise
+            except Exception as row_error:
+                import traceback
+                self.logger.error(f"Task failed for {task['identifier']}: {row_error}")
+                self.logger.debug(f"Traceback: {traceback.format_exc()}")
+                return {
+                    'identifier': task['identifier'],
+                    'final_json': None,
+                    'inference_time': 0,
+                    'status': 'error'
+                }
+
         pbar_desc = ' LLM Annotation'
         if resume_already > 0:
             pbar_desc = f' Annotation (resume, {resume_already:,} already done)'
@@ -1164,10 +1286,7 @@ class LLMAnnotator:
             while row_attempts < max_retries_per_row:
                 row_attempts += 1
 
-                if len(task['prompts']) > 1:
-                    result = process_multiple_prompts(task)
-                else:
-                    result = process_single_prompt(task)
+                result = run_task(task)
 
                 identifier = result['identifier']
                 final_json = result['final_json']
@@ -1254,13 +1373,20 @@ class LLMAnnotator:
                     # Try to check/restart the local client connection
                     try:
                         if self.local_client:
-                            # Re-check Ollama service
-                            import subprocess
-                            check_result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=10)
-                            if check_result.returncode != 0:
-                                self.logger.error("Ollama service appears to be down. Please restart Ollama.")
+                            # Re-check the endpoint over HTTP rather than through the
+                            # ollama CLI, which may be absent or point elsewhere when
+                            # the endpoint is remote.
+                            endpoint = self.ollama_endpoint or resolve_ollama_endpoint()
+                            if list_ollama_models(endpoint=endpoint):
+                                self.logger.info(
+                                    f"Ollama service is running at {endpoint.host}. "
+                                    "Resetting consecutive failure counter."
+                                )
                             else:
-                                self.logger.info("Ollama service is running. Resetting consecutive failure counter.")
+                                self.logger.error(
+                                    f"Ollama endpoint {endpoint.host} appears to be down "
+                                    "or serves no models."
+                                )
                             consecutive_row_failures = 0  # Reset to avoid infinite loop
                     except Exception as restart_error:
                         self.logger.error(f"Failed to check Ollama status: {restart_error}")
@@ -1359,10 +1485,7 @@ class LLMAnnotator:
 
                 for task in failed_tasks_queue:
                     # Try each failed task again
-                    if len(task['prompts']) > 1:
-                        result = process_multiple_prompts(task)
-                    else:
-                        result = process_single_prompt(task)
+                    result = run_task(task)
 
                     identifier = result['identifier']
                     final_json = result['final_json']
@@ -3563,9 +3686,20 @@ class LLMAnnotator:
             )
         elif provider in ['ollama', 'llamacpp'] and self.local_client:
             self.logger.debug(f"[ANALYZE] Using local client for provider: {provider}")
+            # `options` carries the Ollama-native names and wins inside the client;
+            # temperature/max_tokens are also passed positionally for backends
+            # (llama.cpp) that only understand the named arguments.
+            generation_options = _build_generation_options(model_config)
+            # The keys are always present but may hold None when the caller left them
+            # unset, so fall back explicitly rather than relying on .get's default —
+            # an unbounded num_predict would let a single row generate without limit.
+            temperature = model_config.get('temperature')
+            max_tokens = model_config.get('max_tokens')
             response = self.local_client.generate(
                 prompt=full_prompt,
-                options=model_config.get('options', {})
+                temperature=0.7 if temperature is None else temperature,
+                max_tokens=1000 if max_tokens is None else max_tokens,
+                options=generation_options
             )
         else:
             self.logger.error(f"No client configured for provider: {provider}")
@@ -3841,6 +3975,40 @@ def _format_context_prompt(
 # =============================================================================
 
 
+# Row processing happens either inside a pool worker or inline in the sequential
+# loop; either way the client configuration is identical for every row of a run.
+# Building a fresh client per row costs a service probe round-trip each time,
+# which is a WAN round-trip against a remote endpoint, so keep one per process.
+_PROCESS_ANNOTATORS: Dict[Tuple, 'LLMAnnotator'] = {}
+_PROCESS_ANNOTATORS_LOCK = threading.Lock()
+
+
+def _get_process_annotator(config_for_setup: Dict[str, Any]) -> 'LLMAnnotator':
+    """
+    Return a process-local annotator with its model client already wired.
+
+    Parameters
+    ----------
+    config_for_setup : dict
+        Provider, model and endpoint identification for ``_setup_model_client``.
+
+    Returns
+    -------
+    LLMAnnotator
+        Instance shared by every row that uses this client configuration.
+    """
+    cache_key = tuple(sorted((key, str(value)) for key, value in config_for_setup.items()))
+
+    with _PROCESS_ANNOTATORS_LOCK:
+        annotator = _PROCESS_ANNOTATORS.get(cache_key)
+        if annotator is None:
+            annotator = LLMAnnotator()
+            annotator._setup_model_client(config_for_setup)
+            _PROCESS_ANNOTATORS[cache_key] = annotator
+
+    return annotator
+
+
 def process_single_prompt(task: Dict[str, Any]) -> Dict[str, Any]:
     """
     Process a single prompt for annotation.
@@ -3920,17 +4088,19 @@ def process_single_prompt(task: Dict[str, Any]) -> Dict[str, Any]:
         schema = build_dynamic_schema(expected_keys)
         logger.debug(f"[PROCESS] Built dynamic schema for keys: {expected_keys}")
 
-    # Create annotator instance for this process
-    annotator = LLMAnnotator()
-
-    # Setup the model client for this process
+    # Get (or build once) the annotator for this process
     config_for_setup = {
         'model': model_config.get('model_name'),
         'provider': model_config.get('provider', 'ollama'),
-        'api_key': model_config.get('api_key')
+        'api_key': model_config.get('api_key'),
+        'ollama_host': model_config.get('ollama_host'),
+        'ollama_api_key': model_config.get('ollama_api_key')
     }
-    logger.debug(f"[PROCESS] Setting up model client: {config_for_setup}")
-    annotator._setup_model_client(config_for_setup)
+    logger.debug(
+        f"[PROCESS] Using model client: {config_for_setup['provider']} / "
+        f"{config_for_setup['model']} @ {config_for_setup['ollama_host'] or 'default endpoint'}"
+    )
+    annotator = _get_process_annotator(config_for_setup)
 
     # Analyze text
     logger.debug(f"[PROCESS] Calling analyze_text_with_model (context_formatted={context_enabled})")
@@ -4025,15 +4195,14 @@ def process_multiple_prompts(task: Dict[str, Any]) -> Dict[str, Any]:
     status_dict = {}
     collected_json_objects = []
     
-    annotator = LLMAnnotator()
-
-    # Setup the model client for this process
     config_for_setup = {
         'model': model_config.get('model_name'),
         'provider': model_config.get('provider', 'ollama'),
-        'api_key': model_config.get('api_key')
+        'api_key': model_config.get('api_key'),
+        'ollama_host': model_config.get('ollama_host'),
+        'ollama_api_key': model_config.get('ollama_api_key')
     }
-    annotator._setup_model_client(config_for_setup)
+    annotator = _get_process_annotator(config_for_setup)
 
     for idx, prompt_config in enumerate(prompts, 1):
         prompt_text = prompt_config.get('prompt') or prompt_config.get('template', '')

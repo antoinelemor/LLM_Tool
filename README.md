@@ -1604,7 +1604,10 @@ Keep these directories under version control (where appropriate) to guarantee re
 LLM providers available in Mode 1 and 2:
 
 - **Ollama (local)** any open-source model: Llama 3.3/3.2, Gemma 3, Mistral, Nemotron, Phi, Command-R, and any model available via `ollama pull`. No API key, no cost, full privacy.
+- **Ollama Cloud** the same API hosted at `https://ollama.com`, for models too large to run locally: Gemma 4, GLM-5.x, Kimi K3, DeepSeek V4, Qwen 3.5, MiniMax M3, Nemotron 3, Mistral Large 3, GPT-OSS. Needs an API key (`OLLAMA_API_KEY`, or store one for the `ollama` provider); nothing else changes.
 - **OpenAI (cloud)** GPT-4, GPT-4o, o1, o3 family via `openai` SDK.
+
+Both Ollama endpoints appear in the model picker, can be reachability-tested from it before a run starts, and accept a hand-typed model name. Point the tool at any other Ollama server with `OLLAMA_HOST`.
 
 Each provider can be pinned per profile; the CLI tracks preferred models and warns if credentials are missing.
 
@@ -1615,6 +1618,7 @@ Each provider can be pinned per profile; the CLI tracks preferred models and war
 **LLM annotation engines (Mode 1/2)**:
 
 - **Local models (Ollama)**: any open-source model, including large models tested and validated for the forthcoming paper (Lemor et al., 2025): Nemotron (42 GB), GPT-OSS:120B (65 GB), Gemma 3:27B (17 GB), as well as smaller models like Llama 3.3/3.2, Mistral, Mixtral, Phi 3, Command-R, etc.
+- **Ollama Cloud models**: frontier open-weight models that will not fit on a workstation — Gemma 4, Qwen 3.5, GLM-5.1/5.2, Kimi K2.6/K3, DeepSeek V4 Flash/Pro, MiniMax M2.7/M3, Nemotron 3 Nano/Super/Ultra, Mistral Large 3, GPT-OSS 20B/120B.
 - **Cloud models**: OpenAI GPT-4, GPT-4o, o1, o3.
 - JSON validation ensures outputs conform to structured schema regardless of provider.
 

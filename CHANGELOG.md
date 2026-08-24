@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Ollama Cloud support (`https://ollama.com`) alongside the local daemon, selectable in
+  Mode 1, Mode 2, the Resume Center and Agent mode
+- Configurable Ollama endpoint via `OLLAMA_HOST` / `OLLAMA_API_KEY`, or a key stored under
+  the `ollama` provider
+- Reachability test from the model picker (endpoint, credential, model availability and a
+  live one-token generation) before an annotation run starts
+- Free-text model entry for Ollama, so any model name can be used without waiting for a
+  catalogue update
+- Recent annotation-oriented models in the catalogue: Gemma 4, Qwen 3.5, GLM-5.1/5.2,
+  Kimi K2.6/K3, DeepSeek V4 Flash/Pro, MiniMax M2.7/M3, Nemotron 3, Mistral Large 3, GPT-OSS
 - Initial public release preparation
 - Comprehensive README with installation and usage instructions
 - CONTRIBUTING.md for contributor guidelines
@@ -15,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - pyproject.toml for modern Python packaging
 
 ### Fixed
+- Sampling settings configured in the wizard (temperature, top_p, top_k, seed, max tokens)
+  reached the local model client but were then discarded; every Ollama annotation silently
+  ran at the defaults
+- Ollama lifecycle calls shelled out to the `ollama` CLI, so a machine without the binary
+  could not drive a reachable server; they now go over the HTTP API
+- A transient network error while annotating aborted the whole sequential run instead of
+  failing the affected row
+- Rejected credentials and missing models triggered the full retry-and-recover path instead
+  of failing fast
+- `NameError` when opening the model parameters step of the database annotator
 - Training Arena session persistence issues (all sessions now recallable)
 - AttributeError in resume/relaunch training flow
 - Metadata saving now mandatory (no more lost sessions)

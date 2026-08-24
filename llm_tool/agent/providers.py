@@ -3,7 +3,7 @@ Multi-provider tool_use abstraction for the LLM agent.
 
 Supports:
 - OpenAI (GPT models) via openai SDK
-- Ollama (local models) via OpenAI-compatible API
+- Ollama (local and cloud models) via OpenAI-compatible API
 - Anthropic (Claude models) via anthropic SDK
 """
 
@@ -14,7 +14,17 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional
 
+from ..annotators.local_models import DEFAULT_OLLAMA_HOST
+
 logger = logging.getLogger(__name__)
+
+# Both the local daemon and ollama.com expose an OpenAI-compatible surface under
+# /v1, which is the only Ollama API this module speaks.
+DEFAULT_OLLAMA_BASE_URL = f"{DEFAULT_OLLAMA_HOST}/v1"
+
+# Placeholder credential for the local daemon, which ignores the Authorization
+# header while the OpenAI SDK still insists on a non-empty api_key.
+LOCAL_OLLAMA_API_KEY = "ollama"
 
 
 @dataclass
@@ -184,13 +194,19 @@ class OpenAIAgentProvider(BaseAgentProvider):
 
 
 class OllamaAgentProvider(OpenAIAgentProvider):
-    """Ollama provider using OpenAI-compatible API."""
+    """Ollama provider using the OpenAI-compatible API, local or cloud.
 
-    def __init__(self, model: str, base_url: Optional[str] = None, keep_alive: Optional[str] = None, **kwargs):
+    Declaring ``api_key`` in the signature keeps it out of ``**kwargs``, so a
+    caller-supplied key cannot collide with the one forwarded to ``super()``.
+    """
+
+    def __init__(self, model: str, api_key: Optional[str] = None,
+                 base_url: Optional[str] = None, keep_alive: Optional[str] = None, **kwargs):
         super().__init__(
             model=model,
-            api_key="ollama",
-            base_url=base_url or "http://localhost:11434/v1",
+            # ollama.com rejects the placeholder with a 401, so a real key must win.
+            api_key=api_key or LOCAL_OLLAMA_API_KEY,
+            base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
             keep_alive=keep_alive,
             **kwargs,
         )
@@ -355,7 +371,8 @@ def create_agent_provider(
     elif provider == "ollama":
         return OllamaAgentProvider(
             model=model,
-            base_url=base_url or "http://localhost:11434/v1",
+            api_key=api_key,
+            base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
             keep_alive=keep_alive,
         )
 

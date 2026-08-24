@@ -25,7 +25,7 @@ MAIN FEATURES:
 --------------
 1) Secure encryption/decryption of API keys
 2) Persistent storage in user's home directory
-3) Multiple provider support (OpenAI, Anthropic, Google)
+3) Multiple provider support (OpenAI, Anthropic, Google, HuggingFace, Ollama)
 4) Automatic key retrieval
 5) Key validation and testing
 
@@ -52,6 +52,37 @@ except ImportError as e:
 except Exception as e:
     HAS_CRYPTOGRAPHY = False
     logging.error(f"Error importing cryptography: {e}")
+
+
+# Environment variable consulted for each provider before the encrypted store.
+PROVIDER_ENV_VARS: Dict[str, str] = {
+    'openai': 'OPENAI_API_KEY',
+    'anthropic': 'ANTHROPIC_API_KEY',
+    'google': 'GOOGLE_API_KEY',
+    'huggingface': 'HF_TOKEN',
+    'ollama': 'OLLAMA_API_KEY'
+}
+
+# Ollama authenticates nothing when it runs as a local daemon; a token is only
+# needed to reach a remote/cloud endpoint, so "no key" is a valid final state.
+OPTIONAL_KEY_PROVIDERS = frozenset({'ollama'})
+
+
+def provider_requires_key(provider: str) -> bool:
+    """
+    Tell whether a provider cannot work without an API key.
+
+    Parameters
+    ----------
+    provider : str
+        Provider name
+
+    Returns
+    -------
+    bool
+        False for providers that may legitimately run unauthenticated
+    """
+    return provider.lower() not in OPTIONAL_KEY_PROVIDERS
 
 
 class APIKeyManager:
@@ -188,15 +219,8 @@ class APIKeyManager:
         provider = provider.lower()
 
         # First check environment variables
-        env_var_names = {
-            'openai': 'OPENAI_API_KEY',
-            'anthropic': 'ANTHROPIC_API_KEY',
-            'google': 'GOOGLE_API_KEY',
-            'huggingface': 'HF_TOKEN'
-        }
-
-        env_var = env_var_names.get(provider)
-        if env_var and env_var in os.environ:
+        env_var = PROVIDER_ENV_VARS.get(provider)
+        if env_var and os.environ.get(env_var):
             return os.environ[env_var]
 
         # Check stored keys
@@ -269,15 +293,8 @@ class APIKeyManager:
         providers = set(self._keys.keys())
 
         # Check environment variables
-        env_vars = {
-            'OPENAI_API_KEY': 'openai',
-            'ANTHROPIC_API_KEY': 'anthropic',
-            'GOOGLE_API_KEY': 'google',
-            'HF_TOKEN': 'huggingface'
-        }
-
-        for env_var, provider in env_vars.items():
-            if env_var in os.environ:
+        for provider, env_var in PROVIDER_ENV_VARS.items():
+            if os.environ.get(env_var):
                 providers.add(provider)
 
         return sorted(list(providers))
@@ -326,6 +343,8 @@ class APIKeyManager:
         """
         try:
             print(f"\n Enter API key for {provider}")
+            if not provider_requires_key(provider):
+                print("   (Optional - leave empty to stay unauthenticated)")
             if HAS_CRYPTOGRAPHY:
                 print("   (Will be stored securely using encryption)")
             else:

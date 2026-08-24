@@ -841,11 +841,17 @@ class PipelineController:
         # Optional fields that should flow through when provided
         optional_fields = {
             'annotation_mode': config.get('annotation_mode'),
+            # Ollama endpoint selected in the CLI; absent means "resolve the ambient one".
+            'ollama_host': config.get('ollama_host'),
+            'ollama_api_key': config.get('ollama_api_key'),
             'text_columns': config.get('text_columns'),
             'identifier_column': config.get('identifier_column'),
             'temperature': config.get('temperature'),
             'top_p': config.get('top_p'),
             'top_k': config.get('top_k'),
+            # A pinned sampling seed is what makes a local run reproducible, so it
+            # has to survive the hop into the annotation config like the rest.
+            'seed': config.get('seed'),
             'resume_mode': config.get('resume_mode'),
             'resume_from_file': config.get('resume_from_file'),
             'skip_annotated': config.get('skip_annotated'),
