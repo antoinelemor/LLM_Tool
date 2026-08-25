@@ -93,6 +93,7 @@ sys.excepthook = _excepthook
 
 import argparse
 import logging
+import os
 from typing import Optional
 
 # Import main CLI
@@ -210,9 +211,37 @@ def parse_arguments():
     )
 
     model_group.add_argument(
+        '--ollama-api-key',
+        type=str,
+        metavar='KEY',
+        help='Bearer token for a remote Ollama endpoint (defaults to $OLLAMA_API_KEY, '
+             'then the key stored for the "ollama" provider)'
+    )
+
+    # At most one endpoint may be named: these three are three ways of answering
+    # the same question, and silently letting one win would hide a typo.
+    endpoint_group = model_group.add_mutually_exclusive_group()
+    endpoint_group.add_argument(
         '--local',
         action='store_true',
-        help='Use local models only'
+        help='Use local models only; pins Ollama to http://localhost:11434 even if '
+             '$OLLAMA_HOST points elsewhere'
+    )
+
+    endpoint_group.add_argument(
+        '--ollama-host',
+        type=str,
+        metavar='URL',
+        help='Base URL of the Ollama server to annotate with, e.g. '
+             'http://192.168.1.10:11434 (defaults to $OLLAMA_HOST, then '
+             'http://localhost:11434)'
+    )
+
+    endpoint_group.add_argument(
+        '--ollama-cloud',
+        action='store_true',
+        help='Shorthand for --ollama-host https://ollama.com; needs a key from '
+             '--ollama-api-key or $OLLAMA_API_KEY, since only model listing is public'
     )
 
     # Data options
@@ -261,6 +290,105 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def _persisted_ollama_host() -> Optional[str]:
+    """
+    Read the Ollama host saved by the interactive endpoint manager.
+
+    Returns
+    -------
+    Optional[str]
+        The stored base URL, or ``None`` when no endpoint was ever chosen.
+    """
+    return getattr(get_settings().local_model, 'host', None)
+
+
+def _ollama_endpoint_overrides(args, config: Optional[dict] = None) -> dict:
+    """
+    Translate the Ollama endpoint flags into pipeline configuration keys.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    config : dict, optional
+        Run configuration already loaded from a batch file. An endpoint it names
+        outranks the saved preference, but never the flags or the environment.
+
+    Returns
+    -------
+    dict
+        ``{'ollama_host': str, 'ollama_api_key': Optional[str]}``, always
+        populated: the headless run pins the endpoint it resolved instead of
+        leaving each annotator to re-derive one from an environment it cannot
+        see the settings file through.
+
+    Notes
+    -----
+    Precedence matches the interactive picker: explicit flag, then
+    ``OLLAMA_HOST`` / ``OLLAMA_API_KEY``, then the endpoint saved in the settings
+    file, then the local daemon. The lower-priority fallbacks are only handed to
+    :func:`resolve_ollama_endpoint` when the environment is silent, because it
+    ranks an explicit argument above the environment.
+    """
+    # Deferred because pulling in the Ollama SDK costs about a second, which would
+    # be paid by --help and --version too.
+    from .annotators.local_models import (
+        DEFAULT_OLLAMA_HOST,
+        OLLAMA_CLOUD_HOST,
+        resolve_ollama_endpoint,
+    )
+
+    env_host = os.environ.get('OLLAMA_HOST')
+    env_key = os.environ.get('OLLAMA_API_KEY')
+    from_config = config or {}
+
+    if args.local:
+        host = DEFAULT_OLLAMA_HOST
+    elif args.ollama_cloud:
+        host = OLLAMA_CLOUD_HOST
+    elif args.ollama_host:
+        # A bare host:port is what people type and what the interactive picker
+        # completes; without a scheme it is not a usable base URL.
+        host = args.ollama_host if '://' in args.ollama_host else f"http://{args.ollama_host}"
+    elif env_host:
+        host = None
+    else:
+        host = from_config.get('ollama_host') or _persisted_ollama_host()
+
+    api_key = args.ollama_api_key or (None if env_key else from_config.get('ollama_api_key'))
+
+    endpoint = resolve_ollama_endpoint(host=host, api_key=api_key)
+    return {'ollama_host': endpoint.host, 'ollama_api_key': endpoint.api_key}
+
+
+def _apply_config_file(args) -> None:
+    """
+    Load the file given to ``--config`` before anything else reads the settings.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+
+    Notes
+    -----
+    The advanced CLI resolves its Ollama endpoint while it is being constructed,
+    so the file has to be in place first. Its host is exported the way the
+    endpoint manager exports a chosen one, since the environment is the channel
+    every annotator and detector reads; an ``OLLAMA_HOST`` already present in the
+    shell is a deliberate override for that shell and is left untouched.
+    """
+    if not args.config:
+        return
+
+    settings = get_settings()
+    settings.load(args.config)
+
+    host = getattr(settings.local_model, 'host', None)
+    if host and not os.environ.get('OLLAMA_HOST'):
+        os.environ['OLLAMA_HOST'] = host
+
+
 def run_interactive_mode(args):
     """Run in interactive CLI mode"""
     # Check for advanced mode preference
@@ -280,11 +408,6 @@ def run_interactive_mode(args):
     else:
         from .cli.main_cli import LLMToolCLI
         cli = LLMToolCLI()
-
-    # Apply any command-line settings
-    if args.config:
-        settings = get_settings()
-        settings.load(args.config)
 
     # Run the interactive CLI
     cli.run()
@@ -311,12 +434,19 @@ def run_batch_mode(config_file: str, args):
     # Override config with command-line arguments
     if args.model:
         config['model'] = args.model
+        # The annotation phase looks the model up under its own key; 'model' alone
+        # never reaches the annotator and silently leaves the default in place.
+        config['annotation_model'] = args.model
     if args.api_key:
         config['api_key'] = args.api_key
     if args.output:
         config['output'] = args.output
+        # Every phase reads the destination from 'output_path'; 'output' alone is
+        # inert and the results land in the auto-generated annotations folder.
+        config['output_path'] = args.output
     if args.parallel:
         config['parallel'] = args.parallel
+    config.update(_ollama_endpoint_overrides(args, config))
 
     # Run pipeline
     try:
@@ -388,16 +518,23 @@ def run_direct_action(args):
 
     if args.model:
         config['model'] = args.model
+        # The annotation phase looks the model up under its own key; 'model' alone
+        # never reaches the annotator and silently leaves the default in place.
+        config['annotation_model'] = args.model
     if args.api_key:
         config['api_key'] = args.api_key
     if args.output:
         config['output'] = args.output
+        # Every phase reads the destination from 'output_path'; 'output' alone is
+        # inert and the results land in the auto-generated annotations folder.
+        config['output_path'] = args.output
     if args.format:
         config['data_format'] = args.format
     if args.prompt:
         config['prompt_path'] = args.prompt
     if args.max_samples:
         config['max_samples'] = args.max_samples
+    config.update(_ollama_endpoint_overrides(args))
 
     try:
         if args.annotate:
@@ -457,6 +594,9 @@ def main():
 
     # Setup logging
     setup_logging(args.verbose)
+
+    # Before any mode builds a CLI, a controller or an endpoint from the settings.
+    _apply_config_file(args)
 
     # Handle direct actions first
     if any([args.annotate, args.train, args.benchmark, args.validate]):

@@ -313,6 +313,23 @@ MODEL_DESCRIPTIONS = {
 }
 
 
+# ============================================================================
+# CONNECTIVITY PROBE - which model best answers "is this endpoint working?"
+# ============================================================================
+# Families that reply to a one-token prompt with plain text, most broadly
+# available first. A catalogue's first entry is a poor default: on ollama.com it
+# is often a model the account is not entitled to, and a 403 there reads as a
+# rejected key rather than a missing entitlement.
+PROBE_MODEL_PREFERENCES = (
+    'llama', 'gemma', 'ministral', 'mistral', 'mixtral',
+    'qwen', 'phi', 'minimax', 'glm', 'kimi', 'deepseek-v',
+)
+
+# Reasoning models spend a short answer budget on hidden thinking and come back
+# empty, which looks like a dead endpoint even when the key is perfectly valid.
+PROBE_MODEL_AVOID = ('gpt-oss', 'deepseek-r1', 'nemotron', 'thinking', 'reason')
+
+
 @dataclass
 class ModelInfo:
     """Information about an available model"""
@@ -885,6 +902,7 @@ class AdvancedCLI:
         """Initialize the advanced CLI"""
         self.console = Console() if HAS_RICH else None
         self.settings = Settings()
+        self._apply_persisted_ollama_host()
         self.pipeline_controller = PipelineController()
         self.language_detector = LanguageDetector()
         self.llm_detector = LLMDetector()
@@ -1688,7 +1706,7 @@ class AdvancedCLI:
                 ("3", " Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
                 ("4", " BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
                 ("5", " Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement [[!] IN DEVELOPMENT]"),
-                ("6", " Resume Center - Manage Sessions & Configurations"),
+                ("6", " Resume Center - Manage Sessions, Configurations & Ollama Endpoint"),
                 ("7", " Documentation & Help"),
                 ("0", " Exit")
             ]
@@ -1727,7 +1745,7 @@ class AdvancedCLI:
             print("3. Training Arena - Train 50+ Models (Multi-Label & Benchmarking)")
             print("4. BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU)")
             print("5. Validation Lab - Quality Scoring & Sampling [[!] IN DEVELOPMENT]")
-            print("6. Resume Center - Manage Sessions & Configurations")
+            print("6. Resume Center - Manage Sessions, Configurations & Ollama Endpoint")
             print("7. Documentation & Help")
             print("0. Exit")
             print("-"*50)
@@ -2041,91 +2059,340 @@ class AdvancedCLI:
             "bert_annotation_studio": "BERT Annotation Studio",
         }
 
-        records = collect_all_summaries(
-            self._resume_mode_roots(),
-            limit_per_mode=15,
-            total_limit=60,
-        )
-        if not records:
-            message = "[yellow]No resumable sessions detected yet.[/yellow]\n[dim]Start a workflow to populate the resume center.[/dim]"
-            if HAS_RICH and self.console:
-                self.console.print(message)
+        # Looped so that the configuration entries below the session list can be
+        # used repeatedly without walking back through the main menu each time.
+        while True:
+            records = collect_all_summaries(
+                self._resume_mode_roots(),
+                limit_per_mode=15,
+                total_limit=60,
+            )
+
+            table = None
+            if not records:
+                message = "[yellow]No resumable sessions detected yet.[/yellow]\n[dim]Start a workflow to populate the resume center.[/dim]"
+                if HAS_RICH and self.console:
+                    self.console.print(message)
+                else:
+                    print("No resumable sessions detected yet. Run a workflow to populate the resume center.")
+            elif HAS_RICH and self.console:
+                table = Table(title=" Resume Center", border_style="cyan", expand=True)
+                table.add_column("#", style="cyan", width=3)
+                table.add_column("Mode", style="magenta", no_wrap=True)
+                table.add_column("Session", style="white")
+                table.add_column("Status", style="green", no_wrap=True)
+                table.add_column("Updated", style="yellow", no_wrap=True)
+                table.add_column("Last Step", style="cyan")
             else:
-                print("No resumable sessions detected yet. Run a workflow to populate the resume center.")
-            return
+                print("\n=== Resume Center ===")
+                print(f"{'#':<4}{'Mode':<18}{'Session':<30}{'Status':<12}{'Updated':<20}{'Last step'}")
 
-        if HAS_RICH and self.console:
-            table = Table(title=" Resume Center", border_style="cyan", expand=True)
-            table.add_column("#", style="cyan", width=3)
-            table.add_column("Mode", style="magenta", no_wrap=True)
-            table.add_column("Session", style="white")
-            table.add_column("Status", style="green", no_wrap=True)
-            table.add_column("Updated", style="yellow", no_wrap=True)
-            table.add_column("Last Step", style="cyan")
-        else:
-            print("\n=== Resume Center ===")
-            print(f"{'#':<4}{'Mode':<18}{'Session':<30}{'Status':<12}{'Updated':<20}{'Last step'}")
+            entries: List[SummaryRecord] = []
+            for idx, record in enumerate(records, 1):
+                summary = record.summary
+                mode_label = mode_labels.get(summary.mode, summary.mode)
+                updated_display = summary.updated_at.replace("T", " ")
+                last_step = summary.last_step_name or summary.last_step_key or "-"
+                if summary.last_step_no:
+                    last_step = f"{summary.last_step_no}. {last_step}"
 
-        entries: List[SummaryRecord] = []
-        for idx, record in enumerate(records, 1):
-            summary = record.summary
-            mode_label = mode_labels.get(summary.mode, summary.mode)
-            updated_display = summary.updated_at.replace("T", " ")
-            last_step = summary.last_step_name or summary.last_step_key or "-"
-            if summary.last_step_no:
-                last_step = f"{summary.last_step_no}. {last_step}"
+                if table is not None:
+                    table.add_row(
+                        str(idx),
+                        mode_label,
+                        summary.session_id,
+                        summary.status,
+                        updated_display,
+                        last_step,
+                    )
+                else:
+                    print(f"{idx:<4}{mode_label:<18}{summary.session_id:<30}{summary.status:<12}{updated_display:<20}{last_step}")
+                entries.append(record)
 
-            if HAS_RICH and self.console:
-                table.add_row(
-                    str(idx),
-                    mode_label,
-                    summary.session_id,
-                    summary.status,
-                    updated_display,
-                    last_step,
-                )
-            else:
-                print(f"{idx:<4}{mode_label:<18}{summary.session_id:<30}{summary.status:<12}{updated_display:<20}{last_step}")
-            entries.append(record)
+            if table is not None:
+                self.console.print(table)
 
-        if HAS_RICH and self.console:
-            self.console.print(table)
-
-        selection = self._int_prompt_with_validation(
-            "\n[bold yellow]Select session (0 to return)[/bold yellow]" if HAS_RICH and self.console else "\nSelect session (0 to return): ",
-            0,
-            0,
-            len(entries),
-        )
-        if selection == 0:
-            return
-
-        chosen = entries[selection - 1]
-        summary = chosen.summary
-        mode = summary.mode
-
-        if mode == "annotator":
-            self._quick_annotate(focus_session_id=summary.session_id)
-        elif mode == "annotator_factory":
-            self._resume_mode2(focus_session_id=summary.session_id)
-        elif mode == "training_arena":
-            if hasattr(self, "_resume_training_studio"):
-                self._resume_training_studio(summary.session_id)
-            else:
-                self.console.print("[yellow]Training resume handler unavailable in this build.[/yellow]" if HAS_RICH and self.console else "Training resume handler unavailable.")
-        elif mode == "bert_annotation_studio":
+            endpoint_choice = len(entries) + 1
             if HAS_RICH and self.console:
                 self.console.print(
-                    "\n[cyan]Opening BERT Annotation Studio. Select 'Resume existing session' and choose the highlighted session.[/cyan]"
+                    f"\n[bold cyan]{endpoint_choice}[/bold cyan] Ollama endpoint "
+                    "[dim]- server, API key, connectivity test[/dim]"
                 )
             else:
-                print("\nOpening BERT Annotation Studio. Select 'Resume existing session' to continue.")
-            self.bert_annotation_studio()
-        else:
-            if HAS_RICH and self.console:
-                self.console.print(f"[yellow]No direct handler for mode: {mode}[/yellow]")
+                print(f"\n{endpoint_choice}. Ollama endpoint - server, API key, connectivity test")
+
+            selection = self._int_prompt_with_validation(
+                "\n[bold yellow]Select session (0 to return)[/bold yellow]" if HAS_RICH and self.console else "\nSelect session (0 to return): ",
+                0,
+                0,
+                endpoint_choice,
+            )
+            if selection == 0:
+                return
+            if selection == endpoint_choice:
+                self.ollama_endpoint_center()
+                continue
+
+            chosen = entries[selection - 1]
+            summary = chosen.summary
+            mode = summary.mode
+
+            if mode == "annotator":
+                self._quick_annotate(focus_session_id=summary.session_id)
+            elif mode == "annotator_factory":
+                self._resume_mode2(focus_session_id=summary.session_id)
+            elif mode == "training_arena":
+                if hasattr(self, "_resume_training_studio"):
+                    self._resume_training_studio(summary.session_id)
+                else:
+                    self.console.print("[yellow]Training resume handler unavailable in this build.[/yellow]" if HAS_RICH and self.console else "Training resume handler unavailable.")
+            elif mode == "bert_annotation_studio":
+                if HAS_RICH and self.console:
+                    self.console.print(
+                        "\n[cyan]Opening BERT Annotation Studio. Select 'Resume existing session' and choose the highlighted session.[/cyan]"
+                    )
+                else:
+                    print("\nOpening BERT Annotation Studio. Select 'Resume existing session' to continue.")
+                self.bert_annotation_studio()
             else:
-                print(f"No direct handler for mode: {mode}")
+                if HAS_RICH and self.console:
+                    self.console.print(f"[yellow]No direct handler for mode: {mode}[/yellow]")
+                else:
+                    print(f"No direct handler for mode: {mode}")
+            return
+
+    # ------------------------------------------------------------------
+    # Ollama endpoint management
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _mask_secret(secret: str) -> str:
+        """Render a credential as a non-reversible tail so it can be recognised, not read."""
+        tail = secret[-4:] if len(secret) >= 4 else ""
+        return f"****{tail}" if tail else "****"
+
+    def _ollama_key_status(self, session_key: Optional[str] = None) -> str:
+        """Describe where the Ollama credential comes from, never revealing it."""
+        env_key = os.environ.get('OLLAMA_API_KEY')
+        if env_key:
+            return f"[green]set[/green] [dim]via OLLAMA_API_KEY ({self._mask_secret(env_key)})[/dim]"
+
+        try:
+            from ..config.api_key_manager import APIKeyManager
+            stored = APIKeyManager().get_key('ollama')
+        except Exception:
+            stored = None
+        if stored:
+            return f"[green]set[/green] [dim]in the encrypted store ({self._mask_secret(stored)})[/dim]"
+
+        if session_key:
+            return f"[yellow]set for this session only[/yellow] [dim]({self._mask_secret(session_key)})[/dim]"
+
+        return "[yellow]not set[/yellow]"
+
+    def _apply_ollama_host(self, host: str) -> None:
+        """
+        Make `host` the endpoint for this process and for the next run.
+
+        Detection and every annotator resolve their endpoint from the ambient
+        environment, so the choice is exported as well as written to the settings
+        file — otherwise it would only take effect after a restart. The catalogue
+        cached in memory belongs to the previous server and is dropped.
+        """
+        normalised = OllamaEndpoint(host=host).host
+        self.settings.local_model.host = normalised
+        self.settings.save()
+        os.environ['OLLAMA_HOST'] = normalised
+        self.detected_llms = None
+        self.console.print(f"[green]✓ Endpoint set to {normalised}[/green] [dim](saved to {self.settings.config_file})[/dim]")
+
+    def _apply_persisted_ollama_host(self) -> None:
+        """
+        Publish the saved Ollama host to the environment at startup.
+
+        An OLLAMA_HOST already exported by the user is a deliberate override for
+        that shell and outranks the stored preference.
+        """
+        host = getattr(self.settings.local_model, 'host', None)
+        if host and not os.environ.get('OLLAMA_HOST'):
+            os.environ['OLLAMA_HOST'] = host
+
+    def _render_ollama_endpoint_panel(self, endpoint: OllamaEndpoint, session_key: Optional[str]) -> None:
+        """Show the resolved endpoint and the state of its credential."""
+        table = Table(box=box.SIMPLE, show_header=False, expand=True)
+        table.add_column("Field", style="cyan", no_wrap=True)
+        table.add_column("Value", style="white", overflow="fold")
+
+        # A bare server keeps its URL inside its label, so do not print it twice.
+        described = endpoint.label if endpoint.host in endpoint.label else f"{endpoint.label} ({endpoint.host})"
+        table.add_row("Endpoint", described)
+        table.add_row("API key", self._ollama_key_status(session_key))
+        table.add_row(
+            "Saved host",
+            self.settings.local_model.host or "[dim]none - falls back to the local daemon[/dim]",
+        )
+        if os.environ.get('OLLAMA_HOST'):
+            table.add_row("OLLAMA_HOST", os.environ['OLLAMA_HOST'])
+        if endpoint.is_local:
+            table.add_row("Credential", "[dim]not needed - a local daemon does not authenticate[/dim]")
+
+        self.console.print(Panel(
+            table,
+            title="[bold]Ollama Endpoint[/bold]",
+            border_style="cyan",
+            padding=(0, 1),
+        ))
+
+    def _store_ollama_key_interactive(self, endpoint: OllamaEndpoint) -> Optional[str]:
+        """
+        Capture a credential through the shared prompt and return it for this session.
+
+        The prompt only fires for a remote endpoint, so a user sitting on the local
+        daemon is asked about the cloud host they would be using the key against.
+        """
+        target_host = endpoint.host if endpoint.is_cloud else OLLAMA_CLOUD_HOST
+        refreshed = self._ensure_ollama_credential(OllamaEndpoint(host=target_host))
+        return refreshed.api_key
+
+    def _clear_ollama_key(self) -> None:
+        """Delete the stored Ollama credential, reporting what the environment still supplies."""
+        try:
+            from ..config.api_key_manager import APIKeyManager
+            manager = APIKeyManager()
+            # Deletion is a silent no-op for an absent provider, and the plain
+            # getter would answer with OLLAMA_API_KEY, which this cannot remove.
+            was_stored = 'ollama' in manager.export_config()
+            manager.delete_key('ollama')
+        except Exception as exc:
+            self.console.print(f"[yellow]Could not clear the stored key: {exc}[/yellow]")
+            return
+
+        if was_stored:
+            self.console.print("[green]✓ Stored key removed for provider 'ollama'[/green]")
+        else:
+            self.console.print("[dim]No stored key to remove for provider 'ollama'.[/dim]")
+        if os.environ.get('OLLAMA_API_KEY'):
+            self.console.print(
+                "[yellow]OLLAMA_API_KEY is still exported in this shell and keeps authenticating requests.[/yellow]"
+            )
+
+    @staticmethod
+    def _default_probe_model(models: List[str]) -> Optional[str]:
+        """
+        Choose the model a connectivity test should offer by default.
+
+        Parameters
+        ----------
+        models : list of str
+            Catalogue reported by the endpoint, in the order it served them.
+
+        Returns
+        -------
+        str or None
+            A model whose answer reflects the health of the endpoint rather than
+            the account's entitlement to one particular model, or None when the
+            catalogue is empty.
+        """
+        if not models:
+            return None
+
+        usable = [
+            name for name in models
+            if not any(marker in name.lower() for marker in PROBE_MODEL_AVOID)
+        ]
+        for family in PROBE_MODEL_PREFERENCES:
+            for name in usable:
+                if name.lower().startswith(family):
+                    return name
+
+        return usable[0] if usable else models[0]
+
+    def _test_ollama_endpoint(self, endpoint: OllamaEndpoint) -> None:
+        """
+        Probe the endpoint, then optionally prove the credential with a generation.
+
+        Listing models on ollama.com is public, so a green reachability check says
+        nothing about the key; only a real generation does.
+        """
+        probe = self._probe_ollama_with_status(endpoint)
+        self._render_ollama_probe(probe)
+
+        models = probe.get('models') or []
+        if not models:
+            return
+
+        preview = ", ".join(models[:5])
+        suffix = ", ..." if len(models) > 5 else ""
+        self.console.print(f"[dim]Serving: {preview}{suffix}[/dim]")
+
+        if endpoint.is_local:
+            return
+
+        if not Confirm.ask("\n  Run a one-token generation to verify the API key?", default=True):
+            return
+
+        model_name = Prompt.ask("  Model to test", default=self._default_probe_model(models)).strip()
+        if not model_name:
+            return
+
+        probe = self._probe_ollama_with_status(endpoint, model=model_name)
+        self._render_ollama_probe(probe, model=model_name)
+
+    def ollama_endpoint_center(self) -> None:
+        """
+        Inspect and change the Ollama server used by every Ollama-backed workflow.
+
+        The model picker can only settle the endpoint for the model being chosen;
+        this is where the endpoint itself lives, so a user can point the tool at
+        the cloud, store a key or diagnose a dead daemon without starting a run.
+        """
+        if not (HAS_RICH and self.console):
+            print("The Ollama endpoint manager requires the 'rich' library.")
+            return
+
+        # Survives a "do not store" answer so the connectivity test below can still
+        # use the key the user just typed.
+        session_key: Optional[str] = None
+
+        while True:
+            endpoint = resolve_ollama_endpoint(api_key=session_key)
+            self.console.print()
+            self._render_ollama_endpoint_panel(endpoint, session_key)
+
+            self.console.print("  [cyan]1[/cyan] Use Local Ollama   [dim]" + DEFAULT_OLLAMA_HOST + "[/dim]")
+            self.console.print("  [cyan]2[/cyan] Use Ollama Cloud   [dim]" + OLLAMA_CLOUD_HOST + "[/dim]")
+            self.console.print("  [cyan]3[/cyan] Use a custom host  [dim]any machine running `ollama serve`[/dim]")
+            self.console.print("  [cyan]4[/cyan] Store or replace the API key")
+            self.console.print("  [cyan]5[/cyan] Clear the stored API key")
+            self.console.print("  [cyan]6[/cyan] Test connectivity")
+            self.console.print("  [cyan]0[/cyan] Back")
+
+            action = Prompt.ask(
+                "\n[bold yellow]Select option[/bold yellow]",
+                choices=["0", "1", "2", "3", "4", "5", "6"],
+                default="6",
+            )
+
+            if action == "0":
+                return
+            if action == "1":
+                self._apply_ollama_host(DEFAULT_OLLAMA_HOST)
+            elif action == "2":
+                self._apply_ollama_host(OLLAMA_CLOUD_HOST)
+            elif action == "3":
+                host = Prompt.ask("  Host URL", default=endpoint.host).strip()
+                if not host:
+                    self.console.print("[yellow]  Endpoint unchanged.[/yellow]")
+                    continue
+                if "://" not in host:
+                    host = f"http://{host}"
+                self._apply_ollama_host(host)
+            elif action == "4":
+                session_key = self._store_ollama_key_interactive(endpoint) or session_key
+            elif action == "5":
+                self._clear_ollama_key()
+                session_key = None
+            else:
+                self._test_ollama_endpoint(endpoint)
 
 
     def _get_api_key(self, provider: str, model_name: Optional[str] = None) -> Optional[str]:
@@ -4255,9 +4522,17 @@ class AdvancedCLI:
 
         return OllamaEndpoint(host=endpoint.host, api_key=api_key)
 
-    def _prompt_ollama_endpoint(self) -> OllamaEndpoint:
-        """Ask which Ollama server a manually entered model lives on."""
-        ambient = resolve_ollama_endpoint()
+    def _prompt_ollama_endpoint(self, api_key: Optional[str] = None) -> OllamaEndpoint:
+        """
+        Ask which Ollama server a manually entered model lives on.
+
+        Parameters
+        ----------
+        api_key : str, optional
+            Credential already captured in this session; it travels with whatever
+            server is chosen so the user is not asked for it again.
+        """
+        ambient = resolve_ollama_endpoint(api_key=api_key)
 
         self.console.print("\n  [bold]Which Ollama server?[/bold]")
         self.console.print(f"    [cyan]local[/cyan] - {ambient.host}")
@@ -4266,20 +4541,31 @@ class AdvancedCLI:
         where = Prompt.ask("  Server", choices=["local", "cloud", "other"], default="local")
 
         if where == "cloud":
-            return resolve_ollama_endpoint(host=OLLAMA_CLOUD_HOST)
+            return resolve_ollama_endpoint(host=OLLAMA_CLOUD_HOST, api_key=api_key)
         if where == "other":
             host = Prompt.ask("  Server URL", default=DEFAULT_OLLAMA_HOST).strip()
-            return resolve_ollama_endpoint(host=host or DEFAULT_OLLAMA_HOST)
+            return resolve_ollama_endpoint(host=host or DEFAULT_OLLAMA_HOST, api_key=api_key)
         return ambient
 
     def _render_ollama_probe(self, probe: Dict[str, Any], model: Optional[str] = None) -> None:
         """Display the result of `probe_ollama` as a Rich panel."""
         endpoint = probe.get('endpoint')
 
+        # A model that authenticates and then says nothing is a reasoning model
+        # spending the probe's token budget on hidden thinking: the host and the
+        # credential are both fine, so this must not read as a failure.
+        empty_answer = (
+            probe.get('authenticated') is True
+            and probe.get('responds') is False
+            and 'empty response' in (probe.get('error') or '').lower()
+        )
+
         def flag(value: Optional[bool]) -> str:
             if value is None:
                 return "[dim]not tested[/dim]"
-            return "[green]yes[/green]" if value else "[red]no[/red]"
+            if value:
+                return "[green]yes[/green]"
+            return "[yellow]no[/yellow]" if empty_answer else "[red]no[/red]"
 
         table = Table(box=box.SIMPLE, show_header=False, expand=True)
         table.add_column("Check", style="cyan", no_wrap=True)
@@ -4296,18 +4582,27 @@ class AdvancedCLI:
         table.add_row("Latency", f"{latency} ms" if latency is not None else "[dim]not measured[/dim]")
         table.add_row("Models served", str(len(probe.get('models') or [])))
         if probe.get('error'):
-            table.add_row("Error", f"[red]{probe['error']}[/red]")
-        if probe.get('hint'):
-            table.add_row("Hint", f"[yellow]{probe['hint']}[/yellow]")
+            label, style = ("Note", "yellow") if empty_answer else ("Error", "red")
+            table.add_row(label, f"[{style}]{probe['error']}[/{style}]")
+        hint = probe.get('hint') or (
+            "The endpoint and the key work; pick a model that answers directly to see text."
+            if empty_answer else None
+        )
+        if hint:
+            table.add_row("Hint", f"[yellow]{hint}[/yellow]")
 
         healthy = bool(probe.get('reachable')) and probe.get('responds') is not False and not probe.get('error')
+        if healthy:
+            title, border_style = "[bold green]Connectivity test - OK[/bold green]", "green"
+        elif empty_answer:
+            title, border_style = "[bold yellow]Connectivity test - warning[/bold yellow]", "yellow"
+        else:
+            title, border_style = "[bold red]Connectivity test - problem found[/bold red]", "red"
+
         self.console.print(Panel(
             table,
-            title=(
-                "[bold green]Connectivity test - OK[/bold green]" if healthy
-                else "[bold red]Connectivity test - problem found[/bold red]"
-            ),
-            border_style="green" if healthy else "red",
+            title=title,
+            border_style=border_style,
             padding=(0, 1),
         ))
 
@@ -4317,45 +4612,84 @@ class AdvancedCLI:
         with self.console.status(f"[bold green]{label}...", spinner="dots"):
             return probe_ollama(endpoint, model=model)
 
-    def _test_ollama_model_interactive(self, entries: List[Tuple[str, Any]]) -> None:
-        """Test one Ollama model end to end before committing to a long run."""
+    def _test_ollama_model_interactive(
+        self,
+        entries: List[Tuple[str, Any]],
+        session_key: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Test one Ollama model end to end before committing to a long run.
+
+        Parameters
+        ----------
+        entries : list of tuple
+            Numbered picker rows, used to resolve a numeric answer to a model.
+        session_key : str, optional
+            Credential already captured by the caller, so the test does not ask
+            for a key the user has just typed.
+
+        Returns
+        -------
+        str or None
+            The credential the test ran with, for the caller to keep.
+        """
         answer = Prompt.ask("\n  Model to test (number from the list above, or a model name)", default="").strip()
         if not answer:
-            return
+            return session_key
 
         if answer.isdigit():
             index = int(answer) - 1
             if not (0 <= index < len(entries)) or entries[index][0] != 'model':
                 self.console.print("[red]  That number is not a model in the list.[/red]")
-                return
+                return session_key
             candidate: ModelInfo = entries[index][1]
             if candidate.provider != 'ollama':
                 self.console.print("[yellow]  Only Ollama models can be tested here.[/yellow]")
-                return
+                return session_key
             model_name = candidate.name
-            endpoint = resolve_ollama_endpoint(host=candidate.host)
+            endpoint = resolve_ollama_endpoint(host=candidate.host, api_key=session_key)
         else:
             model_name = answer
-            endpoint = self._prompt_ollama_endpoint()
+            endpoint = self._prompt_ollama_endpoint(api_key=session_key)
 
         endpoint = self._ensure_ollama_credential(endpoint)
         probe = self._probe_ollama_with_status(endpoint, model=model_name)
         self._render_ollama_probe(probe, model=model_name)
+        return endpoint.api_key or session_key
 
-    def _prompt_custom_ollama_model(self) -> Optional[ModelInfo]:
-        """Build a ModelInfo for an Ollama model typed by hand, on any server."""
-        endpoint = self._prompt_ollama_endpoint()
+    def _prompt_custom_ollama_model(
+        self,
+        session_key: Optional[str] = None,
+    ) -> Tuple[Optional[ModelInfo], Optional[str]]:
+        """
+        Build a ModelInfo for an Ollama model typed by hand, on any server.
+
+        Parameters
+        ----------
+        session_key : str, optional
+            Credential already captured by the caller, reused instead of asking
+            for it a second time.
+
+        Returns
+        -------
+        tuple
+            ``(ModelInfo or None, credential or None)``. The credential is
+            returned even when the model is abandoned, because a key typed here
+            is still the right one for the rest of the picker.
+        """
+        endpoint = self._prompt_ollama_endpoint(api_key=session_key)
         model_name = Prompt.ask("  Model name (e.g. gemma4:31b)", default="").strip()
         if not model_name:
-            return None
+            return None, session_key
 
         endpoint = self._ensure_ollama_credential(endpoint)
+        session_key = endpoint.api_key or session_key
         probe = self._probe_ollama_with_status(endpoint, model=model_name)
         self._render_ollama_probe(probe, model=model_name)
 
         if probe.get('model_available') is False:
             if not Confirm.ask("  This model is not in the server catalogue. Use it anyway?", default=False):
-                return None
+                return None, session_key
 
         context_length = (
             LLMDetector.live_context_length(model_name, endpoint)
@@ -4372,7 +4706,7 @@ class AdvancedCLI:
             supports_json=True,
             supports_streaming=True,
             is_available=True,
-        )
+        ), session_key
 
     def _build_ollama_client(self, model: ModelInfo, **kwargs):
         """
@@ -4391,9 +4725,21 @@ class AdvancedCLI:
         model.api_key = endpoint.api_key
         return OllamaClient(model.name, endpoint=endpoint, **kwargs)
 
-    def _finalise_ollama_selection(self, model: ModelInfo) -> ModelInfo:
-        """Attach a credential and the server's real context window to an Ollama pick."""
-        endpoint = self._ensure_ollama_credential(resolve_ollama_endpoint(host=model.host, api_key=model.api_key))
+    def _finalise_ollama_selection(self, model: ModelInfo, session_key: Optional[str] = None) -> ModelInfo:
+        """
+        Attach a credential and the server's real context window to an Ollama pick.
+
+        Parameters
+        ----------
+        model : ModelInfo
+            The selected model; its host pins the endpoint it was listed from.
+        session_key : str, optional
+            Credential captured earlier in the picker, used when the model itself
+            carries none.
+        """
+        endpoint = self._ensure_ollama_credential(
+            resolve_ollama_endpoint(host=model.host, api_key=model.api_key or session_key)
+        )
         model.host = endpoint.host
         # Declining to store the key must not lose it: the run still needs it, and
         # ModelInfo never reaches disk.
@@ -4415,26 +4761,40 @@ class AdvancedCLI:
         llms: List[ModelInfo],
         entries: List[Tuple[str, Any]],
         border_style: str,
-    ) -> None:
+    ) -> List[ModelInfo]:
         """
         Render one Ollama catalogue, or explain why it is empty.
 
         An unreachable daemon used to make the whole section disappear, which read
         as "Ollama is not supported" instead of "Ollama is not running".
+
+        Returns
+        -------
+        list of ModelInfo
+            The models actually rendered, which may be a freshly listed catalogue
+            when the one passed in turned out to be stale. Callers keep it so the
+            listing is not repeated on every redraw.
         """
         self.console.print(f"\n[bold cyan]{title} - {endpoint.host}[/bold cyan]\n")
 
         if not llms:
             probe = probe_ollama(endpoint)
-            reason = probe.get('error') or "The endpoint is reachable but serves no models."
-            hint = probe.get('hint') or (
-                "Pull one with: ollama pull llama3.2" if endpoint.is_local
-                else "Check the catalogue at https://ollama.com/library"
-            )
-            self.console.print(f"  [yellow]{reason}[/yellow]")
-            self.console.print(f"  [dim]{hint}[/dim]")
-            self.console.print("  [dim]You can still enter a model name manually below.[/dim]")
-            return
+            if probe.get('models'):
+                # The server does serve models, so the empty list handed to this
+                # section belongs to a previous endpoint: re-list rather than
+                # tell the user a healthy catalogue is empty.
+                llms = LLMDetector.detect_ollama_models(endpoint)
+
+            if not llms:
+                reason = probe.get('error') or "The endpoint is reachable but serves no models."
+                hint = probe.get('hint') or (
+                    "Pull one with: ollama pull llama3.2" if endpoint.is_local
+                    else "Check the catalogue at https://ollama.com/library"
+                )
+                self.console.print(f"  [yellow]{reason}[/yellow]")
+                self.console.print(f"  [dim]{hint}[/dim]")
+                self.console.print("  [dim]You can still enter a model name manually below.[/dim]")
+                return []
 
         if endpoint.is_cloud:
             key_state = (
@@ -4461,6 +4821,7 @@ class AdvancedCLI:
             )
 
         self.console.print(table)
+        return llms
 
     def _select_llm_interactive(self) -> ModelInfo:
         """Let user interactively select an LLM from available options"""
@@ -4468,26 +4829,49 @@ class AdvancedCLI:
             # Fallback
             return self._auto_select_llm()
 
+        # Changing the endpoint drops the cached catalogue, and this picker is
+        # entered directly from the annotation workflows, so it has to be able to
+        # rebuild it rather than render whatever the last server left behind.
+        self._ensure_detected_llms()
+
         detected = self.detected_llms or {}
         local_llms = detected.get('local', [])
         cloud_llms = detected.get('ollama_cloud', [])
         openai_llms = detected.get('openai', [])
         anthropic_llms = detected.get('anthropic', [])
 
-        local_endpoint = resolve_ollama_endpoint()
-        cloud_endpoint = resolve_ollama_endpoint(host=OLLAMA_CLOUD_HOST)
+        # Survives a "do not store" answer so the cloud header and every later
+        # action keep the key the user just typed instead of asking again.
+        session_key: Optional[str] = None
 
         while True:
+            # The ambient endpoint is whatever the endpoint manager last pointed
+            # at, so it can be a remote server too: it has to see the credential
+            # captured here, or its header keeps offering to ask for a key that
+            # is already in hand.
+            local_endpoint = resolve_ollama_endpoint()
+            if local_endpoint.is_cloud:
+                local_endpoint = resolve_ollama_endpoint(host=local_endpoint.host, api_key=session_key)
+            cloud_endpoint = resolve_ollama_endpoint(host=OLLAMA_CLOUD_HOST, api_key=session_key)
+
+            # Pointing the ambient endpoint at the cloud would make both sections
+            # describe the same server, listing it twice and leaving the local
+            # daemon unreachable. Keep the first section on the local daemon in
+            # that case; the cloud section already covers the other host.
+            if local_endpoint.host == cloud_endpoint.host:
+                local_endpoint = OllamaEndpoint(host=DEFAULT_OLLAMA_HOST)
+                local_llms = []
+
             self.console.print("\n[bold]Available LLMs:[/bold]")
             self.console.print("[dim]ℹ️  Additional API models (Anthropic, Google, etc.) will be added as they are tested in the pipeline[/dim]")
 
             # One entry per displayed number: ('model', ModelInfo) or an action.
             entries: List[Tuple[str, Any]] = []
 
-            self._render_ollama_section(
+            local_llms = self._render_ollama_section(
                 "️  Local Models (Ollama)", local_endpoint, local_llms, entries, "cyan"
             )
-            self._render_ollama_section(
+            cloud_llms = self._render_ollama_section(
                 "☁️  Ollama Cloud", cloud_endpoint, cloud_llms, entries, "bright_blue"
             )
 
@@ -4615,7 +4999,7 @@ class AdvancedCLI:
 
             if kind == 'model':
                 if payload.provider == 'ollama':
-                    return self._finalise_ollama_selection(payload)
+                    return self._finalise_ollama_selection(payload, session_key=session_key)
                 return payload
 
             if kind == 'custom_openai':
@@ -4636,13 +5020,13 @@ class AdvancedCLI:
                 )
 
             if kind == 'custom_ollama':
-                custom_ollama = self._prompt_custom_ollama_model()
+                custom_ollama, session_key = self._prompt_custom_ollama_model(session_key=session_key)
                 if custom_ollama:
                     return custom_ollama
                 continue
 
             if kind == 'test':
-                self._test_ollama_model_interactive(entries)
+                session_key = self._test_ollama_model_interactive(entries, session_key=session_key)
 
     def _auto_select_llm(self) -> ModelInfo:
         """Intelligently select the best available LLM for annotation"""
@@ -5533,6 +5917,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             model_info = ModelInfo(**model_entry)
         else:
             model_info = ModelInfo(name=str(model_entry), provider='ollama', is_available=True)
+        if model_info.provider == 'ollama':
+            # A saved profile carries a bare model name, so a cloud model arrives
+            # here with neither host nor credential; both have to be settled
+            # before the endpoint is frozen into the pipeline config below.
+            ollama_endpoint = self._ensure_ollama_credential(
+                resolve_ollama_endpoint(host=model_info.host, api_key=model_info.api_key)
+            )
+            model_info.host = ollama_endpoint.host
+            model_info.api_key = ollama_endpoint.api_key
         api_key = config.get('api_key')
         prompt_config = config.get('prompt')
         training_preset = config.get('training_config', {})
@@ -5624,6 +6017,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             'annotation_mode': annotation_mode,
             'annotation_provider': model_info.provider,
             'annotation_model': model_info.name,
+            # A saved profile may name a model that only exists on a remote endpoint,
+            # so the host travels with it rather than defaulting to the local daemon.
+            **_ollama_endpoint_settings(model_info.provider, model_info),
             'api_key': api_key,
             'openai_batch_mode': openai_batch_mode,
             'prompts': prompts_payload,
@@ -5822,6 +6218,10 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'model_configuration': {
                         'provider': model_info.provider,
                         'model_name': model_info.name,
+                        # Only the host is recorded; the credential is re-resolved from
+                        # env/vault on resume so no bearer token reaches this file.
+                        **({'ollama_host': pipeline_config['ollama_host']}
+                           if pipeline_config.get('ollama_host') else {}),
                         'annotation_mode': annotation_mode,
                         'openai_batch_mode': openai_batch_mode,
                         'temperature': annotation_settings.get('temperature'),
@@ -5840,7 +6240,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     'processing_configuration': {
                         'parallel_workers': None if openai_batch_mode else pipeline_config.get('num_processes', 1),
                         'batch_size': None if openai_batch_mode else pipeline_config.get('batch_size', 16),
-                        'incremental_save': False if openai_batch_mode else save_incrementally,
+                        'incremental_save': False if openai_batch_mode else pipeline_config.get('save_incrementally', True),
                         'openai_batch_mode': openai_batch_mode
                     },
                     'training_configuration': {

@@ -2427,13 +2427,22 @@ Remember: THE FIRST EXAMPLE MUST HAVE ALL CATEGORIES WITH NON-NULL VALUES:"""
         self.console.print(f"\n[green]✓ Prompt saved to: {filepath}[/green]\n")
 
 
-def create_llm_client_for_wizard(provider: str, model: str, api_key: Optional[str] = None):
+def create_llm_client_for_wizard(
+    provider: str,
+    model: str,
+    api_key: Optional[str] = None,
+    host: Optional[str] = None,
+    endpoint: Optional[Any] = None,
+):
     """Create an LLM client for the wizard's AI assistance
 
     Args:
         provider: "ollama", "openai", "anthropic"
         model: Model name
-        api_key: API key if needed
+        api_key: API key if needed; for Ollama this is the endpoint's bearer token
+        host: Ollama base URL (e.g. OLLAMA_CLOUD_HOST). Ignored by the API providers.
+              None resolves the ambient endpoint (OLLAMA_HOST / stored key / localhost).
+        endpoint: Pre-resolved OllamaEndpoint; takes precedence over host/api_key.
 
     Returns:
         LLM client instance
@@ -2442,6 +2451,9 @@ def create_llm_client_for_wizard(provider: str, model: str, api_key: Optional[st
     from ..annotators.local_models import OllamaClient
 
     if provider == "ollama":
-        return OllamaClient(model)
+        # A cloud model reached through the local default would either be missing
+        # from the catalogue or trigger a pull on the user's own machine, so the
+        # endpoint the model was picked from has to travel with it.
+        return OllamaClient(model, host=host, api_key=api_key, endpoint=endpoint)
     else:
         return create_api_client(provider=provider, api_key=api_key, model=model)

@@ -7515,6 +7515,13 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     )
     if ollama_endpoint_settings:
         model_config['ollama_host'] = ollama_endpoint_settings['ollama_host']
+        if metadata_state is not None:
+            # ``metadata_state`` is the payload persisted for the next resume and was
+            # copied before this correction, so the endpoint has to be mirrored into it;
+            # otherwise the stale host survives and every resume re-runs the switch.
+            metadata_state.setdefault('model_configuration', {})['ollama_host'] = (
+                ollama_endpoint_settings['ollama_host']
+            )
         cli.console.print(
             f"[cyan]Ollama endpoint: {ollama_endpoint_settings['ollama_host']}[/cyan]"
         )

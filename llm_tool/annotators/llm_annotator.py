@@ -576,14 +576,41 @@ class LLMAnnotator:
 
     def _prepare_prompts(self, config: Dict[str, Any]) -> List[Dict]:
         """Prepare prompts for annotation"""
-        prompts_config = config.get('prompts', [])
-        if not prompts_config:
-            # Load from prompt files if specified
-            prompt_dir = config.get('prompt_dir')
-            if prompt_dir:
-                prompts_config = self.prompt_manager.load_prompts_from_directory(prompt_dir)
-            else:
-                raise ValueError("No prompts specified")
+        # The key is always present in a pipeline config but may hold None, so a
+        # .get default would not save us here.
+        prompts_config = config.get('prompts') or []
+        if prompts_config:
+            return prompts_config
+
+        # Fall back to prompt files on disk. The CLI spells this several ways
+        # depending on the entry point, and the value may name a single file or
+        # a directory of them, so all of it funnels through one loader.
+        source = (
+            config.get('prompt_dir')
+            or config.get('prompt_path')
+            or config.get('prompts_folder')
+        )
+        if not source:
+            raise ValueError("No prompts specified")
+
+        path = Path(source)
+        if path.is_dir():
+            prompt_files = sorted(path.glob('*.txt'))
+            if not prompt_files:
+                raise ValueError(f"No .txt prompt files found in {path}")
+        elif path.is_file():
+            prompt_files = [path]
+        else:
+            raise ValueError(f"Prompt path does not exist: {path}")
+
+        for prompt_file in prompt_files:
+            prompt_text, expected_keys = self.prompt_manager.load_prompt(str(prompt_file))
+            prompts_config.append({
+                'name': prompt_file.stem,
+                'prompt': prompt_text,
+                'expected_keys': expected_keys,
+                'prefix': '',
+            })
 
         return prompts_config
 
