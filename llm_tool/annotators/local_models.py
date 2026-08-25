@@ -70,6 +70,11 @@ except ImportError:
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_CLOUD_HOST = "https://ollama.com"
 
+# Token budget for the connectivity probe's test generation. Sized so a reasoning
+# model can finish its thinking trace and still answer: gpt-oss:120b needs ~190
+# tokens of reasoning before it emits its first visible character.
+PROBE_TOKEN_BUDGET = 256
+
 
 class OllamaFatalError(RuntimeError):
     """
@@ -258,23 +263,49 @@ def probe_ollama(
         response = client.generate(
             model=model,
             prompt="Reply with only the word 'OK'.",
-            options={'temperature': 0, 'num_predict': 5},
+            # Reasoning models spend their budget on a hidden thinking trace before
+            # emitting the first visible token, so a handful of tokens would cut them
+            # off mid-thought and look indistinguishable from a mute model.
+            options={'temperature': 0, 'num_predict': PROBE_TOKEN_BUDGET},
         )
         text = (getattr(response, 'response', '') or '').strip()
+        thinking = (getattr(response, 'thinking', '') or '').strip()
+        done_reason = getattr(response, 'done_reason', None)
         result['latency_ms'] = int((time.time() - start) * 1000)
-        result['responds'] = bool(text)
         result['authenticated'] = True
+
+        # Anything the model emitted — visible answer or reasoning trace — proves the
+        # endpoint, the credential and the model are all live.
+        result['responds'] = bool(text or thinking)
         if not text:
-            result['error'] = f"Model {model} returned an empty response"
+            if thinking and done_reason == 'length':
+                result['hint'] = (
+                    f"{model} is a reasoning model: it used the whole probe budget on its "
+                    f"thinking trace. It works — give it room for its answer "
+                    f"(max tokens well above {PROBE_TOKEN_BUDGET})."
+                )
+            elif not thinking:
+                result['responds'] = False
+                result['error'] = f"Model {model} returned an empty response"
     except OllamaResponseError as e:
         status = getattr(e, 'status_code', None)
         result['responds'] = False
-        if status in (401, 403):
+        if status == 401:
             result['authenticated'] = False
-            result['error'] = f"Authentication failed for {endpoint.host} (HTTP {status})"
+            result['error'] = f"Authentication failed for {endpoint.host} (HTTP 401)"
             result['hint'] = (
                 "Ollama Cloud requires a valid API key. Set OLLAMA_API_KEY or store "
                 "one for the 'ollama' provider."
+            )
+        elif status == 403:
+            # The credential was accepted and then the model was refused, which is a
+            # different problem from a bad key: telling the user to check their key
+            # sends them to fix something that already works.
+            result['authenticated'] = True
+            result['error'] = f"Your account is not entitled to '{model}' (HTTP 403)"
+            result['hint'] = (
+                "The API key is valid but this model is not included in your plan. "
+                "Pick another model from the catalogue."
             )
         elif status == 404:
             result['error'] = f"Model '{model}' not found on {endpoint.host}"
@@ -633,7 +664,10 @@ class OllamaClient(BaseLocalClient):
 
             response = self._generate_with_timeout(
                 prompt=test_prompt,
-                options={'temperature': 0, 'num_predict': 10},
+                # Same budget as the connectivity probe: too few tokens and a reasoning
+                # model gets cut off mid-thought, and a perfectly healthy server is
+                # diagnosed as unresponsive.
+                options={'temperature': 0, 'num_predict': PROBE_TOKEN_BUDGET},
                 timeout=self._health_check_timeout
             )
 
@@ -850,9 +884,22 @@ class OllamaClient(BaseLocalClient):
             if isinstance(response, dict):
                 return response.get('response', '').strip()
             text = getattr(response, 'response', None)
-            if text is not None:
-                return text.strip()
-            return str(response)
+            if text is None:
+                return str(response)
+
+            text = text.strip()
+            if not text and getattr(response, 'done_reason', None) == 'length':
+                # A reasoning model emits a hidden thinking trace before its answer.
+                # Too small a budget cuts it off mid-thought and yields an empty
+                # string, which is indistinguishable from a mute model unless we say so.
+                thinking = getattr(response, 'thinking', None)
+                if thinking:
+                    self.logger.warning(
+                        f"{self.model_name} used its entire {options.get('num_predict')}-token "
+                        f"budget on reasoning and never reached an answer. Raise max_tokens "
+                        f"(this model needs roughly {len(thinking) // 4 + 64} to reply)."
+                    )
+            return text
 
         # Enforce the timeout on the blocking Ollama call. Note we deliberately
         # avoid `with ThreadPoolExecutor(...)`: its __exit__ waits for the worker,
@@ -984,10 +1031,16 @@ class OllamaClient(BaseLocalClient):
                 status = getattr(e, 'status_code', None)
                 # A rejected credential or a missing model will not fix itself on
                 # retry — and against a metered endpoint each retry costs quota.
-                if status in (401, 403):
+                if status == 401:
                     raise OllamaFatalError(
-                        f"Authentication rejected by {self.endpoint.host} (HTTP {status}). "
+                        f"Authentication rejected by {self.endpoint.host} (HTTP 401). "
                         f"Check the API key for the 'ollama' provider."
+                    ) from e
+                if status == 403:
+                    raise OllamaFatalError(
+                        f"{self.endpoint.host} accepted the key but refused "
+                        f"'{self.model_name}' (HTTP 403) — your account is not entitled "
+                        f"to this model. Pick another one."
                     ) from e
                 if status == 404:
                     raise OllamaFatalError(
