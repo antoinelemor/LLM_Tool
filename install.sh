@@ -127,65 +127,37 @@ PYTHON_VERSION=""
 echo "Searching for Python ≥3.11..."
 echo ""
 
-# 1. Try /opt/homebrew/bin/python3.11 (Homebrew on Apple Silicon)
-if [ -z "$PYTHON_BIN" ] && [ -f "/opt/homebrew/bin/python3.11" ]; then
-    result=$(check_python_version "/opt/homebrew/bin/python3.11")
-    if [ $? -eq 0 ]; then
-        PYTHON_BIN=$(echo $result | cut -d':' -f1)
-        PYTHON_VERSION=$(echo $result | cut -d':' -f2)
-        echo "  ✓ Found /opt/homebrew/bin/python3.11 version $PYTHON_VERSION"
-    fi
-fi
+# Newest first, matching install.ps1: every version listed has prebuilt wheels
+# for the whole dependency set, and the newer ones get fixes sooner. The two
+# Homebrew paths are named explicitly because a Homebrew Python is not always
+# on PATH — `brew install python@3.12` links it as python3.12 only if nothing
+# else claims the name.
+CANDIDATES="
+python3.13
+python3.12
+python3.11
+/opt/homebrew/bin/python3.13
+/opt/homebrew/bin/python3.12
+/opt/homebrew/bin/python3.11
+/usr/local/bin/python3.13
+/usr/local/bin/python3.12
+/usr/local/bin/python3.11
+python3
+python
+"
 
-# 2. Try python3.11 in PATH
-if [ -z "$PYTHON_BIN" ]; then
-    result=$(check_python_version "python3.11")
-    if [ $? -eq 0 ]; then
-        PYTHON_BIN=$(echo $result | cut -d':' -f1)
-        PYTHON_VERSION=$(echo $result | cut -d':' -f2)
-        echo "  ✓ Found python3.11 in PATH version $PYTHON_VERSION"
+for candidate in $CANDIDATES; do
+    [ -n "$PYTHON_BIN" ] && break
+    # `if result=$(...)` and not `result=$(...); if [ $? -eq 0 ]`: under `set -e`
+    # a failing command substitution in a bare assignment terminates the script,
+    # so the old form aborted the whole installer as soon as the first candidate
+    # was missing. Inside an `if` condition, a non-zero exit is just a false test.
+    if result=$(check_python_version "$candidate"); then
+        PYTHON_BIN=${result%%:*}
+        PYTHON_VERSION=${result#*:}
+        echo "  ✓ Found $candidate version $PYTHON_VERSION"
     fi
-fi
-
-# 3. Try python3.12 in PATH
-if [ -z "$PYTHON_BIN" ]; then
-    result=$(check_python_version "python3.12")
-    if [ $? -eq 0 ]; then
-        PYTHON_BIN=$(echo $result | cut -d':' -f1)
-        PYTHON_VERSION=$(echo $result | cut -d':' -f2)
-        echo "  ✓ Found python3.12 in PATH version $PYTHON_VERSION"
-    fi
-fi
-
-# 4. Try python3.13 in PATH
-if [ -z "$PYTHON_BIN" ]; then
-    result=$(check_python_version "python3.13")
-    if [ $? -eq 0 ]; then
-        PYTHON_BIN=$(echo $result | cut -d':' -f1)
-        PYTHON_VERSION=$(echo $result | cut -d':' -f2)
-        echo "  ✓ Found python3.13 in PATH version $PYTHON_VERSION"
-    fi
-fi
-
-# 5. Try generic python3 (only if version >= 3.11)
-if [ -z "$PYTHON_BIN" ]; then
-    result=$(check_python_version "python3")
-    if [ $? -eq 0 ]; then
-        PYTHON_BIN=$(echo $result | cut -d':' -f1)
-        PYTHON_VERSION=$(echo $result | cut -d':' -f2)
-        echo "  ✓ Found python3 version $PYTHON_VERSION"
-    fi
-fi
-
-# 6. Try generic python (only if version >= 3.11)
-if [ -z "$PYTHON_BIN" ]; then
-    result=$(check_python_version "python")
-    if [ $? -eq 0 ]; then
-        PYTHON_BIN=$(echo $result | cut -d':' -f1)
-        PYTHON_VERSION=$(echo $result | cut -d':' -f2)
-        echo "  ✓ Found python version $PYTHON_VERSION"
-    fi
-fi
+done
 
 # If no suitable Python was found, exit with error
 if [ -z "$PYTHON_BIN" ]; then
