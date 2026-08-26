@@ -119,3 +119,18 @@ paper/scripts/__pycache__/
 # Local-only research artefacts (kept off the remote)
 docs/model_repair_report.md
 scripts/repair_experiment.py
+
+# macOS Finder duplicates ("module 2.py") — committed, these ship inside the wheel
+* [0-9].py
+
+# macOS Spotlight
+.metadata_never_index
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk

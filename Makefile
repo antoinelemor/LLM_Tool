@@ -1,4 +1,14 @@
-.PHONY: help install install-dev install-all clean test lint format run check-setup venv
+# Developer shortcuts for macOS and Linux.
+#
+# Windows does not ship `make`. Every target below has an equivalent in
+# make.bat, so `make.bat test` and `make test` do the same thing. The cleanup
+# targets shell out to Python rather than find/rm so they behave identically
+# under both.
+
+.PHONY: help install install-dev install-all clean clean-all test lint format run check-build venv quickstart
+
+# Use this project's interpreter, not whatever `python` resolves to.
+PYTHON ?= python3
 
 help:
 	@echo "╔══════════════════════════════════════════════════════════╗"
@@ -16,33 +26,35 @@ help:
 	@echo "  make test          Run test suite"
 	@echo "  make lint          Run linting checks (flake8)"
 	@echo "  make format        Format code with black and isort"
-	@echo "  make check-setup   Verify setup.py configuration"
+	@echo "  make check-build   Validate the package metadata"
 	@echo ""
 	@echo "Cleanup Commands:"
 	@echo "  make clean         Remove build artifacts and cache"
 	@echo "  make clean-all     Remove build artifacts, cache, and venv"
 	@echo ""
+	@echo "On Windows, use make.bat with the same target names."
+	@echo ""
 
 venv:
 	@echo "Creating virtual environment..."
-	python3 -m venv .venv
+	$(PYTHON) -m venv .venv
 	@echo "✓ Virtual environment created at .venv/"
 	@echo "Activate with: source .venv/bin/activate (macOS/Linux)"
-	@echo "             or .venv\\Scripts\\activate (Windows)"
+	@echo "             or .venv\\Scripts\\Activate.ps1 (Windows PowerShell)"
 
 install:
 	@echo "Installing LLM Tool with core dependencies..."
-	pip install -e .
+	$(PYTHON) -m pip install -e .
 	@echo "✓ Installation complete!"
 
 install-dev:
 	@echo "Installing LLM Tool with development dependencies..."
-	pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ".[dev]"
 	@echo "✓ Installation complete!"
 
 install-all:
 	@echo "Installing LLM Tool with all dependencies..."
-	pip install -e ".[all]"
+	$(PYTHON) -m pip install -e ".[all]"
 	@echo "✓ Installation complete!"
 
 run:
@@ -64,19 +76,24 @@ format:
 	isort llm_tool/
 	@echo "✓ Code formatting complete!"
 
-check-setup:
-	@echo "Verifying setup.py configuration..."
-	python setup.py check
+# There is no setup.py: the metadata lives in pyproject.toml, so validate that
+# a distribution can actually be built from it.
+check-build:
+	@echo "Validating package metadata..."
+	$(PYTHON) -m pip install --quiet --upgrade build twine
+	$(PYTHON) -m build --sdist --wheel --outdir dist/
+	$(PYTHON) -m twine check dist/*
+	@echo "✓ Package metadata is valid!"
 
 clean:
 	@echo "Cleaning build artifacts and cache..."
 	rm -rf build/
 	rm -rf dist/
 	rm -rf *.egg-info
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete
-	find . -type f -name "*.pyo" -delete
-	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name __pycache__ -not -path "./.venv/*" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -not -path "./.venv/*" -delete
+	find . -type f -name "*.pyo" -not -path "./.venv/*" -delete
+	find . -type d -name ".pytest_cache" -not -path "./.venv/*" -exec rm -rf {} + 2>/dev/null || true
 	@echo "✓ Cleanup complete!"
 
 clean-all: clean

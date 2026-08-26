@@ -61,6 +61,7 @@ import math
 import random
 import threading
 import concurrent.futures
+import tempfile
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Tuple, Iterable, Set
 from datetime import datetime
@@ -121,6 +122,32 @@ except ImportError:
     OpenAI = None
     NotFoundError = Exception
     logging.warning("OpenAI SDK not installed. Batch API support disabled.")
+
+def _debug_trace(message: str) -> None:
+    """
+    Append a progress-callback trace line when tracing is switched on.
+
+    Parameters
+    ----------
+    message : str
+        Line to record; a newline is added.
+
+    Notes
+    -----
+    Set ``LLM_TOOL_TRACE_PROGRESS=1`` to enable. The destination is
+    ``<temp>/llm_tool_progress.log`` -- resolved through :func:`tempfile.gettempdir`
+    rather than a literal ``/tmp`` so it lands somewhere real on Windows too,
+    and off by default so a normal run never writes it at all.
+    """
+    if os.environ.get('LLM_TOOL_TRACE_PROGRESS', '').strip().lower() not in {'1', 'true', 'yes', 'on'}:
+        return
+    try:
+        path = Path(tempfile.gettempdir()) / 'llm_tool_progress.log'
+        with open(path, 'a', encoding='utf-8') as handle:
+            handle.write(message + '\n')
+    except OSError:
+        pass  # Tracing must never break the annotation run.
+
 
 OPENAI_BATCH_MAX_FILE_BYTES = 512 * 1024 * 1024  # 512 MB per input file
 OPENAI_BATCH_MAX_INPUT_TOKENS = 50_000_000  # OpenAI documented soft limit
@@ -1058,20 +1085,11 @@ class LLMAnnotator:
                 self.logger.warning(message)
             return full_data
 
-        # Report initial progress - DEBUG with file logging
-        import sys
-        try:
-            with open('/tmp/llmtool_debug.log', 'a') as f:
-                f.write(f"[ANNOTATOR] Starting with {total_tasks} tasks, callback={self.progress_callback is not None}\n")
-        except:
-            pass
+        # Report initial progress
+        _debug_trace(f"[ANNOTATOR] Starting with {total_tasks} tasks, callback={self.progress_callback is not None}")
 
         if self.progress_callback:
-            try:
-                with open('/tmp/llmtool_debug.log', 'a') as f:
-                    f.write(f"[ANNOTATOR] Calling progress_callback(0, {total_tasks}, ...)\n")
-            except:
-                pass
+            _debug_trace(f"[ANNOTATOR] Calling progress_callback(0, {total_tasks}, ...)")
             if resume_already > 0:
                 self.progress_callback(
                     0, total_tasks,
@@ -1080,11 +1098,7 @@ class LLMAnnotator:
             else:
                 self.progress_callback(0, total_tasks, f"Starting annotation of {total_tasks} items")
         else:
-            try:
-                with open('/tmp/llmtool_debug.log', 'a') as f:
-                    f.write(f"[ANNOTATOR] ERROR: No progress_callback!\n")
-            except:
-                pass
+            _debug_trace("[ANNOTATOR] ERROR: No progress_callback!")
 
         # Initialize progress bar with position lock to prevent line jumps
         disable_pbar = config.get('disable_tqdm', False)
@@ -1240,12 +1254,7 @@ class LLMAnnotator:
 
         # Report initial progress
         if self.progress_callback:
-            try:
-                with open('/tmp/llmtool_debug.log', 'a') as f:
-                    f.write(f"[ANNOTATOR SEQUENTIAL] Starting with {total_tasks} tasks, callback={self.progress_callback is not None}\n")
-                    f.flush()
-            except:
-                pass
+            _debug_trace(f"[ANNOTATOR SEQUENTIAL] Starting with {total_tasks} tasks, callback={self.progress_callback is not None}")
             if resume_already > 0:
                 self.progress_callback(
                     0, total_tasks,
@@ -1441,12 +1450,7 @@ class LLMAnnotator:
             # Report progress via callback if available
             completed_count += 1
             if self.progress_callback:
-                try:
-                    with open('/tmp/llmtool_debug.log', 'a') as f:
-                        f.write(f"[ANNOTATOR SEQUENTIAL] Progress: {completed_count}/{total_tasks}\n")
-                        f.flush()
-                except:
-                    pass
+                _debug_trace(f"[ANNOTATOR SEQUENTIAL] Progress: {completed_count}/{total_tasks}")
                 if resume_already > 0:
                     self.progress_callback(completed_count, total_tasks,
                         f"Annotated {completed_count}/{total_tasks} (+ {resume_already:,} previously done)")
@@ -1573,12 +1577,7 @@ class LLMAnnotator:
 
         # Report final progress
         if self.progress_callback:
-            try:
-                with open('/tmp/llmtool_debug.log', 'a') as f:
-                    f.write(f"[ANNOTATOR SEQUENTIAL] Completed all {total_tasks} tasks\n")
-                    f.flush()
-            except:
-                pass
+            _debug_trace(f"[ANNOTATOR SEQUENTIAL] Completed all {total_tasks} tasks")
             self.progress_callback(total_tasks, total_tasks, f"Completed annotation of {total_tasks} items")
 
         # Finalize Doccano sync
@@ -2290,7 +2289,7 @@ class LLMAnnotator:
                     "One or more OpenAI batch chunks failed. Check logs for details."
                 )
 
-        output_file_path.write_text("")
+        output_file_path.write_text("", encoding="utf-8")
         chunk_output_paths: List[Path] = []
 
         successful_jobs = [info for info in submission_results if info.get('status') == 'completed']
@@ -2528,7 +2527,13 @@ class LLMAnnotator:
         }
 
         try:
-            metadata_file_path.write_text(json.dumps(overall_metadata, ensure_ascii=False, indent=2))
+            # ensure_ascii=False keeps prompts and labels readable, so the file
+            # genuinely contains non-ASCII and the encoding cannot be left to
+            # the locale -- on Windows that would be cp1252 and raise here.
+            metadata_file_path.write_text(
+                json.dumps(overall_metadata, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         except Exception as exc:
             self.logger.warning("[BATCH] Unable to write batch metadata: %s", exc)
 
@@ -2933,7 +2938,12 @@ class LLMAnnotator:
 
         fmt = (format or 'csv').lower()
         if fmt == 'csv':
-            data.to_csv(path_obj, index=False)
+            # utf-8-sig, not plain utf-8: these files are what a researcher
+            # double-clicks to review the annotations, and Excel on a localised
+            # Windows opens a BOM-less CSV with the ANSI code page -- turning
+            # "émotion" into "Ã©motion" and any CJK or Arabic into noise. The
+            # BOM is valid UTF-8 everywhere, and pandas strips it on read.
+            data.to_csv(path_obj, index=False, encoding='utf-8-sig')
         elif fmt == 'excel':
             data.to_excel(path_obj, index=False)
         elif fmt == 'parquet':

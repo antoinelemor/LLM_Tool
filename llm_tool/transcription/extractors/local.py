@@ -196,7 +196,7 @@ class LocalExtractor(BaseExtractor):
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True,
+                text=True, encoding='utf-8', errors='replace',
                 check=False
             )
 
@@ -231,7 +231,7 @@ class LocalExtractor(BaseExtractor):
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True,
+                text=True, encoding='utf-8', errors='replace',
                 check=False
             )
 
@@ -274,7 +274,7 @@ class LocalExtractor(BaseExtractor):
                     str(file_path)
                 ],
                 capture_output=True,
-                text=True,
+                text=True, encoding='utf-8', errors='replace',
                 check=True
             )
             info['duration'] = float(result.stdout.strip())

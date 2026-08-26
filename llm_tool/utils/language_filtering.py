@@ -368,7 +368,7 @@ def save_filtered_languages_log(
         'drop_reasons': drop_reasons
     }
 
-    with open(log_file, 'w') as f:
+    with open(log_file, 'w', encoding='utf-8') as f:
         json.dump(log_data, f, indent=2)
 
     logger.info(f"Saved language filtering log to {log_file}")

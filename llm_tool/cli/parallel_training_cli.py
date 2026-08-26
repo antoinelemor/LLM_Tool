@@ -180,7 +180,7 @@ def run_parallel_training(
         console.print(f"[red]Error: Metadata file not found: {metadata_path}[/red]")
         return
 
-    with open(metadata_path, 'r') as f:
+    with open(metadata_path, 'r', encoding='utf-8') as f:
         metadata = json.load(f)
 
     training_files = metadata.get("dataset_config", {}).get("training_files", {})

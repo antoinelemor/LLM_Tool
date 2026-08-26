@@ -1062,14 +1062,14 @@ class PipelineController:
             'warnings': self.state.warnings
         }
 
-        with open(state_file, 'w') as f:
+        with open(state_file, 'w', encoding='utf-8') as f:
             json.dump(state_dict, f, indent=2, default=str)
 
         self.logger.info(f"Pipeline state saved to {state_file}")
 
     def load_pipeline_state(self, state_file: str) -> PipelineState:
         """Load a previous pipeline state from disk"""
-        with open(state_file, 'r') as f:
+        with open(state_file, 'r', encoding='utf-8') as f:
             state_dict = json.load(f)
 
         state = PipelineState(

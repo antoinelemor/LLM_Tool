@@ -130,8 +130,11 @@ class TrainingDataSessionManager:
         # Prevent warnings from propagating to root logger (avoid console spam)
         warnings_logger.propagate = False
 
-        # File handler - warnings only go to file, not console
-        handler = logging.FileHandler(self.warnings_log)
+        # File handler - warnings only go to file, not console.
+        # encoding is explicit: the warnings quote user class labels and dataset
+        # text, and the locale encoding on Windows (cp1252) cannot represent
+        # most of them -- the handler would raise mid-run instead of logging.
+        handler = logging.FileHandler(self.warnings_log, encoding='utf-8')
         handler.setLevel(logging.WARNING)
         formatter = logging.Formatter(
             '%(asctime)s - %(levelname)s - %(message)s',

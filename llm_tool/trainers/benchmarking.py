@@ -82,6 +82,7 @@ from llm_tool.trainers.sota_models import (
 )
 from llm_tool.trainers.data_utils import safe_tolist, safe_convert_labels
 from llm_tool.utils.training_paths import resolve_metrics_base_dir
+from llm_tool.platform_compat import replace_path, sanitize_path_component
 
 
 # Base columns always present in best_models.csv summaries
@@ -695,10 +696,12 @@ class BenchmarkRunner:
             best_path = Path(best_path)
 
         if best_path and best_path.exists():
-            final_path = models_output_dir / model_name
-            if final_path.exists():
-                shutil.rmtree(final_path)
-            shutil.move(str(best_path), final_path)
+            # model_name can be a HuggingFace id such as
+            # "microsoft/deberta-v3-base"; used raw it would create a nested
+            # directory on POSIX and fail outright on Windows, where '/' is
+            # not legal in a name.
+            final_path = models_output_dir / sanitize_path_component(model_name)
+            replace_path(best_path, final_path)
             best_path = final_path
             self.logger.info("✓ Model saved at %s", final_path)
         else:
@@ -755,7 +758,7 @@ class BenchmarkRunner:
             self.logger.warning("best_models.csv missing in %s", log_dir)
             return
 
-        with best_file.open(encoding="utf-8") as fh:
+        with best_file.open(encoding="utf-8", newline="") as fh:
             rows = list(csv.DictReader(fh))
 
         if not rows:
@@ -781,7 +784,7 @@ class BenchmarkRunner:
 
         existing: List[Dict[str, str]] = []
         if summary_csv.exists():
-            with summary_csv.open(encoding="utf-8") as fh:
+            with summary_csv.open(encoding="utf-8", newline="") as fh:
                 existing = list(csv.DictReader(fh))
 
         def _match(rec: Dict[str, str]) -> bool:

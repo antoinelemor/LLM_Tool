@@ -249,7 +249,13 @@ class Settings:
             handlers.append(RotatingFileHandler(
                 log_file,
                 maxBytes=self.logging.max_bytes,
-                backupCount=self.logging.backup_count
+                backupCount=self.logging.backup_count,
+                # Without this the handler writes in the locale encoding, which
+                # is cp1252 on Windows: the first log line carrying an accent,
+                # CJK text or one of the CLI's status glyphs raises
+                # UnicodeEncodeError and logging prints "--- Logging error ---"
+                # over whatever Rich is drawing.
+                encoding='utf-8'
             ))
 
         logging.basicConfig(
@@ -263,7 +269,9 @@ class Settings:
         config_file = config_file or self.config_file
 
         try:
-            with open(config_file, 'r') as f:
+            # JSON is UTF-8 by definition (RFC 8259); reading it in the locale
+            # encoding would corrupt a non-ASCII path or model name on Windows.
+            with open(config_file, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
 
             # Load each configuration section
@@ -329,8 +337,8 @@ class Settings:
         config_data = self._remove_none_values(config_data)
 
         try:
-            with open(config_file, 'w') as f:
-                json.dump(config_data, f, indent=2)
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, indent=2, ensure_ascii=False)
             logging.info(f"Configuration saved to {config_file}")
         except Exception as e:
             logging.error(f"Could not save configuration: {e}")

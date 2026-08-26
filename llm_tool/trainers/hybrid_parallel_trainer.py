@@ -81,6 +81,50 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# ACCELERATOR HELPERS
+# ============================================================================
+#
+# This module was written on Apple Silicon and referred to MPS directly. MPS
+# only exists on macOS: on a Windows or Linux box `force_device='mps'` makes
+# PyTorch raise, and an `torch.mps.empty_cache()` cleanup frees nothing on a
+# CUDA card -- so an out-of-memory retry retried into the same full GPU. These
+# two helpers name the accelerator that is actually present.
+
+
+def detect_gpu_device() -> str:
+    """
+    Return the torch device string for this machine's accelerator.
+
+    Returns
+    -------
+    str
+        ``"cuda"`` on an NVIDIA or ROCm box, ``"mps"`` on Apple Silicon,
+        ``"cpu"`` when neither is usable.
+    """
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def empty_gpu_cache() -> None:
+    """Release cached accelerator memory, whichever backend is in use."""
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+    except Exception:  # pragma: no cover - cleanup must never abort a run
+        pass
+
+
+def has_gpu() -> bool:
+    """Whether any GPU backend is available."""
+    return detect_gpu_device() != "cpu"
+
+
+# ============================================================================
 # HARDWARE ANALYZER (moved from parallel_training_orchestrator.py)
 # ============================================================================
 
@@ -825,8 +869,7 @@ def _process_task_cpu(
                 logger.warning(f"[GPU] OOM detected, retrying {task.category_name} with batch_size={new_bs}")
                 trainer.config.batch_size = new_bs
                 try:
-                    if torch.backends.mps.is_available():
-                        torch.mps.empty_cache()
+                    empty_gpu_cache()
                     result = trainer.train_single_model(
                         label_name=task.category_name,
                         train_samples=train_samples,
@@ -1049,7 +1092,9 @@ def _train_on_gpu(
             batch_size=gpu_config.get('batch_size', 128),
             learning_rate=task.config.get('learning_rate', 2e-5),
             warmup_ratio=task.config.get('warmup_ratio', 0.0),
-            force_device='mps',  # Force MPS for Apple Silicon
+            # The accelerator differs per machine; hardcoding 'mps' made
+            # PyTorch raise on every Windows and Linux box.
+            force_device=gpu_config.get('device_id') or detect_gpu_device(),
             dataloader_num_workers=dl_workers,
             dataloader_prefetch_factor=dl_prefetch,
             dataloader_persistent_workers=dl_workers > 0,
@@ -1138,8 +1183,7 @@ def _train_on_gpu(
         # Cleanup
         del trainer
         gc.collect()
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
+        empty_gpu_cache()
 
         # Extract metrics
         metrics = result.performance_metrics if hasattr(result, 'performance_metrics') else {}
@@ -1239,7 +1283,7 @@ class HybridParallelTrainer:
 
         # Auto-calculate CPU workers only if None (not if explicitly 0)
         if num_cpu_workers is None:
-            has_gpu = torch.backends.mps.is_available() or torch.cuda.is_available()
+            has_gpu = detect_gpu_device() != 'cpu'
             num_cpu_workers = self.memory_monitor.calculate_safe_cpu_workers(has_gpu_worker=has_gpu)
             logger.info(f"Auto-calculated {num_cpu_workers} safe CPU workers based on memory")
         elif num_cpu_workers == 0:
@@ -1260,6 +1304,9 @@ class HybridParallelTrainer:
             'batch_size': gpu_batch_size,
             'dataloader_workers': gpu_dataloader_workers,
             'dataloader_prefetch': gpu_prefetch,
+            # Resolved once here so every GPU task trains on the accelerator
+            # this machine actually has: cuda on Windows/Linux, mps on macOS.
+            'device_id': detect_gpu_device(),
             **_imbalance_cfg,
         }
 
@@ -1412,8 +1459,7 @@ class HybridParallelTrainer:
 
                 # Cleanup after first GPU task
                 gc.collect()
-                if torch.backends.mps.is_available():
-                    torch.mps.empty_cache()
+                empty_gpu_cache()
 
             # GPU continues pulling tasks via smart scheduler
             while True:
@@ -1470,8 +1516,7 @@ class HybridParallelTrainer:
 
                 # Cleanup between GPU tasks
                 gc.collect()
-                if torch.backends.mps.is_available():
-                    torch.mps.empty_cache()
+                empty_gpu_cache()
 
             # Wait for any remaining CPU tasks to complete
             timeout_start = time.time()

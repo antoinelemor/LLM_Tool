@@ -222,7 +222,7 @@ class DataLoader:
         """
         samples = []
 
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, 'r', encoding='utf-8-sig', newline='') as f:
             for line_num, line in enumerate(f, 1):
                 try:
                     data = json.loads(line.strip())
@@ -280,7 +280,7 @@ class DataLoader:
         """
         samples = []
 
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, 'r', encoding='utf-8-sig', newline='') as f:
             reader = csv.DictReader(f, delimiter=delimiter)
 
             for row_num, row in enumerate(reader, 1):

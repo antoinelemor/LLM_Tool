@@ -1,0 +1,55 @@
+# Line endings
+#
+# Git for Windows defaults to core.autocrlf=true, which rewrites every text file
+# to CRLF on checkout. That is harmless for most files and fatal for two kinds:
+#
+#   * shell scripts    - a CRLF shebang makes the kernel look for an interpreter
+#                        called "/bin/bash\r", which does not exist. Git Bash and
+#                        WSL then fail with the famously unhelpful
+#                        "bad interpreter: No such file or directory".
+#   * batch files      - cmd.exe needs CRLF; an LF-only .bat can mis-parse.
+#
+# Normalising here means the checkout is correct on every platform regardless of
+# how each contributor has configured Git.
+
+# Default: normalise to LF in the repository, let Git decide on checkout.
+* text=auto eol=lf
+
+# Must stay LF even on Windows.
+*.sh          text eol=lf
+*.bash        text eol=lf
+*.py          text eol=lf
+*.toml        text eol=lf
+*.cfg         text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+Makefile      text eol=lf
+
+# Must be CRLF: these are executed by Windows shells.
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+*.ps1         text eol=crlf
+*.psm1        text eol=crlf
+
+# Binary — never touch.
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.pdf         binary
+*.ico         binary
+*.bin         binary
+*.gguf        binary
+*.safetensors binary
+*.pt          binary
+*.pth         binary
+*.parquet     binary
+*.xlsx        binary
+*.xls         binary
+*.zip         binary
+*.gz          binary
+
+# Keep generated and vendored files out of diffs and language statistics.
+paper/**      linguist-documentation
+guide/**      linguist-documentation
+img/**        linguist-documentation

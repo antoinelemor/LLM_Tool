@@ -10,15 +10,54 @@ main_cli.py
 
 MAIN OBJECTIVE:
 ---------------
-Fallback CLI that displays a warning message when required dependencies are missing.
-This CLI is used when the advanced CLI cannot be loaded.
+Fallback CLI that displays a warning message when required dependencies are
+missing. This CLI is used when the advanced CLI cannot be loaded.
+
+Because it runs precisely when the installation is broken, it uses nothing
+beyond the standard library, prints plain ASCII, and gives instructions for the
+platform it is actually running on.
+
+Dependencies:
+-------------
+- os
+- sys
 
 Author:
 -------
 Antoine Lemor
 """
 
+import os
 import sys
+
+WIDTH = 74
+
+
+def _supports_colour() -> bool:
+    """
+    Whether ANSI colour codes will be rendered rather than printed literally.
+
+    Returns
+    -------
+    bool
+        False when output is redirected, when NO_COLOR is set, or on a Windows
+        console that has not negotiated virtual-terminal processing -- where the
+        escapes would show up as literal garbage such as ``<-[0;31m``.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    if os.name != "nt":
+        return True
+    # llm_tool.platform_compat turns VT processing on at import, but this module
+    # can be reached before that or with it having failed, so check the markers
+    # that modern Windows terminals set for themselves.
+    return bool(
+        os.environ.get("WT_SESSION")
+        or os.environ.get("ConEmuANSI") == "ON"
+        or os.environ.get("TERM_PROGRAM", "").lower() == "vscode"
+    )
 
 
 class LLMToolCLI:
@@ -26,87 +65,102 @@ class LLMToolCLI:
 
     def __init__(self):
         """Initialize the fallback CLI"""
-        pass
+        self._colour = _supports_colour()
+
+    # ------------------------------------------------------------------
+    # Formatting helpers
+    # ------------------------------------------------------------------
+
+    def _c(self, text: str, code: str) -> str:
+        """Wrap `text` in an ANSI colour `code`, or return it unchanged."""
+        return f"\033[{code}m{text}\033[0m" if self._colour else text
+
+    def _rule(self, char: str = "=") -> None:
+        print(char * WIDTH)
+
+    def _heading(self, text: str) -> None:
+        print()
+        self._rule()
+        print(f"  {self._c(text, '1;37')}")
+        self._rule()
+
+    # ------------------------------------------------------------------
+    # Content
+    # ------------------------------------------------------------------
 
     def display_warning(self):
-        """Display a large warning message about missing dependencies"""
-        # Colors
-        RED = '\033[0;31m'
-        YELLOW = '\033[1;33m'
-        CYAN = '\033[0;36m'
-        WHITE = '\033[1;37m'
-        NC = '\033[0m'  # No Color
+        """Display a warning message about missing dependencies."""
+        windows = os.name == "nt"
 
         print()
-        print(f"{CYAN}╔═══════════════════════════════════════════════════════════════════════════════╗{NC}")
-        print(f"{CYAN}║                                                                               ║{NC}")
-        print(f"{CYAN}║{WHITE}██╗     ██╗     ███╗   ███╗    ████████╗ ██████╗  ██████╗ ██╗.    {CYAN}║{NC}")
-        print(f"{CYAN}║{WHITE}██║     ██║     ████╗ ████║    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     {CYAN}║{NC}")
-        print(f"{CYAN}║{WHITE}██║     ██║     ██╔████╔██║       ██║   ██║   ██║██║   ██║██║     {CYAN}║{NC}")
-        print(f"{CYAN}║{WHITE}██║     ██║     ██║╚██╔╝██║       ██║   ██║   ██║██║   ██║██║.    {CYAN}║{NC}")
-        print(f"{CYAN}║{WHITE}███████╗███████╗██║ ╚═╝ ██║       ██║   ╚██████╔╝╚██████╔╝███████╗{CYAN}║{NC}")
-        print(f"{CYAN}║{WHITE}╚══════╝╚══════╝╚═╝     ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝{CYAN}║{NC}")
-        print(f"{CYAN}║                                                                               ║{NC}")
-        print(f"{CYAN}╚═══════════════════════════════════════════════════════════════════════════════╝{NC}")
+        self._rule()
+        print(self._c("  LLM TOOL - REQUIRED DEPENDENCIES ARE NOT INSTALLED", "1;31"))
+        self._rule()
+        print()
+        print("  The interactive interface could not start because essential")
+        print("  packages are missing from this Python environment.")
+        print()
+        print(f"  Interpreter: {sys.executable}")
+        print(f"  Python:      {sys.version.split()[0]}")
         print()
 
-        print(f"{RED}╔═══════════════════════════════════════════════════════════════════════════════╗{NC}")
-        print(f"{RED}║                                                                               ║{NC}")
-        print(f"{RED}║                           {YELLOW}[!]  WARNING  [!]{RED}                         ║{NC}")
-        print(f"{RED}║                                                                               ║{NC}")
-        print(f"{RED}║{NC}  {WHITE}REQUIRED DEPENDENCIES NOT INSTALLED{RED}                          ║{NC}")
-        print(f"{RED}║                                                                               ║{NC}")
-        print(f"{RED}║{NC}  The advanced CLI interface is not available because essential       {RED}║{NC}")
-        print(f"{RED}║{NC}  dependencies are missing from your installation.                    {RED}║{NC}")
-        print(f"{RED}║                                                                               ║{NC}")
-        print(f"{RED}║{NC}  This usually happens when LLM Tool was not properly installed.      {RED}║{NC}")
-        print(f"{RED}║                                                                               ║{NC}")
-        print(f"{RED}╚═══════════════════════════════════════════════════════════════════════════════╝{NC}")
+        self._heading("HOW TO FIX IT")
         print()
 
-        print(f"{YELLOW}┌─────────────────────────────────────────────────────────────────────────────┐{NC}")
-        print(f"{YELLOW}│{NC}  {WHITE}HOW TO FIX THIS:{NC}                                    {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}                                                                 {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}  {CYAN}Option 1:{NC} Run the automated installation script      {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}    {WHITE}$ ./install.sh --all{NC}                              {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}                                                                 {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}  {CYAN}Option 2:{NC} Manually install all dependencies          {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}    {WHITE}$ pip install -e \".[all]\"{NC}                       {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}                                                                 {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}  {CYAN}Option 3:{NC} Run the cryptography fix script            {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}    {WHITE}$ ./fix_cryptography.sh{NC}                           {YELLOW}│{NC}")
-        print(f"{YELLOW}│{NC}                                                                 {YELLOW}│{NC}")
-        print(f"{YELLOW}└─────────────────────────────────────────────────────────────────────────────┘{NC}")
+        if windows:
+            print(f"  {self._c('Option 1', '0;36')}  Run the installer (recommended)")
+            print("      install.bat")
+            print()
+            print(f"  {self._c('Option 2', '0;36')}  Install into the active environment by hand")
+            print("      .\\.venv\\Scripts\\Activate.ps1")
+            print('      pip install -e ".[all]"')
+            print()
+            print(f"  {self._c('Option 3', '0;36')}  Start over from a clean environment")
+            print("      install.bat -Recreate")
+        else:
+            print(f"  {self._c('Option 1', '0;36')}  Run the installer (recommended)")
+            print("      ./install.sh --all")
+            print()
+            print(f"  {self._c('Option 2', '0;36')}  Install into the active environment by hand")
+            print("      source .venv/bin/activate")
+            print('      pip install -e ".[all]"')
+            print()
+            print(f"  {self._c('Option 3', '0;36')}  Check what is missing")
+            print("      python verify_installation.py")
+
         print()
 
-        print(f"{CYAN}┌─────────────────────────────────────────────────────────────────────────────┐{NC}")
-        print(f"{CYAN}│{NC}  {WHITE}WHAT YOU'RE MISSING:{NC}                                  {CYAN}│{NC}")
-        print(f"{CYAN}│{NC}                                                                   {CYAN}│{NC}")
-        print(f"{CYAN}│{NC}   Advanced Rich CLI with beautiful menus and progress bars.     {CYAN}│{NC}")
-        print(f"{CYAN}│{NC}   Interactive annotation workflow                               {CYAN}│{NC}")
-        print(f"{CYAN}│{NC}   Model training and benchmarking                               {CYAN}│{NC}")
-        print(f"{CYAN}│{NC}   Validation and quality control tools                          {CYAN}│{NC}")
-        print(f"{CYAN}│{NC}   Complete pipeline automation                                  {CYAN}│{NC}")
-        print(f"{CYAN}│{NC}                                                                   {CYAN}│{NC}")
-        print(f"{CYAN}└─────────────────────────────────────────────────────────────────────────────┘{NC}")
+        self._heading("MOST LIKELY CAUSE")
+        print()
+        print("  The virtual environment is not active in this terminal.")
+        if windows:
+            print("  Activate it, then try again:")
+            print()
+            print("      .\\.venv\\Scripts\\Activate.ps1     (PowerShell)")
+            print("      .venv\\Scripts\\activate.bat       (Command Prompt)")
+        else:
+            print("  Activate it, then try again:")
+            print()
+            print("      source .venv/bin/activate")
+        print()
+        print("  Your prompt shows (.venv) when it is active.")
         print()
 
-        print(f"{WHITE}For help and support:{NC}")
-        print(f"  • Documentation: {CYAN}README.md{NC}")
-        print(f"  • Examples: {CYAN}examples/{NC}")
-        print(f"  • Issues: {CYAN}https://github.com/antoinelemor/LLMTool/issues{NC}")
+        self._heading("DOCUMENTATION")
+        print()
+        print("  README.md")
+        if windows:
+            print("  docs\\WINDOWS.md          Windows install and troubleshooting")
+        print("  https://github.com/antoinelemor/LLM_Tool/issues")
         print()
 
     def run(self):
         """Display warning and exit"""
         self.display_warning()
-
-        print(f"\033[1;33m{'─' * 79}\033[0m")
-        print(f"\033[1;37mLLM Tool cannot start without required dependencies.\033[0m")
-        print(f"\033[1;37mPlease install them using one of the methods above.\033[0m")
-        print(f"\033[1;33m{'─' * 79}\033[0m")
+        self._rule("-")
+        print("  LLM Tool cannot start without its dependencies.")
+        self._rule("-")
         print()
-
         sys.exit(1)
 
 

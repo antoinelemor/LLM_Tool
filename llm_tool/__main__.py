@@ -35,17 +35,33 @@ Antoine Lemor
 import sys
 from pathlib import Path
 
+# Console first: on Windows the standard streams default to the ANSI code page,
+# and the banner below would raise UnicodeEncodeError before anything else runs.
+from .platform_compat import configure_console, writable_dir
+
+configure_console()
+
 # Crash & stderr capture — runs before any heavy import so transformers/torch
 # warnings, Rich Live tracebacks, and C-level aborts all reach the filesystem.
 import datetime as _dt
 import faulthandler as _fh
 import traceback as _tb
 
-_LOG_DIR = Path(__file__).resolve().parent.parent / "logs" / "application"
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
+# Logs belong next to the user's work, not next to the code: a wheel installed
+# into site-packages (or C:\Program Files) sits in a tree nobody can write to,
+# and the package directory is not where anyone would look for them anyway.
+_LOG_DIR = writable_dir(
+    [
+        Path.cwd() / "logs" / "application",
+        Path.home() / ".llm_tool" / "logs" / "application",
+    ],
+    prefix="llm_tool_logs",
+)
 _STAMP = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-_fault_fp = open(_LOG_DIR / f"faulthandler_{_STAMP}.log", "w")
+# encoding is explicit because Python picks the ANSI code page on Windows, and
+# these files capture tracebacks that routinely carry non-ASCII text.
+_fault_fp = open(_LOG_DIR / f"faulthandler_{_STAMP}.log", "w", encoding="utf-8")
 _fh.enable(file=_fault_fp, all_threads=True)
 
 
@@ -73,7 +89,7 @@ class _StderrTee:
         return getattr(self._real, name)
 
 
-_stderr_fp = open(_LOG_DIR / f"stderr_{_STAMP}.log", "w", buffering=1)
+_stderr_fp = open(_LOG_DIR / f"stderr_{_STAMP}.log", "w", buffering=1, encoding="utf-8")
 sys.stderr = _StderrTee(sys.stderr, _stderr_fp)
 
 _default_excepthook = sys.excepthook
@@ -81,7 +97,7 @@ _default_excepthook = sys.excepthook
 
 def _excepthook(exc_type, exc_value, exc_tb):
     try:
-        with open(_LOG_DIR / f"exceptions_{_STAMP}.log", "a") as f:
+        with open(_LOG_DIR / f"exceptions_{_STAMP}.log", "a", encoding="utf-8") as f:
             f.write(f"\n=== {_dt.datetime.now().isoformat()} ===\n")
             _tb.print_exception(exc_type, exc_value, exc_tb, file=f)
     except Exception:
@@ -423,7 +439,7 @@ def run_batch_mode(config_file: str, args):
         logging.error(f"Configuration file not found: {config_file}")
         sys.exit(1)
 
-    with open(config_path, 'r') as f:
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
 
     # Create pipeline controller
@@ -479,7 +495,7 @@ def run_api_mode(args):
         from fastapi import FastAPI
         import uvicorn
     except ImportError:
-        logging.error("API mode requires fastapi and uvicorn. Install with: pip install llm-tool[advanced]")
+        logging.error('API mode requires fastapi and uvicorn. Install with: pip install "llm-tool[api]"')
         sys.exit(1)
 
     # Create FastAPI app
@@ -590,6 +606,13 @@ def run_direct_action(args):
 
 def main():
     """Main entry point"""
+    # Windows has no fork: every worker process re-imports and re-executes this
+    # module. Without this call a frozen build would relaunch the whole CLI once
+    # per worker instead of starting one, and spawn the same again from there.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
+
     args = parse_arguments()
 
     # Setup logging

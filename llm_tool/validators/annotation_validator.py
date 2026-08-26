@@ -434,7 +434,7 @@ class AnnotationValidator:
 
         # Save validation report
         report_path = output_dir / f"validation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        with open(report_path, 'w') as f:
+        with open(report_path, 'w', encoding='utf-8') as f:
             report_dict = asdict(result)
             # Convert numpy arrays to lists for JSON serialization
             if result.confusion_matrix is not None:

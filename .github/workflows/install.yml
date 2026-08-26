@@ -1,0 +1,173 @@
+name: Install smoke test
+
+# Proves that `pip install` resolves from wheels alone and that the CLI starts,
+# on every OS and Python version the project claims to support. The Windows
+# jobs are the point: this repository is developed on macOS, and a Windows-only
+# packaging regression is otherwise invisible until a user hits it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - 'install.sh'
+      - 'install.ps1'
+      - 'install.bat'
+      - 'verify_installation.py'
+      - 'llm_tool/**'
+      - '.github/workflows/install.yml'
+  pull_request:
+    paths:
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - 'install.sh'
+      - 'install.ps1'
+      - 'install.bat'
+      - 'verify_installation.py'
+      - 'llm_tool/**'
+      - '.github/workflows/install.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        python: ['3.11', '3.12', '3.13']
+
+    env:
+      # Windows runners default to cp1252 for the process code page; the CLI
+      # prints emoji and box-drawing characters on its first frame.
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Upgrade build tooling
+        run: python -m pip install --upgrade pip setuptools wheel
+
+      # The core dependency set must resolve from prebuilt wheels alone: a user
+      # without Visual Studio build tools has no way to compile anything. This
+      # is the assertion that catches a regression like moving fasttext or
+      # llama-cpp-python back into the default install.
+      - name: Core resolves from wheels alone
+        run: 'python -m pip install --dry-run --only-binary=:all: .'
+
+      - name: Install
+        run: python -m pip install -e ".[all]"
+
+      # Informational: lists anything in [all] that would build from source.
+      # Expected to flag `langdetect`, which publishes only a py2 wheel and an
+      # sdist -- it is pure Python, so no compiler is involved.
+      - name: Report anything in [all] that builds from source
+        continue-on-error: true
+        run: 'python -m pip install --dry-run --only-binary=:all: -e ".[all]"'
+
+      - name: Verify installation
+        run: python verify_installation.py
+
+      - name: CLI starts and reports its version
+        run: |
+          python -m llm_tool --version
+          llm-tool --version
+          llmtool --help
+
+      # The blocker this catches: a module imported unconditionally on the CLI
+      # path whose package is only declared in an extra. That fails at launch,
+      # not at install, so `pip install` succeeding proves nothing on its own.
+      - name: Import the CLI entry points
+        shell: python
+        run: |
+          import importlib
+          import sys
+
+          MODULES = [
+              "llm_tool",
+              "llm_tool.cli",
+              "llm_tool.cli.main_cli",
+              "llm_tool.cli.advanced_cli",
+              "llm_tool.cli.annotation_workflow",
+              "llm_tool.cli.training_arena_integrated",
+              "llm_tool.cli.bert_annotation_studio",
+              "llm_tool.cli.validation_lab",
+              "llm_tool.annotators.llm_annotator",
+              "llm_tool.annotators.local_models",
+              "llm_tool.annotators.prompt_wizard",
+              "llm_tool.pipelines.pipeline_controller",
+              "llm_tool.trainers",
+              "llm_tool.trainers.bert_base",
+              "llm_tool.trainers.benchmarking",
+              "llm_tool.trainers.hybrid_parallel_trainer",
+              "llm_tool.utils",
+              "llm_tool.utils.interactive_skip",
+              "llm_tool.utils.system_resources",
+              "llm_tool.platform_compat",
+              "llm_tool.validators.annotation_validator",
+          ]
+
+          failed = []
+          for name in MODULES:
+              try:
+                  importlib.import_module(name)
+              except Exception as exc:  # noqa: BLE001 - we want every failure
+                  failed.append(f"{name}: {type(exc).__name__}: {exc}")
+
+          for line in failed:
+              print("FAILED", line)
+          sys.exit(1 if failed else 0)
+
+  installer-script:
+    name: installer / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Exercises the script a first-time user actually runs, including the
+      # interpreter discovery, the venv layout and the verification step.
+      - name: Run install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./install.ps1 -Preset core -Recreate
+
+      - name: Run install.sh
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x install.sh
+          ./install.sh
+
+      - name: Launch from the created environment (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.venv\Scripts\python.exe -m llm_tool --version
+
+      - name: Launch from the created environment (POSIX)
+        if: runner.os != 'Windows'
+        run: ./.venv/bin/python -m llm_tool --version

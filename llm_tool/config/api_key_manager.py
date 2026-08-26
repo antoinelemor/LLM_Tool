@@ -305,7 +305,7 @@ class APIKeyManager:
             return
 
         try:
-            with open(self.keys_file, 'r') as f:
+            with open(self.keys_file, 'r', encoding='utf-8') as f:
                 self._keys = json.load(f)
             self.logger.debug(f"Loaded {len(self._keys)} API keys from disk")
         except Exception as e:
@@ -318,7 +318,7 @@ class APIKeyManager:
             # Ensure secure permissions
             self.keys_file.touch(mode=0o600)
 
-            with open(self.keys_file, 'w') as f:
+            with open(self.keys_file, 'w', encoding='utf-8') as f:
                 json.dump(self._keys, f, indent=2)
 
             self.logger.debug(f"Saved {len(self._keys)} API keys to disk")

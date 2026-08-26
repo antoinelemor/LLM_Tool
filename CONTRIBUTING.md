@@ -32,37 +32,96 @@ This project adheres to a code of conduct. By participating, you are expected to
 
 3. **Add upstream remote**:
    ```bash
-   git remote add upstream https://github.com/ORIGINAL-OWNER/LLM_Tool.git
+   git remote add upstream https://github.com/antoinelemor/LLM_Tool.git
    ```
 
 ## Development Setup
 
 ### Prerequisites
 
-- Python 3.9 or higher (3.11+ recommended)
+- **Python 3.11 or higher** (3.12 recommended), 64-bit
 - Git
-- Virtual environment tool (venv, conda, etc.)
 
 ### Setup Instructions
 
-1. **Create and activate virtual environment**:
+**The fastest route on any platform is the installer**, which creates `.venv`,
+installs the dev toolchain and configures VS Code:
+
+```powershell
+.\install.bat -Preset full      # Windows
+```
+```bash
+./install.sh --dev              # macOS / Linux
+```
+
+<details>
+<summary>Or set it up by hand</summary>
+
+1. **Create and activate a virtual environment**:
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate         # macOS/Linux
-   # source .venv/Scripts/activate   # Windows (Git Bash)
-   # .venv\Scripts\activate          # Windows (Command Prompt / PowerShell)
+   py -3.12 -m venv .venv                # Windows
+   python3.12 -m venv .venv              # macOS / Linux
+
+   .\.venv\Scripts\Activate.ps1          # Windows PowerShell
+   .venv\Scripts\activate.bat            # Windows Command Prompt
+   source .venv/Scripts/activate         # Windows Git Bash
+   source .venv/bin/activate             # macOS / Linux
    ```
 
 2. **Install in development mode with all dependencies**:
    ```bash
-   make install-all
-   # or manually: pip install -e ".[all]"
+   pip install -e ".[all,dev]"
    ```
 
 3. **Verify installation**:
    ```bash
+   python verify_installation.py
    llm-tool --version
    ```
+
+</details>
+
+### Task shortcuts
+
+`make` is not available on Windows, so every target has a `make.bat` twin with
+the same name:
+
+| Task | macOS / Linux | Windows |
+|------|---------------|---------|
+| Install (all) | `make install-all` | `make.bat install-all` |
+| Run the CLI | `make run` | `make.bat run` |
+| Tests | `make test` | `make.bat test` |
+| Lint | `make lint` | `make.bat lint` |
+| Format | `make format` | `make.bat format` |
+| Validate packaging | `make check-build` | `make.bat check-build` |
+| Clean | `make clean` | `make.bat clean` |
+
+### Cross-platform expectations
+
+This project is developed on macOS and must keep working on Windows and Linux.
+CI (`.github/workflows/install.yml`) installs and launches on all three across
+Python 3.11–3.13 on every change to `llm_tool/` or the packaging files. When you
+touch anything that talks to the filesystem, the console or a subprocess:
+
+- **Open text files with `encoding='utf-8'`.** Python defaults to the ANSI code
+  page on Windows; this codebase handles French, Arabic and Chinese.
+- **Add `newline=''`** to any `open()` feeding a `csv.reader`/`csv.writer`.
+- **Never hardcode `/tmp`, `/usr`, or `~/.config`.** Use `tempfile.gettempdir()`,
+  `Path.home()`, or `llm_tool.platform_compat.writable_dir()`.
+- **Build filenames with `platform_compat.sanitize_path_component()`** — Windows
+  rejects `: * ? " < > | \ /` and reserves `CON`, `NUL`, `AUX`, `COM1`…
+- **Use `platform_compat.replace_path()`** instead of `os.rename`/`shutil.move`
+  onto a destination that may exist: `os.rename` raises on Windows where POSIX
+  overwrites.
+- **Keep paths short.** Windows caps a path at 260 characters by default;
+  checkpoint trees already nest deeply.
+- **Guard POSIX-only APIs** (`select` on stdin, `fcntl`, `os.fork`, `SIGKILL`)
+  and provide a Windows branch, as `llm_tool/utils/interactive_skip.py` does.
+- **Prefer `torch.cuda`/`torch.backends.mps` checks** over assuming a backend;
+  `mps` does not exist off macOS.
+- **New dependencies must have a prebuilt wheel** for Windows, macOS and Linux
+  on CPython 3.11–3.13. If one needs a compiler, put it in its own opt-in extra
+  and keep it out of `[all]`.
 
 ## Making Changes
 
@@ -139,7 +198,8 @@ We follow [PEP 8](https://pep8.org/) with some modifications:
 Format your code before committing:
 
 ```bash
-make format
+make format        # macOS / Linux
+make.bat format    # Windows
 ```
 
 This runs:
@@ -151,7 +211,8 @@ This runs:
 Check code quality:
 
 ```bash
-make lint
+make lint          # macOS / Linux
+make.bat lint      # Windows
 ```
 
 This runs:
@@ -378,7 +439,7 @@ git checkout -b feature/add-new-model
 # 3. Make changes
 # ... edit files ...
 
-# 4. Format and test
+# 4. Format and test  (Windows: make.bat format / lint / test)
 make format
 make lint
 make test
@@ -418,12 +479,12 @@ Looking for ideas? Here are some areas that need help:
 - [ ] Active learning integration
 
 ### Bug Fixes
-- Check [Issues](https://github.com/YOUR-REPO/issues) labeled "bug"
+- Check [Issues](https://github.com/antoinelemor/LLM_Tool/issues) labeled "bug"
 
 ## Getting Help
 
-- **Questions?** Open a [Discussion](https://github.com/YOUR-REPO/discussions)
-- **Found a bug?** Open an [Issue](https://github.com/YOUR-REPO/issues)
+- **Questions?** Open a [Discussion](https://github.com/antoinelemor/LLM_Tool/discussions)
+- **Found a bug?** Open an [Issue](https://github.com/antoinelemor/LLM_Tool/issues)
 - **Want to chat?** Join our community (Discord/Slack link)
 
 ## License

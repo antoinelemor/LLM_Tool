@@ -19,13 +19,23 @@ __author__ = "Antoine Lemor"
 
 from pathlib import Path
 
-# Package directories
+from ..platform_compat import writable_dir
+
+# Output directories.
+#
+# These follow the working directory, like every other output path in the
+# package, rather than the directory the code was installed into: a wheel in
+# site-packages -- or anywhere under C:\Program Files -- sits in a tree the user
+# cannot write to, and importing this module would raise PermissionError before
+# any transcription began.
 PACKAGE_DIR = Path(__file__).parent
-ROOT_DIR = PACKAGE_DIR.parent.parent
-DATA_DIR = ROOT_DIR / "data"
+ROOT_DIR = Path.cwd()
+DATA_DIR = writable_dir(
+    [ROOT_DIR / "data", Path.home() / ".llm_tool" / "data"],
+    prefix="llm_tool_data",
+)
 AUDIO_DIR = DATA_DIR / "audio"
 TRANSCRIPTS_DIR = DATA_DIR / "transcripts"
 
-# Ensure directories exist
-for dir_path in [DATA_DIR, AUDIO_DIR, TRANSCRIPTS_DIR]:
+for dir_path in [AUDIO_DIR, TRANSCRIPTS_DIR]:
     dir_path.mkdir(parents=True, exist_ok=True)

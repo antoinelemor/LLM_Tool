@@ -94,7 +94,11 @@ def write_progress(progress_path: str, update: Dict[str, Any]):
     try:
         with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(update, f, indent=2)
-        os.rename(tmp_path, progress_path)
+        # os.replace, not os.rename: on Windows renaming onto an existing
+        # file raises FileExistsError, and progress_path exists from the
+        # second update onwards. os.replace has POSIX overwrite semantics
+        # on every platform.
+        os.replace(tmp_path, progress_path)
     except Exception as e:
         logger.warning(f"Failed to write progress: {e}")
         # Try to clean up temp file
@@ -146,7 +150,7 @@ def _load_jsonl_data(data_path: str) -> List[Any]:
     from llm_tool.trainers.data_utils import DataSample
 
     samples = []
-    with open(data_path, 'r', encoding='utf-8') as f:
+    with open(data_path, 'r', encoding='utf-8-sig', newline='') as f:
         for line in f:
             if not line.strip():
                 continue
@@ -179,7 +183,7 @@ def _load_csv_data(data_path: str) -> List[Any]:
     from llm_tool.trainers.data_utils import DataSample
 
     samples = []
-    with open(data_path, 'r', encoding='utf-8') as f:
+    with open(data_path, 'r', encoding='utf-8-sig', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
             text = row.get('text', '')

@@ -862,7 +862,7 @@ def _display_training_diagnostic(self, bundle, quick_params=None, preloaded_conf
                         from pathlib import Path
                         pf = Path(bundle.primary_file) if not isinstance(bundle.primary_file, Path) else bundle.primary_file
                         if pf.exists():
-                            total_for_display = sum(1 for _ in open(pf)) - (1 if pf.suffix == '.csv' else 0)
+                            total_for_display = sum(1 for _ in open(pf, encoding='utf-8', errors='replace')) - (1 if pf.suffix == '.csv' else 0)
                     except Exception:
                         pass
                 # Display each label as a row
@@ -10989,7 +10989,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                         _csvs = _g.glob(f"{_metrics_base}/{category_name}/**/training.csv", recursive=True)
                         if _csvs:
                             import csv as _csv
-                            with open(_csvs[0]) as _f:
+                            with open(_csvs[0], encoding='utf-8', newline='') as _f:
                                 _lines = [l for l in _f if not l.startswith('#')]
                                 _rows = list(_csv.DictReader(_lines))
                             if _rows:
@@ -11697,7 +11697,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     _csvs = _g.glob(f"{session_dir}/training_metrics/normal_training/{key_name}/**/training.csv", recursive=True)
                     if _csvs:
                         import csv as _csv
-                        with open(_csvs[0]) as _f:
+                        with open(_csvs[0], encoding='utf-8', newline='') as _f:
                             _lines = [l for l in _f if not l.startswith('#')]
                             _rows = list(_csv.DictReader(_lines))
                         if _rows:
@@ -11815,7 +11815,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                     _csvs = _g.glob(f"{session_dir}/training_metrics/normal_training/{key_name}/**/training.csv", recursive=True)
                     if _csvs:
                         import csv as _csv
-                        with open(_csvs[0]) as _f:
+                        with open(_csvs[0], encoding='utf-8', newline='') as _f:
                             _lines = [l for l in _f if not l.startswith('#')]
                             _rows = list(_csv.DictReader(_lines))
                         if _rows:
@@ -11950,7 +11950,7 @@ def _training_studio_run_quick(self, bundle: TrainingDataBundle, model_config: D
                             _csvs = _g.glob(f"{session_dir}/training_metrics/normal_training/{label_name}/**/training.csv", recursive=True)
                             if _csvs:
                                 import csv as _csv
-                                with open(_csvs[0]) as _f:
+                                with open(_csvs[0], encoding='utf-8', newline='') as _f:
                                     _lines = [l for l in _f if not l.startswith('#')]
                                     _rows = list(_csv.DictReader(_lines))
                                 if _rows:
@@ -17174,7 +17174,7 @@ def integrate_training_arena_in_annotator_factory(
         metadata_file = session_dirs.get("session_root", Path("data")) / "training_metadata.json"
         metadata_file.parent.mkdir(parents=True, exist_ok=True)
         import json
-        with open(metadata_file, 'w') as f:
+        with open(metadata_file, 'w', encoding='utf-8') as f:
             json.dump(bundle.metadata, f, indent=2, default=str)
         console.print(f"\n[green]✓ Training metadata saved to Annotator Factory session[/green]")
 

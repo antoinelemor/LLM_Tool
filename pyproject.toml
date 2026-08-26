@@ -17,6 +17,10 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -79,12 +83,16 @@ keywords = [
     "model-benchmarking",
     "prompt-engineering",
 ]
+# Every dependency below ships a prebuilt wheel for Windows, macOS (Intel and
+# Apple Silicon) and Linux on CPython 3.11-3.13. Nothing here needs a C, C++ or
+# Rust toolchain, so `pip install .` never falls back to a source build.
+# Anything that would is in an opt-in extra at the bottom of this section.
 dependencies = [
     # Data manipulation
     "pandas>=2.0.0",
     "numpy>=1.24.0",
     "openpyxl>=3.1.0",
-    "pyarrow>=18.1.0,<19.0.0",
+    "pyarrow>=18.1.0",
     "pyreadr>=0.5.0",
     # Database
     "sqlalchemy>=2.0.0",
@@ -95,9 +103,13 @@ dependencies = [
     # CLI and interface
     "rich>=14.0.0",
     "tqdm>=4.65.0",
-    "inquirer>=3.0.0",
-    # Language detection
-    "lingua-language-detector>=2.0.0",
+    "psutil>=5.9.0",
+    # Charts. Imported unconditionally by the annotation and training displays,
+    # so this is a core requirement rather than an optional one.
+    "matplotlib>=3.8.0",
+    # Language detection. 2.1.1 is the floor because it is the first release
+    # with a Windows wheel for every supported CPython.
+    "lingua-language-detector>=2.1.1",
     # Logging
     "loguru>=0.7.0",
     # Utilities
@@ -129,41 +141,62 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-advanced = [
-    # Additional LLM providers
+
+# Cloud LLM providers other than OpenAI. Pure-Python, installs everywhere.
+providers = [
     "anthropic>=0.18.0",
     "google-generativeai>=0.3.0",
-    "llama-cpp-python>=0.2.0",
-    # Annotation platforms
-    "label-studio>=1.20.0",
-    "label-studio-sdk>=2.0.0",
-    # Alternative language detection
-    "langdetect>=1.0.9",
-    "fasttext>=0.9.2",
-    "fasttext-wheel>=0.9.2",
-    # Advanced ML features
-    "sentence-transformers>=2.2.0",
-    "imbalanced-learn>=0.11.0",
-    # Visualization
-    "seaborn>=0.12.0",
-    "matplotlib>=3.6.0",
-    # Optimization
-    "optuna>=3.3.0",
-    # MLOps
-    "mlflow>=2.8.0",
-    "wandb>=0.15.0",
-    "tensorboard>=2.13.0",
-    # Web serving
+]
+
+# The `--api` mode's HTTP server.
+api = [
     "fastapi>=0.103.0",
     "uvicorn>=0.23.0",
-    "gradio>=3.45.0",
-    # Databases
-    "redis>=5.0.0",
-    "pymongo>=4.5.0",
-    # Distributed computing
-    "ray>=2.6.0",
-    "dask[complete]>=2023.8.0",
 ]
+
+# Second-opinion language detector used when lingua is unsure.
+langdetect = [
+    "langdetect>=1.0.9",
+]
+
+# Experiment tracking. Not imported directly; these are the backends
+# transformers' Trainer picks up through `report_to` once they are present.
+mlops = [
+    "tensorboard>=2.13.0",
+    "mlflow>=2.8.0",
+    "wandb>=0.15.0",
+    "optuna>=3.3.0",
+]
+
+# Audio/video transcription (llm_tool.transcription). Heavy and rarely needed,
+# so it stays out of `all`. Also needs the ffmpeg binary on PATH
+# (`winget install Gyan.FFmpeg`, `brew install ffmpeg`, `apt install ffmpeg`).
+transcription = [
+    "openai-whisper>=20231117",
+    "yt-dlp>=2024.1.0",
+]
+
+# --- Extras that need a compiler ------------------------------------------
+# Deliberately excluded from `all`: neither publishes a wheel for every
+# platform/CPython combination we support, so `pip install ".[all]"` would try
+# to build C++ from source and fail on a machine without MSVC or Xcode.
+# Both back optional features that have a wheel-only alternative:
+#   llamacpp -> use Ollama instead
+#   fasttext -> lingua (a core dependency) is the default detector
+
+# GGUF inference through llama.cpp. Needs CMake and a C++ toolchain on every
+# platform: the project ships no wheels at all.
+llamacpp = [
+    "llama-cpp-python>=0.2.0",
+]
+
+# fastText language identification. No Windows wheel exists for CPython 3.11+,
+# so this needs the Visual Studio C++ build tools there.
+fasttext = [
+    "fasttext-wheel>=0.9.2; python_version < '3.13'",
+    "fasttext>=0.9.2; python_version >= '3.13'",
+]
+
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
@@ -177,52 +210,39 @@ dev = [
     "jupyter>=1.0.0",
     "notebook>=7.0.0",
 ]
+
+# The recommended install. Everything the code can actually use, and nothing
+# that needs a compiler -- so it resolves from wheels alone on Windows, macOS
+# and Linux. Listed out rather than referenced as llm-tool[...] so that the
+# resolution never depends on self-referential extras working.
 all = [
-    # Additional LLM providers
+    # providers
     "anthropic>=0.18.0",
     "google-generativeai>=0.3.0",
-    "llama-cpp-python>=0.2.0",
-    # Annotation platforms
-    "label-studio>=1.20.0",
-    "label-studio-sdk>=2.0.0",
-    # Alternative language detection
-    "langdetect>=1.0.9",
-    "fasttext>=0.9.2",
-    "fasttext-wheel>=0.9.2",
-    # Advanced ML features
-    "sentence-transformers>=2.2.0",
-    "imbalanced-learn>=0.11.0",
-    # Visualization
-    "seaborn>=0.12.0",
-    "matplotlib>=3.6.0",
-    # Optimization
-    "optuna>=3.3.0",
-    # MLOps
-    "mlflow>=2.8.0",
-    "wandb>=0.15.0",
-    "tensorboard>=2.13.0",
-    # Web serving
+    # api
     "fastapi>=0.103.0",
     "uvicorn>=0.23.0",
-    "gradio>=3.45.0",
-    # Databases
-    "redis>=5.0.0",
-    "pymongo>=4.5.0",
-    # Distributed computing
-    "ray>=2.6.0",
-    "dask[complete]>=2023.8.0",
-    # Development tools
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "pytest-asyncio>=0.21.0",
-    "black>=23.7.0",
-    "flake8>=6.1.0",
-    "mypy>=1.5.0",
-    "isort>=5.12.0",
-    "pre-commit>=3.3.0",
-    "ipykernel>=6.25.0",
-    "jupyter>=1.0.0",
-    "notebook>=7.0.0",
+    # langdetect
+    "langdetect>=1.0.9",
+    # mlops
+    "tensorboard>=2.13.0",
+    "mlflow>=2.8.0",
+    "wandb>=0.15.0",
+    "optuna>=3.3.0",
+]
+
+# Kept as an alias so `pip install "llm-tool[advanced]"` from older docs and
+# scripts keeps working; `all` is the name to use.
+advanced = [
+    "anthropic>=0.18.0",
+    "google-generativeai>=0.3.0",
+    "fastapi>=0.103.0",
+    "uvicorn>=0.23.0",
+    "langdetect>=1.0.9",
+    "tensorboard>=2.13.0",
+    "mlflow>=2.8.0",
+    "wandb>=0.15.0",
+    "optuna>=3.3.0",
 ]
 
 [project.scripts]
@@ -234,8 +254,15 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 include = ["llm_tool*"]
+# Excluded so the macOS "Finder duplicate" files (module names containing a
+# space, e.g. "task_scheduler 2.py") can never be shipped in a wheel.
+exclude = ["llm_tool.*.__pycache__", "tests*"]
 
 [tool.setuptools.package-data]
+# The package ships no bundled data today: prompts/, data/ and configs/ live at
+# the project root and belong to the user, not to the distribution. Declared
+# anyway so that adding a file under one of these names starts working without
+# anyone having to remember this file.
 llm_tool = [
     "data/*.json",
     "data/*.jsonl",
@@ -243,7 +270,6 @@ llm_tool = [
     "prompts/*.json",
     "configs/*.yaml",
     "configs/*.json",
-    "docs/*.md",
 ]
 
 [tool.black]

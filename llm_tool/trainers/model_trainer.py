@@ -1801,7 +1801,7 @@ class ModelTrainer:
         # Save benchmark report - use session-aware path via resolve_metrics_base_dir
         metrics_base = resolve_metrics_base_dir(self.config.metrics_output_dir)
         report_path = metrics_base / "benchmark_report.json"
-        with open(report_path, 'w') as f:
+        with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(benchmark_report, f, indent=2, default=str)
 
         self.logger.info(f"Benchmark complete. Best model: {benchmark_report['best_model']}")

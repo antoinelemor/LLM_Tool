@@ -262,7 +262,7 @@ def _detect_model_type_from_path(model_path: str) -> str | None:
     metadata_path = os.path.join(model_path, "training_metadata.json")
     if os.path.exists(metadata_path):
         try:
-            with open(metadata_path, 'r') as f:
+            with open(metadata_path, 'r', encoding='utf-8') as f:
                 metadata = json.load(f)
             model_type = metadata.get("model_type")
             if model_type:
@@ -274,7 +274,7 @@ def _detect_model_type_from_path(model_path: str) -> str | None:
     config_path = os.path.join(model_path, "config.json")
     if os.path.exists(config_path):
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             return config.get("model_type")  # e.g., "deberta-v2", "bert"
         except Exception:
@@ -535,7 +535,7 @@ def _predict_chunk(
         try:
             config_path = os.path.join(model_path, "config.json")
             if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
+                with open(config_path, 'r', encoding='utf-8') as f:
                     config = _json.load(f)
                     if config.get("problem_type") == "multi_label_classification":
                         is_multi_label = True
@@ -543,7 +543,7 @@ def _predict_chunk(
             # Also check training_metadata.json for explicit multi_label flag
             metadata_path = os.path.join(model_path, "training_metadata.json")
             if os.path.exists(metadata_path):
-                with open(metadata_path, 'r') as f:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
                     metadata = _json.load(f)
                     if metadata.get("multi_label", False):
                         is_multi_label = True
@@ -618,7 +618,7 @@ def _predict_chunk(
             config_path = os.path.join(model_path, "config.json")
             if os.path.exists(config_path):
                 import json
-                with open(config_path) as f:
+                with open(config_path, encoding='utf-8') as f:
                     n_labels = json.load(f).get("num_labels", 2)
             else:
                 n_labels = 2

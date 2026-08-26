@@ -746,7 +746,7 @@ class TrainingSummaryGenerator:
             df.to_csv(self.csv_summary_path, index=False)
         except:
             # Last resort: create empty CSV
-            with open(self.csv_summary_path, 'w') as f:
+            with open(self.csv_summary_path, 'w', encoding='utf-8') as f:
                 f.write("session_id,status,error\n")
                 f.write(f"{self.session_id},failed,Could not generate summary\n")
 
@@ -764,7 +764,7 @@ class TrainingSummaryGenerator:
                 f.write(json.dumps(minimal_record, default=str) + '\n')
         except:
             # Last resort: create error record
-            with open(self.jsonl_summary_path, 'w') as f:
+            with open(self.jsonl_summary_path, 'w', encoding='utf-8') as f:
                 f.write(f'{{"session_id": "{self.session_id}", "status": "failed"}}\n')
 
     def _generate_partial_summaries(self) -> Tuple[Path, Path]:

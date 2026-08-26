@@ -140,7 +140,7 @@ class SSHRemoteManager:
                     "echo", "ok",
                 ],
                 capture_output=True,
-                text=True,
+                text=True, encoding='utf-8', errors='replace',
                 timeout=timeout + 5,
             )
 
@@ -186,7 +186,7 @@ class SSHRemoteManager:
                     command,
                 ],
                 capture_output=True,
-                text=True,
+                text=True, encoding='utf-8', errors='replace',
                 timeout=timeout,
             )
 
@@ -225,7 +225,7 @@ class SSHRemoteManager:
                 ],
                 input=script,
                 capture_output=True,
-                text=True,
+                text=True, encoding='utf-8', errors='replace',
                 timeout=timeout,
             )
 
@@ -259,7 +259,7 @@ class SSHRemoteManager:
         cmd.extend([local_path, f"{hostname}:{remote_path}"])
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout)
             if result.returncode == 0:
                 return True, ""
             return False, result.stderr.strip() or "SCP failed"
@@ -290,7 +290,7 @@ class SSHRemoteManager:
         cmd.extend([f"{hostname}:{remote_path}", local_path])
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout)
             if result.returncode == 0:
                 return True, ""
             return False, result.stderr.strip() or "SCP failed"
@@ -606,7 +606,7 @@ class SSHRemoteManager:
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                text=True, encoding='utf-8', errors='replace',
             )
             logger.info(
                 f"Started remote training on {machine.hostname} "
@@ -704,7 +704,7 @@ class SSHRemoteManager:
 
         # Parse results
         try:
-            with open(local_results_path, 'r') as f:
+            with open(local_results_path, 'r', encoding='utf-8') as f:
                 results = json.load(f)
         except Exception as e:
             return False, {"status": "error", "error": f"Failed to parse results: {e}"}

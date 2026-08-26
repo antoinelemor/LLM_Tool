@@ -198,7 +198,7 @@ class BenchmarkDatasetBuilder:
         languages = []
 
         try:
-            with open(data_path, 'r', encoding='utf-8') as f:
+            with open(data_path, 'r', encoding='utf-8-sig', newline='') as f:
                 for line_num, line in enumerate(f, 1):
                     if max_samples and len(texts) >= max_samples:
                         break
@@ -265,7 +265,7 @@ class BenchmarkDatasetBuilder:
         languages = []
 
         try:
-            with open(data_path, 'r', encoding='utf-8') as f:
+            with open(data_path, 'r', encoding='utf-8-sig', newline='') as f:
                 reader = csv.DictReader(f, delimiter=delimiter)
 
                 for row_num, row in enumerate(reader, 1):

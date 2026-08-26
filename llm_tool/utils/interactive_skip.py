@@ -12,10 +12,10 @@ MAIN OBJECTIVE:
 Global, robust interactive skip listener for long-running multi-stage
 operations (sequential model training, multi-prompt annotation, etc.).
 
-A single background thread polls stdin via `select.select()` with a short
-timeout, reads bytes as they arrive, and sets a process-wide Event when a
-skip token is detected. The foreground loop checks the flag at every
-epoch boundary.
+A single background thread polls stdin -- with `select.select()` on POSIX,
+with `msvcrt.kbhit()` on Windows -- reads bytes as they arrive, and sets a
+process-wide Event when a skip token is detected. The foreground loop checks
+the flag at every epoch boundary.
 
 Why this design (vs. blocking `sys.stdin.readline()`):
 ------------------------------------------------------
@@ -33,8 +33,10 @@ The current implementation:
     into cbreak mode by us. We do NOT modify the tty mode globally
     because Rich already manages display; we just read whatever bytes
     arrive on stdin.
-  * Polls via `select()` with a 200 ms timeout so the thread never
-    blocks indefinitely and reacts to EOF cleanly.
+  * Polls with a 200 ms timeout so the thread never blocks indefinitely
+    and reacts to EOF cleanly. On POSIX that is `select()` on the stdin
+    file descriptor; on Windows `select()` only accepts sockets, so the
+    thread uses `msvcrt.kbhit()` / `msvcrt.getwch()` instead.
   * Single process-wide listener; `reset()` between models clears stale
     state.
   * Falls back to no-op when stdin is not a TTY (CI, piped input).
@@ -49,13 +51,28 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 from typing import Optional
 
-try:
-    import select  # POSIX; available on macOS / Linux
-    _HAS_SELECT = True
-except ImportError:
+# select() exists on Windows but only accepts sockets there: handing it the
+# stdin file descriptor raises OSError (WinError 10038), which would kill the
+# listener thread and silently disable skipping. msvcrt is the console API.
+if os.name == "nt":
     _HAS_SELECT = False
+    try:
+        import msvcrt
+        _HAS_MSVCRT = True
+    except ImportError:  # pragma: no cover - msvcrt ships with CPython on Windows
+        _HAS_MSVCRT = False
+else:
+    _HAS_MSVCRT = False
+    try:
+        import select  # POSIX; available on macOS / Linux
+        _HAS_SELECT = True
+    except ImportError:  # pragma: no cover - select is always present on POSIX
+        _HAS_SELECT = False
+
+_HAS_STDIN_POLL = _HAS_SELECT or _HAS_MSVCRT
 
 
 class _SkipListener:
@@ -92,22 +109,24 @@ class _SkipListener:
         """Start the background listener if not already running.
 
         Safe to call multiple times. No-op if stdin is not interactive
-        or if `select` is unavailable.
+        or if no stdin polling primitive is available.
         """
         with self._start_lock:
             if self._started:
                 self._enabled = True
                 return
-            if not self._stdin_is_interactive() or not _HAS_SELECT:
+            if not self._stdin_is_interactive() or not _HAS_STDIN_POLL:
                 self._enabled = False
                 self._started = True  # never try again
                 return
-            try:
-                self._stdin_fd = sys.stdin.fileno()
-            except (OSError, ValueError):
-                self._enabled = False
-                self._started = True
-                return
+            if _HAS_SELECT:
+                # msvcrt reads the console directly and needs no descriptor.
+                try:
+                    self._stdin_fd = sys.stdin.fileno()
+                except (OSError, ValueError):
+                    self._enabled = False
+                    self._started = True
+                    return
             self._enabled = True
             self._started = True
             self._stop.clear()
@@ -147,32 +166,59 @@ class _SkipListener:
         except Exception:
             return False
 
-    def _listen_loop(self) -> None:
-        """Poll stdin with select(); set flag on skip token.
+    def _read_available(self) -> Optional[str]:
+        """Return whatever is waiting on stdin, ``""`` on timeout, ``None`` on EOF.
 
         Reads bytes (not lines) so a bare `s` keystroke is detected even
         if the terminal happens to be in raw / cbreak mode (e.g. Rich
         Live on certain shells); also recognises `s\\n`, `skip\\n`, and
         `next\\n` from line-buffered stdin.
         """
-        fd = self._stdin_fd
+        if _HAS_MSVCRT:
+            # The Windows console has no descriptor to wait on, so poll
+            # kbhit() and sleep between checks for the same 200 ms cadence.
+            # getwch() returns a str and never blocks once kbhit() is true.
+            if not msvcrt.kbhit():
+                time.sleep(self.POLL_INTERVAL)
+                return ""
+            text = ""
+            while msvcrt.kbhit():
+                try:
+                    char = msvcrt.getwch()
+                except (OSError, ValueError):
+                    return None
+                # Arrow keys and function keys arrive as a two-character
+                # sequence led by \x00 or \xe0; drop both halves so they
+                # cannot be mistaken for a token.
+                if char in ("\x00", "\xe0"):
+                    if msvcrt.kbhit():
+                        msvcrt.getwch()
+                    continue
+                # The console reports Enter as a bare carriage return.
+                text += "\n" if char == "\r" else char
+            return text
+
+        try:
+            ready, _, _ = select.select([self._stdin_fd], [], [], self.POLL_INTERVAL)
+        except (OSError, ValueError):
+            return None  # fd closed
+        if not ready:
+            return ""
+        try:
+            chunk = os.read(self._stdin_fd, 1024)
+        except (OSError, ValueError):
+            return None
+        if not chunk:
+            return None  # EOF — terminal closed.
+        return chunk.decode("utf-8", errors="ignore")
+
+    def _listen_loop(self) -> None:
+        """Poll stdin; set the flag when a skip token arrives."""
         while not self._stop.is_set():
-            try:
-                ready, _, _ = select.select([fd], [], [], self.POLL_INTERVAL)
-            except (OSError, ValueError):
-                return  # fd closed
-            if not ready:
-                continue
-            try:
-                chunk = os.read(fd, 1024)
-            except (OSError, ValueError):
+            text = self._read_available()
+            if text is None:
                 return
-            if not chunk:
-                # EOF — terminal closed; stop quietly.
-                return
-            try:
-                text = chunk.decode("utf-8", errors="ignore")
-            except Exception:
+            if not text:
                 continue
             self._buffer += text
 

@@ -168,6 +168,7 @@ from ..trainers.training_data_builder import (
     TrainingDataRequest,
     TrainingDataBundle,
 )
+from llm_tool.platform_compat import sanitize_path_component
 from llm_tool.utils.data_detector import DatasetInfo, DataDetector
 from llm_tool.utils.session_summary import (
     SessionSummary,
@@ -835,7 +836,7 @@ class ProfileManager:
             'performance_metrics': profile.performance_metrics,
             'notes': profile.notes
         }
-        with open(profile_file, 'w') as f:
+        with open(profile_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
 
     def load_profile(self, name: str) -> Optional[ExecutionProfile]:
@@ -844,7 +845,7 @@ class ProfileManager:
         if not profile_file.exists():
             return None
 
-        with open(profile_file, 'r') as f:
+        with open(profile_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
         return ExecutionProfile(
@@ -870,7 +871,7 @@ class ProfileManager:
         """Save configuration to execution history"""
         history = []
         if self.history_file.exists():
-            with open(self.history_file, 'r') as f:
+            with open(self.history_file, 'r', encoding='utf-8') as f:
                 history = json.load(f)
 
         history.append({
@@ -881,7 +882,7 @@ class ProfileManager:
         # Keep only last 100 executions
         history = history[-100:]
 
-        with open(self.history_file, 'w') as f:
+        with open(self.history_file, 'w', encoding='utf-8') as f:
             json.dump(history, f, indent=2)
 
     def get_recent_configs(self, limit: int = 5) -> List[Dict[str, Any]]:
@@ -889,7 +890,7 @@ class ProfileManager:
         if not self.history_file.exists():
             return []
 
-        with open(self.history_file, 'r') as f:
+        with open(self.history_file, 'r', encoding='utf-8') as f:
             history = json.load(f)
 
         return [h['configuration'] for h in history[-limit:]]
@@ -3380,7 +3381,9 @@ class AdvancedCLI:
                 annotation_mode = 'api' if provider in {'openai', 'anthropic', 'google'} else 'local'
 
         provider_folder = (provider or "model_provider").replace("/", "_")
-        model_folder = safe_model_name
+        # Windows refuses a path longer than 260 characters, and this component is
+        # repeated at several directory levels, so it is bounded once here.
+        model_folder = sanitize_path_component(safe_model_name, "model", max_length=32)
 
         if run_annotation:
             self.console.print("\n[bold cyan] Phase 1: LLM Annotation[/bold cyan]\n")
@@ -3395,7 +3398,9 @@ class AdvancedCLI:
             model_subdir.mkdir(parents=True, exist_ok=True)
 
             dataset_name = data_path.stem
-            dataset_subdir = model_subdir / dataset_name
+            # Bounded for the same 260-character reason as the model component.
+            dataset_folder = sanitize_path_component(dataset_name, "dataset", max_length=40)
+            dataset_subdir = model_subdir / dataset_folder
             dataset_subdir.mkdir(parents=True, exist_ok=True)
 
             if annotation_mode == 'openai_batch':
@@ -3405,7 +3410,7 @@ class AdvancedCLI:
                 batch_dir.mkdir(parents=True, exist_ok=True)
 
                 archive_root = Path(session_dirs.get('openai_batches', session_dirs['annotated_data']))
-                archive_dir = archive_root / provider_folder / model_folder / dataset_name / timestamp
+                archive_dir = archive_root / provider_folder / model_folder / dataset_folder / timestamp
                 archive_dir.mkdir(parents=True, exist_ok=True)
 
                 pointer_file = archive_dir / "LOCATION.txt"
@@ -3421,7 +3426,10 @@ class AdvancedCLI:
                 batch_dir = dataset_subdir
                 archive_dir = None
 
-            output_filename = f"{dataset_name}_{safe_model_name}_annotations_{timestamp}.{data_format}"
+            # The bounded dataset component keeps the file identifiable if it is
+            # later moved into a directory shared by several datasets, without
+            # spending characters the 260-character limit does not allow.
+            output_filename = f"{dataset_folder}_{safe_model_name}_annotations_{timestamp}.{data_format}"
             output_path = dataset_subdir / output_filename
 
             model_name = model_config.get('model_name', 'llama2')
@@ -5994,9 +6002,15 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         annotations_dir = self.settings.paths.data_dir / 'annotations'
         annotations_dir.mkdir(parents=True, exist_ok=True)
-        safe_model_name = model_info.name.replace(':', '_')
+        # Ollama ids carry both separators -- "library/llama3.2:3b" -- and
+        # neither is legal in a Windows filename.
+        safe_model_name = model_info.name.replace(':', '_').replace('/', '_')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        default_output_path = annotations_dir / f"{Path(dataset_path).stem}_{safe_model_name}_annotations_{timestamp}.csv"
+        # Every dataset lands in this one directory, so the name keeps a dataset
+        # prefix; it is the bounded one because Windows rejects a path longer than
+        # 260 characters and dataset stems grow with each annotation round.
+        dataset_folder = sanitize_path_component(Path(dataset_path).stem, "dataset", max_length=40)
+        default_output_path = annotations_dir / f"{dataset_folder}_{safe_model_name}_annotations_{timestamp}.csv"
 
         if model_info.provider == 'openai' and openai_batch_mode:
             annotation_mode = 'openai_batch'
@@ -6269,8 +6283,9 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     }
                 }
 
-                # Save metadata JSON
-                metadata_filename = f"{Path(dataset_path).stem}_{safe_model_name}_metadata_{timestamp}.json"
+                # Save metadata JSON -- same shared directory, so the same bounded
+                # dataset prefix as the annotated CSV above.
+                metadata_filename = f"{dataset_folder}_{safe_model_name}_metadata_{timestamp}.json"
                 metadata_path = annotations_dir / metadata_filename
 
                 with open(metadata_path, 'w', encoding='utf-8') as f:
@@ -8705,7 +8720,7 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                     result = subprocess.run(
                         [sys.executable, "-m", "pip", "install", "requests"],
                         capture_output=True,
-                        text=True
+                        text=True, encoding='utf-8', errors='replace'
                     )
 
                     if result.returncode == 0:

@@ -3620,7 +3620,7 @@ class BERTAnnotationStudio:
                         metadata_path = model_dir / "training_metadata.json"
                         if metadata_path.exists():
                             try:
-                                with open(metadata_path, "r") as f:
+                                with open(metadata_path, "r", encoding='utf-8') as f:
                                     metadata = json.load(f)
                                     languages = metadata.get("confirmed_languages", [])
                                     if languages:

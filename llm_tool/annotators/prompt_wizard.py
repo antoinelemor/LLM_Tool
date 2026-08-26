@@ -39,7 +39,10 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
+import os
 import re
+import shlex
+import shutil
 
 try:
     from rich.console import Console
@@ -2372,27 +2375,73 @@ Remember: THE FIRST EXAMPLE MUST HAVE ALL CATEGORIES WITH NON-NULL VALUES:"""
 
         return prompt_text
 
+    @staticmethod
+    def _resolve_editor() -> Optional[List[str]]:
+        """
+        Return the command to launch a text editor, or None if none is present.
+
+        Returns
+        -------
+        Optional[List[str]]
+            Argument list to prepend to the file path.
+
+        Notes
+        -----
+        ``$EDITOR`` wins when it is set and resolvable. Otherwise the candidates
+        are per-platform: `nano` and `vi` do not exist on a stock Windows
+        install, where `notepad` always does.
+        """
+        configured = os.environ.get('EDITOR') or os.environ.get('VISUAL')
+        if configured:
+            # $EDITOR often carries flags, e.g. "code --wait".
+            parts = shlex.split(configured, posix=(os.name != 'nt'))
+            if parts and shutil.which(parts[0]):
+                return parts
+
+        candidates = (
+            ['notepad.exe'] if os.name == 'nt'
+            else ['nano', 'vim', 'vi', 'open -t']
+        )
+        for candidate in candidates:
+            parts = candidate.split()
+            if shutil.which(parts[0]):
+                return parts
+        return None
+
     def _manual_edit_prompt(self, prompt_text: str) -> str:
         """Allow manual editing of prompt using external editor"""
         import tempfile
         import subprocess
-        import os
 
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        editor = self._resolve_editor()
+        if editor is None:
+            self.console.print(
+                "\n[yellow]No text editor found.[/yellow] "
+                "Set the EDITOR environment variable to the editor you use "
+                "(for example [cyan]setx EDITOR notepad[/cyan] on Windows) and "
+                "try again.\n"
+            )
+            return prompt_text
+
+        # encoding is explicit: prompts routinely contain accents and CJK, and
+        # NamedTemporaryFile would otherwise write them in the locale encoding.
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.txt', delete=False, encoding='utf-8'
+        ) as f:
             f.write(prompt_text)
             temp_path = f.name
 
         try:
-            # Open in editor
-            editor = os.environ.get('EDITOR', 'nano')
-            self.console.print(f"\n[cyan]Opening editor: {editor}[/cyan]")
+            self.console.print(f"\n[cyan]Opening editor: {' '.join(editor)}[/cyan]")
             self.console.print("[dim]Edit the prompt, save, and close the editor to continue.[/dim]\n")
 
-            subprocess.call([editor, temp_path])
+            try:
+                subprocess.call([*editor, temp_path])
+            except OSError as exc:
+                self.console.print(f"\n[yellow]Could not start the editor: {exc}[/yellow]\n")
+                return prompt_text
 
-            # Read edited content
-            with open(temp_path, 'r') as f:
+            with open(temp_path, 'r', encoding='utf-8') as f:
                 edited_prompt = f.read()
 
             self.console.print("\n[green]✓ Prompt edited successfully![/green]\n")

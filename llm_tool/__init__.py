@@ -36,6 +36,14 @@ Antoine Lemor
 import os
 import sys
 
+# Console encoding is fixed at import time, before any module can print. On
+# Windows the standard streams otherwise use the ANSI code page, and this CLI's
+# emoji, box-drawing characters and multilingual text would raise
+# UnicodeEncodeError on the very first banner.
+from .platform_compat import configure_console
+
+configure_console()
+
 # Environment helpers -----------------------------------------------------
 def _env_flag(name: str) -> bool:
     """Interpret environment variable as boolean flag."""

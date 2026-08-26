@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+#### First-class Windows support
+
+- `install.bat` and `install.ps1`: a one-command Windows installer mirroring
+  `install.sh`. It finds the newest usable Python (3.13 → 3.12 → 3.11), rejects the
+  Microsoft Store placeholder `python.exe`, refuses 32-bit interpreters, warns about
+  long paths / OneDrive / low disk space, creates `.venv`, configures VS Code, installs
+  and verifies. `install.bat` launches it with the execution policy bypassed for that
+  one process, so a fresh machine needs no PowerShell configuration.
+  `-Cuda cu126` installs the GPU build of PyTorch from PyTorch's own index.
+- `docs/WINDOWS.md`: complete Windows install, GPU, Ollama and troubleshooting guide
+- `make.bat`: Windows twin of every `Makefile` target
+- `.github/workflows/install.yml`: CI installing and launching on
+  windows-latest / ubuntu-latest / macos-latest across Python 3.11–3.13, plus a job that
+  runs the real installer scripts end to end
+- `.gitattributes`: normalises line endings so `install.sh` is not checked out with CRLF
+  on Windows (which makes its shebang unusable)
+- `llm_tool/platform_compat.py`: shared cross-platform helpers —
+  `configure_console()` (UTF-8 standard streams and ANSI escapes on Windows),
+  `sanitize_path_component()`, `replace_path()`, `writable_dir()`, `supports_unicode()`
+- Windows-aware `verify_installation.py`: checks console encoding, resolves console
+  scripts through the venv's `Scripts` directory, degrades its ✓/✗ glyphs on legacy code
+  pages, and points at the CUDA index when an NVIDIA GPU is present but PyTorch is CPU-only
+
 - Ollama Cloud support (`https://ollama.com`) alongside the local daemon, selectable in
   Mode 1, Mode 2, the Resume Center and Agent mode
 - Configurable Ollama endpoint via `OLLAMA_HOST` / `OLLAMA_API_KEY`, or a key stored under
@@ -24,7 +48,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Makefile for common development tasks
 - pyproject.toml for modern Python packaging
 
+### Changed
+
+#### Dependencies
+
+- `matplotlib` and `psutil` are now **core** dependencies. Both are imported
+  unconditionally on the CLI path, so `pip install -e .` produced an installation that
+  could not launch.
+- Dropped two declared-but-unused dependencies: `inquirer` (never imported; it pulled in
+  `blessed`, `readchar`, `wcwidth` and `editor`) and `colorama`. The colorama import in
+  `bert_base` also called `init(autoreset=True)`, which **replaces `sys.stdout` and
+  `sys.stderr` on Windows** — undoing the UTF-8 setup and reintroducing
+  `UnicodeEncodeError` on the training dashboard, for symbols the module never used.
+- The `[all]` extra no longer pulls `llama-cpp-python` or `fasttext`. Neither publishes a
+  Windows wheel, so the documented recommended install tried to compile C++ and failed on
+  any machine without Visual Studio build tools. Both moved to opt-in extras
+  (`[llamacpp]`, `[fasttext]`) and are documented as such; Ollama and `lingua` cover the
+  same ground with no compiler.
+- `[all]` also dropped `label-studio`, `ray`, `dask`, `gradio`, `redis`, `pymongo`,
+  `sentence-transformers`, `imbalanced-learn` and `seaborn` — several GB of packages that
+  no module in this codebase imports. (`seaborn` was never needed: the charts use
+  matplotlib's built-in `seaborn-v0_8-whitegrid` style.) Experiment trackers moved to an
+  `[mlops]` extra, the HTTP server to `[api]`, the extra providers to `[providers]`, all
+  three still included in `[all]`.
+- Removed the `pyarrow<19` cap, which silently pinned `datasets` to exactly 4.0.0 and sent
+  pip through a long backtracking search.
+- `requirements.txt` no longer holds a macOS `pip freeze` — it contained an editable
+  `git+https` self-reference that needed `git.exe` on PATH, `numpy==1.26.4` (no wheel for
+  Python 3.13) and ~55 unrelated transitive pins. It now defers to `pyproject.toml`.
+- The minimum Python version is **3.11** everywhere. The README badge, the README text,
+  `CONTRIBUTING.md` and `verify_installation.py` all claimed 3.9, which pip had been
+  refusing since `requires-python` was set.
+
 ### Fixed
+
+#### Windows correctness
+
+- The console entry point created and opened log files **inside the installed package** at
+  import time, so any non-editable install into a read-only tree (`C:\Program Files`, a
+  system `site-packages`) raised `PermissionError` before the CLI could start. Logs now
+  follow the working directory, with a fallback to the user profile and then the temp
+  directory. `llm_tool.transcription` had the same bug and the same fix.
+- The CLI's emoji, box-drawing characters and multilingual text raised
+  `UnicodeEncodeError` on the first banner, because Python opens stdout with the ANSI code
+  page on Windows. The standard streams are now reconfigured to UTF-8 at package import,
+  and ANSI escape handling is enabled for the legacy console.
+- ~40 file reads and writes omitted `encoding=`, so JSON configs, API-key stores, session
+  metadata, annotation output and log handlers were read and written in the locale
+  encoding — corrupting accented, Arabic and CJK text on Windows and raising on write.
+- CSV readers now pass `newline=''`, without which the `csv` module mis-parses newlines
+  embedded in quoted fields.
+- Model checkpoint promotion used `shutil.rmtree` followed by `shutil.move`/`os.rename`
+  onto the same name. On Windows `os.rename` raises `FileExistsError` where POSIX
+  overwrites, and `shutil.move` onto an existing directory moves *into* it, burying the
+  checkpoint a level deeper on every rerun. Both now go through `replace_path()`.
+- Annotation and training-metrics output paths repeated the dataset stem as both a
+  directory and a filename component, with nothing bounding their length; real paths in
+  this repository already reach 297 characters, past Windows' 260-character limit.
+  Components are now bounded and no longer duplicated.
+- Hybrid parallel training hardcoded `force_device='mps'`, which does not exist off macOS
+  and raised on every Windows and Linux box. Device selection and cache clearing are now
+  resolved from the accelerator actually present.
+- `MemoryMonitor.trigger_cleanup()` tested `hasattr(torch.mps, 'empty_cache')`, which is
+  true on every platform — so the CUDA branch was unreachable and an out-of-memory retry
+  retried into the same full GPU.
+- The interactive "press `s` to skip" listener called `select.select()` on the stdin file
+  descriptor. On Windows `select` only accepts sockets, so the listener thread died
+  silently and skipping never worked; it now uses `msvcrt` there.
+- DataLoader worker counts were tuned for `fork`. Windows has no `fork`, so each worker
+  re-imported torch and transformers; workers are now capped there and kept alive between
+  epochs on every device.
+- System resource detection fell through to `/proc/meminfo` on Windows and reported 0 GB
+  of RAM, collapsing the batch-size and worker heuristics that read it. It now uses
+  `GlobalMemoryStatusEx`. CPU and GPU detection no longer shell out to `wmic`, which
+  Windows 11 24H2 removed.
+- The prompt wizard's "edit manually" launched `nano` with no fallback and no exception
+  handler, raising `FileNotFoundError` on Windows. It now resolves `$EDITOR`/`$VISUAL`,
+  falls back per platform, and reports cleanly when no editor exists.
+- `_clear_terminal_buffer` called `Control("erase", target)`, which is not the Rich API and
+  raised `KeyError` on every platform, and wrote a raw ANSI sequence that a legacy Windows
+  console prints literally.
+- The missing-dependency fallback CLI printed raw ANSI escapes, misaligned box art, and
+  instructions naming a `fix_cryptography.sh` and an `examples/` directory that do not
+  exist. It now prints plain ASCII with per-platform instructions.
+- Six hardcoded writes to `/tmp/llmtool_debug.log`, one inside the per-row annotation loop,
+  replaced by an opt-in trace behind `LLM_TOOL_TRACE_PROGRESS`.
+- Ollama recovery advice, GGUF model search paths and Ollama model names used as filenames
+  are all platform-aware.
+
 - Sampling settings configured in the wizard (temperature, top_p, top_k, seed, max tokens)
   reached the local model client but were then discarded; every Ollama annotation silently
   ran at the defaults
@@ -144,6 +255,7 @@ N/A (initial release)
 - Large datasets (>100K documents) may require significant RAM during annotation
 - Some LongFormer variants may have memory issues on GPUs <8GB
 - Windows support is experimental (primarily tested on macOS/Linux)
+  — *superseded in [Unreleased]: Windows is now a first-class, CI-tested platform*
 
 ### Upgrade Notes
 

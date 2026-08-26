@@ -1041,7 +1041,7 @@ def main():
         exit_code = cli.run()
     elif args.config and args.config.exists():
         # Load config and run non-interactively
-        with open(args.config, 'r') as f:
+        with open(args.config, 'r', encoding='utf-8') as f:
             config = json.load(f)
         print("[!]  Non-interactive mode not fully implemented")
         exit_code = 1

@@ -39,7 +39,6 @@ import logging
 import time
 import json
 import subprocess
-import signal
 import threading
 from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
@@ -558,7 +557,7 @@ class OllamaClient(BaseLocalClient):
                     result = subprocess.run(
                         ["ollama", "stop", model['name']],
                         capture_output=True,
-                        text=True,
+                        text=True, encoding='utf-8', errors='replace',
                         timeout=10
                     )
                     if result.returncode == 0:
@@ -576,10 +575,15 @@ class OllamaClient(BaseLocalClient):
                 return True
 
             # Last resort: suggest manual intervention
+            restart_hint = (
+                'Stop-Process -Name ollama -Force, then relaunch Ollama '
+                'from the Start menu'
+                if os.name == 'nt'
+                else 'pkill ollama && ollama serve'
+            )
             self.logger.error(
                 "Could not automatically recover stuck Ollama models. "
-                "Please manually restart Ollama service: "
-                "pkill ollama && ollama serve"
+                f"Please restart the Ollama service manually: {restart_hint}"
             )
             return False
 
@@ -710,7 +714,7 @@ class OllamaClient(BaseLocalClient):
             stop_result = subprocess.run(
                 ["ollama", "stop", self.model_name],
                 capture_output=True,
-                text=True,
+                text=True, encoding='utf-8', errors='replace',
                 timeout=30
             )
 
@@ -720,7 +724,7 @@ class OllamaClient(BaseLocalClient):
                 subprocess.run(
                     ["ollama", "stop", base_name],
                     capture_output=True,
-                    text=True,
+                    text=True, encoding='utf-8', errors='replace',
                     timeout=30
                 )
 
@@ -1310,12 +1314,21 @@ def find_gguf_models(directory: str = None) -> List[str]:
         search_dirs = [Path(directory)]
     else:
         search_dirs = [
+            Path.cwd() / 'models',
             Path.home() / 'models',
             Path.home() / '.cache' / 'llama-cpp',
-            Path.home() / '.local' / 'share' / 'models',
-            Path('/usr/local/models'),
-            Path.cwd() / 'models'
         ]
+        if os.name == 'nt':
+            # The Windows equivalents of ~/.local/share and /usr/local.
+            for var in ('LOCALAPPDATA', 'APPDATA', 'ProgramData'):
+                root = os.environ.get(var)
+                if root:
+                    search_dirs.append(Path(root) / 'models')
+        else:
+            search_dirs.extend([
+                Path.home() / '.local' / 'share' / 'models',
+                Path('/usr/local/models'),
+            ])
     
     for search_dir in search_dirs:
         if search_dir.exists():

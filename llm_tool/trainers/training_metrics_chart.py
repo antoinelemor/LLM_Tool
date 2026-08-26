@@ -267,28 +267,24 @@ class TrainingMetricsChart:
 
     def _get_chart_filename(self) -> str:
         """
-        Generate descriptive chart filename.
+        Generate the chart basename for this instance.
 
         Uses a single fixed filename per chart instance so the same file
         is updated epoch-by-epoch rather than creating multiple files.
+
+        Notes
+        -----
+        The basename used to repeat the category, the model and the session id
+        -- all three of which the output *directory* already encodes
+        (``training_metrics/<mode>/<category>/<LANG>/<model>/charts/``). That
+        made a real path in this repository 282 characters relative to the
+        project root, which crosses Windows' 260-character limit as soon as any
+        drive prefix is added, and ``mkdir``/``savefig`` then fail with
+        ``FileNotFoundError``. The timestamp stays: it is what keeps two chart
+        instances writing into the same directory distinct.
         """
         if self._chart_filename is None:
-            # Generate filename only once on first call
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            # Build descriptive name
-            parts = ['training_metrics']
-
-            if self.category_name:
-                # Clean category name for filename
-                safe_category = self.category_name.replace('/', '_').replace('\\', '_')[:30]
-                parts.append(safe_category)
-
-            parts.append(self.model_name[:30])
-            parts.append(self.session_id[:20] if len(self.session_id) > 20 else self.session_id)
-            parts.append(timestamp)
-
-            self._chart_filename = '_'.join(parts)
+            self._chart_filename = 'chart_' + datetime.now().strftime("%Y%m%d_%H%M%S")
 
         return self._chart_filename
 

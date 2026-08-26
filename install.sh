@@ -2,8 +2,11 @@
 #
 # LLM Tool - Quick Installation Script
 #
-# This script automates the installation process for LLM Tool.
+# This script automates the installation process for LLM Tool on macOS and Linux.
 # It creates a virtual environment, installs dependencies, and verifies the installation.
+#
+# Windows users: run install.bat instead (or install.ps1 from PowerShell).
+# See docs/WINDOWS.md.
 #
 # Usage:
 #   ./install.sh              # Install core features
@@ -13,6 +16,23 @@
 # Author: Antoine Lemor
 
 set -e  # Exit on error
+
+# Windows has its own installer: this script's venv activation, chmod and
+# read -p all assume a POSIX shell, and under Git Bash the interpreter would
+# land in .venv/Scripts rather than .venv/bin.
+case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*)
+        echo ""
+        echo "This is the macOS/Linux installer."
+        echo ""
+        echo "On Windows, run this instead (from PowerShell or Explorer):"
+        echo "    ./install.bat"
+        echo ""
+        echo "Full guide: docs/WINDOWS.md"
+        echo ""
+        exit 1
+        ;;
+esac
 
 # Colors for output
 RED='\033[0;31m'
@@ -221,6 +241,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 mkdir -p .vscode
 
+# The interpreter path is written per-platform: this one is the POSIX layout.
+# install.ps1 writes the .venv\Scripts\python.exe form on Windows.
 cat > .vscode/settings.json << 'EOF'
 {
     "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
@@ -237,10 +259,11 @@ cat > .vscode/settings.json << 'EOF'
     "python.testing.pytestArgs": [
         "tests"
     ],
-    "python.formatting.provider": "black",
-    "python.linting.enabled": true,
-    "python.linting.flake8Enabled": true,
-    "python.linting.mypyEnabled": true,
+    "terminal.integrated.env.windows": {
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8"
+    },
+    "files.eol": "\n",
     "[python]": {
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
@@ -268,7 +291,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "Step 5: Upgrading pip..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-pip install --upgrade pip setuptools wheel > /dev/null 2>&1
+# Invoked through the interpreter so the upgrade targets this venv's pip even
+# if the shell's `pip` still resolves to another environment.
+python -m pip install --upgrade pip setuptools wheel > /dev/null
 echo -e "${GREEN}✓ pip upgraded to latest version${NC}"
 echo ""
 
@@ -278,11 +303,11 @@ echo "Step 6: Installing LLM Tool..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 if [ "$INSTALL_TYPE" == "all" ]; then
-    pip install -e ".[all]"
+    python -m pip install -e ".[all]"
 elif [ "$INSTALL_TYPE" == "dev" ]; then
-    pip install -e ".[dev]"
+    python -m pip install -e ".[dev]"
 else
-    pip install -e .
+    python -m pip install -e .
 fi
 
 echo -e "${GREEN}✓ LLM Tool installed successfully${NC}"
@@ -312,13 +337,11 @@ echo ""
 echo "  2. Launch LLM Tool:"
 echo -e "     ${BLUE}llm-tool${NC}"
 echo ""
-echo "  3. Try the examples:"
-echo -e "     ${BLUE}python examples/quickstart_annotation.py${NC}"
+echo "  3. Read the documentation:"
+echo -e "     ${BLUE}README.md${NC}  (features and the five modes)"
+echo -e "     ${BLUE}docs/modes_reference.md${NC}"
 echo ""
-echo "  4. Read the documentation:"
-echo -e "     ${BLUE}cat README.md | less${NC}"
-echo ""
-echo "  5. VS Code users:"
+echo "  4. VS Code users:"
 echo -e "     ${GREEN}✓ VS Code is already configured to use .venv${NC}"
 echo -e "     ${GREEN}  Just open/reload the workspace in VS Code!${NC}"
 echo ""
@@ -332,8 +355,8 @@ echo -e "    ${YELLOW}export OPENAI_API_KEY='sk-...'${NC}"
 echo ""
 echo "For help and support:"
 echo "  • README: README.md"
-echo "  • Examples: examples/"
 echo "  • Docs: docs/"
+echo "  • Issues: https://github.com/antoinelemor/LLM_Tool/issues"
 echo ""
 echo "Happy annotating! 🚀"
 echo ""

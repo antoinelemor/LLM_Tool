@@ -65,6 +65,102 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _query_windows_cim(cim_class: str, properties: List[str]) -> List[Dict[str, str]]:
+    """
+    Query a Windows CIM/WMI class and return one dict per instance.
+
+    Parameters
+    ----------
+    cim_class : str
+        WMI class name, e.g. ``"Win32_VideoController"``.
+    properties : list of str
+        Property names to select.
+
+    Returns
+    -------
+    list of dict
+        One mapping per instance; empty when the query is unavailable or fails.
+
+    Notes
+    -----
+    ``wmic.exe`` was the classic way to do this, but Microsoft deprecated it and
+    stopped shipping it by default from Windows 11 24H2 onwards -- calls to it
+    now raise FileNotFoundError on an up-to-date machine. PowerShell's
+    ``Get-CimInstance`` is the supported replacement and is present on every
+    Windows 10/11 install; ``wmic`` is kept as a fallback for older builds.
+    """
+    if platform.system() != "Windows":
+        return []
+
+    select = ", ".join(properties)
+    script = (
+        f"Get-CimInstance -ClassName {cim_class} | "
+        f"Select-Object {select} | "
+        f"ConvertTo-Json -Compress"
+    )
+
+    for executable in ("powershell.exe", "pwsh.exe"):
+        try:
+            result = subprocess.run(
+                [executable, "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                # Windows would otherwise decode with the OEM code page and
+                # raise on a GPU or CPU name containing a non-ASCII character.
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+
+        if result.returncode != 0 or not result.stdout.strip():
+            continue
+
+        try:
+            payload = json.loads(result.stdout)
+        except (ValueError, TypeError):
+            continue
+
+        # ConvertTo-Json emits a bare object when there is exactly one instance.
+        if isinstance(payload, dict):
+            payload = [payload]
+        if isinstance(payload, list):
+            return [
+                {k: ("" if v is None else str(v)) for k, v in item.items()}
+                for item in payload
+                if isinstance(item, dict)
+            ]
+
+    # Legacy fallback for Windows builds that still ship wmic.
+    try:
+        result = subprocess.run(
+            ["wmic", "path", cim_class, "get", ",".join(properties), "/format:csv"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    if result.returncode != 0:
+        return []
+
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return []
+
+    header = [h.strip() for h in lines[0].split(",")]
+    rows = []
+    for line in lines[1:]:
+        cells = [c.strip() for c in line.split(",")]
+        if len(cells) == len(header):
+            rows.append(dict(zip(header, cells)))
+    return rows
+
+
 @dataclass
 class GPUInfo:
     """Information about GPU availability and capabilities"""
@@ -244,6 +340,21 @@ class SystemResources:
             recommendations['batch_size'] = max(4, recommendations['batch_size'] // 2)
             recommendations['num_workers'] = max(2, recommendations['num_workers'] // 2)
             recommendations['notes'].append("Low RAM detected: Reduced batch size and workers")
+
+        # Windows has no fork(): every DataLoader worker is a brand-new
+        # interpreter that re-imports torch and transformers, which costs
+        # seconds each and several hundred MB of RSS. The counts above are
+        # tuned for fork's near-zero cost and are actively slower here, so cap
+        # them low -- and drop to 0 without a GPU, where extra processes buy
+        # nothing but a stall at every epoch boundary.
+        if platform.system() == "Windows":
+            capped = 0 if not self.gpu.available else min(2, recommendations['num_workers'])
+            if capped != recommendations['num_workers']:
+                recommendations['num_workers'] = capped
+                recommendations['notes'].append(
+                    f"Windows detected: DataLoader workers capped at {capped} "
+                    "(process spawn is far more expensive than fork)"
+                )
 
         return recommendations
 
@@ -765,14 +876,20 @@ class MemoryMonitor:
         import gc
         gc.collect()
 
-        # Try to clear GPU/MPS cache if available
+        # Try to clear GPU/MPS cache if available.
+        #
+        # The check has to be is_available(), not hasattr: torch.mps exists on
+        # every platform, so `hasattr(torch.mps, 'empty_cache')` was always true
+        # and the CUDA branch below it never ran. On an NVIDIA machine this call
+        # silently freed nothing, which is why an OOM retry retried into the
+        # same full GPU.
         if HAS_TORCH:
             try:
                 import torch
-                if hasattr(torch.mps, 'empty_cache'):
-                    torch.mps.empty_cache()
-                elif torch.cuda.is_available():
+                if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
             except Exception:
                 pass
 
@@ -889,7 +1006,7 @@ class SystemResourceDetector:
                     result = subprocess.run(
                         ['sysctl', '-n', 'machdep.cpu.brand_string'],
                         capture_output=True,
-                        text=True,
+                        text=True, encoding='utf-8', errors='replace',
                         timeout=5
                     )
                     if result.returncode == 0:
@@ -988,7 +1105,7 @@ class SystemResourceDetector:
                         result = subprocess.run(
                             ['sysctl', '-n', 'machdep.cpu.brand_string'],
                             capture_output=True,
-                            text=True,
+                            text=True, encoding='utf-8', errors='replace',
                             timeout=5
                         )
                         if result.returncode == 0:
@@ -1050,7 +1167,7 @@ class SystemResourceDetector:
                     result = subprocess.run(
                         ['rocm-smi', '--showproductname'],
                         capture_output=True,
-                        text=True,
+                        text=True, encoding='utf-8', errors='replace',
                         timeout=5
                     )
                     if result.returncode == 0 and 'GPU' in result.stdout:
@@ -1071,7 +1188,7 @@ class SystemResourceDetector:
                                 mem_result = subprocess.run(
                                     ['rocm-smi', '--showmeminfo', 'vram'],
                                     capture_output=True,
-                                    text=True,
+                                    text=True, encoding='utf-8', errors='replace',
                                     timeout=5
                                 )
                                 if mem_result.returncode == 0:
@@ -1100,7 +1217,7 @@ class SystemResourceDetector:
                     result = subprocess.run(
                         ['lspci'],
                         capture_output=True,
-                        text=True,
+                        text=True, encoding='utf-8', errors='replace',
                         timeout=5
                     )
                     if result.returncode == 0:
@@ -1121,38 +1238,30 @@ class SystemResourceDetector:
                     pass
 
             elif system == "Windows":
-                # Use wmic to detect AMD GPUs
-                try:
-                    result = subprocess.run(
-                        ['wmic', 'path', 'win32_VideoController', 'get', 'name,adapterram'],
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-                    if result.returncode == 0:
-                        amd_gpus = []
-                        total_mem = 0
-                        for line in result.stdout.split('\n'):
-                            if 'AMD' in line or 'Radeon' in line:
-                                parts = line.strip().split()
-                                if parts:
-                                    # Try to extract memory (last number)
-                                    try:
-                                        mem_bytes = int(parts[-1])
-                                        total_mem += mem_bytes / (1024**3)
-                                        gpu_name = ' '.join(parts[:-1])
-                                    except:
-                                        gpu_name = line.strip()
-                                    amd_gpus.append(gpu_name)
+                # Structured query instead of scraping wmic's columnar text:
+                # the old parser split on whitespace, so a GPU whose name ends
+                # in a number ("Radeon RX 7900 XTX") lost its last word to the
+                # memory field.
+                amd_gpus = []
+                total_mem = 0.0
+                for controller in _query_windows_cim(
+                    "Win32_VideoController", ["Name", "AdapterRAM"]
+                ):
+                    name = controller.get("Name", "").strip()
+                    if not name or not ("AMD" in name or "Radeon" in name):
+                        continue
+                    amd_gpus.append(name)
+                    try:
+                        total_mem += int(controller.get("AdapterRAM") or 0) / (1024**3)
+                    except (TypeError, ValueError):
+                        pass
 
-                        if amd_gpus:
-                            return {
-                                'names': amd_gpus,
-                                'count': len(amd_gpus),
-                                'memory_gb': total_mem
-                            }
-                except FileNotFoundError:
-                    pass
+                if amd_gpus:
+                    return {
+                        'names': amd_gpus,
+                        'count': len(amd_gpus),
+                        'memory_gb': total_mem
+                    }
 
         except Exception as e:
             logger.debug(f"AMD GPU fallback detection failed: {e}")
@@ -1207,7 +1316,7 @@ class SystemResourceDetector:
                     result = subprocess.run(
                         ['sysctl', '-n', 'machdep.cpu.brand_string'],
                         capture_output=True,
-                        text=True,
+                        text=True, encoding='utf-8', errors='replace',
                         timeout=5
                     )
                     if result.returncode == 0:
@@ -1216,20 +1325,14 @@ class SystemResourceDetector:
                     pass
 
             elif platform.system() == "Windows":
-                # Windows
-                try:
-                    result = subprocess.run(
-                        ['wmic', 'cpu', 'get', 'name'],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    if result.returncode == 0:
-                        lines = result.stdout.strip().split('\n')
-                        if len(lines) > 1:
-                            cpu_info.processor_name = lines[1].strip()
-                except:
-                    pass
+                # Windows. platform.processor() already returns something like
+                # "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel"; the CIM
+                # query upgrades that to the marketing name when available.
+                processors = _query_windows_cim("Win32_Processor", ["Name"])
+                if processors:
+                    name = processors[0].get("Name", "").strip()
+                    if name:
+                        cpu_info.processor_name = name
 
         except Exception as e:
             logger.error(f"Error detecting CPU: {e}")
@@ -1278,10 +1381,41 @@ class SystemResourceDetector:
                 mem_info.available_gb = available_bytes / (1024**3)
                 mem_info.used_gb = mem_info.total_gb - mem_info.available_gb
                 mem_info.percent_used = (mem_info.used_gb / mem_info.total_gb * 100) if mem_info.total_gb else 0.0
+            elif platform.system() == "Windows":
+                # No /proc on Windows: without this branch the Linux path below
+                # raised FileNotFoundError and every memory figure came back as
+                # 0 GB, which in turn collapsed the batch-size and worker-count
+                # heuristics that read them. GlobalMemoryStatusEx is the Win32
+                # equivalent and needs nothing beyond the standard library.
+                import ctypes
+                from ctypes import wintypes
+
+                class _MEMORYSTATUSEX(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLength", wintypes.DWORD),
+                        ("dwMemoryLoad", wintypes.DWORD),
+                        ("ullTotalPhys", ctypes.c_ulonglong),
+                        ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong),
+                        ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                    ]
+
+                status = _MEMORYSTATUSEX()
+                status.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+                if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                    raise OSError(ctypes.get_last_error(), "GlobalMemoryStatusEx failed")
+
+                mem_info.total_gb = status.ullTotalPhys / (1024**3)
+                mem_info.available_gb = status.ullAvailPhys / (1024**3)
+                mem_info.used_gb = mem_info.total_gb - mem_info.available_gb
+                mem_info.percent_used = float(status.dwMemoryLoad)
             else:
                 # Linux fallback using /proc/meminfo
                 meminfo = {}
-                with open('/proc/meminfo') as f:
+                with open('/proc/meminfo', encoding='utf-8') as f:
                     for line in f:
                         key, val = line.split(':', 1)
                         meminfo[key] = float(val.strip().split()[0])  # kB
@@ -1371,7 +1505,7 @@ class SystemResourceDetector:
         resources = self.detect_all(force_refresh=force_refresh)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding='utf-8') as f:
             f.write(resources.to_json())
 
         logger.info(f"System resources saved to {output_path}")

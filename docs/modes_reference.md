@@ -173,7 +173,7 @@ The structure is identical across modes so you can compare them quickly.
 - **Mission**: Centralise credentials, default settings, and reusable prompt/model presets for reproducible experiments.
 - **Best For**: Multi-provider setups, teams sharing machines, researchers alternating between cloud and local runs.
 - **Inputs**: API keys, preferred models per provider, saved prompt bundles, execution history.
-- **Outputs**: Encrypted key store (`~/.llm_tool/api_keys.enc`), profile JSON files, history logs, reusable configurations surfaced in the CLI.
+- **Outputs**: Encrypted key store (`~/.llm_tool/api_keys.enc`; on Windows `%USERPROFILE%\.llm_tool\api_keys.enc`), profile JSON files, history logs, reusable configurations surfaced in the CLI.
 - **Core Steps**:
   1. Open Profile Manager from the main menu (option 6).
   2. Review existing profiles and activate one as the default context.
@@ -186,7 +186,7 @@ The structure is identical across modes so you can compare them quickly.
   - Per-provider preferred model tracking (e.g., default `gpt-4o` vs `ollama:llama3.2`).
   - Profile snapshots referenced automatically by advanced CLI wizards.
 - **Resume & Logging**:
-  - Profiles stored in `~/.llm_tool/profiles/`, history in `~/.llm_tool/history.json`.
+  - Profiles stored in `~/.llm_tool/profiles/`, history in `~/.llm_tool/history.json` (Windows: under `%USERPROFILE%\.llm_tool\`).
   - All changes recorded in application logs with masked secrets.
 - **Hand-off & Next Mode**:
   - Seeds credentials for Modes 1–5.

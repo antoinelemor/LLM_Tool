@@ -34,7 +34,6 @@ Dependencies:
 - transformers
 - tqdm
 - rich
-- colorama
 - tabulate
 - llm_tool.utils.training_paths
 - llm_tool.trainers.bert_abc
@@ -86,7 +85,6 @@ from torch.utils.data import TensorDataset, SequentialSampler, DataLoader, Weigh
 from torch.amp import autocast, GradScaler
 from tqdm.auto import tqdm
 from sklearn.metrics import classification_report, precision_recall_fscore_support
-from colorama import init, Fore, Back, Style
 from tabulate import tabulate
 from rich.live import Live
 from rich.panel import Panel
@@ -99,12 +97,19 @@ from rich.text import Text
 from rich import box
 
 from llm_tool.utils.training_paths import resolve_metrics_base_dir, get_session_dir
+from llm_tool.platform_compat import replace_path
 
 # Create a shared console for Rich operations
 console = Console()
 
-# Initialize colorama for cross-platform colored output
-init(autoreset=True)
+# colorama is deliberately not initialised here.
+#
+# Fore/Back/Style were imported but never used, and colorama.init() REPLACES
+# sys.stdout and sys.stderr on Windows with its own AnsiToWin32 wrapper. That
+# discarded the UTF-8 reconfiguration llm_tool.platform_compat applies at import
+# and reintroduced UnicodeEncodeError on the training dashboard. Rich handles
+# colour on every platform, and platform_compat enables the console's ANSI
+# support directly.
 try:                             # transformers >= 5
     from torch.optim import AdamW
 except ImportError:              # transformers <= 4
@@ -323,14 +328,13 @@ def _clear_terminal_buffer(console_obj) -> bool:
     """
     cleared = False
 
-    # Send erase commands via Rich's control API (supported terminals will comply)
-    for target in ("scroll", "screen"):
-        try:
-            console_obj.control(Control("erase", target))
-            cleared = True
-        except Exception:
-            pass
-
+    # Console.clear() is the portable route: Rich emits the escape sequence on a
+    # capable terminal and falls back to the platform's clear command elsewhere.
+    #
+    # This used to call Control("erase", target) first. That is not the Rich API
+    # -- Control's constructor takes (ControlType, *params) and parses a string
+    # argument character by character, so "erase" raised KeyError('e') on every
+    # platform and the branch never did anything.
     try:
         console_obj.clear()
         cleared = True
@@ -339,22 +343,46 @@ def _clear_terminal_buffer(console_obj) -> bool:
 
     # Ensure cursor returns to origin so the next Live frame repaints from the top
     try:
-        console_obj.control(Control("home"))
+        console_obj.control(Control.home())
         cleared = True
     except Exception:
         pass
 
-    # Fallback: raw ANSI sequence to wipe scrollback and screen for stubborn terminals (e.g. VS Code)
+    # Fallback for terminals that keep scrollback after a clear (VS Code, iTerm).
+    # ESC[3J erases the scrollback buffer specifically, which Console.clear()
+    # does not touch. Guarded on is_terminal so the sequence is never written
+    # into a redirected log, and skipped on a Windows console that has not
+    # negotiated VT processing, where it would print as literal garbage.
     try:
-        stream = getattr(console_obj, "file", None)
-        if stream is not None:
-            stream.write("\033[3J\033[2J\033[H")
-            stream.flush()
-            cleared = True
+        if getattr(console_obj, "is_terminal", False) and _supports_ansi():
+            stream = getattr(console_obj, "file", None)
+            if stream is not None:
+                stream.write("\033[3J")
+                stream.flush()
+                cleared = True
     except Exception:
         pass
 
     return cleared
+
+
+def _supports_ansi() -> bool:
+    """
+    Whether raw ANSI escape sequences are interpreted rather than printed.
+
+    Returns
+    -------
+    bool
+        True on POSIX terminals, and on Windows once virtual-terminal
+        processing has been enabled (llm_tool.platform_compat does this at
+        import) or when running under a terminal that advertises support.
+    """
+    if os.name != "nt":
+        return True
+    # Windows Terminal sets WT_SESSION; ConEmu/VS Code set their own markers.
+    if os.environ.get("WT_SESSION") or os.environ.get("ConEmuANSI") == "ON":
+        return True
+    return os.environ.get("TERM_PROGRAM", "").lower() == "vscode"
 
 
 # ================== Asymmetric Loss for Multi-Label Classification ==================
@@ -1925,11 +1953,18 @@ class BertBase(BertABC):
         if device_type == 'cuda' and num_workers > 0:
             pin_memory = True
             prefetch_factor = 6
-            persistent_workers = True
         elif device_type == 'mps' and num_workers > 0:
             pin_memory = False
             prefetch_factor = 8
-            persistent_workers = True
+        elif num_workers > 0:
+            # CPU training still benefits from keeping workers alive.
+            prefetch_factor = 4
+
+        # Whatever the device, workers that are torn down at the end of every
+        # epoch have to be re-created at the start of the next one. On Windows
+        # that means re-importing torch and transformers per worker, which is a
+        # multi-second stall between epochs.
+        persistent_workers = num_workers > 0
 
         loader_kwargs = {
             'dataset': original_dataloader.dataset,
@@ -2188,7 +2223,6 @@ class BertBase(BertABC):
             if num_workers > 0:
                 # High prefetch factor keeps GPU saturated
                 prefetch_factor = 6
-                persistent_workers = True  # Avoid worker spawn overhead between batches
         elif device_type == 'mps':
             # ========== STATE-OF-THE-ART MPS OPTIMIZATION ==========
             # MPS (Apple Silicon) has unified memory architecture - CPU and GPU share RAM
@@ -2201,7 +2235,15 @@ class BertBase(BertABC):
                 # AGGRESSIVE PREFETCH: Keep 8+ batches ready at all times
                 # This ensures GPU never waits for data, eliminating utilization stutters
                 prefetch_factor = 8
-                persistent_workers = True  # Keep workers alive to avoid spawn overhead
+        elif num_workers > 0:
+            # CPU training was left with the defaults, so its workers were torn
+            # down and re-created every epoch.
+            prefetch_factor = 4
+
+        # Workers are kept alive on every device. Re-creating them per epoch is
+        # cheap under fork and expensive under spawn, which is what Windows and
+        # macOS both use -- a fresh interpreter plus a full torch import each.
+        persistent_workers = num_workers > 0
 
         # Build DataLoader with optimized settings
         loader_kwargs = {
@@ -3689,7 +3731,7 @@ class BertBase(BertABC):
             # ========== SKIP TO RL: Resume at Phase 2 ==========
             if skip_to_rl and rl_state_path:
                 try:
-                    with open(rl_state_path, 'r') as f:
+                    with open(rl_state_path, 'r', encoding='utf-8') as f:
                         rl_state = json.load(f)
                     # Restore best_scores from saved state
                     best_scores = (
@@ -4529,7 +4571,7 @@ class BertBase(BertABC):
                                 'lr': lr,
                             }
                             rl_state_file = os.path.join(metrics_output_dir, 'rl_ready_state.json')
-                            with open(rl_state_file, 'w') as f:
+                            with open(rl_state_file, 'w', encoding='utf-8') as f:
                                 json.dump(rl_state, f, indent=2)
                         except Exception:
                             pass  # Don't fail training over state save
@@ -4677,7 +4719,7 @@ class BertBase(BertABC):
 
                     if os.path.exists(best_models_csv) and os.path.getsize(best_models_csv) > 0:
                         # Read existing best models to check if this category/model already has a better score
-                        with open(best_models_csv, 'r', encoding='utf-8') as f_read:
+                        with open(best_models_csv, 'r', encoding='utf-8', newline='') as f_read:
                             # Read all lines first
                             all_lines = f_read.readlines()
 
@@ -4720,7 +4762,7 @@ class BertBase(BertABC):
                             metadata_lines = []
                             headers_dict = None
 
-                            with open(best_models_csv, 'r', encoding='utf-8') as f_read:
+                            with open(best_models_csv, 'r', encoding='utf-8', newline='') as f_read:
                                 # Read all lines first
                                 all_lines = f_read.readlines()
 
@@ -4929,10 +4971,11 @@ class BertBase(BertABC):
 
                 # Skip move if already at final location (e.g., resume_rl)
                 if os.path.normpath(best_model_path) != os.path.normpath(final_path):
-                    # Remove existing final path if any
-                    if os.path.exists(final_path):
-                        shutil.rmtree(final_path)
-                    shutil.move(best_model_path, final_path)
+                    # replace_path clears the destination first: on Windows
+                    # shutil.move onto an existing directory moves the source
+                    # *inside* it instead of replacing it, which buries the
+                    # checkpoint one level deeper every rerun.
+                    replace_path(best_model_path, final_path)
                     best_model_path = final_path
                     # Log model save confirmation
                     self.logger.info(f"✅ Best model saved to: {final_path}")
@@ -6358,9 +6401,10 @@ class BertBase(BertABC):
                     # Finalize reinforced model path
                     if best_model_path and best_model_path.endswith("_reinforced_temp"):
                         final_path = best_model_path.replace("_reinforced_temp", "")
-                        if os.path.exists(final_path):
-                            shutil.rmtree(final_path)
-                        os.rename(best_model_path, final_path)
+                        # os.rename onto an existing directory raises on
+                        # Windows; replace_path clears it first and falls
+                        # back to a copy across volumes.
+                        final_path = str(replace_path(best_model_path, final_path))
                         best_model_path = final_path
                         # Log reinforced model save
                         self.logger.info(f"✅ Reinforced model saved to: {final_path}")
@@ -6621,7 +6665,7 @@ class BertBase(BertABC):
         metadata_path = os.path.join(model_path, "training_metadata.json")
         if os.path.exists(metadata_path):
             try:
-                with open(metadata_path, 'r') as f:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
                     metadata = json.load(f)
                 num_labels = metadata.get("num_labels")
                 if num_labels is not None:
@@ -6637,7 +6681,7 @@ class BertBase(BertABC):
         config_path = os.path.join(model_path, "config.json")
         if os.path.exists(config_path):
             try:
-                with open(config_path, 'r') as f:
+                with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                 # Try num_labels directly
                 num_labels = config.get("num_labels")

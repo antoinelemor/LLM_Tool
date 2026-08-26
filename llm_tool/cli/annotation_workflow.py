@@ -56,6 +56,7 @@ except ImportError:  # pragma: no cover - optional styling
     box = None
 
 from ..utils.language_detector import LanguageDetector
+from llm_tool.platform_compat import sanitize_path_component
 from llm_tool.utils.data_detector import DataDetector
 from llm_tool.utils.session_summary import SessionSummary, merge_summary, read_summary
 from llm_tool.utils.cost_estimator import (
@@ -911,11 +912,24 @@ def _persist_annotation_outputs(
         return paths
 
     annotated_data_root = Path(annotated_data_root)
-    dataset_root = annotated_data_root / provider_folder / model_folder / dataset_name
+    # Windows refuses any path longer than 260 characters unless long paths are
+    # enabled, and this destination already nests four levels below the session
+    # directory, so the dataset and model components are bounded here instead of
+    # letting a long dataset stem or model tag blow the budget at mkdir time.
+    dataset_folder = sanitize_path_component(dataset_name, "dataset", max_length=40)
+    model_component = sanitize_path_component(model_folder, "model", max_length=32)
+    dataset_root = annotated_data_root / provider_folder / model_component / dataset_folder
     dataset_root.mkdir(parents=True, exist_ok=True)
 
     source_path = Path(source_output_path)
-    full_output_path = dataset_root / source_path.name
+    # The destination directory is already named after the dataset, so a basename
+    # that repeats the dataset stem only spends characters we do not have.
+    final_name = source_path.name
+    for redundant_prefix in (f"{dataset_name}_", f"{dataset_folder}_"):
+        if final_name.startswith(redundant_prefix):
+            final_name = final_name[len(redundant_prefix):]
+            break
+    full_output_path = dataset_root / final_name
 
     # Move into organised structure if needed (avoids lingering copies in data/)
     try:
@@ -956,7 +970,7 @@ def _persist_annotation_outputs(
             samples: List[Dict[str, Any]] = []
 
             try:
-                with csv_path.open("r", newline="", encoding="utf-8") as src_file:
+                with csv_path.open("r", newline="", encoding="utf-8-sig") as src_file:
                     reader = csv.DictReader(src_file)
                     fieldnames = reader.fieldnames or []
                     if not fieldnames:
@@ -1046,14 +1060,20 @@ def _persist_annotation_outputs(
     except Exception as exc:
         cli.logger.debug(f"Could not remove legacy annotations file {legacy_candidate}: {exc}")
 
+    # Staging copies are written under either the raw stem (older runs) or the
+    # bounded folder component (current runs), so both spellings are swept.
+    staging_patterns = [f"{dataset_name}.*"]
+    if dataset_folder != dataset_name:
+        staging_patterns.append(f"{dataset_folder}.*")
     try:
-        for raw_candidate in annotated_data_root.glob(f"{dataset_name}.*"):
-            if not raw_candidate.is_file():
-                continue
-            resolved = raw_candidate.resolve()
-            if resolved in {full_output_path.resolve(), subset_target.resolve()}:
-                continue
-            raw_candidate.unlink()
+        for pattern in staging_patterns:
+            for raw_candidate in annotated_data_root.glob(pattern):
+                if not raw_candidate.is_file():
+                    continue
+                resolved = raw_candidate.resolve()
+                if resolved in {full_output_path.resolve(), subset_target.resolve()}:
+                    continue
+                raw_candidate.unlink()
     except Exception as exc:
         cli.logger.debug(f"Could not remove dataset staging artefact for %s: %s", dataset_name, exc)
 
@@ -1081,7 +1101,7 @@ def _generate_annotations_only_subset(
         return 0
 
     try:
-        with source_csv.open("r", newline="", encoding="utf-8") as src_file:
+        with source_csv.open("r", newline="", encoding="utf-8-sig") as src_file:
             reader = csv.DictReader(src_file)
             fieldnames = reader.fieldnames or []
             if not fieldnames:
@@ -3463,19 +3483,27 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     )
     safe_model_name = model_name.replace(":", "_").replace("/", "_")
     provider_folder = provider.replace("/", "_")
-    model_folder = safe_model_name
+    # Windows caps a full path at 260 characters unless long paths are enabled,
+    # and these components are repeated at several nesting levels, so each one is
+    # bounded once here and reused everywhere a directory is built.
+    model_folder = sanitize_path_component(safe_model_name, "model", max_length=32)
+    dataset_folder = sanitize_path_component(dataset_name, "dataset", max_length=40)
     metadata_data_source['provider_folder'] = provider_folder
     metadata_data_source['model_folder'] = model_folder
     metadata_processing_config['provider_folder'] = provider_folder
     metadata_processing_config['model_folder'] = model_folder
 
-    metadata_subdir = session_dirs['metadata'] / provider_folder / model_folder / dataset_name
-    metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{run_timestamp}.json"
+    metadata_subdir = session_dirs['metadata'] / provider_folder / model_folder / dataset_folder
+    # The directory is already named after the dataset, so the filename does not
+    # repeat the stem; the metadata discovery globs match on "*_metadata_*.json".
+    metadata_filename = f"{safe_model_name}_metadata_{run_timestamp}.json"
     metadata_path = metadata_subdir / metadata_filename
     if metadata_path not in metadata_targets:
         metadata_targets.append(metadata_path)
 
-    default_output_path = staging_dir / f"{data_path.stem}_{safe_model_name}_annotations_{run_timestamp}.{data_format}"
+    # The staging directory is shared by every dataset in the session, so the
+    # bounded dataset component stays in the filename to keep runs apart.
+    default_output_path = staging_dir / f"{dataset_folder}_{safe_model_name}_annotations_{run_timestamp}.{data_format}"
     metadata_output_config = {
         'output_path': str(default_output_path),
         'output_format': data_format,
@@ -4448,7 +4476,9 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         annotation_mode_display = "Local"
 
     provider_folder = (provider or "model_provider").replace("/", "_")
-    model_folder = safe_model_name
+    # Windows gives up beyond 260 characters, so the model and dataset names are
+    # bounded once and then reused at every directory level below.
+    model_folder = sanitize_path_component(safe_model_name, "model", max_length=32)
 
     provider_subdir = session_dirs['annotated_data'] / provider_folder
     provider_subdir.mkdir(parents=True, exist_ok=True)
@@ -4457,7 +4487,8 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
     model_subdir.mkdir(parents=True, exist_ok=True)
 
     dataset_name = data_path.stem
-    dataset_subdir = model_subdir / dataset_name
+    dataset_folder = sanitize_path_component(dataset_name, "dataset", max_length=40)
+    dataset_subdir = model_subdir / dataset_folder
     dataset_subdir.mkdir(parents=True, exist_ok=True)
 
     if annotation_mode == 'openai_batch':
@@ -4467,7 +4498,7 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         batch_dir.mkdir(parents=True, exist_ok=True)
 
         archive_root = Path(session_dirs.get('openai_batches', session_dirs['annotated_data']))
-        archive_dir = archive_root / provider_folder / model_folder / dataset_name / timestamp
+        archive_dir = archive_root / provider_folder / model_folder / dataset_folder / timestamp
         archive_dir.mkdir(parents=True, exist_ok=True)
 
         pointer_file = archive_dir / "LOCATION.txt"
@@ -4483,7 +4514,10 @@ def run_annotator_workflow(cli, session_id: str = None, session_dirs: Optional[D
         batch_dir = dataset_subdir
         archive_dir = None
 
-    output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
+    # The bounded dataset component replaces the raw stem here as well: the file
+    # can be relocated into a shared staging directory later, so it keeps a
+    # dataset prefix, just one that cannot overrun the 260-character limit.
+    output_filename = f"{dataset_folder}_{safe_model_name}_annotations_{timestamp}.{data_format}"
     default_output_path = dataset_subdir / output_filename
 
     cli.console.print(f"\n[bold cyan]Output Location:[/bold cyan]")
@@ -6384,7 +6418,9 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         annotation_mode_display = "Local"
 
     provider_folder = (provider or "model_provider").replace("/", "_")
-    model_folder = safe_model_name
+    # Windows gives up beyond 260 characters, so the model and dataset names are
+    # bounded once and then reused at every directory level below.
+    model_folder = sanitize_path_component(safe_model_name, "model", max_length=32)
 
     provider_subdir = session_dirs['annotated_data'] / provider_folder
     provider_subdir.mkdir(parents=True, exist_ok=True)
@@ -6393,7 +6429,8 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     model_subdir.mkdir(parents=True, exist_ok=True)
 
     dataset_name = data_path.stem
-    dataset_subdir = model_subdir / dataset_name
+    dataset_folder = sanitize_path_component(dataset_name, "dataset", max_length=40)
+    dataset_subdir = model_subdir / dataset_folder
     dataset_subdir.mkdir(parents=True, exist_ok=True)
 
     if annotation_mode == 'openai_batch':
@@ -6403,7 +6440,7 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         batch_dir.mkdir(parents=True, exist_ok=True)
 
         legacy_root = Path(session_dirs.get('openai_batches', session_dirs['annotated_data']))
-        legacy_target = legacy_root / provider_folder / model_folder / dataset_name
+        legacy_target = legacy_root / provider_folder / model_folder / dataset_folder
         legacy_target.mkdir(parents=True, exist_ok=True)
         pointer_file = legacy_target / f"{timestamp}_LOCATION.txt"
         if not pointer_file.exists():
@@ -6417,7 +6454,10 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
     else:
         batch_dir = dataset_subdir
 
-    output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
+    # The bounded dataset component replaces the raw stem here as well: the file
+    # can be relocated into a shared staging directory later, so it keeps a
+    # dataset prefix, just one that cannot overrun the 260-character limit.
+    output_filename = f"{dataset_folder}_{safe_model_name}_annotations_{timestamp}.{data_format}"
     default_output_path = dataset_subdir / output_filename
 
     cli.console.print(f"\n[bold cyan]Output Location:[/bold cyan]")
@@ -6529,10 +6569,14 @@ def run_factory_workflow(cli, session_id: str = None, session_dirs: Optional[Dic
         else:
             initial_remaining = 'all'
 
-        metadata_subdir = session_dirs['metadata'] / provider_folder / model_folder / dataset_name
+        # Same bounded components as the annotated_data tree, for the same
+        # reason: Windows stops at 260 characters for the whole path.
+        metadata_subdir = session_dirs['metadata'] / provider_folder / model_folder / dataset_folder
         metadata_subdir.mkdir(parents=True, exist_ok=True)
 
-        metadata_filename = f"{data_path.stem}_{safe_model_name}_metadata_{timestamp}.json"
+        # The directory already carries the dataset name, so the filename does
+        # not repeat it; discovery globs on "*_metadata_*.json" either way.
+        metadata_filename = f"{safe_model_name}_metadata_{timestamp}.json"
         metadata_path = metadata_subdir / metadata_filename
         if metadata_path not in factory_metadata_targets:
             factory_metadata_targets.append(metadata_path)
@@ -7224,10 +7268,14 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
     dataset_stem = data_path.stem
     if not dataset_stem:
         dataset_stem = Path(data_source.get('file_name', '') or "dataset").stem or "dataset"
+    # A relaunched run often reads back an already annotated file, so the stem can
+    # be arbitrarily long; it is bounded before it becomes a directory because
+    # Windows rejects the whole path once it passes 260 characters.
+    dataset_folder = sanitize_path_component(dataset_stem, "dataset", max_length=40)
 
     metadata_root = None
     if session_dirs:
-        metadata_root = session_dirs['metadata'] / dataset_stem
+        metadata_root = session_dirs['metadata'] / dataset_folder
         metadata_root.mkdir(parents=True, exist_ok=True)
 
     # Check if resuming
@@ -7476,7 +7524,10 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         output_filename = original_output.name  # Keep same filename
         default_output_path = original_output
     else:
-        output_filename = f"{data_path.stem}_{safe_model_name}_annotations_{timestamp}.{data_format}"
+        # Every dataset of the session shares this staging directory, so the name
+        # keeps a dataset prefix -- the bounded one, since Windows stops honouring
+        # a path past 260 characters and a relaunch stem can be very long.
+        output_filename = f"{dataset_folder}_{safe_model_name}_annotations_{timestamp}.{data_format}"
         default_output_path = staging_dir / output_filename
         identifier_column = default_identifier
         data_source['identifier_column'] = identifier_column
@@ -7708,7 +7759,10 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
             new_metadata['output'] = {}
         new_metadata['output']['output_path'] = str(default_output_path)
 
-        new_metadata_filename = f"{dataset_stem}_{safe_model_name}_metadata_{timestamp}.json"
+        # metadata_root is shared by every model that ran on this dataset, so the
+        # bounded dataset prefix stays to keep the files apart without risking the
+        # 260-character ceiling.
+        new_metadata_filename = f"{dataset_folder}_{safe_model_name}_metadata_{timestamp}.json"
         new_metadata_path = metadata_root / new_metadata_filename
 
         with open(new_metadata_path, 'w', encoding='utf-8') as f:
@@ -7730,7 +7784,9 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
         resume_metadata['output']['output_path'] = str(default_output_path)
         resume_metadata['resume_mode'] = True
 
-        resume_metadata_filename = f"{dataset_stem}_{safe_model_name}_resume_{timestamp}.json"
+        # Same bounded prefix as the relaunch metadata, for the same 260-character
+        # reason.
+        resume_metadata_filename = f"{dataset_folder}_{safe_model_name}_resume_{timestamp}.json"
         resume_metadata_path = metadata_root / resume_metadata_filename
 
         with open(resume_metadata_path, 'w', encoding='utf-8') as f:
@@ -7911,7 +7967,8 @@ def execute_from_metadata(cli, metadata: dict, action_mode: str, metadata_file: 
 
                     # Persist updated metadata back to the metadata file
                     if metadata_root is not None:
-                        _meta_update_path = metadata_root / f"{dataset_stem}_{safe_model_name}_metadata_{timestamp}.json"
+                        # Must match the name written above, bounded prefix included.
+                        _meta_update_path = metadata_root / f"{dataset_folder}_{safe_model_name}_metadata_{timestamp}.json"
                         if not _meta_update_path.exists():
                             # Try to update the original metadata file
                             _meta_update_path = metadata_file

@@ -3,10 +3,16 @@
 <img src="img/LLM_Tool.png" alt="LLM Tool banner" width="720">
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.9+"/>
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT License"/>
   <img src="https://img.shields.io/badge/status-stable-brightgreen?style=for-the-badge" alt="Stable"/>
   <img src="https://img.shields.io/badge/PRs-welcome-ff69b4?style=for-the-badge" alt="PRs Welcome"/>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Windows 10/11"/>
+  <img src="https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS"/>
+  <img src="https://img.shields.io/badge/Linux-supported-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux"/>
 </p>
 
 <p align="center">
@@ -105,8 +111,9 @@ As a social science researcher, you might have:
 - [Features](#-features)
 - [Workflow Intelligence & Tooling](#-workflow-intelligence--tooling)
 - [Installation](#-installation)
-  - [Step-by-Step Installation (VSCode)](#step-by-step-installation-vscode)
-  - [Step-by-Step Installation (Terminal Only)](#step-by-step-installation-terminal-only)
+  - [Windows guide (docs/WINDOWS.md)](docs/WINDOWS.md)
+  - [GPU acceleration](#gpu-acceleration)
+  - [Verify the installation](#verify-the-installation)
 - [The 5 Modes Explained](#-the-5-modes-explained)
   - [Mode 1: The Annotator](#mode-1-the-annotator)
   - [Mode 2: The Annotator Factory](#mode-2-the-annotator-factory)
@@ -129,24 +136,44 @@ As a social science researcher, you might have:
 
 > Ten minutes to move from checkout to your first annotated dataset.
 
-1. **Install prerequisites** – Python 3.11+, Git, and (optionally) [Ollama](https://ollama.ai) for fully local LLMs. On macOS: `brew install python@3.11` then `brew install --cask ollama`.
-2. **Clone the repository** – run these two commands one after the other:  
-   `git clone https://github.com/antoinelemor/LLM_Tool.git`  
-   `cd LLM_Tool`
-3. **Run the installer** – run these two commands one after the other (creates `.venv`, installs extras, runs verification):  
-   `chmod +x install.sh`  
-   `./install.sh --all`
-4. **Activate the virtualenv** – pick the line that matches your shell:  
-   - macOS/Linux: `source .venv/bin/activate`  
-   - Windows (Git Bash): `source .venv/Scripts/activate`  
-   - Windows (Command Prompt / PowerShell): `.venv\Scripts\activate`
-5. **Launch the CLI** – `llm-tool` shows the Rich main menu.
-6. **Configure providers (optional)** – Mode 6 → Resume Center → add OpenAI API key or set Ollama as default.
-7. **Annotate a sample** – Mode 1 → pick `data/AI_catégo_pour_antoine_phrases.csv` → choose columns → select `ollama:llama3.2` or `gpt-4o-mini` → run.
-8. **Check quality** – Mode 5 → load the same output → request a 50-item stratified sample for review.
-9. **Train a model** – Mode 3 → import the annotated CSV from `annotations_output/.../data/` → accept recommended multilingual models → run benchmarks.
-10. **Deploy predictions** – Mode 4 → load the best checkpoint → annotate another dataset or rerun the original corpus at scale.
-11. **Explore artefacts** – `annotations_output/`, `models/`, and `logs/` capture everything; see [Outputs & Directory Layout](#-outputs--directory-layout).
+### Install and launch
+
+**Windows** (PowerShell — full guide: [docs/WINDOWS.md](docs/WINDOWS.md))
+
+```powershell
+git clone https://github.com/antoinelemor/LLM_Tool.git
+cd LLM_Tool
+.\install.bat
+.\.venv\Scripts\Activate.ps1
+llm-tool
+```
+
+**macOS / Linux**
+
+```bash
+git clone https://github.com/antoinelemor/LLM_Tool.git
+cd LLM_Tool
+chmod +x install.sh && ./install.sh --all
+source .venv/bin/activate
+llm-tool
+```
+
+The installer creates a private `.venv`, installs everything, and runs a
+verification report. Expect 5–20 minutes and 3–6 GB of downloads.
+
+> **Prerequisites:** Python 3.11+ and Git. Windows: `winget install -e --id Python.Python.3.12`
+> and `winget install -e --id Git.Git`. macOS: `brew install python@3.12 git`.
+> Optional but recommended: [Ollama](https://ollama.com) for fully local, free LLMs
+> (`winget install -e --id Ollama.Ollama` / `brew install --cask ollama`).
+
+### Then, inside the CLI
+
+1. **Configure providers (optional)** – Mode 6 → Resume Center → add an OpenAI API key, or set Ollama as default.
+2. **Annotate a sample** – Mode 1 → pick `data/political_transcriptions_sample.csv` → choose columns → select `ollama:llama3.2` or `gpt-4o-mini` → run.
+3. **Check quality** – Mode 5 → load the same output → request a 50-item stratified sample for review.
+4. **Train a model** – Mode 3 → import the annotated CSV from `annotations_output/.../data/` → accept recommended multilingual models → run benchmarks.
+5. **Deploy predictions** – Mode 4 → load the best checkpoint → annotate another dataset or rerun the original corpus at scale.
+6. **Explore artefacts** – `annotations_output/`, `models/`, and `logs/` capture everything; see [Outputs & Directory Layout](#-outputs--directory-layout).
 
 ---
 
@@ -299,141 +326,238 @@ LLM Tool bundles a set of purposeful assistants so researchers can focus on meth
 ## 🔧 Requirements
 
 ### Python Version
-- **Python 3.9 or higher** (tested with 3.9, 3.10, 3.11, 3.12, 3.13)
-- Python 3.11+ recommended for optimal performance
+- **Python 3.11 or higher** — required, and enforced by the installer
+- Tested on 3.11, 3.12 and 3.13; **3.12 is the recommended version**
+- Must be a **64-bit** build (PyTorch publishes no 32-bit wheels)
 
 ### Operating System
-- **macOS** (Apple Silicon MPS and Intel)
-- **Linux** (CUDA/ROCm support)
-- **Windows** (CPU/CUDA support)
+
+| OS | Status | GPU acceleration |
+|----|--------|------------------|
+| **Windows 10 / 11** (x64) | Fully supported — see [docs/WINDOWS.md](docs/WINDOWS.md) | NVIDIA CUDA (opt-in install), otherwise CPU |
+| **macOS** (Apple Silicon & Intel) | Fully supported | Apple MPS, automatic |
+| **Linux** (x64) | Fully supported | NVIDIA CUDA / AMD ROCm |
+
+Every dependency installs from a prebuilt wheel on all three platforms: **no C++
+compiler, CMake or Rust toolchain is needed anywhere.**
 
 ### Hardware
-- **Minimum**: 8 GB RAM, 4 CPU cores
+- **Minimum**: 8 GB RAM, 4 CPU cores, ~10 GB free disk
 - **Recommended**: 16+ GB RAM, 8+ CPU cores, GPU (NVIDIA/Apple MPS)
 - **Optimal**: 32+ GB RAM, 16+ CPU cores, GPU with 8+ GB VRAM
 
 ### External Dependencies (Optional)
-- **Ollama**: For local LLM inference (install from https://ollama.ai)
-- **PostgreSQL**: For database-backed datasets (optional)
+- **Ollama**: for local LLM inference — [ollama.com/download](https://ollama.com/download),
+  or `winget install -e --id Ollama.Ollama` (Windows) / `brew install --cask ollama` (macOS)
+- **PostgreSQL**: for database-backed datasets
 
 ---
 
 ## 📦 Installation
 
-**Two installation methods**: VSCode (recommended for beginners) or Terminal only (for advanced users).
+**One command on every platform.** Pick your operating system below — Windows
+users have a dedicated, much more detailed guide in
+**[docs/WINDOWS.md](docs/WINDOWS.md)**.
 
-### Step-by-Step Installation (VSCode)
+<table>
+<tr><th>Windows 10 / 11</th><th>macOS / Linux</th></tr>
+<tr valign="top"><td>
 
-**Perfect for researchers new to programming. VSCode provides a visual interface for managing your project.**
+```powershell
+git clone https://github.com/antoinelemor/LLM_Tool.git
+cd LLM_Tool
+.\install.bat
+```
 
-#### 1. Install Prerequisites
+</td><td>
 
-**Install Python 3.11 or higher:**
-- **macOS**: Download from [python.org](https://www.python.org/downloads/) or `brew install python@3.11`
-- **Windows**: Download from [python.org](https://www.python.org/downloads/)
-- **Linux**: `sudo apt install python3.11` (Ubuntu/Debian) or `sudo dnf install python3.11` (Fedora)
+```bash
+git clone https://github.com/antoinelemor/LLM_Tool.git
+cd LLM_Tool
+chmod +x install.sh
+./install.sh --all
+```
 
-**Install Visual Studio Code:**
-- Download from [code.visualstudio.com](https://code.visualstudio.com/)
-- Install the **Python extension** (search "Python" in VSCode Extensions panel)
+</td></tr>
+</table>
 
-#### 2. Download LLM Tool
+Downloaded the ZIP instead of cloning? Extract it, open a terminal in the
+extracted folder, and run the same installer line. On Windows you can simply
+**double-click `install.bat`** in File Explorer.
 
-**Option A: Download ZIP** (easiest for beginners)
-1. Download this repository as ZIP
-2. Extract it to a folder (e.g., `Documents/LLM_Tool`)
+---
 
-**Option B: Use Git** (if you have it installed)
+### 1. Install the prerequisites
+
+#### Python 3.11 or newer (3.12 recommended)
+
+<table>
+<tr><th>Windows</th><th>macOS</th><th>Linux</th></tr>
+<tr valign="top"><td>
+
+```powershell
+winget install -e --id Python.Python.3.12
+```
+
+or the **64-bit** installer from
+[python.org](https://www.python.org/downloads/windows/) —
+**tick “Add python.exe to PATH”** on the first screen.
+
+</td><td>
+
+```bash
+brew install python@3.12
+```
+
+or the installer from
+[python.org](https://www.python.org/downloads/macos/).
+
+</td><td>
+
+```bash
+sudo apt install python3.12 python3.12-venv   # Debian/Ubuntu
+sudo dnf install python3.12                   # Fedora
+```
+
+</td></tr>
+</table>
+
+Check it worked — open a **new** terminal and run `py --version` (Windows) or
+`python3 --version` (macOS/Linux).
+
+#### Git
+
+`winget install -e --id Git.Git` · `brew install git` · `sudo apt install git`
+
+#### Visual Studio Code (optional but recommended)
+
+Download from [code.visualstudio.com](https://code.visualstudio.com/) and
+install the **Python extension**. The installer configures the workspace for
+you, so the right interpreter is selected automatically.
+
+> **You do not need** Visual Studio C++ build tools, CMake, Rust, Conda or
+> Anaconda. Every dependency installs from a prebuilt package.
+
+---
+
+### 2. Get the code
+
+**Option A — Git** (makes updating a one-liner later)
+
 ```bash
 git clone https://github.com/antoinelemor/LLM_Tool.git
 cd LLM_Tool
 ```
 
-#### 3. Open in VSCode
+**Option B — ZIP**: use the green **Code → Download ZIP** button, then extract.
 
-1. Launch VSCode
-2. **File → Open Folder**
-3. Select the `LLM_Tool` folder
+**Where to put it:** choose a **short, local path** such as `C:\Dev\LLM_Tool`
+(Windows) or `~/Projects/LLM_Tool` (macOS/Linux). Avoid OneDrive-, iCloud- or
+Dropbox-synced folders: they can lock or offload files mid-training and corrupt
+checkpoints.
 
-You should see this structure:
+---
+
+### 3. Run the installer
+
+<details open>
+<summary><b>Windows</b></summary>
+
+```powershell
+.\install.bat
 ```
-LLM_Tool/
-├── llm_tool/          ← Main code
-├── examples/          ← Example scripts
-├── README.md          ← This file
-├── setup.py           ← Installation config
-└── install.sh         ← Automated installer
-```
 
-#### 4. Run the Installation Script
+The installer will:
 
-Open the integrated terminal in VSCode (**View → Terminal** or `` Ctrl+` ``).
+- find the newest usable Python (3.13 → 3.12 → 3.11) and reject the Microsoft
+  Store placeholder,
+- warn about long paths, OneDrive and low disk space,
+- create `.venv`, point VS Code at it, and install everything,
+- run `verify_installation.py` and print a report.
 
-**macOS/Linux:**
+Options:
+
+| Command | Result |
+|---------|--------|
+| `.\install.bat` | Everything (default) |
+| `.\install.bat -Preset core` | Pipeline only, ~2 GB smaller |
+| `.\install.bat -Preset dev` | Core + pytest/black/mypy |
+| `.\install.bat -Preset all -Cuda cu126` | Everything, with **GPU** PyTorch |
+| `.\install.bat -Recreate` | Wipe `.venv` and start over |
+
+> **Why `.bat` and not `.ps1`?** PowerShell blocks unsigned scripts by default,
+> so `.\install.ps1` fails on a fresh machine with *“running scripts is disabled
+> on this system”*. `install.bat` lifts that restriction **for one process
+> only** — nothing on your machine is changed.
+
+</details>
+
+<details open>
+<summary><b>macOS / Linux</b></summary>
+
 ```bash
 chmod +x install.sh
 ./install.sh --all
 ```
 
-**Windows (Git Bash):**
+| Command | Result |
+|---------|--------|
+| `./install.sh` | Core features |
+| `./install.sh --all` | Everything (recommended) |
+| `./install.sh --dev` | Core + development tooling |
+
+</details>
+
+<details>
+<summary><b>Manual installation (any platform)</b></summary>
+
 ```bash
-python -m venv .venv
-source .venv/Scripts/activate
+# 1. Create the virtual environment
+py -3.12 -m venv .venv          # Windows
+python3.12 -m venv .venv        # macOS / Linux
+
+# 2. Activate it
+.\.venv\Scripts\Activate.ps1    # Windows PowerShell
+.venv\Scripts\activate.bat      # Windows Command Prompt
+source .venv/Scripts/activate   # Windows Git Bash
+source .venv/bin/activate       # macOS / Linux
+
+# 3. Install
+python -m pip install --upgrade pip setuptools wheel
 pip install -e ".[all]"
+
+# 4. Verify
+python verify_installation.py
 ```
 
-**Windows (Command Prompt / PowerShell):**
-```bat
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e ".[all]"
+Keep the quotes around `".[all]"` — without them PowerShell and zsh both treat
+the brackets as a glob and quietly install the core package only.
+
+</details>
+
+Expect **5–20 minutes** and **3–6 GB** of downloads, most of it PyTorch.
+
+---
+
+### 4. Launch
+
+Every new terminal needs the environment activated first:
+
+```powershell
+.\.venv\Scripts\Activate.ps1     # Windows PowerShell
+```
+```bash
+source .venv/bin/activate        # macOS / Linux
 ```
 
-> **Note:** Git and `python` commands work in all three shells once installed — you don't need to switch from Git Bash to Command Prompt to run them. Only the virtualenv **activation** line differs: Git Bash uses `source .venv/Scripts/activate` (forward slashes), while Command Prompt/PowerShell use `.venv\Scripts\activate` (backslashes).
+Your prompt then starts with `(.venv)`. Now run:
 
-The installer will:
-- ✅ Check your Python version
-- ✅ Create a virtual environment (`.venv`)
-- ✅ Install all dependencies
-- ✅ Verify everything works
-
-**Expected output:**
-```
-╔══════════════════════════════════════════════════════════╗
-║              LLM Tool - Installation Script             ║
-╚══════════════════════════════════════════════════════════╝
-
-Step 1: Checking Python version...
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ Python 3.11.0 found
-
-Step 2: Creating virtual environment...
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ Virtual environment created at .venv/
-
-...
-
-╔══════════════════════════════════════════════════════════╗
-║                  🎉 INSTALLATION COMPLETE! 🎉            ║
-╚══════════════════════════════════════════════════════════╝
-```
-
-#### 5. Select Python Interpreter in VSCode
-
-1. Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
-2. Type: **Python: Select Interpreter**
-3. Choose: **`.venv/bin/python`** (should show first)
-
-You'll see `(.venv)` in the bottom-left corner of VSCode.
-
-#### 6. Launch LLM Tool
-
-In the VSCode terminal:
 ```bash
 llm-tool
 ```
 
 You should see the main menu:
+
 ```
      ╭─────────────────────────── Main Menu ───────────────────────────╮
      │ 1  🎨 The Annotator - LLM Tool annotates, you decide             │
@@ -449,102 +573,92 @@ You should see the main menu:
 Select option [0/1/2/3/4/5/6/7] (1):
 ```
 
-**🎉 Success! LLM Tool is now running.**
+**🎉 Success! LLM Tool is running.**
+
+`llmtool` and `python -m llm_tool` are equivalent entry points. If activation is
+blocked on your machine, `.\.venv\Scripts\python.exe -m llm_tool` works without
+it.
+
+**In VS Code:** open the `LLM_Tool` folder, press `Ctrl+Shift+P` (`Cmd+Shift+P`
+on macOS), run **Python: Select Interpreter**, and choose the one inside
+`.venv`. New terminals (`` Ctrl+` ``) then activate it for you.
 
 ---
 
-### Step-by-Step Installation (Terminal Only)
+### Installation options
 
-**For users comfortable with the command line.**
+| Preset | Size | Contents |
+|--------|------|----------|
+| `core` | ~4 GB | The full pipeline: annotation, training, benchmarking, validation |
+| `all` | ~6 GB | `core` + Anthropic & Gemini providers, the `--api` server, TensorBoard, MLflow, Weights & Biases, Optuna |
+| `dev` | ~4 GB | `core` + pytest, black, flake8, mypy, isort, Jupyter |
 
-#### 1. Install Python 3.11+
-
-Verify you have Python 3.11 or higher:
 ```bash
-python3 --version
-# Should show: Python 3.11.x or higher
+pip install -e .            # core
+pip install -e ".[all]"     # recommended
+pip install -e ".[dev]"     # development
 ```
 
-If not, install from [python.org](https://www.python.org/downloads/).
-
-#### 2. Clone or Download
+Two extras are **deliberately excluded from `all`** because they have no
+prebuilt package on every platform and would try to compile C++ or Rust on your
+machine:
 
 ```bash
-git clone https://github.com/antoinelemor/LLM_Tool.git
-cd LLM_Tool
+pip install -e ".[llamacpp]"       # GGUF inference — needs CMake + a C++ compiler
+pip install -e ".[fasttext]"       # fastText language ID — needs a C++ compiler
+pip install -e ".[transcription]"  # Whisper + yt-dlp — also needs ffmpeg on PATH
 ```
 
-#### 3. Run Automated Installer
+Neither of the first two is required: **Ollama** covers local inference, and
+language detection uses `lingua`, which is a core dependency.
 
-**macOS/Linux:**
-```bash
-chmod +x install.sh
-./install.sh --all
+---
+
+### GPU acceleration
+
+| Platform | Backend | How |
+|----------|---------|-----|
+| **macOS** (Apple Silicon) | MPS | Automatic — nothing to do |
+| **Linux** (NVIDIA) | CUDA | Automatic — PyPI ships CUDA wheels for Linux |
+| **Windows** (NVIDIA) | CUDA | **Opt-in**, see below |
+| **Windows/Linux** (AMD, Intel) | — | CPU only (ROCm is Linux-only and not bundled) |
+
+The PyPI build of PyTorch for **Windows is CPU-only**. To train on an NVIDIA GPU
+there, install the CUDA build from PyTorch's own index:
+
+```powershell
+.\install.bat -Preset all -Cuda cu126
 ```
 
-**Or manually:**
-```bash
-# Create virtual environment
-python3 -m venv .venv
+or, into an environment you already have:
 
-# Activate
-source .venv/bin/activate         # macOS/Linux
-# source .venv/Scripts/activate   # Windows (Git Bash)
-# .venv\Scripts\activate          # Windows (Command Prompt / PowerShell)
-
-# Install
-pip install -e ".[all]"
-
-# Verify
-python verify_installation.py
+```powershell
+pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu126
 ```
 
-#### 4. Launch
+Pick the tag matching your driver (`cu126`, `cu128`, …); `nvidia-smi` reports the
+highest CUDA version your driver supports. Check the result with:
 
 ```bash
-llm-tool
+python -c "import torch; print(torch.cuda.is_available())"
 ```
 
 ---
 
-### Installation Options
+### Verify the installation
 
-- **Core only** (minimal dependencies): `pip install -e .`
-- **All features** (recommended): `pip install -e ".[all]"`
-- **Development** (with testing tools): `pip install -e ".[dev]"`
-
----
-
-### What Gets Installed?
-
-**Core Dependencies** (~500 MB):
-- PyTorch for deep learning
-- HuggingFace Transformers for BERT models
-- OpenAI SDK for GPT access
-- Ollama SDK for local LLMs
-- Rich for beautiful CLI
-- Pandas/NumPy for data handling
-
-**Optional Dependencies** (with `[all]`):
-- Label Studio SDK (annotation platform)
-- MLOps tools (MLflow, Weights & Biases)
-
----
-
-### Verify Installation
-
-Run the verification script:
 ```bash
 python verify_installation.py
 ```
 
 **Expected output:**
+
 ```
 ═══════════════════════════════════════════════════════════
 LLM TOOL - Installation Verification
 ═══════════════════════════════════════════════════════════
 Checking Python version...
-  ✓ Python 3.11.0 (OK)
+  ✓ Python 3.12.7 (OK)
 
 Checking LLM Tool installation...
   ✓ llm-tool version 1.0.0
@@ -552,12 +666,15 @@ Checking LLM Tool installation...
 Checking core dependencies...
   ✓ Pandas                         version 2.3.3
   ✓ PyTorch                        version 2.8.0
-  ✓ Transformers                   version 4.56.2
+  ✓ Matplotlib                     version 3.9.2
   ...
 
+Checking console encoding...
+  ✓ stdout encoding: utf-8
+
 Checking GPU support...
-  ✓ MPS (Apple Silicon) available
-  # or: ✓ CUDA available: 1 device(s)
+  ✓ CUDA available: 1 device(s)
+  # or: ✓ MPS (Apple Silicon) available
   # or: - No GPU detected (CPU only)
 
 ═══════════════════════════════════════════════════════════
@@ -565,6 +682,26 @@ Checking GPU support...
 
 LLM Tool is correctly installed and ready to use!
 ```
+
+If anything fails, the script tells you the exact command to fix it. Windows
+users: [docs/WINDOWS.md](docs/WINDOWS.md) has a troubleshooting section covering
+execution policy, the Microsoft Store stub, `UnicodeEncodeError`, the 260-character
+path limit and more.
+
+---
+
+### Updating
+
+```bash
+git pull
+pip install -e ".[all]" --upgrade
+```
+
+### Uninstalling
+
+Delete the project folder — the virtual environment, dependencies and models all
+live inside it. Settings and stored API keys live in `~/.llm_tool`
+(`%USERPROFILE%\.llm_tool` on Windows) and can be removed separately.
 
 ---
 
@@ -582,9 +719,17 @@ Navigate to **Resume Center → API Key Configuration** and add your keys:
 - OpenAI API Key (for GPT-4, o1, o3 models)
 
 **OR** use environment variables:
+
 ```bash
-export OPENAI_API_KEY="sk-..."
+export OPENAI_API_KEY="sk-..."            # macOS / Linux
 ```
+```powershell
+$env:OPENAI_API_KEY = "sk-..."            # Windows PowerShell, this session only
+setx OPENAI_API_KEY "sk-..."              # Windows, permanent (new terminals only)
+```
+
+Recognised variables: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`,
+`OLLAMA_API_KEY`, `OLLAMA_HOST`. See [docs/API_KEY_MANAGEMENT.md](docs/API_KEY_MANAGEMENT.md).
 
 ### 2. Launch the Interactive CLI
 ```bash
@@ -608,13 +753,27 @@ You'll see the main menu:
 ### 3. Quick Annotation Example (Using Ollama - 100% Local)
 
 #### Install Ollama
-```bash
-# macOS/Linux
-curl -fsSL https://ollama.ai/install.sh | sh
 
-# Pull a model (e.g., Llama 3.2)
-ollama pull llama3.2
+```powershell
+winget install -e --id Ollama.Ollama      # Windows
 ```
+```bash
+brew install --cask ollama                # macOS
+curl -fsSL https://ollama.com/install.sh | sh   # Linux
+```
+
+Or download the installer for your platform from
+[ollama.com/download](https://ollama.com/download). Then open a **new** terminal
+and pull a model:
+
+```bash
+ollama pull llama3.2
+ollama list
+```
+
+LLM Tool finds Ollama at `http://localhost:11434` automatically. Point it
+elsewhere with `--ollama-host http://192.168.1.10:11434`, or use Ollama Cloud
+with `--ollama-cloud --ollama-api-key "..."`.
 
 #### Run Annotation
 1. Launch `llm-tool`
@@ -649,7 +808,12 @@ code .
 
 1. Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
 2. Type "Python: Select Interpreter"
-3. Choose the virtual environment: `.venv/bin/python`
+3. Choose the interpreter inside the project's virtual environment:
+   - **Windows**: `.venv\Scripts\python.exe`
+   - **macOS/Linux**: `.venv/bin/python`
+
+Both installers write this into `.vscode/settings.json` for you, so it is
+usually already selected — you should see `.venv` in the status bar.
 
 ### Step 3: Configure VSCode Terminal
 
@@ -659,6 +823,9 @@ Ensure your integrated terminal uses the virtual environment:
 
 Search for `python.terminal.activateEnvironment` and ensure it's **checked**.
 
+On Windows, the workspace also sets `PYTHONUTF8=1` for integrated terminals, so
+the CLI's emoji and accented text render correctly.
+
 ### Step 4: Run LLM Tool from VSCode Terminal
 
 Open integrated terminal (`Ctrl+` ` or **View → Terminal**):
@@ -667,6 +834,11 @@ Open integrated terminal (`Ctrl+` ` or **View → Terminal**):
 # Terminal should show (.venv) prefix
 llm-tool
 ```
+
+> **Windows:** if the terminal opens without `(.venv)` and PowerShell reports
+> that *running scripts is disabled*, either allow local scripts once with
+> `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`, or set
+> the integrated terminal's default profile to **Command Prompt**.
 
 ### Step 5: Debug Mode (Optional)
 
@@ -1578,14 +1750,23 @@ LLM_Tool/
 │   ├── annotation_studio/         # Mode 4 session caches
 │   └── application/               # Global logs (llmtool_<timestamp>.log)
 ├── cache/                         # Temporary datasets, embeddings, etc.
-├── prompts/                       # User-authored prompt templates
-└── ~/.llm_tool/
-    ├── api_keys.enc               # Encrypted credentials
-    ├── profiles/                  # Saved mode configurations
-    └── history.json               # Execution history for quick resume
+└── prompts/                       # User-authored prompt templates
+
+~/.llm_tool/                       # Windows: %USERPROFILE%\.llm_tool\
+├── api_keys.enc                   # Encrypted credentials
+├── profiles/                      # Saved mode configurations
+└── history.json                   # Execution history for quick resume
 ```
 
+Everything except `~/.llm_tool/` is created **relative to the directory you run
+`llm-tool` from**, so a project folder stays self-contained and portable.
+
 Keep these directories under version control (where appropriate) to guarantee reproducibility and shareable research artefacts.
+
+> **Windows note:** dataset and model names are truncated when used as directory
+> or file components, because Windows rejects any path over 260 characters
+> unless long path support is enabled. Run the project from a short path such as
+> `C:\Dev\LLM_Tool` and see [docs/WINDOWS.md](docs/WINDOWS.md#enable-long-paths).
 
 ---
 
@@ -1652,7 +1833,7 @@ Trained checkpoints are standard Hugging Face directories and can be pushed to p
 ### General Questions
 
 **Q: Do I need to know how to code?**
-A: No. The interactive CLI guides you through every step with menus and prompts. However, if you want to automate workflows, you can use LLM Tool programmatically (see `examples/`).
+A: No. The interactive CLI guides you through every step with menus and prompts. However, if you want to automate workflows, `llm-tool --batch config.json` runs the whole pipeline headlessly, and `llm-tool --help` lists the direct actions (`--annotate`, `--train`, `--benchmark`, `--validate`).
 
 **Q: Is this free to use?**
 A: The software is free (MIT license). Using Ollama (local LLMs) is also free. Cloud APIs (OpenAI) have costs (~$0.001-$0.01 per document).
@@ -1816,14 +1997,54 @@ Compare multiple models before committing to full training:
 
 ## 🐛 Troubleshooting
 
+> **On Windows?** [docs/WINDOWS.md](docs/WINDOWS.md) has a dedicated
+> troubleshooting section covering the PowerShell execution policy, `python`
+> opening the Microsoft Store, MSVC build errors, `UnicodeEncodeError`, the
+> 260-character path limit, OneDrive and antivirus interference.
+
 ### Issue: "ModuleNotFoundError: No module named 'llm_tool'"
 **Solution**: Ensure virtual environment is activated and package is installed:
 ```bash
 source .venv/bin/activate         # macOS/Linux
 # source .venv/Scripts/activate   # Windows (Git Bash)
-# .venv\Scripts\activate          # Windows (Command Prompt / PowerShell)
+# .venv\Scripts\Activate.ps1      # Windows (PowerShell)
+# .venv\Scripts\activate.bat      # Windows (Command Prompt)
 pip install -e .
 ```
+
+### Issue (Windows): "running scripts is disabled on this system"
+**Solution**: PowerShell blocks unsigned scripts by default. Use the wrapper,
+which bypasses it for one process without changing the machine:
+```powershell
+.\install.bat
+```
+To allow local scripts permanently (also fixes `Activate.ps1`):
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+### Issue (Windows): typing `python` opens the Microsoft Store
+**Solution**: Windows ships a placeholder `python.exe`. Use `py` instead, or turn
+the alias off in **Settings → Apps → Advanced app settings → App execution
+aliases**. The installer detects and skips the placeholder automatically.
+
+### Issue (Windows): `UnicodeEncodeError: 'charmap' codec can't encode character`
+**Solution**: The console is on a legacy code page. LLM Tool forces UTF-8 on
+itself at startup, so this should not appear — if it does:
+```powershell
+$env:PYTHONUTF8 = "1"      # this session
+setx PYTHONUTF8 1          # permanent (new terminals)
+```
+
+### Issue (Windows): "Microsoft Visual C++ 14.0 or greater is required"
+**Solution**: A package fell back to a source build. This should not happen for
+`core`, `all` or `dev` on Python 3.11–3.13 — check `py --version` first. If you
+asked for the `llamacpp` or `fasttext` extras, they genuinely need a compiler:
+```powershell
+winget install -e --id Microsoft.VisualStudio.2022.BuildTools
+```
+(select **Desktop development with C++**). Use Ollama instead of `llamacpp` to
+avoid this entirely.
 
 ### Issue: VS Code integrated terminal freezes or flickers
 **Solution**: LLM Tool now throttles Rich updates automatically inside Electron/VS Code terminals, but you can fine-tune the behaviour:
@@ -1838,10 +2059,15 @@ pip install -e .
 - `LLM_TOOL_VSCODE_MIN_THROTTLE=<seconds>` – lowest refresh interval allowed inside VS Code when you force a faster rate.
 - `LLM_TOOL_TERMINAL_CLEAR_INTERVAL=<seconds>` – periodically clear the integrated terminal scrollback (set to `0` to disable).
 
-Changes can be exported before launching `llm-tool`, e.g.:
+Set the variable before launching `llm-tool`:
 ```bash
-export LLM_TOOL_RICH_PROFILE=balanced
-llm-tool
+export LLM_TOOL_RICH_PROFILE=balanced     # macOS / Linux
+```
+```powershell
+$env:LLM_TOOL_RICH_PROFILE = "balanced"   # Windows PowerShell
+```
+```bat
+set LLM_TOOL_RICH_PROFILE=balanced        :: Windows Command Prompt
 ```
 
 ### Issue: "CUDA out of memory" during training
@@ -1850,15 +2076,28 @@ llm-tool
 - Use CPU-only mode if GPU memory is limited
 - Close other GPU-intensive applications
 
+### Issue: `torch.cuda.is_available()` is False on a Windows NVIDIA machine
+**Solution**: The PyPI build of PyTorch for Windows is CPU-only. Install the
+CUDA build from PyTorch's own index:
+```powershell
+pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu126
+```
+Pick the tag matching your driver — `nvidia-smi` reports the highest CUDA
+version it supports.
+
 ### Issue: Ollama connection refused
 **Solution**: Ensure Ollama is running:
 ```bash
-# Check if Ollama is running
+# Check if Ollama is reachable (any platform)
 curl http://localhost:11434/api/tags
-
-# If not, start Ollama
-ollama serve
 ```
+On **macOS/Linux**, start it with `ollama serve`. On **Windows** Ollama runs as a
+background service installed with the app — launch **Ollama** from the Start
+menu, or check it in Task Manager. If it is stuck:
+```powershell
+Stop-Process -Name ollama -Force
+```
+then relaunch it from the Start menu.
 
 ### Issue: MPS backend errors (macOS Apple Silicon)
 **Solution**: Fall back to CPU:
