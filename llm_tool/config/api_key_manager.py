@@ -63,6 +63,14 @@ PROVIDER_ENV_VARS: Dict[str, str] = {
     'ollama': 'OLLAMA_API_KEY'
 }
 
+# Additional names accepted for the same provider, tried after the primary one.
+# Google's own quickstarts and the google-genai SDK both read GEMINI_API_KEY, so
+# a user who followed Google's documentation has it set under that name and
+# would otherwise be told no key was found.
+PROVIDER_ENV_ALIASES: Dict[str, tuple] = {
+    'google': ('GEMINI_API_KEY',),
+}
+
 # Ollama authenticates nothing when it runs as a local daemon; a token is only
 # needed to reach a remote/cloud endpoint, so "no key" is a valid final state.
 OPTIONAL_KEY_PROVIDERS = frozenset({'ollama'})
@@ -218,10 +226,13 @@ class APIKeyManager:
         """
         provider = provider.lower()
 
-        # First check environment variables
+        # First check environment variables, primary name then any alias.
         env_var = PROVIDER_ENV_VARS.get(provider)
         if env_var and os.environ.get(env_var):
             return os.environ[env_var]
+        for alias in PROVIDER_ENV_ALIASES.get(provider, ()):
+            if os.environ.get(alias):
+                return os.environ[alias]
 
         # Check stored keys
         if provider in self._keys:
@@ -294,7 +305,9 @@ class APIKeyManager:
 
         # Check environment variables
         for provider, env_var in PROVIDER_ENV_VARS.items():
-            if os.environ.get(env_var):
+            if os.environ.get(env_var) or any(
+                os.environ.get(a) for a in PROVIDER_ENV_ALIASES.get(provider, ())
+            ):
                 providers.add(provider)
 
         return sorted(list(providers))

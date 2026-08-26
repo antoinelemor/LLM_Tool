@@ -30,7 +30,7 @@ MAIN FEATURES:
 3) Core dependencies check (pandas, numpy, rich, matplotlib, etc.)
 4) LLM dependencies check (openai, ollama, transformers, torch)
 5) Training dependencies check (datasets, sklearn, scipy, nltk, peft)
-6) Optional dependencies check (anthropic, google.generativeai, etc.)
+6) Optional dependencies check (anthropic, google.genai, etc.)
 7) GPU support detection (CUDA, MPS) with Windows-specific guidance
 8) Console encoding check (UnicodeEncodeError is a Windows-only failure mode)
 9) CLI command verification, resolved through the venv's script directory
@@ -222,7 +222,7 @@ def check_optional_dependencies():
     print("\nChecking optional dependencies...")
     deps = [
         ("anthropic", "Anthropic SDK", True),
-        ("google.generativeai", "Google GenAI SDK", True),
+        ("google.genai", "Google GenAI SDK (Gemini)", True),
         ("langdetect", "langdetect", True),
         ("fastapi", "FastAPI (--api mode)", True),
         ("tensorboard", "TensorBoard", True),

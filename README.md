@@ -81,7 +81,7 @@ As a social science researcher, you might have:
 **LLM Tool makes recent AI models accessible through a simple, interactive interface:**
 
 - ✅ **Local-first** annotate with any open-source model via Ollama (Llama, Gemma, Mistral, Nemotron, etc.), no API key needed
-- ✅ **Cloud option** also supports OpenAI GPT models when needed
+- ✅ **Cloud option** also supports OpenAI GPT and Google Gemini models when needed
 - ✅ **Automatic resource detection** detects your GPU (NVIDIA CUDA, AMD ROCm, Apple MPS), CPU, and RAM to adapt batch sizes and parallelism
 - ✅ **End-to-end pipeline** local LLM annotation → BERT training → production classifier, validated in the [technical paper](https://doi.org/10.31235/osf.io/6q8yg_v2) (Lemor et al., 2025)
 - ✅ **Interactive CLI** guides you through every step, no coding required
@@ -168,7 +168,7 @@ verification report. Expect 5–20 minutes and 3–6 GB of downloads.
 
 ### Then, inside the CLI
 
-1. **Configure providers (optional)** – Mode 6 → Resume Center → add an OpenAI API key, or set Ollama as default.
+1. **Configure providers (optional)** – Mode 6 → Resume Center → add an OpenAI, Anthropic or Google Gemini API key, or set Ollama as default.
 2. **Annotate a sample** – Mode 1 → pick `data/political_transcriptions_sample.csv` → choose columns → select `ollama:llama3.2` or `gpt-4o-mini` → run.
 3. **Check quality** – Mode 5 → load the same output → request a 50-item stratified sample for review.
 4. **Train a model** – Mode 3 → import the annotated CSV from `annotations_output/.../data/` → accept recommended multilingual models → run benchmarks.
@@ -716,7 +716,9 @@ llm-tool
 ```
 
 Navigate to **Resume Center → API Key Configuration** and add your keys:
-- OpenAI API Key (for GPT-4, o1, o3 models)
+- **OpenAI** (`OPENAI_API_KEY`) — GPT-4o, GPT-5, o1, o3
+- **Google Gemini** (`GOOGLE_API_KEY`, or `GEMINI_API_KEY`) — get one free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+- **Anthropic** (`ANTHROPIC_API_KEY`) — Claude
 
 **OR** use environment variables:
 
@@ -782,6 +784,57 @@ with `--ollama-cloud --ollama-api-key "..."`.
 4. Select text column and configure annotation schema
 5. Choose **Ollama** as LLM provider → select `llama3.2`
 6. Start annotation → Monitor progress → Export to Doccano/Label Studio
+
+### 3bis. Annotate with Google Gemini (cloud, free tier available)
+
+Gemini is a good middle ground: no local GPU needed, a generous free tier, a
+1M-token context window, and **native schema-constrained JSON**, which is what
+makes annotations parse reliably.
+
+**Get a key** — free, no billing required to start:
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+
+```bash
+export GOOGLE_API_KEY="..."          # macOS / Linux
+```
+```powershell
+$env:GOOGLE_API_KEY = "..."          # Windows, this session
+setx GOOGLE_API_KEY "..."            # Windows, permanent
+```
+
+`GEMINI_API_KEY` is accepted too, since that is the name Google's own
+quickstarts use. Or store it encrypted from **Resume Center → API Key
+Configuration** and skip the environment entirely.
+
+**Interactive:** launch `llm-tool`, choose Mode 1, and pick from the
+**Google Gemini Models** section of the model picker.
+
+**Headless:**
+
+```bash
+llm-tool --annotate data.csv --model gemini-3.6-flash --prompt prompt.txt
+```
+
+The provider is inferred from the model name (`gemini-*` → Google, `gpt-*` →
+OpenAI, `claude-*` → Anthropic, anything else → Ollama); pass `--provider google`
+to be explicit.
+
+| Model | Use it for |
+|-------|-----------|
+| `gemini-3.6-flash` | **Default.** Best speed/quality balance for annotation |
+| `gemini-3.7-flash` | Newest Flash generation |
+| `gemini-3.5-flash-lite` | Cheapest tier, for very large corpora |
+| `gemini-3.1-pro-preview` | Hardest tasks; slower and more expensive |
+| `gemini-flash-latest` | Always the current Flash — but answers `503` under load more often than a pinned id |
+
+Requires the `providers` extra, which `[all]` already includes:
+`pip install -e ".[providers]"`.
+
+> Google retires model generations for new keys. If you see *"no longer
+> available to new users"*, the run stops immediately with a clear message
+> instead of retrying every row — switch to a model from the table above.
+
+---
 
 ### 4. Train Your First Model
 
@@ -1787,6 +1840,8 @@ LLM providers available in Mode 1 and 2:
 - **Ollama (local)** any open-source model: Llama 3.3/3.2, Gemma 3, Mistral, Nemotron, Phi, Command-R, and any model available via `ollama pull`. No API key, no cost, full privacy.
 - **Ollama Cloud** the same API hosted at `https://ollama.com`, for models too large to run locally: Gemma 4, GLM-5.x, Kimi K3, DeepSeek V4, Qwen 3.5, MiniMax M3, Nemotron 3, Mistral Large 3, GPT-OSS. Needs an API key (`OLLAMA_API_KEY`, or store one for the `ollama` provider); nothing else changes.
 - **OpenAI (cloud)** GPT-4, GPT-4o, o1, o3 family via `openai` SDK.
+- **Google Gemini (cloud)** Gemini 3.x Flash / Flash-Lite / Pro via the `google-genai` SDK. 1M-token context and native schema-constrained JSON, so annotations parse without fence-stripping. Free tier available; needs `GOOGLE_API_KEY` (or `GEMINI_API_KEY`). Included in the `providers` and `all` extras.
+- **Anthropic (cloud)** Claude family via the `anthropic` SDK (client implemented; catalogue not yet populated).
 
 Both Ollama endpoints appear in the model picker, can be reachability-tested from it before a run starts, and accept a hand-typed model name. Point the tool at any other Ollama server with `OLLAMA_HOST`.
 

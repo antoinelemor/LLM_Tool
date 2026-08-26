@@ -302,6 +302,15 @@ MODEL_DESCRIPTIONS = {
     'o3': 'OpenAI o3 - Latest reasoning model with enhanced performance',
     'o4': 'OpenAI o4 - Advanced reasoning model (2025)',
 
+    # Google Gemini models
+    'gemini-3.6-flash': 'Google Gemini 3.6 Flash - Fast, 1M context, native JSON schema; best default for annotation',
+    'gemini-3.7-flash': 'Google Gemini 3.7 Flash - Newest Flash generation, 1M context',
+    'gemini-3.5-flash': 'Google Gemini 3.5 Flash - Previous Flash generation, 1M context',
+    'gemini-3.5-flash-lite': 'Google Gemini 3.5 Flash-Lite - Cheapest tier, for very large batches',
+    'gemini-3.1-pro-preview': 'Google Gemini 3.1 Pro (preview) - Strongest reasoning, slower and pricier',
+    'gemini-flash-latest': 'Google Gemini Flash (rolling alias) - Always the current Flash; can answer 503 under load',
+    'gemini-pro-latest': 'Google Gemini Pro (rolling alias) - Always the current Pro; can answer 503 under load',
+
     # Anthropic Claude models
     'claude-sonnet-4.5': 'Claude Sonnet 4.5 - Best for coding/computer use, autonomous for 30hrs (200K)',
     'claude-3.7-sonnet': 'Claude 3.7 Sonnet - Hybrid reasoning, extended thinking for complex problems',
@@ -636,6 +645,48 @@ class LLMDetector:
         return models
 
     @staticmethod
+    def detect_google_models() -> List[ModelInfo]:
+        """
+        List the Google Gemini models offered for annotation.
+
+        Returns
+        -------
+        list of ModelInfo
+            Text-capable Gemini models, newest first.
+
+        Notes
+        -----
+        Static rather than queried, for the same reason as the OpenAI catalogue:
+        the picker must render instantly and offline. The live listing is used
+        only when the user asks for it, because ``models.list()`` costs a network
+        round trip and returns models that then 404 on use -- Google keeps
+        retired generations visible but refuses them for keys that never called
+        them ("no longer available to new users").
+
+        Per-token costs are deliberately left unset. Google publishes Gemini
+        pricing per million tokens at https://ai.google.dev/pricing and revises
+        it per generation; an out-of-date number here would be worse than the
+        honest "N/A" the picker shows, because the cost estimator would quote it.
+        """
+        common = dict(
+            requires_api_key=True,
+            supports_json=True,       # native response_schema, verified in the client
+            supports_streaming=True,
+            max_tokens=8192,
+        )
+        return [
+            ModelInfo("gemini-3.6-flash", "google", context_length=1_048_576, **common),
+            ModelInfo("gemini-3.7-flash", "google", context_length=1_048_576, **common),
+            ModelInfo("gemini-3.5-flash", "google", context_length=1_048_576, **common),
+            ModelInfo("gemini-3.5-flash-lite", "google", context_length=1_048_576, **common),
+            ModelInfo("gemini-3.1-pro-preview", "google", context_length=1_048_576, **common),
+            # Rolling aliases: always the current generation, but they answer 503
+            # under load more often than a pinned id, so they are listed last.
+            ModelInfo("gemini-flash-latest", "google", context_length=1_048_576, **common),
+            ModelInfo("gemini-pro-latest", "google", context_length=1_048_576, **common),
+        ]
+
+    @staticmethod
     def detect_all_llms() -> Dict[str, List[ModelInfo]]:
         """
         Detect all available LLMs for annotation from all sources.
@@ -649,6 +700,7 @@ class LLMDetector:
             "ollama_cloud": LLMDetector.detect_ollama_cloud_models(),
             "openai": LLMDetector.detect_openai_models(),
             "anthropic": LLMDetector.detect_anthropic_models(),
+            "google": LLMDetector.detect_google_models(),
         }
 
 
@@ -1528,7 +1580,7 @@ class AdvancedCLI:
             )
 
         # Show API models (top ones)
-        for provider in ['openai', 'anthropic']:
+        for provider in ['openai', 'anthropic', 'google']:
             api_models = self.detected_llms.get(provider, [])
             for model in api_models[:2]:  # Show top 2 per API provider
                 llms_table.add_row(
@@ -4416,7 +4468,7 @@ class AdvancedCLI:
         try:
             self.detected_llms = self.llm_detector.detect_all_llms()
         except Exception:  # pragma: no cover - defensive fallback
-            self.detected_llms = {"local": [], "ollama_cloud": [], "openai": [], "anthropic": []}
+            self.detected_llms = {"local": [], "ollama_cloud": [], "openai": [], "anthropic": [], "google": []}
             if self.console:
                 self.console.print("[red][!] Unable to refresh available LLMs list.[/red]")
 
@@ -4847,6 +4899,7 @@ class AdvancedCLI:
         cloud_llms = detected.get('ollama_cloud', [])
         openai_llms = detected.get('openai', [])
         anthropic_llms = detected.get('anthropic', [])
+        google_llms = detected.get('google', [])
 
         # Survives a "do not store" answer so the cloud header and every later
         # action keep the key the user just typed instead of asking again.
@@ -4978,6 +5031,33 @@ class AdvancedCLI:
 
                 self.console.print(anthropic_table)
 
+            # Display Google Gemini Models with Rich Table
+            if google_llms:
+                self.console.print("\n[bold cyan] Google Gemini Models:[/bold cyan]\n")
+
+                google_table = Table(border_style="green", show_header=True, expand=True)
+                google_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
+                google_table.add_column("Model Name", style="white", no_wrap=True)
+                google_table.add_column("Context", style="cyan", no_wrap=True)
+                google_table.add_column("Description", style="dim", ratio=1, overflow="fold")
+
+                for llm in google_llms:
+                    entries.append(('model', llm))
+                    google_table.add_row(
+                        str(len(entries)),
+                        llm.name,
+                        f"{llm.context_length:,}" if llm.context_length else "N/A",
+                        self._get_model_description(llm.name)
+                    )
+
+                self.console.print(google_table)
+                # Costs are not shown: Google prices per million tokens and
+                # revises it per generation, so a stale figure here would be
+                # quoted by the cost estimator as if it were current.
+                self.console.print(
+                    "[dim italic]  Pricing: https://ai.google.dev/pricing[/dim italic]"
+                )
+
             # Actions are always available, so a picker with an empty catalogue is
             # still a way out: type a model name, or find out why nothing listed.
             self.console.print("\n[bold cyan] Actions:[/bold cyan]\n")
@@ -5072,6 +5152,18 @@ class AdvancedCLI:
                     if 'sonnet' in llm.name:
                         return llm
                 return anthropic_llms[0]
+
+        # GEMINI_API_KEY is the name Google's own quickstarts use, so accept both.
+        if os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY'):
+            google_llms = self.detected_llms.get('google', [])
+            if google_llms:
+                # Prefer a Flash tier: annotation is high-volume and latency
+                # bound, and Flash is the cheapest model that still does
+                # schema-constrained JSON.
+                for llm in google_llms:
+                    if 'flash' in llm.name and 'lite' not in llm.name:
+                        return llm
+                return google_llms[0]
 
         # Default fallback
         return ModelInfo(
@@ -5485,6 +5577,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             provider_styled = "️  OpenAI"
                         elif provider == "anthropic":
                             provider_styled = "️  Anthropic"
+                        elif provider == "google":
+                            provider_styled = "️  Google Gemini"
                         else:
                             provider_styled = provider
 

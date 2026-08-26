@@ -221,9 +221,19 @@ def parse_arguments():
     )
 
     model_group.add_argument(
+        '--provider',
+        type=str,
+        choices=['ollama', 'openai', 'anthropic', 'google'],
+        help='LLM provider to annotate with. Inferred from --model when omitted '
+             '(gemini-* -> google, gpt-*/o1/o3 -> openai, claude-* -> anthropic, '
+             'anything else -> ollama)'
+    )
+
+    model_group.add_argument(
         '--api-key',
         type=str,
-        help='API key for cloud models'
+        help='API key for cloud models (defaults to the provider\'s environment '
+             'variable, then the encrypted store)'
     )
 
     model_group.add_argument(
@@ -304,6 +314,110 @@ def parse_arguments():
     )
 
     return parser.parse_args()
+
+
+def infer_provider(model_name: Optional[str]) -> str:
+    """
+    Guess which provider serves `model_name`.
+
+    Parameters
+    ----------
+    model_name : str, optional
+        A model identifier as typed on the command line.
+
+    Returns
+    -------
+    str
+        One of ``'google'``, ``'openai'``, ``'anthropic'`` or ``'ollama'``.
+
+    Notes
+    -----
+    Without this, ``--annotate data.csv --model gemini-3.6-flash`` fell through to
+    the ``'ollama'`` default, and the run died trying to pull "gemini-3.6-flash"
+    from the Ollama registry. Ollama stays the fallback because its model names
+    are free-form and cannot be recognised by shape.
+
+    Examples
+    --------
+    >>> infer_provider('gemini-3.6-flash')
+    'google'
+    >>> infer_provider('gpt-4o-mini')
+    'openai'
+    >>> infer_provider('llama3.2:3b')
+    'ollama'
+    """
+    name = (model_name or '').strip().lower()
+    if not name:
+        return 'ollama'
+    if name.startswith(('gemini', 'models/gemini')):
+        return 'google'
+    if name.startswith(('gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'text-davinci')):
+        return 'openai'
+    if name.startswith('claude'):
+        return 'anthropic'
+    return 'ollama'
+
+
+def _resolve_provider_credential(provider: str, explicit_key: Optional[str]) -> Optional[str]:
+    """
+    Settle the credential for a cloud provider before the pipeline starts.
+
+    Parameters
+    ----------
+    provider : str
+        Provider name.
+    explicit_key : str, optional
+        Whatever ``--api-key`` supplied.
+
+    Returns
+    -------
+    Optional[str]
+        The key to use, or None when the provider needs none (Ollama) or none
+        could be found -- the client then raises with an actionable message.
+    """
+    if explicit_key:
+        return explicit_key
+    if provider == 'ollama':
+        return None
+    try:
+        from .config.api_key_manager import APIKeyManager
+        return APIKeyManager().get_key(provider)
+    except Exception:
+        return None
+
+
+def _apply_model_selection(config: dict, args) -> None:
+    """
+    Write the chosen model, provider and credential into a headless run config.
+
+    Parameters
+    ----------
+    config : dict
+        Run configuration, modified in place.
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
+    if not args.model:
+        return
+
+    provider = args.provider or infer_provider(args.model)
+
+    config['model'] = args.model
+    # The annotation phase looks the model up under its own key; 'model' alone
+    # never reaches the annotator and silently leaves the default in place.
+    config['annotation_model'] = args.model
+    config['provider'] = provider
+    config['annotation_provider'] = provider
+
+    api_key = _resolve_provider_credential(provider, args.api_key)
+    if api_key:
+        config['api_key'] = api_key
+
+    if provider != 'ollama' and not api_key:
+        logging.warning(
+            "No API key found for provider '%s'. Set %s_API_KEY or pass --api-key.",
+            provider, provider.upper(),
+        )
 
 
 def _persisted_ollama_host() -> Optional[str]:
@@ -448,12 +562,8 @@ def run_batch_mode(config_file: str, args):
     controller = PipelineController()
 
     # Override config with command-line arguments
-    if args.model:
-        config['model'] = args.model
-        # The annotation phase looks the model up under its own key; 'model' alone
-        # never reaches the annotator and silently leaves the default in place.
-        config['annotation_model'] = args.model
-    if args.api_key:
+    _apply_model_selection(config, args)
+    if args.api_key and 'api_key' not in config:
         config['api_key'] = args.api_key
     if args.output:
         config['output'] = args.output
@@ -532,12 +642,8 @@ def run_direct_action(args):
         'batch_size': args.batch_size,
     }
 
-    if args.model:
-        config['model'] = args.model
-        # The annotation phase looks the model up under its own key; 'model' alone
-        # never reaches the annotator and silently leaves the default in place.
-        config['annotation_model'] = args.model
-    if args.api_key:
+    _apply_model_selection(config, args)
+    if args.api_key and 'api_key' not in config:
         config['api_key'] = args.api_key
     if args.output:
         config['output'] = args.output

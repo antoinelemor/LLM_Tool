@@ -145,7 +145,7 @@ dependencies = [
 # Cloud LLM providers other than OpenAI. Pure-Python, installs everywhere.
 providers = [
     "anthropic>=0.18.0",
-    "google-generativeai>=0.3.0",
+    "google-genai>=1.0.0",
 ]
 
 # The `--api` mode's HTTP server.
@@ -218,7 +218,7 @@ dev = [
 all = [
     # providers
     "anthropic>=0.18.0",
-    "google-generativeai>=0.3.0",
+    "google-genai>=1.0.0",
     # api
     "fastapi>=0.103.0",
     "uvicorn>=0.23.0",
@@ -235,7 +235,7 @@ all = [
 # scripts keeps working; `all` is the name to use.
 advanced = [
     "anthropic>=0.18.0",
-    "google-generativeai>=0.3.0",
+    "google-genai>=1.0.0",
     "fastapi>=0.103.0",
     "uvicorn>=0.23.0",
     "langdetect>=1.0.9",

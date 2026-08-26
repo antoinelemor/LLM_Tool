@@ -19,7 +19,7 @@ Dependencies:
 - sys
 - openai
 - anthropic
-- google.generativeai
+- google.genai
 - logging
 - typing
 - time
@@ -37,6 +37,7 @@ Author:
 Antoine Lemor
 """
 
+import atexit
 import logging
 import time
 import json
@@ -338,19 +339,84 @@ class AnthropicClient(BaseAPIClient):
             return None
 
 
+class GoogleFatalError(RuntimeError):
+    """
+    Raised for a Gemini condition every subsequent row would hit identically.
+
+    A rejected key, a model the project is not entitled to, or a model Google has
+    retired will not resolve itself on retry. Replaying it for every row of a
+    corpus wastes minutes and, on a paid key, money -- so the annotator abandons
+    the run instead, the same way it does for :class:`OllamaFatalError`.
+    """
+
+
+# Gemini's default thinking budget consumes the output allowance before any
+# visible text is produced, so a small max_output_tokens comes back empty even
+# though the call succeeded. This floor leaves room for the reasoning trace.
+GEMINI_MIN_OUTPUT_TOKENS = 2048
+
+
 class GoogleClient(BaseAPIClient):
     """Google GenAI SDK client implementation (unified SDK for Gemini)"""
+
+    DEFAULT_MODEL = 'gemini-3.6-flash'
 
     def __init__(self, api_key: str, **kwargs):
         """Initialize Google client"""
         super().__init__(api_key, **kwargs)
 
         if not HAS_GOOGLE:
-            raise ImportError("Google GenAI SDK not installed. Install with: pip install google-genai")
+            raise ImportError(
+                "Google GenAI SDK not installed. Install with: "
+                'pip install "llm-tool[providers]"  (or: pip install google-genai)'
+            )
+
+        if not api_key:
+            raise GoogleFatalError(
+                "No Google API key. Set GOOGLE_API_KEY (or GEMINI_API_KEY), or "
+                "store one for the 'google' provider in the Resume Center."
+            )
 
         # Initialize client with API key (new unified SDK)
         self.client = genai.Client(api_key=api_key)
-        self.model_name = kwargs.get('model', 'gemini-2.0-flash')
+        self.model_name = kwargs.get('model') or self.DEFAULT_MODEL
+        self.last_usage: Optional[Dict[str, int]] = None
+
+        # The SDK opens an async session even for synchronous calls, and leaving
+        # it to the garbage collector makes asyncio print "Task was destroyed but
+        # it is pending!" at shutdown -- an alarming-looking error at the end of
+        # an otherwise successful annotation run.
+        atexit.register(self.close)
+
+    def close(self) -> None:
+        """Release the SDK's HTTP session. Safe to call more than once."""
+        client = getattr(self, 'client', None)
+        if client is None:
+            return
+        try:
+            client.close()
+        except Exception:  # pragma: no cover - shutdown must never raise
+            pass
+
+    @staticmethod
+    def _is_fatal(exc: Exception) -> bool:
+        """
+        Whether `exc` describes a condition that retrying cannot fix.
+
+        Notes
+        -----
+        Gemini reports a retired model as 404 and a bad key as 400/401/403, both
+        of which are permanent for this run. 429 and 5xx are transient: the
+        `-latest` aliases in particular return 503 under load and succeed on the
+        next attempt.
+        """
+        status = getattr(exc, 'code', None) or getattr(exc, 'status_code', None)
+        if status in (400, 401, 403, 404):
+            return True
+        text = str(exc).lower()
+        if any(m in text for m in ('api key not valid', 'permission denied', 'no longer available')):
+            return True
+        return False
 
     def generate(
         self,
@@ -365,51 +431,139 @@ class GoogleClient(BaseAPIClient):
         Parameters
         ----------
         prompt : str
-            The prompt to send to the model
+            The prompt to send to the model.
         temperature : float
-            Temperature parameter
+            Sampling temperature.
         max_tokens : int
-            Maximum tokens in response
+            Maximum tokens in the response. Raised to
+            :data:`GEMINI_MIN_OUTPUT_TOKENS` when lower, because the budget is
+            shared with the model's hidden reasoning.
+        **kwargs
+            ``top_p``, ``top_k``, ``system_prompt``, ``json_mode`` (bool) and
+            ``json_schema`` (a JSON Schema dict). With ``json_mode`` the API is
+            asked for ``application/json`` directly, so the reply needs no
+            fence-stripping before it is parsed.
 
         Returns
         -------
         str or None
-            Generated response or None on error
+            Generated text, or None when the model returned nothing usable.
+
+        Raises
+        ------
+        GoogleFatalError
+            Rejected credential, or a model that does not exist for this key.
         """
-        try:
-            # Configure generation parameters using new SDK types
-            config = genai_types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                top_p=kwargs.get('top_p', 0.95),
-                top_k=kwargs.get('top_k', 40)
-            )
+        config_kwargs: Dict[str, Any] = {
+            'temperature': temperature,
+            'max_output_tokens': max(int(max_tokens or 0), GEMINI_MIN_OUTPUT_TOKENS),
+            'top_p': kwargs.get('top_p', 0.95),
+        }
+        # top_k is rejected outright by some Gemini 3 models, so it is only sent
+        # when the caller asked for it rather than defaulted in.
+        if kwargs.get('top_k') is not None:
+            config_kwargs['top_k'] = kwargs['top_k']
+        if kwargs.get('system_prompt'):
+            config_kwargs['system_instruction'] = kwargs['system_prompt']
+        if kwargs.get('json_mode') or kwargs.get('json_schema'):
+            config_kwargs['response_mime_type'] = 'application/json'
+            if kwargs.get('json_schema'):
+                config_kwargs['response_schema'] = kwargs['json_schema']
 
-            # Generate response using client.models service
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=config
-            )
+        config = genai_types.GenerateContentConfig(**config_kwargs)
 
-            # Extract text from response
+        last_error: Optional[Exception] = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,
+                )
+            except Exception as e:
+                if self._is_fatal(e):
+                    raise GoogleFatalError(
+                        f"Gemini rejected the request for model '{self.model_name}': {e}"
+                    ) from e
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    delay = 2 ** attempt
+                    self.logger.warning(
+                        f"Gemini call failed (attempt {attempt + 1}/{self.max_retries}), "
+                        f"retrying in {delay}s: {e}"
+                    )
+                    time.sleep(delay)
+                continue
+
+            usage = getattr(response, 'usage_metadata', None)
+            if usage is not None:
+                self.last_usage = {
+                    'prompt_tokens': getattr(usage, 'prompt_token_count', 0) or 0,
+                    'completion_tokens': getattr(usage, 'candidates_token_count', 0) or 0,
+                }
+
             if response.text:
                 return response.text
 
-            # Check for safety filters in candidates
-            if response.candidates:
-                for candidate in response.candidates:
-                    if candidate.content and candidate.content.parts:
-                        for part in candidate.content.parts:
-                            if hasattr(part, 'text') and part.text:
-                                return part.text
+            # A blocked prompt is reported on the response, not as an exception.
+            blocked = getattr(getattr(response, 'prompt_feedback', None), 'block_reason', None)
+            if blocked:
+                self.logger.warning(f"Gemini blocked the prompt: {blocked}")
+                return None
+
+            # Older shapes put the text on a candidate part instead of .text.
+            for candidate in (response.candidates or []):
+                content = getattr(candidate, 'content', None)
+                for part in (getattr(content, 'parts', None) or []):
+                    if getattr(part, 'text', None):
+                        return part.text
+                finish = getattr(candidate, 'finish_reason', None)
+                if finish and str(finish).upper().endswith('MAX_TOKENS'):
+                    self.logger.warning(
+                        "Gemini hit the output limit before emitting text; "
+                        "raise max_tokens for this model."
+                    )
 
             self.logger.warning("No text found in Google response")
             return None
 
+        self.logger.error(f"Gemini failed after {self.max_retries} attempts: {last_error}")
+        return None
+
+    def list_models(self) -> List[str]:
+        """
+        Return the Gemini models this key can call, newest first.
+
+        Returns
+        -------
+        list of str
+            Bare model ids (``models/`` stripped). Empty when the key is
+            rejected or the network is unavailable -- callers fall back to the
+            static catalogue.
+
+        Notes
+        -----
+        The listing includes models that 404 on use ("no longer available to new
+        users"), so it is a superset of what actually works. Image, TTS,
+        embedding and robotics variants are filtered out: none of them can serve
+        a text annotation.
+        """
+        try:
+            names = []
+            for model in self.client.models.list():
+                actions = getattr(model, 'supported_actions', None) or []
+                if actions and 'generateContent' not in actions:
+                    continue
+                name = (model.name or '').replace('models/', '')
+                if not name.startswith('gemini'):
+                    continue
+                if any(tag in name for tag in ('tts', 'image', 'embedding', 'robotics', 'transcribe')):
+                    continue
+                names.append(name)
+            return names
         except Exception as e:
-            self.logger.error(f"Error calling Google Gemini: {e}")
-            return None
+            self.logger.debug(f"Could not list Gemini models: {e}")
+            return []
 
 
 def create_api_client(provider: str, api_key: str, **kwargs) -> BaseAPIClient:

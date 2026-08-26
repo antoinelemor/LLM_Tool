@@ -283,6 +283,7 @@ The system currently supports:
 
 - **OpenAI** (GPT-3.5, GPT-4, GPT-4o, o1, o3-mini, GPT-5, etc.)
 - **Anthropic** (Claude 3 Opus, Sonnet, Haiku, etc.)
+- **Google Gemini** (Gemini 3.x Flash / Pro) — free key at https://aistudio.google.com/apikey
 - **Google** (Gemini Pro, etc.)
 - **HuggingFace** (models via API)
 

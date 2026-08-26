@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Google Gemini support
+
+- Gemini is now a first-class annotation provider, offered in the model picker
+  next to OpenAI and Ollama, and usable headlessly.
+- Switched from `google-generativeai` to `google-genai`. The declared package was
+  the deprecated SDK (end-of-life, provides `google.generativeai`) while the code
+  imported the maintained one (`google.genai`) -- so `HAS_GOOGLE` was always
+  False after a documented install and Gemini silently never loaded.
+- New `--provider {ollama,openai,anthropic,google}`, inferred from the model name
+  when omitted. `--annotate data.csv --model gemini-3.6-flash` previously fell
+  through to Ollama and died trying to pull "gemini-3.6-flash" from the Ollama
+  registry; there was no way to reach a cloud provider headlessly at all.
+- `GEMINI_API_KEY` is accepted as an alias for `GOOGLE_API_KEY`, since that is the
+  name Google's own quickstarts and the SDK itself use.
+- `GoogleClient` rewritten for robustness: exponential-backoff retry on 429/5xx,
+  a `GoogleFatalError` that stops the run immediately on a rejected key or a
+  retired model instead of replaying the failure for every row, native
+  `response_schema` JSON mode, system instructions, token-usage capture, and a
+  minimum output budget (Gemini's hidden reasoning otherwise consumes the whole
+  allowance and returns empty text).
+- 29 tests, 25 of which run without a key.
+
 #### First-class Windows support
 
 - `install.bat` and `install.ps1`: a one-command Windows installer mirroring
