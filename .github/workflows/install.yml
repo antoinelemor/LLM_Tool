@@ -150,24 +150,43 @@ jobs:
         with:
           python-version: '3.12'
 
-      # Exercises the script a first-time user actually runs, including the
-      # interpreter discovery, the venv layout and the verification step.
-      - name: Run install.ps1
+      # Runs exactly what docs/WINDOWS.md tells a first-time user to type:
+      # install.bat, not install.ps1. That is the path that matters, because the
+      # wrapper is what gets past PowerShell's default execution policy -- the
+      # single most common reason a Windows install stalls before it starts.
+      # stdin comes from NUL so the closing `pause` does not block the runner.
+      - name: Run install.bat (the documented command)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./install.ps1 -Preset core -Recreate
+        shell: cmd
+        run: install.bat -Preset core -Recreate < NUL
 
-      - name: Run install.sh
+      - name: Run install.sh (the documented command)
         if: runner.os != 'Windows'
         run: |
           chmod +x install.sh
           ./install.sh
 
-      - name: Launch from the created environment (Windows)
+      # And the documented way to launch: activate, then call the console script
+      # by name. `python -m llm_tool` would pass even if the entry point or the
+      # activation script were broken.
+      - name: Activate and launch (Windows PowerShell)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: .\.venv\Scripts\python.exe -m llm_tool --version
+        run: |
+          .\.venv\Scripts\Activate.ps1
+          llm-tool --version
+          llmtool --version
 
-      - name: Launch from the created environment (POSIX)
+      - name: Activate and launch (Windows Command Prompt)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call .venv\Scripts\activate.bat
+          llm-tool --version
+
+      - name: Activate and launch (POSIX)
         if: runner.os != 'Windows'
-        run: ./.venv/bin/python -m llm_tool --version
+        run: |
+          source .venv/bin/activate
+          llm-tool --version
+          llmtool --version
