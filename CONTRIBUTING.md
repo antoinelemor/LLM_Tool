@@ -96,6 +96,36 @@ the same name:
 | Validate packaging | `make check-build` | `make.bat check-build` |
 | Clean | `make clean` | `make.bat clean` |
 
+### Adding an LLM provider
+
+Providers are data, not code paths. `llm_tool/config/providers.py` is the single
+source of truth: the model pickers, the resource tables, `--provider`, provider
+inference, the key manager, the Provider Center and Agent mode all read from it.
+
+To add one:
+
+1. Append a `ProviderSpec` to `PROVIDERS` in `llm_tool/config/providers.py` —
+   id, label, `env_vars`, `sdk_module`, `install_extra`, `signup_url`,
+   `model_prefixes`, and a `models` tuple of `ModelSpec`.
+2. If it speaks the OpenAI wire format, set `openai_compat_base_url` and you are
+   done for Agent mode. Otherwise implement a client in
+   `llm_tool/annotators/api_clients.py` and add it to `create_api_client()`.
+3. Add the SDK to the `providers` extra in `pyproject.toml`.
+
+Nothing else needs editing. `tests/test_google_gemini.py` has a test that
+registers a fake provider at runtime and asserts it reaches the picker,
+`--provider` and inference — run it after adding yours.
+
+Two rules the tests enforce:
+
+- **`model_prefixes` must not overlap** between providers, or inference becomes
+  order-dependent.
+- **Exactly one provider sets `is_fallback`** (Ollama), because its model names
+  are free-form and cannot be recognised by shape.
+
+Leave `prompt_cost_per_1k` unset unless you can verify the figure. The picker
+shows "N/A", which is better than the cost estimator quoting a stale price.
+
 ### Cross-platform expectations
 
 This project is developed on macOS and must keep working on Windows and Linux.

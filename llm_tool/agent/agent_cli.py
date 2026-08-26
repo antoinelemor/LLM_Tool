@@ -50,6 +50,7 @@ from ..cli.advanced_cli import LLMDetector, TrainerModelDetector
 from ..utils.data_detector import DatasetInfo, DataDetector
 from ..utils.resource_display import create_visual_resource_panel
 from ..utils.system_resources import SystemResourceDetector
+from ..config.providers import get_provider, cloud_provider_ids
 
 logger = logging.getLogger(__name__)
 
@@ -449,14 +450,20 @@ class AgentCLI:
         """Let user configure a cloud provider model, styled like the classic CLI."""
         self.console.print()
 
-        if provider == "openai":
+        # Driven by the registry: an `else` branch here used to hand every
+        # provider that was not OpenAI the Anthropic model list, so picking
+        # Google silently offered Claude.
+        spec = get_provider(provider)
+        if spec and spec.models:
+            models = [m.name for m in spec.models][:4]
+        elif provider == "openai":
             models = ["gpt-4o", "gpt-4o-mini", "o3-mini", "gpt-4.1"]
-            default = "gpt-4o"
-            env_key = "OPENAI_API_KEY"
-        else:
+        elif provider == "anthropic":
             models = ["claude-sonnet-4-20250514", "claude-haiku-4-20250514", "claude-opus-4-20250514"]
-            default = "claude-sonnet-4-20250514"
-            env_key = "ANTHROPIC_API_KEY"
+        else:
+            models = []
+        default = (spec.default_agent_model if spec else None) or (models[0] if models else "")
+        env_key = (spec.env_vars[0] if spec and spec.env_vars else f"{provider.upper()}_API_KEY")
 
         model_table = Table.grid(padding=(0, 1))
         model_table.add_column(width=3, justify="right")
@@ -1566,7 +1573,7 @@ class AgentCLI:
             )
 
         # Show API models (top 2 per provider)
-        for provider in ["openai", "anthropic"]:
+        for provider in cloud_provider_ids():
             api_models = all_llms.get(provider, [])
             for model in api_models[:2]:
                 llms_table.add_row(

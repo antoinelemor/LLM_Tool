@@ -115,6 +115,7 @@ from typing import Optional
 # Import main CLI
 from .cli.main_cli import LLMToolCLI
 from .config.settings import get_settings
+from .config.providers import get_provider, infer_provider, provider_ids
 from .__init__ import __version__
 
 
@@ -223,7 +224,7 @@ def parse_arguments():
     model_group.add_argument(
         '--provider',
         type=str,
-        choices=['ollama', 'openai', 'anthropic', 'google'],
+        choices=list(provider_ids()),
         help='LLM provider to annotate with. Inferred from --model when omitted '
              '(gemini-* -> google, gpt-*/o1/o3 -> openai, claude-* -> anthropic, '
              'anything else -> ollama)'
@@ -316,69 +317,31 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def infer_provider(model_name: Optional[str]) -> str:
-    """
-    Guess which provider serves `model_name`.
-
-    Parameters
-    ----------
-    model_name : str, optional
-        A model identifier as typed on the command line.
-
-    Returns
-    -------
-    str
-        One of ``'google'``, ``'openai'``, ``'anthropic'`` or ``'ollama'``.
-
-    Notes
-    -----
-    Without this, ``--annotate data.csv --model gemini-3.6-flash`` fell through to
-    the ``'ollama'`` default, and the run died trying to pull "gemini-3.6-flash"
-    from the Ollama registry. Ollama stays the fallback because its model names
-    are free-form and cannot be recognised by shape.
-
-    Examples
-    --------
-    >>> infer_provider('gemini-3.6-flash')
-    'google'
-    >>> infer_provider('gpt-4o-mini')
-    'openai'
-    >>> infer_provider('llama3.2:3b')
-    'ollama'
-    """
-    name = (model_name or '').strip().lower()
-    if not name:
-        return 'ollama'
-    if name.startswith(('gemini', 'models/gemini')):
-        return 'google'
-    if name.startswith(('gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'text-davinci')):
-        return 'openai'
-    if name.startswith('claude'):
-        return 'anthropic'
-    return 'ollama'
-
-
 def _resolve_provider_credential(provider: str, explicit_key: Optional[str]) -> Optional[str]:
     """
-    Settle the credential for a cloud provider before the pipeline starts.
+    Settle the credential for a provider before the pipeline starts.
 
     Parameters
     ----------
     provider : str
-        Provider name.
+        Registered provider id.
     explicit_key : str, optional
         Whatever ``--api-key`` supplied.
 
     Returns
     -------
     Optional[str]
-        The key to use, or None when the provider needs none (Ollama) or none
-        could be found -- the client then raises with an actionable message.
+        The key to use, or None when the provider needs none (a local Ollama
+        daemon) or none could be found -- the client then raises with an
+        actionable message.
     """
     if explicit_key:
         return explicit_key
-    if provider == 'ollama':
+
+    spec = get_provider(provider)
+    if spec and not spec.requires_key:
         return None
+
     try:
         from .config.api_key_manager import APIKeyManager
         return APIKeyManager().get_key(provider)
@@ -413,10 +376,13 @@ def _apply_model_selection(config: dict, args) -> None:
     if api_key:
         config['api_key'] = api_key
 
-    if provider != 'ollama' and not api_key:
+    spec = get_provider(provider)
+    if spec and spec.requires_key and not api_key:
+        names = " or ".join(spec.env_vars) or "the provider's API key variable"
+        hint = f" Get one at {spec.signup_url}." if spec.signup_url else ""
         logging.warning(
-            "No API key found for provider '%s'. Set %s_API_KEY or pass --api-key.",
-            provider, provider.upper(),
+            "No API key found for %s. Set %s, or pass --api-key.%s",
+            spec.label, names, hint,
         )
 
 

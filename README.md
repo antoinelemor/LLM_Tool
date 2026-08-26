@@ -168,7 +168,7 @@ verification report. Expect 5–20 minutes and 3–6 GB of downloads.
 
 ### Then, inside the CLI
 
-1. **Configure providers (optional)** – Mode 6 → Resume Center → add an OpenAI, Anthropic or Google Gemini API key, or set Ollama as default.
+1. **Configure providers (optional)** – Mode 6 → Resume Center → **LLM providers**: add an OpenAI, Google Gemini or Anthropic key (stored encrypted, connection-tested), or configure the Ollama endpoint.
 2. **Annotate a sample** – Mode 1 → pick `data/political_transcriptions_sample.csv` → choose columns → select `ollama:llama3.2` or `gpt-4o-mini` → run.
 3. **Check quality** – Mode 5 → load the same output → request a 50-item stratified sample for review.
 4. **Train a model** – Mode 3 → import the annotated CSV from `annotations_output/.../data/` → accept recommended multilingual models → run benchmarks.
@@ -715,7 +715,9 @@ LLM Tool stores API keys securely with encryption. Run the interactive CLI to se
 llm-tool
 ```
 
-Navigate to **Resume Center → API Key Configuration** and add your keys:
+Navigate to **Mode 6 → Resume Center → LLM providers** and add your keys. The
+screen shows, per provider, whether its SDK is installed, whether a key is set
+and where it came from, and can test the credential before you start a run:
 - **OpenAI** (`OPENAI_API_KEY`) — GPT-4o, GPT-5, o1, o3
 - **Google Gemini** (`GOOGLE_API_KEY`, or `GEMINI_API_KEY`) — get one free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 - **Anthropic** (`ANTHROPIC_API_KEY`) — Claude
@@ -803,8 +805,11 @@ setx GOOGLE_API_KEY "..."            # Windows, permanent
 ```
 
 `GEMINI_API_KEY` is accepted too, since that is the name Google's own
-quickstarts use. Or store it encrypted from **Resume Center → API Key
-Configuration** and skip the environment entirely.
+quickstarts use.
+
+Or skip the environment entirely: **Mode 6 → Resume Center → LLM providers**
+lists every provider with its SDK state and key status, stores keys encrypted,
+and tests the connection before you commit to a run.
 
 **Interactive:** launch `llm-tool`, choose Mode 1, and pick from the
 **Google Gemini Models** section of the model picker.

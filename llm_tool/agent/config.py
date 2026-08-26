@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .providers import DEFAULT_OLLAMA_BASE_URL
+from ..config.providers import get_provider, resolve_api_key
 
 
 @dataclass
@@ -41,21 +42,18 @@ class AgentConfig:
         base_url = os.environ.get("LLM_TOOL_AGENT_BASE_URL")
         keep_alive = os.environ.get("LLM_TOOL_AGENT_KEEP_ALIVE")
 
-        if provider == "anthropic":
-            api_key = explicit_key or (
-                os.environ.get("ANTHROPIC_API_KEY")
-                or settings.get_api_key("anthropic")
-            )
+        # Cloud providers all resolve the same way: the provider's environment
+        # variables (aliases included), then the encrypted store, then the
+        # registry's default model. Ollama is handled separately below because a
+        # local daemon needs no credential and does need a base URL.
+        spec = get_provider(provider)
+        if spec and spec.kind == "cloud":
+            api_key = explicit_key or resolve_api_key(provider) or settings.get_api_key(provider)
             if not model:
-                model = "claude-sonnet-4-20250514"
-        elif provider == "openai":
-            api_key = explicit_key or (
-                os.environ.get("OPENAI_API_KEY")
-                or settings.get_api_key("openai")
-            )
-            if not model:
-                model = "gpt-4o"
-        elif provider == "ollama":
+                model = spec.default_agent_model or ""
+            if not base_url and spec.openai_compat_base_url:
+                base_url = spec.openai_compat_base_url
+        if provider == "ollama":
             # A local daemon needs no credential, but the same provider id also
             # drives ollama.com, where inference is authenticated.
             api_key = explicit_key or (

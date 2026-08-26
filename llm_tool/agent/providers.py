@@ -24,6 +24,8 @@ DEFAULT_OLLAMA_BASE_URL = f"{DEFAULT_OLLAMA_HOST}/v1"
 
 # Placeholder credential for the local daemon, which ignores the Authorization
 # header while the OpenAI SDK still insists on a non-empty api_key.
+from llm_tool.config.providers import get_provider, iter_providers
+
 LOCAL_OLLAMA_API_KEY = "ollama"
 
 
@@ -376,8 +378,27 @@ def create_agent_provider(
             keep_alive=keep_alive,
         )
 
-    else:
-        raise ValueError(
-            f"Unsupported agent provider: {provider}. "
-            f"Supported: anthropic, openai, ollama"
+    # A provider that mirrors the OpenAI chat API needs no client of its own:
+    # Gemini serves /chat/completions with tool calling at its compat endpoint,
+    # so the OpenAI provider drives it unchanged.
+    spec = get_provider(provider)
+    if spec and spec.openai_compat_base_url:
+        if not api_key:
+            names = " or ".join(spec.env_vars)
+            signup = f" Get one at {spec.signup_url}." if spec.signup_url else ""
+            raise ValueError(
+                f"{spec.label} API key required. Set {names} or use --api-key.{signup}"
+            )
+        return OpenAIAgentProvider(
+            model=model,
+            api_key=api_key,
+            base_url=base_url or spec.openai_compat_base_url,
         )
+
+    supported = ", ".join(
+        s.id for s in iter_providers()
+        if s.id in {"anthropic", "openai", "ollama"} or s.openai_compat_base_url
+    )
+    raise ValueError(
+        f"Unsupported agent provider: {provider}. Supported: {supported}"
+    )

@@ -54,7 +54,26 @@ If you don't have `cryptography` installed, the system will still work but:
 
 ## 📖 Usage
 
-### Via Interactive CLI
+### Via the Provider Center
+
+**Mode 6 → Resume Center → LLM providers** is the single place to manage cloud
+credentials. For every registered provider it shows:
+
+| Column | Meaning |
+|--------|---------|
+| SDK | whether the provider's Python package is installed, and the `pip` command if not |
+| API key | `set via <VAR>` (environment), `stored encrypted`, or `not set` |
+| Models | how many models the catalogue offers |
+| Status | `ready`, or exactly what is missing |
+
+From there you can store a key (encrypted, after a connectivity test), re-test an
+existing one, or delete a stored key. An environment variable always takes
+precedence over the encrypted store, and the screen says so when both are set.
+
+Providers come from `llm_tool/config/providers.py`; registering one there makes
+it appear in this screen and in the model pickers automatically.
+
+### Via the model picker
 
 When you select an API model (OpenAI, Anthropic, Google), the system:
 

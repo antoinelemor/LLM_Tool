@@ -54,21 +54,29 @@ except Exception as e:
     logging.error(f"Error importing cryptography: {e}")
 
 
+from .providers import iter_providers
+
+
 # Environment variable consulted for each provider before the encrypted store.
+#
+# Derived from the provider registry so a new provider needs no edit here; the
+# extra names below cover credentials the registry does not describe (a model
+# host rather than an annotation provider).
 PROVIDER_ENV_VARS: Dict[str, str] = {
-    'openai': 'OPENAI_API_KEY',
-    'anthropic': 'ANTHROPIC_API_KEY',
-    'google': 'GOOGLE_API_KEY',
-    'huggingface': 'HF_TOKEN',
-    'ollama': 'OLLAMA_API_KEY'
+    spec.id: spec.env_vars[0]
+    for spec in iter_providers()
+    if spec.env_vars
 }
+PROVIDER_ENV_VARS.setdefault('huggingface', 'HF_TOKEN')
 
 # Additional names accepted for the same provider, tried after the primary one.
 # Google's own quickstarts and the google-genai SDK both read GEMINI_API_KEY, so
 # a user who followed Google's documentation has it set under that name and
 # would otherwise be told no key was found.
 PROVIDER_ENV_ALIASES: Dict[str, tuple] = {
-    'google': ('GEMINI_API_KEY',),
+    spec.id: spec.env_vars[1:]
+    for spec in iter_providers()
+    if len(spec.env_vars) > 1
 }
 
 # Ollama authenticates nothing when it runs as a local daemon; a token is only

@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Provider registry and Provider Center
+
+- New `llm_tool/config/providers.py`: one declarative registry describing every
+  LLM provider — id, label, environment variables, SDK module, install extra,
+  signup URL, model-name prefixes and model catalogue. The model pickers, the
+  resource tables, `--provider`, provider inference, the key manager and Agent
+  mode all read from it, so registering a provider is now the whole job.
+  Previously a provider was ~35 hardcoded literals across six files, and missing
+  one was silent.
+- New **Resume Center → LLM providers** screen. There was no way to manage cloud
+  credentials in the CLI at all: `advanced_settings` was a stub reading "under
+  development", and the README pointed at an "API Key Configuration" screen that
+  did not exist. The new screen lists each provider's SDK state, key source
+  (environment variable vs encrypted store) and catalogue size, and can store,
+  test or delete a credential — testing it against the live API before saving.
+- The annotation model picker renders non-OpenAI cloud providers through one
+  generic loop instead of a hand-written block per provider, and auto-selection
+  iterates the registry instead of one `if os.getenv(...)` per provider.
+- Agent mode: `_select_cloud_model` had a two-way `if` whose `else` branch handed
+  every non-OpenAI provider Anthropic's model list, so choosing Google silently
+  offered Claude. It is registry-driven now, and a provider exposing an
+  OpenAI-compatible endpoint (Gemini does, tool calling included) needs no
+  bespoke agent client.
+
 #### Google Gemini support
 
 - Gemini is now a first-class annotation provider, offered in the model picker

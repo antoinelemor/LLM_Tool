@@ -131,6 +131,15 @@ except ImportError:
 
 # Import internal modules
 from ..config.settings import Settings
+from ..config.providers import (
+    cloud_provider_ids,
+    get_provider,
+    is_sdk_available,
+    iter_providers,
+    model_descriptions,
+    provider_env_vars,
+    resolve_api_key,
+)
 from ..pipelines.pipeline_controller import PipelineController
 from ..utils.language_detector import LanguageDetector
 from llm_tool.utils.language_normalizer import LanguageNormalizer
@@ -302,15 +311,6 @@ MODEL_DESCRIPTIONS = {
     'o3': 'OpenAI o3 - Latest reasoning model with enhanced performance',
     'o4': 'OpenAI o4 - Advanced reasoning model (2025)',
 
-    # Google Gemini models
-    'gemini-3.6-flash': 'Google Gemini 3.6 Flash - Fast, 1M context, native JSON schema; best default for annotation',
-    'gemini-3.7-flash': 'Google Gemini 3.7 Flash - Newest Flash generation, 1M context',
-    'gemini-3.5-flash': 'Google Gemini 3.5 Flash - Previous Flash generation, 1M context',
-    'gemini-3.5-flash-lite': 'Google Gemini 3.5 Flash-Lite - Cheapest tier, for very large batches',
-    'gemini-3.1-pro-preview': 'Google Gemini 3.1 Pro (preview) - Strongest reasoning, slower and pricier',
-    'gemini-flash-latest': 'Google Gemini Flash (rolling alias) - Always the current Flash; can answer 503 under load',
-    'gemini-pro-latest': 'Google Gemini Pro (rolling alias) - Always the current Pro; can answer 503 under load',
-
     # Anthropic Claude models
     'claude-sonnet-4.5': 'Claude Sonnet 4.5 - Best for coding/computer use, autonomous for 30hrs (200K)',
     'claude-3.7-sonnet': 'Claude 3.7 Sonnet - Hybrid reasoning, extended thinking for complex problems',
@@ -321,6 +321,11 @@ MODEL_DESCRIPTIONS = {
     'claude-3-sonnet': 'Claude 3 Sonnet - Balanced performance and speed',
     'claude-3-haiku': 'Claude 3 Haiku - Fastest Claude 3 model',
 }
+
+# Descriptions for every model the provider registry catalogues. Merged in rather
+# than duplicated above, so registering a model gives it a picker description for
+# free -- the hand-maintained entries here stay authoritative where they overlap.
+MODEL_DESCRIPTIONS = {**model_descriptions(), **MODEL_DESCRIPTIONS}
 
 
 # ============================================================================
@@ -572,119 +577,65 @@ class LLMDetector:
         return max(512, min(2048, context // 2))
 
     @staticmethod
-    def detect_openai_models() -> List[ModelInfo]:
-        """List available OpenAI models"""
-        models = [
-            ModelInfo(
-                "gpt-4.1-2025-04-14",
-                "openai",
-                context_length=1_047_576,
-                requires_api_key=True,
-                prompt_cost_per_1k=0.001,
-                completion_cost_per_1k=0.004,
-                supports_json=True,
-                supports_streaming=True,
-                max_tokens=32768,
-                batch_prompt_cost_per_1k=0.001,
-                batch_completion_cost_per_1k=0.004,
-            ),
-            ModelInfo(
-                "gpt-5-2025-08-07",
-                "openai",
-                context_length=200000,
-                requires_api_key=True,
-                prompt_cost_per_1k=0.00125,
-                completion_cost_per_1k=0.01,
-                cached_prompt_cost_per_1k=0.000125,
-                batch_prompt_cost_per_1k=0.000625,
-                batch_cached_prompt_cost_per_1k=0.0000625,
-                batch_completion_cost_per_1k=0.005,
-                supports_json=True,
-                supports_streaming=True,
-                max_tokens=8000,
-            ),
-            ModelInfo(
-                "gpt-5-mini-2025-08-07",
-                "openai",
-                context_length=200000,
-                requires_api_key=True,
-                prompt_cost_per_1k=0.00025,
-                completion_cost_per_1k=0.002,
-                cached_prompt_cost_per_1k=0.000025,
-                batch_prompt_cost_per_1k=0.000125,
-                batch_cached_prompt_cost_per_1k=0.0000125,
-                batch_completion_cost_per_1k=0.001,
-                supports_json=True,
-                supports_streaming=True,
-                max_tokens=4000,
-            ),
-            ModelInfo(
-                "gpt-5-nano-2025-08-07",
-                "openai",
-                context_length=200000,
-                requires_api_key=True,
-                prompt_cost_per_1k=0.00005,
-                completion_cost_per_1k=0.0004,
-                cached_prompt_cost_per_1k=0.000005,
-                batch_prompt_cost_per_1k=0.000025,
-                batch_cached_prompt_cost_per_1k=0.0000025,
-                batch_completion_cost_per_1k=0.0002,
-                supports_json=True,
-                supports_streaming=True,
-                max_tokens=4000,
-            ),
-        ]
-        return models
-
-    @staticmethod
-    def detect_anthropic_models() -> List[ModelInfo]:
-        """List available Anthropic models"""
-        models = [
-            # [!] Not yet tested in pipeline
-        ]
-        return models
-
-    @staticmethod
-    def detect_google_models() -> List[ModelInfo]:
+    def models_for(provider_id: str) -> List[ModelInfo]:
         """
-        List the Google Gemini models offered for annotation.
+        Build the picker's entries for one registered provider.
+
+        Parameters
+        ----------
+        provider_id : str
+            A provider id from :mod:`llm_tool.config.providers`.
 
         Returns
         -------
         list of ModelInfo
-            Text-capable Gemini models, newest first.
+            Empty when the provider is unknown or its catalogue is not curated
+            yet; free-text model entry still reaches it in that case.
 
         Notes
         -----
-        Static rather than queried, for the same reason as the OpenAI catalogue:
-        the picker must render instantly and offline. The live listing is used
-        only when the user asks for it, because ``models.list()`` costs a network
-        round trip and returns models that then 404 on use -- Google keeps
-        retired generations visible but refuses them for keys that never called
-        them ("no longer available to new users").
-
-        Per-token costs are deliberately left unset. Google publishes Gemini
-        pricing per million tokens at https://ai.google.dev/pricing and revises
-        it per generation; an out-of-date number here would be worse than the
-        honest "N/A" the picker shows, because the cost estimator would quote it.
+        The catalogue is data in the registry rather than code here, so adding a
+        model -- or a whole provider -- needs no change to this file. It stays
+        static, and offline, because the picker has to render instantly: a live
+        listing costs a network round trip and, for Gemini, also returns models
+        that then 404 on use.
         """
-        common = dict(
-            requires_api_key=True,
-            supports_json=True,       # native response_schema, verified in the client
-            supports_streaming=True,
-            max_tokens=8192,
-        )
+        spec = get_provider(provider_id)
+        if not spec:
+            return []
         return [
-            ModelInfo("gemini-3.6-flash", "google", context_length=1_048_576, **common),
-            ModelInfo("gemini-3.7-flash", "google", context_length=1_048_576, **common),
-            ModelInfo("gemini-3.5-flash", "google", context_length=1_048_576, **common),
-            ModelInfo("gemini-3.5-flash-lite", "google", context_length=1_048_576, **common),
-            ModelInfo("gemini-3.1-pro-preview", "google", context_length=1_048_576, **common),
-            # Rolling aliases: always the current generation, but they answer 503
-            # under load more often than a pinned id, so they are listed last.
-            ModelInfo("gemini-flash-latest", "google", context_length=1_048_576, **common),
-            ModelInfo("gemini-pro-latest", "google", context_length=1_048_576, **common),
+            ModelInfo(
+                model.name,
+                spec.id,
+                context_length=model.context_length,
+                requires_api_key=spec.requires_key,
+                supports_json=model.supports_json,
+                supports_streaming=model.supports_streaming,
+                max_tokens=model.max_tokens,
+                prompt_cost_per_1k=model.prompt_cost_per_1k,
+                completion_cost_per_1k=model.completion_cost_per_1k,
+                cached_prompt_cost_per_1k=model.cached_prompt_cost_per_1k,
+                batch_prompt_cost_per_1k=model.batch_prompt_cost_per_1k,
+                batch_cached_prompt_cost_per_1k=model.batch_cached_prompt_cost_per_1k,
+                batch_completion_cost_per_1k=model.batch_completion_cost_per_1k,
+            )
+            for model in spec.models
         ]
+
+    @staticmethod
+    def detect_openai_models() -> List[ModelInfo]:
+        """List available OpenAI models."""
+        return LLMDetector.models_for("openai")
+
+    @staticmethod
+    def detect_anthropic_models() -> List[ModelInfo]:
+        """List available Anthropic models."""
+        return LLMDetector.models_for("anthropic")
+
+    @staticmethod
+    def detect_google_models() -> List[ModelInfo]:
+        """List available Google Gemini models."""
+        return LLMDetector.models_for("google")
 
     @staticmethod
     def detect_all_llms() -> Dict[str, List[ModelInfo]]:
@@ -695,13 +646,15 @@ class LLMDetector:
         both hold models whose `provider` is the literal 'ollama'; they differ by
         `host`.
         """
-        return {
+        buckets = {
             "local": LLMDetector.detect_ollama_models(),
             "ollama_cloud": LLMDetector.detect_ollama_cloud_models(),
-            "openai": LLMDetector.detect_openai_models(),
-            "anthropic": LLMDetector.detect_anthropic_models(),
-            "google": LLMDetector.detect_google_models(),
         }
+        # Every cloud provider in the registry gets a bucket, so a new one shows
+        # up in the pickers without an edit here.
+        for provider_id in cloud_provider_ids():
+            buckets[provider_id] = LLMDetector.models_for(provider_id)
+        return buckets
 
 
 class TrainerModelDetector:
@@ -1759,7 +1712,7 @@ class AdvancedCLI:
                 ("3", " Training Arena - Train 50+ Models (BERT/RoBERTa/DeBERTa) with Multi-Label & Benchmarking"),
                 ("4", " BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU, 100+ Languages)"),
                 ("5", " Validation Lab - Quality Scoring, Stratified Sampling, Inter-Annotator Agreement [[!] IN DEVELOPMENT]"),
-                ("6", " Resume Center - Manage Sessions, Configurations & Ollama Endpoint"),
+                ("6", " Resume Center - Manage Sessions, Configurations & LLM Providers"),
                 ("7", " Documentation & Help"),
                 ("0", " Exit")
             ]
@@ -1798,7 +1751,7 @@ class AdvancedCLI:
             print("3. Training Arena - Train 50+ Models (Multi-Label & Benchmarking)")
             print("4. BERT Annotation Studio - High-Throughput Inference (Parallel GPU/CPU)")
             print("5. Validation Lab - Quality Scoring & Sampling [[!] IN DEVELOPMENT]")
-            print("6. Resume Center - Manage Sessions, Configurations & Ollama Endpoint")
+            print("6. Resume Center - Manage Sessions, Configurations & LLM Providers")
             print("7. Documentation & Help")
             print("0. Exit")
             print("-"*50)
@@ -2166,24 +2119,33 @@ class AdvancedCLI:
                 self.console.print(table)
 
             endpoint_choice = len(entries) + 1
+            provider_choice = len(entries) + 2
             if HAS_RICH and self.console:
                 self.console.print(
                     f"\n[bold cyan]{endpoint_choice}[/bold cyan] Ollama endpoint "
                     "[dim]- server, API key, connectivity test[/dim]"
                 )
+                self.console.print(
+                    f"[bold cyan]{provider_choice}[/bold cyan] LLM providers "
+                    "[dim]- OpenAI, Google Gemini, Anthropic: API keys and connectivity[/dim]"
+                )
             else:
                 print(f"\n{endpoint_choice}. Ollama endpoint - server, API key, connectivity test")
+                print(f"{provider_choice}. LLM providers - API keys and connectivity")
 
             selection = self._int_prompt_with_validation(
                 "\n[bold yellow]Select session (0 to return)[/bold yellow]" if HAS_RICH and self.console else "\nSelect session (0 to return): ",
                 0,
                 0,
-                endpoint_choice,
+                provider_choice,
             )
             if selection == 0:
                 return
             if selection == endpoint_choice:
                 self.ollama_endpoint_center()
+                continue
+            if selection == provider_choice:
+                self.provider_center()
                 continue
 
             chosen = entries[selection - 1]
@@ -2213,6 +2175,257 @@ class AdvancedCLI:
                 else:
                     print(f"No direct handler for mode: {mode}")
             return
+
+    # ------------------------------------------------------------------
+    # Cloud provider management
+    # ------------------------------------------------------------------
+    def _provider_key_source(self, provider_id: str) -> Tuple[str, Optional[str]]:
+        """
+        Report where `provider_id`'s credential comes from, without revealing it.
+
+        Returns
+        -------
+        tuple of (str, Optional[str])
+            A short state -- ``'env'``, ``'stored'`` or ``'missing'`` -- and the
+            environment variable it was found under, when applicable.
+        """
+        for var in provider_env_vars(provider_id):
+            if os.environ.get(var):
+                return "env", var
+        try:
+            from ..config.api_key_manager import APIKeyManager
+            if APIKeyManager().get_key(provider_id):
+                return "stored", None
+        except Exception:
+            pass
+        return "missing", None
+
+    def _effective_api_key(self, provider_id: str) -> Optional[str]:
+        """
+        The credential a run would actually use for `provider_id`.
+
+        Environment first (aliases included), then the encrypted store -- the
+        same order :class:`APIKeyManager` applies. Callers must not reimplement
+        this: a status column that checked only the environment while the probe
+        checked both is exactly how the two came to disagree.
+        """
+        key = resolve_api_key(provider_id)
+        if key:
+            return key
+        try:
+            from ..config.api_key_manager import APIKeyManager
+            return APIKeyManager().get_key(provider_id)
+        except Exception:
+            return None
+
+    def _probe_provider(self, spec, api_key: Optional[str]) -> Tuple[bool, str]:
+        """
+        Check that `spec`'s credential actually works.
+
+        Returns
+        -------
+        tuple of (bool, str)
+            Success flag and a human-readable detail line.
+
+        Notes
+        -----
+        Model listing is used rather than a generation: every provider here
+        offers it, it costs nothing, and it still proves the key is accepted.
+        """
+        if not spec.requires_key:
+            return True, "no credential needed"
+        if not api_key:
+            return False, "no API key configured"
+        if not is_sdk_available(spec.id):
+            extra = f'pip install -e ".[{spec.install_extra}]"' if spec.install_extra else "install its SDK"
+            return False, f"SDK not installed - {extra}"
+
+        try:
+            if spec.id == "google":
+                from ..annotators.api_clients import GoogleClient
+                names = GoogleClient(api_key=api_key).list_models()
+                return bool(names), f"{len(names)} models available" if names else "key rejected"
+            if spec.id == "openai":
+                from openai import OpenAI
+                names = [m.id for m in OpenAI(api_key=api_key).models.list()]
+                return bool(names), f"{len(names)} models available"
+            if spec.id == "anthropic":
+                import anthropic
+                names = [m.id for m in anthropic.Anthropic(api_key=api_key).models.list()]
+                return bool(names), f"{len(names)} models available"
+        except Exception as exc:
+            return False, f"{type(exc).__name__}: {str(exc)[:90]}"
+
+        return True, "configured (no connectivity test for this provider)"
+
+    def provider_center(self) -> None:
+        """
+        Inspect and configure the cloud LLM providers used for annotation.
+
+        Every provider registered in :mod:`llm_tool.config.providers` is listed
+        here with its SDK state, credential source and catalogue size, so adding
+        a provider to the registry makes it appear in this screen -- and in the
+        model pickers -- without touching this method.
+
+        The Ollama endpoint has its own screen, because it is configured by URL
+        rather than by credential alone.
+        """
+        while True:
+            specs = [s for s in iter_providers(kind="cloud")]
+
+            if HAS_RICH and self.console:
+                table = Table(title=" LLM Providers", border_style="cyan", expand=True)
+                table.add_column("#", style="cyan", width=3, justify="right")
+                table.add_column("Provider", style="magenta", no_wrap=True)
+                table.add_column("SDK", no_wrap=True)
+                table.add_column("API key", no_wrap=True)
+                table.add_column("Models", justify="right", no_wrap=True)
+                table.add_column("Status", style="dim", min_width=26, overflow="fold", ratio=1)
+            else:
+                table = None
+                print("\n=== LLM Providers ===")
+
+            for idx, spec in enumerate(specs, 1):
+                sdk_ok = is_sdk_available(spec.id)
+                sdk_cell = "[green]installed[/green]" if sdk_ok else "[yellow]missing[/yellow]"
+                state, var = self._provider_key_source(spec.id)
+                if state == "env":
+                    key_cell = f"[green]set[/green] [dim]via {var}[/dim]"
+                elif state == "stored":
+                    key_cell = "[green]stored[/green] [dim]encrypted[/dim]"
+                else:
+                    key_cell = "[yellow]not set[/yellow]"
+
+                if table is not None:
+                    if not sdk_ok and spec.install_extra:
+                        note = f'pip install -e ".[{spec.install_extra}]"'
+                    elif state == "missing":
+                        note = f"needs {spec.env_vars[0]}" if spec.env_vars else "needs an API key"
+                    elif not spec.models:
+                        note = "catalogue not curated - type a model name"
+                    else:
+                        note = "ready"
+                    table.add_row(
+                        str(idx), spec.label, sdk_cell, key_cell,
+                        str(len(spec.models)) if spec.models else "-",
+                        note,
+                    )
+                else:
+                    print(f"{idx}. {spec.label:16s} sdk={'ok' if sdk_ok else 'missing':8s} key={state:8s} {spec.signup_url or ''}")
+
+            if table is not None:
+                self.console.print(table)
+                self.console.print(
+                    "\n[dim]Ollama is configured separately, by endpoint URL.[/dim]"
+                )
+                for spec in specs:
+                    if spec.signup_url and not self._provider_key_available(spec.id):
+                        self.console.print(
+                            f"[dim]  {spec.label}: get a key at {spec.signup_url}[/dim]"
+                        )
+
+            ollama_choice = len(specs) + 1
+            if HAS_RICH and self.console:
+                self.console.print(
+                    f"\n[bold cyan]{ollama_choice}[/bold cyan] Ollama endpoint "
+                    "[dim]- server, API key, connectivity test[/dim]"
+                )
+            else:
+                print(f"{ollama_choice}. Ollama endpoint")
+
+            choice = self._int_prompt_with_validation(
+                "\n[bold yellow]Select a provider to configure (0 to return)[/bold yellow]"
+                if HAS_RICH and self.console else "\nSelect a provider (0 to return): ",
+                0, 0, ollama_choice,
+            )
+            if choice == 0:
+                return
+            if choice == ollama_choice:
+                self.ollama_endpoint_center()
+                continue
+
+            self._configure_provider(specs[choice - 1])
+
+    def _configure_provider(self, spec) -> None:
+        """Set, test or clear the credential for one provider."""
+        state, var = self._provider_key_source(spec.id)
+
+        if HAS_RICH and self.console:
+            self.console.print(f"\n[bold cyan] {spec.label}[/bold cyan]")
+            if spec.signup_url:
+                self.console.print(f"[dim]Get a key: {spec.signup_url}[/dim]")
+            if spec.env_vars:
+                self.console.print(
+                    f"[dim]Environment: {' or '.join(spec.env_vars)}[/dim]"
+                )
+            if state == "env":
+                self.console.print(
+                    f"[dim]A key is already set via {var}; it takes precedence "
+                    "over anything stored here.[/dim]"
+                )
+        else:
+            print(f"\n{spec.label}")
+
+        options = ["Set or replace the stored API key", "Test the connection"]
+        if state == "stored":
+            options.append("Delete the stored API key")
+
+        for i, label in enumerate(options, 1):
+            if HAS_RICH and self.console:
+                self.console.print(f"  [bold cyan]{i}[/bold cyan] {label}")
+            else:
+                print(f"  {i}. {label}")
+
+        action = self._int_prompt_with_validation(
+            "\n[bold yellow]Action (0 to go back)[/bold yellow]"
+            if HAS_RICH and self.console else "\nAction (0 to go back): ",
+            0, 0, len(options),
+        )
+        if action == 0:
+            return
+
+        from ..config.api_key_manager import APIKeyManager
+        manager = APIKeyManager()
+
+        if action == 1:
+            if HAS_RICH and self.console:
+                api_key = Prompt.ask(f"{spec.label} API key", password=True)
+            else:
+                import getpass
+                api_key = getpass.getpass(f"{spec.label} API key: ")
+            api_key = (api_key or "").strip()
+            if not api_key:
+                return
+
+            ok, detail = self._probe_provider(spec, api_key)
+            if not ok:
+                message = f"[red]That key did not work:[/red] {detail}"
+                if HAS_RICH and self.console:
+                    self.console.print(message)
+                    if not Confirm.ask("Store it anyway?", default=False):
+                        return
+                else:
+                    print(f"That key did not work: {detail}")
+                    if input("Store it anyway? [y/N]: ").strip().lower() != "y":
+                        return
+            manager.save_key(spec.id, api_key)
+            done = f"[green]Stored, encrypted.[/green] [dim]{detail}[/dim]" if ok else "[yellow]Stored.[/yellow]"
+            self.console.print(done) if HAS_RICH and self.console else print("Stored.")
+
+        elif action == 2:
+            ok, detail = self._probe_provider(spec, self._effective_api_key(spec.id))
+            if HAS_RICH and self.console:
+                colour = "green" if ok else "red"
+                self.console.print(f"[{colour}]{'OK' if ok else 'Failed'}:[/{colour}] {detail}")
+            else:
+                print(f"{'OK' if ok else 'Failed'}: {detail}")
+
+        elif action == 3:
+            manager.delete_key(spec.id)
+            msg = "[green]Stored key deleted.[/green]"
+            if state == "env":
+                msg += f" [dim]{var} is still set in the environment.[/dim]"
+            self.console.print(msg) if HAS_RICH and self.console else print("Stored key deleted.")
 
     # ------------------------------------------------------------------
     # Ollama endpoint management
@@ -4438,6 +4651,16 @@ class AdvancedCLI:
             "training_logs_dir": str(metrics_dir),
         }
 
+    def _provider_key_available(self, provider_id: str) -> bool:
+        """
+        Whether `provider_id` has a credential available right now.
+
+        Checks the environment first (including the provider's aliases) and then
+        the encrypted store, so the picker can tell the user whether they still
+        need to supply a key before choosing a model.
+        """
+        return bool(self._effective_api_key(provider_id))
+
     def _get_model_description(self, model_name: str) -> str:
         """Get factual description for a model based on its name"""
         # Normalize model name for matching
@@ -5003,60 +5226,45 @@ class AdvancedCLI:
 
                 self.console.print(openai_table)
 
-            # Display Anthropic Models with Rich Table
-            if anthropic_llms:
-                self.console.print("\n[bold cyan] Anthropic Models:[/bold cyan]\n")
+            # Every other cloud provider in the registry gets a section here.
+            #
+            # OpenAI keeps its own table above because it is the only provider
+            # whose full batch and cache pricing is published and stable enough
+            # to quote. The rest render through this one loop, so registering a
+            # provider is enough to make it selectable -- no edit in this file.
+            for spec in iter_providers(kind="cloud"):
+                if spec.id == "openai":
+                    continue
+                provider_llms = detected.get(spec.id, [])
+                if not provider_llms:
+                    continue
 
-                anthropic_table = Table(border_style="magenta", show_header=True, expand=True)
-                anthropic_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
-                anthropic_table.add_column("Model Name", style="white", no_wrap=True)
-                anthropic_table.add_column("Cost (in/out)", style="cyan", no_wrap=True)
-                anthropic_table.add_column("Description", style="dim", ratio=1, overflow="fold")
+                self.console.print(f"\n[bold cyan] {spec.label} Models:[/bold cyan]\n")
 
-                for llm in anthropic_llms[:3]:  # Show top 3
+                provider_table = Table(border_style="green", show_header=True, expand=True)
+                provider_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
+                provider_table.add_column("Model Name", style="white", no_wrap=True)
+                provider_table.add_column("Context", style="cyan", justify="right", no_wrap=True)
+                provider_table.add_column("Description", style="dim", ratio=1, overflow="fold")
+
+                for llm in provider_llms:
                     entries.append(('model', llm))
-                    if llm.prompt_cost_per_1k and llm.completion_cost_per_1k:
-                        cost = f"${llm.prompt_cost_per_1k:.4f}/${llm.completion_cost_per_1k:.4f}"
-                    elif llm.prompt_cost_per_1k:
-                        cost = f"${llm.prompt_cost_per_1k:.4f}/—"
-                    else:
-                        cost = "N/A"
-                    description = self._get_model_description(llm.name)
-                    anthropic_table.add_row(
-                        str(len(entries)),
-                        llm.name,
-                        cost,
-                        description
-                    )
-
-                self.console.print(anthropic_table)
-
-            # Display Google Gemini Models with Rich Table
-            if google_llms:
-                self.console.print("\n[bold cyan] Google Gemini Models:[/bold cyan]\n")
-
-                google_table = Table(border_style="green", show_header=True, expand=True)
-                google_table.add_column("#", style="bold yellow", width=5, justify="right", no_wrap=True)
-                google_table.add_column("Model Name", style="white", no_wrap=True)
-                google_table.add_column("Context", style="cyan", no_wrap=True)
-                google_table.add_column("Description", style="dim", ratio=1, overflow="fold")
-
-                for llm in google_llms:
-                    entries.append(('model', llm))
-                    google_table.add_row(
+                    provider_table.add_row(
                         str(len(entries)),
                         llm.name,
                         f"{llm.context_length:,}" if llm.context_length else "N/A",
-                        self._get_model_description(llm.name)
+                        self._get_model_description(llm.name),
                     )
 
-                self.console.print(google_table)
-                # Costs are not shown: Google prices per million tokens and
-                # revises it per generation, so a stale figure here would be
-                # quoted by the cost estimator as if it were current.
-                self.console.print(
-                    "[dim italic]  Pricing: https://ai.google.dev/pricing[/dim italic]"
-                )
+                self.console.print(provider_table)
+
+                key_state = "stored" if self._provider_key_available(spec.id) else "needed"
+                hint = f"[dim italic]  API key {key_state}"
+                if spec.env_vars:
+                    hint += f" ({' or '.join(spec.env_vars)})"
+                if spec.signup_url:
+                    hint += f"  •  {spec.signup_url}"
+                self.console.print(hint + "[/dim italic]")
 
             # Actions are always available, so a picker with an empty catalogue is
             # still a way out: type a model name, or find out why nothing listed.
@@ -5134,36 +5342,28 @@ class AdvancedCLI:
             # Return the first available if no preferred found
             return local_llms[0]
 
-        # Check for API keys in environment
-        if os.getenv('OPENAI_API_KEY'):
-            openai_llms = self.detected_llms.get('openai', [])
-            if openai_llms:
-                # Prefer GPT-4 Turbo for best quality/cost ratio
-                for llm in openai_llms:
-                    if 'gpt-4-turbo' in llm.name:
+        # Check for a usable cloud credential, in registry order. Preferences
+        # are per-provider because the "best default" differs: a mid-tier chat
+        # model for OpenAI, a Flash tier for Gemini (annotation is high-volume
+        # and latency-bound, and Flash still does schema-constrained JSON).
+        preferred_by_provider = {
+            'openai': ('gpt-4-turbo', 'gpt-4.1', 'gpt-5-mini'),
+            'google': ('flash',),
+            'anthropic': ('sonnet',),
+        }
+        for spec in iter_providers(kind="cloud"):
+            if not self._provider_key_available(spec.id):
+                continue
+            candidates = self.detected_llms.get(spec.id, [])
+            if not candidates:
+                continue
+            for hint in preferred_by_provider.get(spec.id, ()):
+                for llm in candidates:
+                    # 'lite' tiers are cheaper but noticeably weaker; only pick
+                    # one when it is the sole match.
+                    if hint in llm.name.lower() and 'lite' not in llm.name.lower():
                         return llm
-                return openai_llms[0]
-
-        if os.getenv('ANTHROPIC_API_KEY'):
-            anthropic_llms = self.detected_llms.get('anthropic', [])
-            if anthropic_llms:
-                # Prefer Sonnet for balance
-                for llm in anthropic_llms:
-                    if 'sonnet' in llm.name:
-                        return llm
-                return anthropic_llms[0]
-
-        # GEMINI_API_KEY is the name Google's own quickstarts use, so accept both.
-        if os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY'):
-            google_llms = self.detected_llms.get('google', [])
-            if google_llms:
-                # Prefer a Flash tier: annotation is high-volume and latency
-                # bound, and Flash is the cheapest model that still does
-                # schema-constrained JSON.
-                for llm in google_llms:
-                    if 'flash' in llm.name and 'lite' not in llm.name:
-                        return llm
-                return google_llms[0]
+            return candidates[0]
 
         # Default fallback
         return ModelInfo(
