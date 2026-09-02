@@ -519,7 +519,8 @@ class AnnotationToTrainingConverter:
         label_strategy: str = "key_value",
         id_column: Optional[str] = None,
         lang_column: Optional[str] = None,
-        excluded_values: Optional[Dict[str, List[str]]] = None
+        excluded_values: Optional[Dict[str, List[str]]] = None,
+        drop_unlabelled: Optional[bool] = None
     ) -> str:
         """
         Create a single JSONL dataset for multi-label classification.
@@ -536,6 +537,25 @@ class AnnotationToTrainingConverter:
             label_strategy: How to create labels (see create_single_label_datasets)
             id_column: Column to use as ID (auto-detect if None)
             lang_column: Column to use as language (auto-detect if None)
+            drop_unlabelled: Drop rows that carry no label for the requested
+                keys. Defaults to True when exactly one key is requested,
+                False otherwise.
+
+                This distinction is not cosmetic. An upstream builder may
+                deliberately OMIT a key from a row's annotation to say "this
+                row is out of scope for that head" -- that is how per-head
+                class balancing is expressed (see the yes:no downsampling in
+                pol-emo-vidence's 22_build_training_csv.py). Keeping those
+                rows turns every out-of-scope row into a silent negative: on
+                a 100k-row wave the expert_cited head was built with 3,535
+                positives against 10,605 chosen negatives, then handed
+                85,860 extra unlabelled rows, so the model trained at 1:27
+                instead of the intended 1:3 and collapsed to the majority
+                class while its reported macro-F1 stayed at 0.90.
+
+                For a genuine multi-key multi-label file an empty list still
+                legitimately means "none of these categories apply", hence
+                the key-count-based default rather than a blanket change.
 
         Returns:
             Path to output JSONL file
@@ -594,6 +614,13 @@ class AnnotationToTrainingConverter:
         samples = []
         filtered_items = []
         keys_to_use = annotation_keys or self._get_all_keys(df, annotation_column)
+
+        # A single-key file is a per-head dataset: a row with no label for that
+        # key is out of scope, not a negative. A multi-key file is a genuine
+        # multi-label dataset where an empty list means "none apply".
+        if drop_unlabelled is None:
+            drop_unlabelled = len(keys_to_use) == 1
+        n_unlabelled = 0
 
         for idx, row in df.iterrows():
             try:
@@ -693,11 +720,22 @@ class AnnotationToTrainingConverter:
                             else:
                                 all_labels.append(cleaned_value)
 
-                # CRITICAL FIX: Include ALL samples, even if no labels
-                # For multilabel: empty list [] means "none of the categories apply"
+                # Rows carrying no label for the requested keys: kept as
+                # "none of these categories apply" for a real multi-label
+                # file, dropped for a per-head file where their absence is
+                # the upstream builder saying the row is out of scope.
+                if not all_labels and drop_unlabelled:
+                    n_unlabelled += 1
+                    filtered_items.append({
+                        'index': idx,
+                        'reason': 'no_label_for_requested_key',
+                        'keys': ','.join(keys_to_use),
+                    })
+                    continue
+
                 sample = {
                     "text": str(row[text_column]),
-                    "labels": all_labels  # Can be empty list - that's valid!
+                    "labels": all_labels  # Empty only when drop_unlabelled is False
                 }
 
                 # Add ID metadata (combine multiple columns if specified)
@@ -726,11 +764,22 @@ class AnnotationToTrainingConverter:
 
         # Log all filtered items
         if filtered_items:
+            _only_scope = all(f['reason'] == 'no_label_for_requested_key'
+                              for f in filtered_items)
             filter_logger.log_filtered_batch(
                 items=[f"Row {f['index']}: {f['reason']}" for f in filtered_items],
-                reason="annotation_processing_error",
+                reason=("out_of_scope_for_requested_key" if _only_scope
+                        else "annotation_processing_error"),
                 location="annotation_to_training.create_multi_label_dataset",
                 indices=[f['index'] for f in filtered_items]
+            )
+
+        if n_unlabelled:
+            self.logger.info(
+                f"[{','.join(keys_to_use)}] dropped {n_unlabelled:,} row(s) carrying no "
+                f"label for the requested key(s); kept {len(samples):,}. These rows are "
+                f"out of scope for this head, not negatives -- keeping them would "
+                f"silently rebalance the classes."
             )
 
         if samples:
