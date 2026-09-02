@@ -129,6 +129,7 @@ transformers.logging.set_verbosity_error()
 
 from llm_tool.trainers.bert_abc import BertABC
 from llm_tool.utils.logging_utils import get_logger
+from llm_tool.utils.tokenizer_check import check_special_tokens
 from llm_tool.trainers.imbalance_loss import ImbalanceConfig, build_train_criterion
 from llm_tool.trainers.training_metrics_chart import TrainingMetricsChart
 from llm_tool.trainers.training_logger import (
@@ -1594,6 +1595,10 @@ class BertBase(BertABC):
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
         else:
             self.tokenizer = tokenizer.from_pretrained(self.model_name)
+
+        # A tokenizer that drops [CLS]/[SEP] still trains, onto an input
+        # format nothing else produces. Fail here, not at deployment.
+        self.tokenizer_check = check_special_tokens(self.tokenizer, self.model_name)
 
         # Use AutoModelForSequenceClassification for better model compatibility
         if model_sequence_classifier is None:
@@ -4696,6 +4701,7 @@ class BertBase(BertABC):
                             "label_value": label_value if label_value else None,
                             "language": primary_lang_code if primary_lang_code else (language.upper() if isinstance(language, str) and language else None),
                             "confirmed_languages": confirmed_languages,
+                            "tokenizer_check": getattr(self, "tokenizer_check", None),
                             # Training results
                             "epoch": i_epoch + 1,
                             "combined_metric": combined_metric,
@@ -5131,6 +5137,7 @@ class BertBase(BertABC):
                     "label_value": label_value if label_value else None,
                     "language": primary_lang_code if primary_lang_code else (language.upper() if isinstance(language, str) and language else None),
                     "confirmed_languages": confirmed_languages,
+                    "tokenizer_check": getattr(self, "tokenizer_check", None),
                     "final_epoch": epoch_value,
                     "combined_metric": self._safe_float(fallback_combined_metric) if fallback_combined_metric is not None else None,
                     "macro_f1": self._safe_float(fallback_macro_f1) if fallback_macro_f1 is not None else None,
@@ -6287,6 +6294,7 @@ class BertBase(BertABC):
                                     "label_value": label_value if label_value else None,
                                     "language": primary_lang_code if primary_lang_code else (language.upper() if isinstance(language, str) and language else None),
                                     "confirmed_languages": confirmed_languages,
+                                    "tokenizer_check": getattr(self, "tokenizer_check", None),
                                     "epoch": n_epochs + epoch + 1,  # Total epoch number
                                     "combined_metric": combined_metric,
                                     "macro_f1": macro_f1,
