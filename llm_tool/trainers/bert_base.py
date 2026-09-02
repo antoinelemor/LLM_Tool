@@ -1764,9 +1764,14 @@ class BertBase(BertABC):
 
             # Collect a bounded evaluation slice from the validation loader.
             batches = []
+            gold = []
             n_taken = 0
             for batch in test_dataloader:
                 batches.append((batch[0], batch[1]))
+                # Keep the gold labels so the checkpoint can be judged on its
+                # own merit, not merely against another copy of itself.
+                if len(batch) > 2:
+                    gold.append(batch[-1].cpu().numpy())
                 n_taken += batch[0].shape[0]
                 if n_taken >= max_samples:
                     break
@@ -1799,6 +1804,31 @@ class BertBase(BertABC):
 
             live_preds = _predict(live)
             agreement = float((_reload_and_predict() == live_preds).mean())
+
+            # Agreement alone is a save-integrity check: two identically bad
+            # models agree perfectly. Record what the reloaded checkpoint is
+            # actually worth on the held-out slice, so a head that collapsed
+            # to the majority class cannot pass as verified.
+            self._last_reload_quality = None
+            if gold:
+                try:
+                    y_true = _np.concatenate(gold, axis=0)[:len(live_preds)]
+                    y_pred = _reload_and_predict()[:len(y_true)]
+                    if not multi_label and y_true.ndim > 1:
+                        y_true = y_true.argmax(axis=1)
+                    from sklearn.metrics import f1_score as _f1
+                    _avg = 'samples' if multi_label else 'macro'
+                    self._last_reload_quality = {
+                        'reloaded_macro_f1': float(_f1(y_true, y_pred,
+                                                       average=_avg, zero_division=0)),
+                        'reloaded_pred_class_balance': {
+                            str(int(k)): int(v) for k, v in
+                            zip(*_np.unique(y_pred, return_counts=True))
+                        } if not multi_label else None,
+                        'n_samples': int(len(y_true)),
+                    }
+                except Exception as _qe:  # noqa: BLE001
+                    self.logger.debug(f"[SAVE VERIFY] quality probe skipped: {_qe}")
 
             if agreement < min_agreement and retry_save:
                 self.logger.warning(
@@ -4704,10 +4734,25 @@ class BertBase(BertABC):
                             best_model_path, model, test_dataloader, multi_label,
                         )
                         if verify_agreement is not None:
+                            _q = getattr(self, '_last_reload_quality', None)
                             training_metadata["save_verification"] = {
                                 "agreement": verify_agreement,
                                 "passed": verify_agreement >= 0.98,
+                                # Agreement only proves the file reproduces the
+                                # in-memory model. This is what the reloaded
+                                # checkpoint actually scores on held-out data.
+                                **({"reloaded_quality": _q} if _q else {}),
                             }
+                            if _q and _q.get('reloaded_macro_f1') is not None:
+                                _gap = macro_f1 - _q['reloaded_macro_f1']
+                                if _gap > 0.10:
+                                    self.logger.error(
+                                        f"[SAVE VERIFY] Reloaded checkpoint scores "
+                                        f"{_q['reloaded_macro_f1']:.4f} macro-F1 against "
+                                        f"{macro_f1:.4f} reported in training "
+                                        f"({checkpoint_dir}). The exported artefact does "
+                                        f"NOT reproduce the training result."
+                                    )
                         with open(metadata_file, 'w', encoding='utf-8') as f:
                             json.dump(training_metadata, f, indent=2, ensure_ascii=False)
                     else:
