@@ -828,7 +828,15 @@ class DataDetector:
             dict_fraction = dict_hits / sample_size
             delimiter_fraction = delimiter_hits / sample_size
 
-            unique_count = series.nunique(dropna=True)
+            # A JSONL column of labels holds real lists once pandas has read
+            # it, and lists are unhashable: nunique() raises TypeError and
+            # takes the whole wizard down before the user can pick a file.
+            # The count is only used as a cardinality heuristic, so fall back
+            # to the string form of each value.
+            try:
+                unique_count = series.nunique(dropna=True)
+            except TypeError:
+                unique_count = non_null.astype(str).nunique(dropna=True)
             unique_ratio = unique_count / max(non_null_count, 1)
 
             avg_length = float(sample_as_str.str.len().mean())
