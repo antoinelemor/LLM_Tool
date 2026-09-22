@@ -95,6 +95,12 @@ from ..annotators.prompt_manager import PromptManager
 from ..annotators.json_cleaner import JSONCleaner, clean_json_output
 from ..config.settings import Settings
 from ..utils.data_filter_logger import get_filter_logger
+from ..utils.key_order import (
+    canonical_key_order,
+    ordered_unique,
+    prefixed_keys,
+    reorder_payload,
+)
 
 # Try to import local model support
 try:
@@ -1654,18 +1660,20 @@ class LLMAnnotator:
         prompts_by_index: Dict[int, Dict[str, Any]] = {
             idx + 1: prompt_cfg for idx, prompt_cfg in enumerate(prompts)
         }
+        # Key order must follow the prompt declaration order. Collecting these
+        # keys in a set would hand back an arbitrary, hash-seed dependent order
+        # and scramble every annotation column downstream (CSV, Doccano, labels).
         prefixed_expected_keys: Dict[int, List[str]] = {}
-        all_expected_keys: Set[str] = set()
         for prompt_idx, prompt_cfg in prompts_by_index.items():
-            expected_keys = prompt_cfg.get('expected_keys') or []
-            prefix = prompt_cfg.get('prefix', '') or ''
-            normalized_keys: List[str] = []
-            for key in expected_keys:
-                if not key:
-                    continue
-                normalized_keys.append(f"{prefix}_{key}" if prefix else key)
-            prefixed_expected_keys[prompt_idx] = normalized_keys
-            all_expected_keys.update(normalized_keys)
+            prefixed_expected_keys[prompt_idx] = prefixed_keys(
+                prompt_cfg.get('expected_keys'),
+                prompt_cfg.get('prefix'),
+            )
+        all_expected_keys: List[str] = ordered_unique(
+            key
+            for prompt_idx in sorted(prefixed_expected_keys)
+            for key in prefixed_expected_keys[prompt_idx]
+        )
         row_lookup: Dict[str, Dict[str, Any]] = {}
         row_results: Dict[str, Dict[str, Any]] = {}
 
@@ -2680,13 +2688,11 @@ class LLMAnnotator:
                     row_state['response_info'][prompt_key] = {}
 
             merged_payload = row_state.get('merged', {})
-            final_payload: Dict[str, Any] = {}
-            if all_expected_keys:
-                for key in all_expected_keys:
-                    final_payload[key] = merged_payload.get(key)
-            for key, value in merged_payload.items():
-                if key not in final_payload:
-                    final_payload[key] = value
+            # Canonical prompt order first, then any key the model returned
+            # outside the declared schema, appended in arrival order.
+            final_payload: Dict[str, Any] = reorder_payload(
+                merged_payload, all_expected_keys
+            )
             row_state['merged'] = final_payload
             final_json = json.dumps(final_payload, ensure_ascii=False) if final_payload else None
             usage_totals = aggregate_usage(row_state.get('usage', {}).values())
@@ -3177,12 +3183,10 @@ class LLMAnnotator:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         doccano_path = doccano_dir / f"{dataset_name}_doccano_{timestamp}.jsonl"
 
-        label_keys: Set[str] = set()
-        for prompt_cfg in config.get('prompts', []):
-            expected_keys = prompt_cfg.get('expected_keys') or []
-            prefix = prompt_cfg.get('prefix', '') or ''
-            for key in expected_keys:
-                label_keys.add(f"{prefix}_{key}" if prefix else key)
+        # Label order drives the order in which Doccano creates its category
+        # types, hence the order the annotation panel displays. Keep it aligned
+        # with the prompt instead of letting a set randomise it.
+        label_keys: List[str] = canonical_key_order(config.get('prompts', []))
 
         total_written = 0
         with doccano_path.open('w', encoding='utf-8') as handle:
@@ -3219,11 +3223,16 @@ class LLMAnnotator:
                     return sanitized or None
 
                 if label_keys:
-                    label_keys_to_process: Set[str] = {
+                    label_keys_to_process: List[str] = [
                         key for key in label_keys if key in annotation_data
-                    }
+                    ]
+                    # Keys the model added outside the declared schema still get
+                    # exported, after the canonical ones.
+                    label_keys_to_process.extend(
+                        key for key in annotation_data if key not in label_keys
+                    )
                 else:
-                    label_keys_to_process = set(annotation_data.keys())
+                    label_keys_to_process = list(annotation_data.keys())
 
                 for label_key in label_keys_to_process:
                     label_value = annotation_data.get(label_key)
@@ -4278,12 +4287,17 @@ def process_multiple_prompts(task: Dict[str, Any]) -> Dict[str, Any]:
             cleaned_dict[str(idx)] = None
             status_dict[str(idx)] = 'error'
     
-    # Merge all JSON objects
+    # Merge all JSON objects, then realign on the prompt-declared key order so
+    # sequential and batch runs produce byte-identical column ordering even when
+    # the model echoes the keys in a different order or the schema is disabled.
     merged = {}
     for obj in collected_json_objects:
         if isinstance(obj, dict):
             merged.update(obj)
-    
+    merged = reorder_payload(
+        merged, canonical_key_order(prompts), include_missing=False
+    )
+
     final_json = json.dumps(merged, ensure_ascii=False) if merged else None
     elapsed = time.perf_counter() - start_time
     

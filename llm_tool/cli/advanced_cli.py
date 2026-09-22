@@ -142,6 +142,7 @@ from ..config.providers import (
 )
 from ..pipelines.pipeline_controller import PipelineController
 from ..utils.language_detector import LanguageDetector
+from ..utils.key_order import ordered_unique, prefixed_keys
 from llm_tool.utils.language_normalizer import LanguageNormalizer
 from ..utils.data_filter_logger import get_filter_logger
 from ..utils.system_resources import detect_resources, SystemResourceDetector
@@ -8517,15 +8518,14 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             jsonl_filename = f"{dataset_name}_doccano_{timestamp}.jsonl"
             jsonl_path = doccano_dir / jsonl_filename
 
-            # Get all label keys from prompts
-            all_label_keys = set()
-            for pc in prompt_configs:
-                prefix = pc.get('prefix', '')
-                for key in pc['prompt']['keys']:
-                    if prefix:
-                        all_label_keys.add(f"{prefix}_{key}")
-                    else:
-                        all_label_keys.add(key)
+            # Get all label keys from prompts, in prompt-declaration order.
+            # A set here would randomise the label order and, through it, the
+            # order Doccano creates and displays its categories.
+            all_label_keys = ordered_unique(
+                key
+                for pc in prompt_configs
+                for key in prefixed_keys(pc['prompt']['keys'], pc.get('prefix'))
+            )
 
             # Extract labels from annotations (JSON strings)
             exported_count = 0
@@ -8564,10 +8564,11 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                             sanitized = re.sub(r"[^\w]+", "_", lowered).strip("_")
                             return sanitized or None
 
-                        # Extract labels from annotation
-                        label_keys_to_process = set(annotation_data.keys())
-                        if all_label_keys:
-                            label_keys_to_process |= all_label_keys
+                        # Extract labels from annotation, canonical keys first,
+                        # then anything the model returned outside the schema.
+                        label_keys_to_process = ordered_unique(
+                            list(all_label_keys) + list(annotation_data.keys())
+                        )
 
                         for label_key in label_keys_to_process:
                             if label_key not in annotation_data:
@@ -8808,15 +8809,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
             jsonl_filename = f"{dataset_name}_labelstudio_{timestamp}.jsonl"
             jsonl_path = labelstudio_dir / jsonl_filename
 
-            # Get all label keys from prompts
-            all_label_keys = set()
-            for pc in prompt_configs:
-                prefix = pc.get('prefix', '')
-                for key in pc['prompt']['keys']:
-                    if prefix:
-                        all_label_keys.add(f"{prefix}_{key}")
-                    else:
-                        all_label_keys.add(key)
+            # Get all label keys from prompts, in prompt-declaration order, so
+            # the generated Label Studio config mirrors the prompt.
+            all_label_keys = ordered_unique(
+                key
+                for pc in prompt_configs
+                for key in prefixed_keys(pc['prompt']['keys'], pc.get('prefix'))
+            )
 
             # Export to Label Studio format
             exported_count = 0
@@ -9093,12 +9092,13 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
                         self.console.print(f"[cyan]  Random sampling: {n_samples:,} rows[/cyan]")
                         df_annotated = df_annotated.sample(n=n_samples, random_state=42).copy()
 
-            # Get all label keys from prompts
-            all_label_keys = set()
-            for pc in prompt_configs:
-                if 'keys' in pc['prompt']:
-                    for key in pc['prompt']['keys']:
-                        all_label_keys.add(key)
+            # Get all label keys from prompts, in prompt-declaration order.
+            all_label_keys = ordered_unique(
+                key
+                for pc in prompt_configs
+                if 'keys' in pc['prompt']
+                for key in pc['prompt']['keys']
+            )
 
             # Create Label Studio project
             mode_suffix = "_with_predictions" if prediction_mode == 'with' else "_no_predictions"
@@ -9288,8 +9288,8 @@ Format your response as JSON with keys: topic, sentiment, entities, summary"""
 
         Parameters
         ----------
-        label_keys : set
-            Set of label keys (e.g., {'theme', 'party'})
+        label_keys : list
+            Label keys in prompt-declaration order (e.g., ['theme', 'party'])
         prompt_configs : list, optional
             List of prompt configurations containing the actual values for each key
         """
