@@ -176,7 +176,12 @@ def repair_csv(
         Report with the row counts and the observed orders.
     """
     input_path = Path(input_path)
-    with input_path.open("r", encoding="utf-8", newline="") as handle:
+    # A leading byte order mark would otherwise be glued to the first column
+    # name, which breaks the lookup when the annotation column comes first.
+    # It is written back only if the source carried one.
+    raw_head = input_path.open("rb").read(3)
+    has_bom = raw_head.startswith(b"\xef\xbb\xbf")
+    with input_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         fieldnames = reader.fieldnames or []
         if column not in fieldnames:
@@ -203,7 +208,9 @@ def repair_csv(
             changed += 1
 
     target = _resolve_target(input_path, output_path, in_place, suffix="_reordered")
-    with target.open("w", encoding="utf-8", newline="") as handle:
+    with target.open(
+        "w", encoding="utf-8-sig" if has_bom else "utf-8", newline=""
+    ) as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)

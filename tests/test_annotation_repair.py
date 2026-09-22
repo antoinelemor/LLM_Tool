@@ -193,6 +193,47 @@ def test_csv_repair_in_place_keeps_a_backup(tmp_path):
     assert list(json.loads(next(csv.DictReader(source.open(encoding="utf-8")))["annotation"])) == DECLARED
 
 
+def test_csv_repair_handles_a_leading_byte_order_mark(tmp_path):
+    """A BOM must not end up glued to the first column name."""
+    source = tmp_path / "annotations.csv"
+    with source.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["annotation", "party"])
+        writer.writeheader()
+        writer.writerow(
+            {
+                "annotation": json.dumps(_scrambled_payload()),
+                "party": "CAQ",
+            }
+        )
+
+    report = repair.repair_csv(source, DECLARED)
+
+    row = next(csv.DictReader(Path(report["output"]).open(encoding="utf-8-sig")))
+    assert list(json.loads(row["annotation"])) == DECLARED
+    assert set(row) == {"annotation", "party"}
+
+
+def test_csv_repair_preserves_the_byte_order_mark(tmp_path):
+    source = tmp_path / "annotations.csv"
+    with source.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["annotation"])
+        writer.writeheader()
+        writer.writerow({"annotation": json.dumps(_scrambled_payload())})
+
+    report = repair.repair_csv(source, DECLARED)
+
+    assert Path(report["output"]).open("rb").read(3) == b"\xef\xbb\xbf"
+
+
+def test_csv_repair_does_not_add_a_byte_order_mark(tmp_path):
+    source = tmp_path / "annotations.csv"
+    _write_csv(source, rows=1)
+
+    report = repair.repair_csv(source, DECLARED)
+
+    assert Path(report["output"]).open("rb").read(3) != b"\xef\xbb\xbf"
+
+
 def test_csv_repair_rejects_unknown_column(tmp_path):
     source = tmp_path / "annotations.csv"
     _write_csv(source)

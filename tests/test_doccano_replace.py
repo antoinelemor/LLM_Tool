@@ -158,6 +158,26 @@ def test_rows_skip_blank_texts(tmp_path):
     assert [row["text"] for row in rows] == ["Gardée"]
 
 
+def test_rows_strip_a_leading_byte_order_mark(tmp_path):
+    """A BOM must not become part of the first metadata key in Doccano."""
+    source = tmp_path / "repaired.csv"
+    with source.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["party_id", "text", "annotation"])
+        writer.writeheader()
+        writer.writerow(
+            {
+                "party_id": "CAQ",
+                "text": "Phrase",
+                "annotation": json.dumps({k: VALUES[k] for k in SCRAMBLED}),
+            }
+        )
+
+    rows = replace.rows_from_csv(source, DECLARED, text_column="text")
+
+    assert set(rows[0]["meta"]) == {"party_id"}
+    assert list(rows[0]["annotation"]) == DECLARED
+
+
 def test_rows_reject_missing_text_column(tmp_path):
     source = tmp_path / "repaired.csv"
     _write_csv(source)

@@ -282,7 +282,9 @@ def rows_from_csv(
         Push payloads in file order.
     """
     csv_path = Path(csv_path)
-    with csv_path.open("r", encoding="utf-8", newline="") as handle:
+    # utf-8-sig strips a leading byte order mark; read as plain utf-8 and the
+    # mark ends up glued to the first column name, then to a metadata key.
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         fieldnames = reader.fieldnames or []
         for required in (text_column, annotation_column):
