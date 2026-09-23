@@ -97,6 +97,7 @@ from ..config.settings import Settings
 from ..utils.data_filter_logger import get_filter_logger
 from ..utils.key_order import (
     canonical_key_order,
+    missing_keys,
     ordered_unique,
     prefixed_keys,
     reorder_payload,
@@ -2625,9 +2626,12 @@ class LLMAnnotator:
                         continue
                     status = row_state['status'].get(str(prompt_idx))
                     merged_payload = row_state.get('merged', {})
-                    needs_retry = any(
-                        merged_payload.get(key) in (None, '', []) for key in expected_keys
-                    )
+                    # Retry only when the answer lacks a key. A key returned as
+                    # null is an answer (the prompts ask for null when a
+                    # category does not apply): counting it as missing re-ran
+                    # nearly every valid batch answer synchronously, at the
+                    # standard price.
+                    needs_retry = bool(missing_keys(merged_payload, expected_keys))
                     if status == 'success' and not needs_retry:
                         continue
                     if needs_retry:

@@ -29,6 +29,7 @@ MAIN FEATURES:
 3) Apply prompt prefixes without losing the declared ordering
 4) Reorder an annotation payload onto the canonical order
 5) Keep unexpected keys returned by the model, appended in arrival order
+6) List the expected keys an answer lacks, a null value counting as an answer
 
 Author:
 -------
@@ -45,6 +46,7 @@ __all__ = [
     "prefixed_keys",
     "canonical_key_order",
     "reorder_payload",
+    "missing_keys",
 ]
 
 
@@ -185,3 +187,18 @@ def reorder_payload(
         if key not in ordered:
             ordered[key] = value
     return ordered
+
+
+def missing_keys(payload: Optional[Mapping[str, Any]], expected: Optional[Iterable[Any]]) -> List[str]:
+    """Return the expected keys that are absent from ``payload``, in declared order.
+
+    A key the model returned with ``null``, ``""`` or ``[]`` is present: it is
+    an answer, not a gap. LLM Tool's own prompts ask the model to use ``null``
+    when a category does not apply ("Ensure that all keys are present in the
+    JSON, using `null` when necessary"), so treating such a value as missing
+    would flag nearly every valid answer of a scheme with optional keys.
+    Only a key the model did not return at all is missing.
+    """
+    if not isinstance(payload, Mapping):
+        return ordered_unique(expected)
+    return [key for key in ordered_unique(expected) if key not in payload]
